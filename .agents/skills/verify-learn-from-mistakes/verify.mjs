@@ -7,13 +7,16 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSy
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { decode } from '@toon-format/toon';
 import { parse, stringify } from 'yaml';
 
 const repo = realpathSync(fileURLToPath(new URL('../../..', import.meta.url)));
-const [destination, mode, sourceDir, labelsArg, proposalsArg, ...extra] = process.argv.slice(2);
+const raw = process.argv.slice(2);
+const packageProof = raw.includes('--package');
+const [destination, mode, sourceDir, labelsArg, proposalsArg, ...extra] = raw.filter((a) => a !== '--package');
 assert(destination && isAbsolute(destination), 'Provide an absolute private evidence directory');
 assert(!extra.length && (!mode || (mode === '--private' && sourceDir && labelsArg && proposalsArg)),
-  'usage: node verify.mjs /absolute/evidence [--private /project /labels.jsonl /proposals.jsonl]');
+  'usage: node verify.mjs /absolute/evidence [--private /project /labels.jsonl /proposals.jsonl] [--package]');
 const inside = (parent, child) => { const r = relative(parent, child); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 // Resolve existing ancestors too: a symlinked output parent must not redirect into the repo.
 function canonical(path) {
@@ -66,7 +69,7 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/lfm.mjs', 'package-lock.json', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+  candidate: ['bin/lfm.mjs', 'package.json', 'package-lock.json', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -83,11 +86,59 @@ try {
   // Reuse, don't duplicate, negative/duplicate/occurrence/unread journey coverage.
   run('npm-test', 'npm', ['test']);
   const cli = join(repo, 'bin/lfm.mjs');
+  const stagedLabels = join(staged, 'labels.jsonl');
+  const stagedProposals = join(staged, 'proposals.jsonl');
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged]);
+  drive('help', '--help');    // help and version must work with no config read
+  drive('version', '--version');
   drive('ingest', 'ingest');
+  drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
   drive('count-unread', 'count');
-  drive('count-labelled', 'count', '--labels', join(staged, 'labels.jsonl'));
-  drive('report', 'report', '--labels', join(staged, 'labels.jsonl'), '--proposals', join(staged, 'proposals.jsonl'));
+  drive('count-labelled', 'count', '--labels', stagedLabels);
+  drive('report', 'report', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
+  // The default output is TOON; --json is the same projection under lfm-report.v1.
+  const out = (name) => readFileSync(join(evidence, `${name}.stdout`), 'utf8');
+  const toon = decode(out('bare'));
+  assert.equal(toon.schema, 'lfm-report.v1', 'bare output is not valid TOON lfm-report.v1');
+  assert.deepEqual(toon, JSON.parse(out('report-json')), '--json differs from the default projection');
+  assert.ok(decode(out('report')).causes.length, 'report has no causes');
+  const full = JSON.parse(out('report-full'));
+  assert.ok(full.causes.every((c) => 'record_ids' in c && 'store_row_ids' in c), '--full omits evidence ids');
+  assert.equal(out('version').trim(), JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version);
+  // Privacy canary: private prose in a label and a proposal must never reach any output.
+  const canary = 'CANARY-verify-private-1f4d';
+  writeFileSync(stagedLabels, readFileSync(stagedLabels, 'utf8').replace('"why":"', `"why":"${canary} `));
+  writeFileSync(stagedProposals, readFileSync(stagedProposals, 'utf8').replace('"change":"', `"change":"${canary} `));
+  for (const extra of [[], ['--json'], ['--full', '--json']]) {
+    const r = spawnSync(process.execPath, [cli, 'report', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals, ...extra], { cwd: repo, env, encoding: 'utf8' });
+    commands.push({ name: `canary${extra.join('') || '-default'}`, command: process.execPath, args: [cli, 'report', ...extra], cwd: repo, status: r.status });
+    save(`canary${extra.join('') || '-default'}.stdout`, r.stdout ?? '');
+    assert.equal(r.status, 0, 'canary report failed');
+    assert.ok(!r.stdout.includes(canary) && !(r.stderr ?? '').includes(canary), 'private canary text reached the output');
+  }
+  save('canary.json', { canary, absentFrom: ['default', '--json', '--full'] });
+  if (packageProof) {
+    const pack = join(evidence, 'pack');
+    mkdirSync(pack, { mode: 0o700 });
+    run('npm-pack', 'npm', ['pack', '--pack-destination', pack]);
+    const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
+    const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
+    save('pack.manifest.txt', manifest.join('\n'));
+    assert.ok(manifest.includes('package/bin/lfm.mjs') && manifest.includes('package/package.json'), 'tarball omits the bin or package.json');
+    assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
+    assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
+    const prefix = join(scratch, 'prefix');
+    run('npm-install-pack', 'npm', ['install', '-g', '--prefix', prefix, tarball]);
+    const installed = join(prefix, 'bin', 'lfm');
+    run('packed-version', installed, ['--version']);
+    run('packed-help', installed, ['--help']);
+    run('packed-report', installed, ['report', '--json', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals]);
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v1', 'packed bin does not drive the report');
+    assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');
+    save('pack.json', { tarball: tarball.slice(evidence.length + 1), sha256: createHash('sha256').update(readFileSync(tarball)).digest('hex'), files: manifest.length });
+  }
   passed = true;
 } finally {
   const after = hashes();

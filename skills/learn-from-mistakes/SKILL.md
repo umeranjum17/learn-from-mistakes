@@ -13,7 +13,7 @@ description: Label a defect log for the lfm CLI and recommend changes for its re
 lfm ingest            # in the project that has .learn-from-mistakes.yaml
 ```
 
-It prints the state dir. `records.jsonl` there holds one JSON object per log bullet: `id`, `source`, `line`, `date`, `text`.
+It prints the state dir. `records.jsonl` there holds one JSON object per log bullet: `id`, `source`, `line`, `date`, `text`. Run `lfm --help` to see every command and option; each command prints a `next:` hint on stderr.
 
 ## 2. Label every record you read
 
@@ -36,10 +36,12 @@ Rules:
 ## 3. Count
 
 ```sh
-lfm count
+lfm count             # or just `lfm`
 ```
 
 A cause is repeated when one source shows at least `repeat.min_incidents` incidents on `repeat.min_days` days. Log counts come from your labels. Store counts come from typed failure rows matched by the config's `match` rule. They are never added together.
+
+The default output is TOON. Add `--json` to get the same data as JSON under the `lfm-report.v1` schema, and `--full` to add the evidence ids (record ids, store row ids, proposal refs).
 
 ## 4. Recommend changes for repeated causes
 
@@ -50,12 +52,14 @@ Write `proposals.jsonl` in the state dir, one line per change:
 ```
 
 - One change per line, at most five per report. Prefer a check, a script or a deleted rule over more prose.
-- Every ref must be a record id or a `source:row id` from `lfm count`'s groups. `lfm report` checks each one and marks a proposal whose evidence does not resolve.
+- Every ref must be a record id or a `source:row id`. `lfm report --full` lists the id-level evidence it accepted, and marks a proposal whose evidence does not resolve.
 
 ## 5. Report
 
 ```sh
-lfm report > report.md
+lfm report            # default TOON; --json for lfm-report.v1; --full adds evidence ids
 ```
 
-Exit 1 means a label or proposal has a problem; the report lists it. Fix it and run again.
+The machine and default output carries identifiers and counts only — never record text, your label `why`, or proposal `change` text. That keeps a report safe to share. To read your own labels back, open `labels.jsonl` and `proposals.jsonl` in the state dir.
+
+Exit 1 means a label or proposal has a problem; the output counts the problems (their text is not printed). Fix them and run again.

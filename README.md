@@ -4,47 +4,37 @@
 
 <p align="center">Find the mistakes your coding agents keep repeating, with the evidence for each, and a short list of changes to stop them.</p>
 
-<p align="center"><img src="docs/hero.png" alt="lfm report output: a repeated cause with its log records and two recommended changes"></p>
-
 ## Why
 
 Agent fleets write down what went wrong: a defect log, a pipeline's failed steps. The same cause turns up again and again, yet nobody counts it, so the fix never gets priority. Counting by keyword is wrong too: "database is locked" in one tool is not the same cause as in another.
 
 `lfm` splits the work. Your agent reads each record and judges what happened, using the bundled skill. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
 
-<table>
-<tr><td width="50%" valign="top"><b>Ingest</b>: sources read, with hashes<br><img src="docs/ingest.png" alt="lfm ingest: two sources read with hashes"></td>
-<td width="50%" valign="top"><b>Count</b>: log and store side by side<br><img src="docs/count.png" alt="lfm count: three repeated causes, log and store counts never added"></td></tr>
-<tr><td width="50%" valign="top"><b>Problems are named</b>: a change citing a missing record<br><img src="docs/problem.png" alt="lfm report naming a recommendation whose evidence ref does not exist"></td>
-<td width="50%" valign="top"><b>Tested end to end</b>: the real CLI on synthetic fixtures<br><img src="docs/test.png" alt="npm test: three end-to-end tests pass"></td></tr>
-</table>
-
-## Quick start
+## Install
 
 Needs Node 22.13 or newer.
 
-1. Install:
+**Not published to npm yet.** These one-line installs are the proposed path and will work after the first publish:
 
-   ```sh
-   git clone https://github.com/umeranjum17/learn-from-mistakes
-   cd learn-from-mistakes && npm install && npm link
-   ```
+```sh
+npx -y learn-from-mistakes            # one-shot, no install (after publication)
+npm install -g learn-from-mistakes    # global (after publication)
+```
 
-2. Read the example sources:
+Until then, run it from a checkout:
 
-   ```sh
-   lfm ingest --dir examples
-   ```
+```sh
+git clone https://github.com/umeranjum17/learn-from-mistakes
+cd learn-from-mistakes && npm install && npm link
+```
 
-3. Print the report:
+Install the bundled skill for your agent (this works today, no npm publish needed):
 
-   ```sh
-   lfm report --dir examples --labels examples/labels.jsonl --proposals examples/proposals.jsonl
-   ```
+```sh
+npx skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g
+```
 
-The examples are synthetic: a 13-record defect log, a small no-mistakes store, and labels written by following the skill.
-
-## Use it on your own records
+## Quick start
 
 1. Put `.learn-from-mistakes.yaml` in your project:
 
@@ -60,11 +50,51 @@ The examples are synthetic: a 13-record defect log, a small no-mistakes store, a
    repeat: { min_incidents: 3, min_days: 2 }
    ```
 
-2. Run `lfm ingest`. It prints the state dir (`~/.learn-from-mistakes/state/<name>`; set `LFM_HOME` to move it).
+2. Run `lfm ingest --dir .`. It prints the state dir (`~/.learn-from-mistakes/state/<name>`; set `LFM_HOME` to move it).
 3. Ask your agent to follow [`skills/learn-from-mistakes/SKILL.md`](skills/learn-from-mistakes/SKILL.md). It writes `labels.jsonl` and `proposals.jsonl` in the state dir.
-4. Run `lfm count`, then `lfm report > report.md`.
+4. Run `lfm` for the report. A bare command, or `lfm report`, prints the repeated causes for the project you are in.
 
-Exit codes: `0` ok, `1` a label or proposal has a problem (listed in the output), `2` bad usage or config, `3` the sources hold nothing.
+## Command line
+
+```
+lfm                 print the project's repeated-cause report (same as `lfm report`)
+lfm ingest          read the configured sources (read-only) into the state dir
+lfm count           print the counts (same projection as `lfm report`)
+lfm report          print the report; --full adds evidence ids, --json prints JSON
+lfm --help          show the commands and options
+lfm --version       show the version
+```
+
+Every command stays useful:
+
+- Default output is **TOON** (compact, token-lean). `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema.
+- `--full` adds allow-listed evidence **ids** (record ids, store row ids, proposal refs) — never record text.
+- Each command ends with a `next:` hint on stderr, so an agent can chain `ingest → report → --full → --json` without reading the docs.
+
+```
+schema: lfm-report.v1
+coverage: {labelled: 13, total_records: 13, unlabelled: 0}
+problems: 0
+causes[1]:
+  - cause: server-memory-kill
+    repeated: true
+    by[1]: log
+    log: {incidents: 4, records: 3, days: 3}
+    store: {matched: false, rows: 0, days: 0}
+    proposals: {count: 2, unchecked: 0}
+```
+
+## Privacy
+
+Every output is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, cause descriptions, source paths, branches or error text. That is why the default and `--full` output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds ids.
+
+## Use it on your own records
+
+The `.learn-from-mistakes.yaml` above is all the configuration. Then `lfm ingest`, have your agent label, and `lfm`.
+
+## Exit codes
+
+`0` ok, `1` a label or proposal has a problem (a count of problems is included in the output), `2` bad usage or config, `3` the sources hold nothing. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
 
 ## What it does not do
 

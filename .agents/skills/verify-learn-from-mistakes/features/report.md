@@ -5,17 +5,19 @@ Evidence-backed recommendations, unresolved refs, unread coverage, bad config,
 malformed labels and empty input.
 
 ## How to get to it (user POV)
-Run `lfm report --labels <file> --proposals <file>` after ingest.
+Run `lfm` or `lfm report --labels <file> --proposals <file>` after ingest; add
+`--json` for JSON and `--full` for evidence ids.
 
 ## Driving it with the public CLI
-Inspect helper report and all three existing `npm test` journeys. Examples show
-0 unlabelled, duplicate annotations, gate:step-6 but not step-5, and real refs.
-The second journey retains two unread long records, reports missing ref `nope`
-and exits 1; malformed JSON exits 2 and names its line; unknown IDs are named;
-unknown config key `colour` is rejected. The third journey's empty input exits 3
-and says nothing to count. These are driven by the real CLI, not new unit tests.
+Inspect helper `report`/`report-json`/`report-full` and all three existing `npm
+test` journeys. Examples show 0 unlabelled, duplicate annotations, gate:step-1
+but not step-5, and real refs. The second journey retains two unread long records
+(coverage falls), counts the missing ref `nope` as one problem and exits 1 without
+printing its text; malformed JSON exits 2 and names its line; unknown IDs count as
+a problem; unknown config key `colour` is rejected. The third journey's empty
+input exits 3, says nothing to count and prints a `next: lfm ingest` hint. These
+are driven by the real CLI, not new unit tests.
 
 ## Gotchas
-An unchecked proposal is explicitly marked, not accepted. Inspect the TAP log
-for all three passing journeys, not just npm's process exit. No recommendations
-are applied and no release is performed.
+A problem is counted (`problems: N`), not printed, to keep the output private.
+No recommendations are applied and no release is performed.

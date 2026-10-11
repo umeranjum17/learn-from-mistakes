@@ -1,0 +1,24 @@
+# Package install (npm pack + fresh-prefix install)
+
+## Sub-features
+A minimal installable single-bin package that carries its standalone skill and
+public package metadata; a fresh prefix installs the exact packed tarball and its
+real `lfm` bin drives the report.
+
+## How to get to it (user POV)
+`npm pack`, then `npm install -g --prefix <fresh> <tarball>`, then run
+`<fresh>/bin/lfm --help` / `--version` / `report --json`.
+
+## Driving it with the public CLI
+Run the helper with `--package`:
+`node .agents/skills/verify-learn-from-mistakes/verify.mjs <evidence> --package`.
+It records `pack.json`, `pack.manifest.txt` and the packed-command logs. The
+manifest must include `package/bin/lfm.mjs`, `package/package.json` and the skill,
+and must exclude `test`/`examples`. The installed bin's `report --json` must be
+`lfm-report.v1`, and the packaged skill file must exist in the installed prefix.
+
+## Gotchas
+This is the only journey that resolves the declared dependency, so it uses the
+isolated npm cache and may touch the registry. `npm pack`/install never publishes:
+first publish is the captain's own test. The tarball and its sha256 are retained
+as evidence; no release or account is created.
