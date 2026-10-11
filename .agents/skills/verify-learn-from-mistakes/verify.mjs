@@ -96,6 +96,7 @@ try {
   drive('count-unread', 'count');
   drive('count-labelled', 'count', '--labels', stagedLabels);
   drive('report', 'report', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   // The default output is TOON; --json is the same projection under lfm-report.v1.
@@ -106,11 +107,15 @@ try {
   assert.ok(decode(out('report')).causes.length, 'report has no causes');
   const full = JSON.parse(out('report-full'));
   assert.ok(full.causes.every((c) => 'record_ids' in c && 'store_row_ids' in c), '--full omits evidence ids');
-  // Next hints keep the input flags, never echo the private staged path, and never suggest a flag already used.
+  // Next hints keep the input flags, never echo the private staged path, and compose the detail flags used.
   const err = (name) => readFileSync(join(evidence, `${name}.stderr`), 'utf8');
-  for (const name of ['ingest', 'report', 'report-json', 'report-full']) assert.ok(!err(name).includes(staged), `${name}: hint leaked the private staged path`);
+  const hintOf = (name) => err(name).split('\n').find((l) => l.startsWith('next: '))?.slice(6).split('   #')[0].trim();
+  for (const name of ['ingest', 'report', 'report-detail', 'report-json', 'report-full']) assert.ok(!err(name).includes(staged), `${name}: hint leaked the private staged path`);
   for (const flag of ['--dir', '--labels', '--proposals']) assert.ok(err('report').includes(flag), `report hint omits ${flag}`);
-  assert.ok(!err('report-full').includes('--json'), 'full+json hint repeats a flag the run already used');
+  assert.equal(hintOf('report'), 'lfm report --full', 'report hint drops the next detail flag');
+  assert.equal(hintOf('report-detail'), 'lfm report --full --json', 'report --full hint drops --full or --json');
+  assert.equal(hintOf('report-json'), 'lfm report --full --json', 'report --json hint drops --full or --json');
+  assert.equal(hintOf('report-full'), undefined, 'full+json chain should terminate, not loop');
   assert.equal(out('version').trim(), JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version);
   // Privacy canary: private prose in a label and a proposal must never reach any output.
   const canary = 'CANARY-verify-private-1f4d';

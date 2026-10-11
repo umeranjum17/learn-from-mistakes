@@ -233,9 +233,9 @@ const withContext = (base, note, opts) => {
   return flags.length ? `${base}   # ${note} (keep your ${flags.join(' ')})` : `${base}   # ${note}`;
 };
 const NEXT = (json, full, opts) => {
-  if (!full) return withContext('lfm report --full', 'add the evidence ids', opts);
-  if (!json) return withContext('lfm report --json', 'the same report as JSON', opts);
-  return '';
+  if (full && json) return '';
+  const detail = full || json ? '--full --json' : '--full';
+  return withContext(`lfm report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
 };
 const COMMANDS = ['ingest', 'count', 'report'];
 

@@ -65,6 +65,32 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   assert.deepEqual(toon.coverage, { labelled: 13, total_records: 13, unlabelled: 0 });
 });
 
+test('next hints compose the flags already used so both report chains terminate at full+json', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  const nextOf = (stderr) => stderr.split('\n').find((l) => l.startsWith('next: '))?.slice(6).split('   #')[0].trim();
+  const runHint = (line) => lfm(...line.replace(/^lfm /, '').split(' '), '--labels', inputs(p)[0], '--proposals', inputs(p)[1]);
+  const assertTerminal = (r) => {
+    assert.equal(r.status, 0, r.stderr);
+    const model = JSON.parse(r.stdout);
+    assert.equal(model.schema, 'lfm-report.v1');
+    assert.ok(model.causes.find((c) => c.cause === 'shared-cache-lock').record_ids.includes('1b35bb2034fa')); // detail ids survive the chain
+    assert.doesNotMatch(r.stdout, /"why"|"change"|"description"|"branch"/); // no private prose field
+    assert.ok(!r.stderr.includes(p), 'the hint must not echo an input path value');
+    assert.equal(nextOf(r.stderr), undefined); // the chain ends here
+  };
+
+  const hint1 = nextOf(report(lfm, p).stderr); // report -> --full
+  assert.equal(hint1, 'lfm report --full');
+  const hint2 = nextOf(runHint(hint1).stderr); // --full -> --full --json
+  assert.equal(hint2, 'lfm report --full --json');
+  assertTerminal(runHint(hint2)); // --full --json is terminal
+
+  const hintJson = nextOf(report(lfm, p, '--json').stderr); // report --json -> --full --json
+  assert.equal(hintJson, 'lfm report --full --json');
+  assertTerminal(runHint(hintJson));
+});
+
 test('--full adds only allow-listed ids, never record text', () => {
   const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);

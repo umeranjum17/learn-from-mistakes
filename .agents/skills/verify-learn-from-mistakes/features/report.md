@@ -9,8 +9,8 @@ Run `lfm` or `lfm report --labels <file> --proposals <file>` after ingest; add
 `--json` for JSON and `--full` for evidence ids.
 
 ## Driving it with the public CLI
-Inspect helper `report`/`report-json`/`report-full` and all three existing `npm
-test` journeys. Examples show 0 unlabelled, duplicate annotations, gate:step-1
+Inspect helper `report`/`report-detail`/`report-json`/`report-full` and the existing
+`npm test` journeys. Examples show 0 unlabelled, duplicate annotations, gate:step-1
 but not step-5, and real refs. The second journey retains two unread long records
 (coverage falls), counts the missing ref `nope` as one problem and exits 1 without
 printing its text; malformed JSON exits 2 and names its line; unknown IDs count as
