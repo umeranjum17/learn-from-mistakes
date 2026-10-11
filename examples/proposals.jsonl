@@ -1,0 +1,4 @@
+{"cause":"server-memory-kill","target":"agent server service unit","owner":"host admin","change":"Run builds in their own memory group so the killer cannot take the agent server with them.","refs":["2034b8c4ce57","5f777ca10f62","9af06a0ee858"]}
+{"cause":"server-memory-kill","target":"health check","owner":"host admin","change":"Alert from outside the agent server when it is killed.","refs":["9af06a0ee858"]}
+{"cause":"shared-cache-lock","target":"worker launch script","owner":"maintainer","change":"Give each worker its own cache directory.","refs":["d46582d33983","7af1b048390e","1b35bb2034fa","9912b59892ae"]}
+{"cause":"agent-exit-wait","target":"pipeline tool (upstream issue)","owner":"tool maintainer","change":"Treat a wait-delay error after the final result as success; otherwise retry once.","refs":["gate:step-1","gate:step-3","gate:step-4","gate:step-6"]}

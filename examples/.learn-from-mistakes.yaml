@@ -1,0 +1,13 @@
+name: example
+sources:
+  log: { type: markdown-log, path: defects.md }
+  gate: { type: no-mistakes, path: gate.sqlite }
+causes:
+  server-memory-kill:
+    description: The memory killer stops the agent server, so every worker on it stops.
+  shared-cache-lock:
+    description: Workers share one cache and block each other on its write lock.
+  agent-exit-wait:
+    description: A pipeline step fails because the agent's output pipe stays open after it exits.
+    match: { source: gate, error_contains: "wait delay expired" }
+repeat: { min_incidents: 3, min_days: 2 }
