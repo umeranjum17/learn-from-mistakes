@@ -1,0 +1,13 @@
+{"id":"2034b8c4ce57","event":true,"cause":"server-memory-kill","occurrences":2,"why":"Memory killer stopped the agent server at 09:10 and 14:40; every worker lost its session."}
+{"id":"d46582d33983","event":true,"cause":"shared-cache-lock","why":"Two workers wrote the shared build cache at once; the second failed on the cache lock."}
+{"id":"94b724eabfe2","event":true,"cause":"agent-exit-wait","why":"Review step failed because the agent output pipe stayed open past the 5 s wait."}
+{"id":"667475828ffc","event":false,"cause":"not-an-event","why":"A new lint rule, not a failure."}
+{"id":"5f777ca10f62","event":true,"cause":"server-memory-kill","why":"Memory killer stopped the agent server at 03:05 with three builds in the same group."}
+{"id":"a0f549ca0dba","event":true,"cause":"other","why":"Recovery problem after the 03:05 restart: workers resumed in the main checkout. A consequence, not another kill."}
+{"id":"7af1b048390e","event":true,"cause":"shared-cache-lock","confidence":"medium","why":"Worker stopped on a cache lock error; contention is inferred from the next record."}
+{"id":"1b35bb2034fa","event":true,"cause":"shared-cache-lock","why":"Same 03-03 stall, analysed: lock held 11 s against a 5 s timeout.","duplicate_of":"7af1b048390e"}
+{"id":"d9d53855f963","event":true,"cause":"other","why":"Editor index lock: same words, different database, nothing stopped."}
+{"id":"9af06a0ee858","event":true,"cause":"server-memory-kill","why":"Memory killer stopped the agent server at 21:50; no alert for 4 h."}
+{"id":"9912b59892ae","event":true,"cause":"shared-cache-lock","why":"Three workers stalled on the cache lock within 20 minutes."}
+{"id":"03302bb1d394","event":true,"cause":"agent-exit-wait","why":"Test step failed with the same wait-delay error."}
+{"id":"ff909068f9b0","event":false,"cause":"not-an-event","why":"Pulse snapshot with no failure named."}
