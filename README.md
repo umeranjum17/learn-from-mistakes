@@ -71,17 +71,33 @@ Every command stays useful:
 - `--full` adds allow-listed evidence **ids** (record ids, store row ids, proposal refs) — never record text.
 - Each command ends with a `next:` hint on stderr, so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
+Default TOON output, abridged to one cause on the example project:
+
 ```
 schema: lfm-report.v1
-coverage: {labelled: 13, total_records: 13, unlabelled: 0}
+coverage:
+  labelled: 13
+  total_records: 13
+  unlabelled: 0
 problems: 0
+sources[2]{id,type,items}:
+  log,markdown-log,13
+  gate,no-mistakes,5
 causes[1]:
   - cause: server-memory-kill
     repeated: true
     by[1]: log
-    log: {incidents: 4, records: 3, days: 3}
-    store: {matched: false, rows: 0, days: 0}
-    proposals: {count: 2, unchecked: 0}
+    log:
+      incidents: 4
+      records: 3
+      days: 3
+    store:
+      matched: false
+      rows: 0
+      days: 0
+    proposals:
+      count: 2
+      unchecked: 0
 ```
 
 ## Privacy
