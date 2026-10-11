@@ -13,10 +13,10 @@ Agent fleets write down what went wrong: a defect log, a pipeline's failed steps
 `lfm` splits the work. Your agent reads each record and judges what happened, using the bundled skill. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
 
 <table>
-<tr><td><b>Ingest</b>: sources read, with hashes<br><img src="docs/ingest.png" alt="lfm ingest: two sources read with hashes"></td>
-<td><b>Count</b>: log and store side by side<br><img src="docs/count.png" alt="lfm count: three repeated causes, log and store counts never added"></td></tr>
-<tr><td><b>Problems are named</b>: a change citing a missing record<br><img src="docs/problem.png" alt="lfm report naming a recommendation whose evidence ref does not exist"></td>
-<td><b>Tested end to end</b>: the real CLI on synthetic fixtures<br><img src="docs/test.png" alt="npm test: three end-to-end tests pass"></td></tr>
+<tr><td width="50%" valign="top"><b>Ingest</b>: sources read, with hashes<br><img src="docs/ingest.png" alt="lfm ingest: two sources read with hashes"></td>
+<td width="50%" valign="top"><b>Count</b>: log and store side by side<br><img src="docs/count.png" alt="lfm count: three repeated causes, log and store counts never added"></td></tr>
+<tr><td width="50%" valign="top"><b>Problems are named</b>: a change citing a missing record<br><img src="docs/problem.png" alt="lfm report naming a recommendation whose evidence ref does not exist"></td>
+<td width="50%" valign="top"><b>Tested end to end</b>: the real CLI on synthetic fixtures<br><img src="docs/test.png" alt="npm test: three end-to-end tests pass"></td></tr>
 </table>
 
 ## Quick start
