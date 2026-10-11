@@ -164,10 +164,11 @@ function analyse(cfg, files) {
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
   const proposals = readJsonl(pf, false).map((p) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
-    const missing = refs.filter((ref) => !records.has(ref) && !rows.some((r) => `${r.source}:${r.id}` === ref));
+    const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
+    const missing = refs.filter((ref) => !resolves(ref));
     const bad = !groups[p.cause] ? `cause ${p.cause} has no counted events` : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.join(', ')}` : !p.change ? 'no change text' : '';
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
-    return { ...p, refs, ok: !bad };
+    return { ...p, refs: refs.filter(resolves), ok: !bad };
   });
   return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length };
 }

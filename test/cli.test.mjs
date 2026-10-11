@@ -104,6 +104,8 @@ test('bad input is counted, never echoed; unresolved refs exit 1', () => {
   const model = decode(r.stdout);
   assert.equal(model.problems, 1); // a problem is counted, its text is not printed
   assert.doesNotMatch(r.stdout, /nope/);
+  const full = JSON.parse(report(lfm, p, '--proposals', join(p, 'refs.jsonl'), '--full', '--json').stdout);
+  assert.deepEqual(full.causes.find((c) => c.cause === 'server-memory-kill').proposal_refs, []); // an unresolved ref is never echoed as evidence
   writeFileSync(join(p, 'odd.jsonl'), '{"id":"ffffffffffff","event":true,"cause":"server-memory-kill","why":"x"}\n');
   assert.equal(decode(lfm('count', '--labels', join(p, 'odd.jsonl')).stdout).problems, 1);
   appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'colour: blue\n');
