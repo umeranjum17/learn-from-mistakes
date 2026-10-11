@@ -226,8 +226,17 @@ next: lfm --dir <project>        # point at a project with .learn-from-mistakes.
 next: lfm report --full          # add the evidence ids
 next: lfm report --json          # the same report as JSON`;
 
-function hint(text) { console.error(`next: ${text}`); }
-const NEXT = (full) => (full ? 'lfm report --json   # the same report as JSON' : 'lfm report --full   # add the evidence ids');
+function hint(text) { if (text) console.error(`next: ${text}`); }
+const INPUT_FLAGS = ['dir', 'labels', 'proposals'];
+const withContext = (base, note, opts) => {
+  const flags = INPUT_FLAGS.filter((k) => opts[k]).map((k) => `--${k}`);
+  return flags.length ? `${base}   # ${note} (keep your ${flags.join(' ')})` : `${base}   # ${note}`;
+};
+const NEXT = (json, full, opts) => {
+  if (!full) return withContext('lfm report --full', 'add the evidence ids', opts);
+  if (!json) return withContext('lfm report --json', 'the same report as JSON', opts);
+  return '';
+};
 const COMMANDS = ['ingest', 'count', 'report'];
 
 function main() {
@@ -246,20 +255,20 @@ function main() {
     else throw new UsageError(USAGE);
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
-  if (cmd === 'ingest') { ingest(cfg); hint('lfm   # the report for this project'); return; }
+  if (cmd === 'ingest') { ingest(cfg); hint(withContext('lfm', 'the report for this project', opts)); return; }
   const a = analyse(cfg, opts);
   if (!a.records.size && !a.rows.length) {
     console.error('no records or rows in the sources: nothing to count');
-    hint('lfm ingest   # read the configured sources, or fix source paths in .learn-from-mistakes.yaml');
+    hint(withContext('lfm ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', opts));
     process.exit(3);
   }
   console.log(render(project(a, full), json));
   if (a.problems.length) {
     console.error(`problems: ${a.problems.length}   # fix labels.jsonl or proposals.jsonl, then run lfm report`);
-    hint(NEXT(full));
+    hint(NEXT(json, full, opts));
     process.exit(1);
   }
-  hint(NEXT(full));
+  hint(NEXT(json, full, opts));
 }
 
 try { main(); } catch (e) {

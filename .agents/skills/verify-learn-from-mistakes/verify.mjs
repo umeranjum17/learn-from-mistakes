@@ -106,6 +106,11 @@ try {
   assert.ok(decode(out('report')).causes.length, 'report has no causes');
   const full = JSON.parse(out('report-full'));
   assert.ok(full.causes.every((c) => 'record_ids' in c && 'store_row_ids' in c), '--full omits evidence ids');
+  // Next hints keep the input flags, never echo the private staged path, and never suggest a flag already used.
+  const err = (name) => readFileSync(join(evidence, `${name}.stderr`), 'utf8');
+  for (const name of ['ingest', 'report', 'report-json', 'report-full']) assert.ok(!err(name).includes(staged), `${name}: hint leaked the private staged path`);
+  for (const flag of ['--dir', '--labels', '--proposals']) assert.ok(err('report').includes(flag), `report hint omits ${flag}`);
+  assert.ok(!err('report-full').includes('--json'), 'full+json hint repeats a flag the run already used');
   assert.equal(out('version').trim(), JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version);
   // Privacy canary: private prose in a label and a proposal must never reach any output.
   const canary = 'CANARY-verify-private-1f4d';

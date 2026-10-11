@@ -43,10 +43,17 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   const toon = decode(bare.stdout); // invalid TOON throws
   assert.equal(toon.schema, 'lfm-report.v1');
   assert.match(bare.stderr, /next: lfm report --full/); // the next move is always offered
+  for (const flag of ['--dir', '--labels', '--proposals']) assert.match(bare.stderr, new RegExp(flag)); // the hint names the inputs it used
+  assert.ok(!bare.stderr.includes(p), 'the hint must not echo an input path value');
 
   const json = report(lfm, p, '--json');
   assert.equal(json.status, 0, json.stderr);
   assert.deepEqual(toon, JSON.parse(json.stdout)); // one allow-listed projection
+
+  const fullJson = report(lfm, p, '--full', '--json');
+  assert.equal(fullJson.status, 0, fullJson.stderr);
+  assert.doesNotMatch(fullJson.stderr, /next: lfm report --json/); // never suggest a flag the run already used
+  assert.equal(JSON.parse(fullJson.stdout).schema, 'lfm-report.v1'); // the projection is unchanged
 
   const causes = Object.fromEntries(toon.causes.map((c) => [c.cause, c]));
   assert.equal(causes['server-memory-kill'].log.incidents, 4); // occurrences: 2 collapsed into one incident
@@ -77,12 +84,14 @@ test('private canary prose never reaches default, --json, --full or stderr', () 
   const { p, lfm } = setup();
   appendFileSync(join(p, 'defects.md'), `- [runner] ${CANARY} stopped the server -> 1 h -> OPEN.\n`);
   const labels = readFileSync(join(p, 'labels.jsonl'), 'utf8').replace('Memory killer stopped', `${CANARY} Memory killer stopped`);
-  writeFileSync(join(p, 'canary-labels.jsonl'), labels);
+  const canaryLabels = join(p, `${CANARY}-labels.jsonl`);
+  writeFileSync(canaryLabels, labels);
   const proposals = readFileSync(join(p, 'proposals.jsonl'), 'utf8').replace('Run builds in their own memory group', `${CANARY} Run builds in their own memory group`);
-  writeFileSync(join(p, 'canary-proposals.jsonl'), proposals);
+  const canaryProposals = join(p, `${CANARY}-proposals.jsonl`);
+  writeFileSync(canaryProposals, proposals);
   assert.equal(lfm('ingest').status, 0);
   for (const extra of [[], ['--json'], ['--full'], ['--full', '--json']]) {
-    const r = lfm('report', '--labels', join(p, 'canary-labels.jsonl'), '--proposals', join(p, 'canary-proposals.jsonl'), ...extra);
+    const r = lfm('report', '--labels', canaryLabels, '--proposals', canaryProposals, ...extra);
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout, new RegExp(CANARY));
     assert.doesNotMatch(r.stderr, new RegExp(CANARY));
@@ -117,9 +126,13 @@ test('empty input exits 3 with a next command', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, 'defects.md'), '');
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
-  assert.match(lfm('ingest').stdout, /log +markdown-log +0 items/);
+  const ing = lfm('ingest');
+  assert.match(ing.stdout, /log +markdown-log +0 items/);
+  assert.match(ing.stderr, /next: lfm\b.*--dir/); // the report hint keeps the dir it was told to use
   const r = lfm('count');
   assert.equal(r.status, 3);
   assert.match(r.stderr, /nothing to count/);
   assert.match(r.stderr, /next: lfm ingest/);
+  assert.match(r.stderr, /--dir/);
+  assert.ok(!r.stderr.includes(p), 'the empty-input hint must not echo an input path value');
 });
