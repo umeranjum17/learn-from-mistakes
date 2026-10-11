@@ -1,0 +1,13 @@
+commands:
+  test: npm test
+test:
+  instructions: |
+    Read CONSTRAINTS.md and .agents/skills/verify-learn-from-mistakes/SKILL.md.
+    Follow that skill's synthetic public CLI journey on this candidate, using a
+    caller-specified private evidence directory outside the checkout and inputs.
+    Reuse the existing three npm test journeys; do not add per-function tests.
+    Private source verification requires explicit caller opt-in and private output.
+    Record candidate/source identities, input hashes, command exits and limitations.
+  evidence:
+    store_in_repo: false
+    attach_media: false
