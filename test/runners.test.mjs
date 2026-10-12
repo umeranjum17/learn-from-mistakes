@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
-import { mockOpenAI } from '@byokit/accounts/testing';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
@@ -267,6 +266,7 @@ const seal = osKeyringSeal({ service: 'byokit' }), a = new Accounts({ authBase: 
 await a.login('lfm', 'chatgpt'); await a.finished('lfm', 'chatgpt'); a.stop();`;
 
 async function byokitSetup() {
+  const { mockOpenAI } = await import('@byokit/accounts/testing');
   const s = setup();
   const home = join(s.tmp, 'home');
   const mock = await mockOpenAI({ answers: [{ match: 'lfm-run:test:byokit-chatgpt', text: '{"reply":"hello from the fake route"}' }] });
