@@ -14,6 +14,7 @@ then the 3 latest `[e<event row id>]` events with time, session id and
 no `match` rule tagged, `[r<record row id>]` with source, ref and date).
 With `excerpts: on` each event and record has a `  > ` excerpt of at most 300
 characters; with `excerpts: off` there is none, only pointers and counts.
+With `excerpts: on`, redact() removes secret-shaped values only; plain record text stays in the bundle by design, so the canary guarantee for prose is `excerpts: off`.
 `redact()` from `src/redact.mjs` runs on every string the step writes, from every
 source (session excerpts, defect bullets, gate errors, refs, ids). Items that
 would pass `caps.bundle_chars` (at least 1000; smaller exits 2) are dropped and a

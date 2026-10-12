@@ -256,6 +256,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
     return { id, text: readFileSync(join(p, '.lfm', 'runs', String(id), 'bundle.md'), 'utf8') };
   };
 
+  // The canaries are secret-shaped values, which redact() removes; with excerpts on, plain record text stays in the bundle by design.
   const on = bundleOf(lfm('retro', '--foreground'));
   for (const [, needle] of PLANTED) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
   assert.ok(!on.text.includes('OTHER-REPO-CANARY') && !on.text.includes('step-other'), 'another repo\'s gate row in bundle.md');
