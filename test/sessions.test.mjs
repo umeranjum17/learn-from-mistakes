@@ -317,21 +317,21 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
   // part with no text.
   assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 60, sessions: 4, skipped: 3 });
   assert.deepEqual(Object.fromEntries(run.metrics.filter((m) => ['tool_error_rate', 'corrections_per_session', 'interrupts', 'retries'].includes(m.name)).map((m) => [m.name, m.current])),
-    { tool_error_rate: 0.591, corrections_per_session: 0.5, interrupts: 2, retries: 2 });
+    { tool_error_rate: 0.5, corrections_per_session: 0.5, interrupts: 2, retries: 2 });
   const id = run.run.id;
   assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
     [{ agent: 'codex', session_id: 'cx-main', n: 35 }, { agent: 'codex', session_id: 'cx-tree', n: 4 }, { agent: 'opencode', session_id: 'oc-main', n: 19 }, { agent: 'opencode', session_id: 'oc-tree', n: 2 }]);
   const signals = query(p, 'SELECT agent, signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2', id);
   // The goal wrapper and the message after an interrupt are not corrections; a failed patch and a script whose second
   // command (npm test) failed are.
-  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['codex correction 1', 'codex interrupt 1', 'codex nonzero_exit 2', 'codex retry 1', 'codex test_fail 2', 'codex tool_error 5',
+  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['codex correction 1', 'codex interrupt 1', 'codex nonzero_exit 2', 'codex retry 1', 'codex test_fail 2', 'codex tool_error 3',
     'opencode correction 1', 'opencode interrupt 1', 'opencode nonzero_exit 1', 'opencode retry 1', 'opencode test_fail 1', 'opencode tool_error 2']);
   assert.deepEqual(query(p, `SELECT tool, exit_code FROM events WHERE run_id = ? AND signal IN ('test_fail', 'nonzero_exit') ORDER BY id`, id),
     [{ tool: 'exec_command', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'exec', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'bash', exit_code: 1 }, { tool: 'bash', exit_code: null }]);
   // A successful exec_command whose output has "Exit code: 2" or a JSON "exit_code" body is not an error; a failed
-  // apply_patch naming npm test is a tool error, not a test failure; an output with no Output: line, or an MCP
-  // function's JSON exit_code, is not read as an exit.
-  assert.deepEqual(query(p, `SELECT status, signal, exit_code FROM events WHERE run_id = ? AND kind = 'tool_result' AND (ref GLOB '*rollout-cx-main.jsonl:2[1-9]' OR ref GLOB '*rollout-cx-main.jsonl:3[01]') ORDER BY id`, id),
+  // apply_patch naming npm test is a tool error, not a test failure; a non-shell tool's "Exit code: 1" after Output: or
+  // an MCP function's JSON exit_code is not read as an exit.
+  assert.deepEqual(query(p, `SELECT status, signal, exit_code FROM events WHERE run_id = ? AND kind = 'tool_result' AND (ref GLOB '*rollout-cx-main.jsonl:2[1-9]' OR ref GLOB '*rollout-cx-main.jsonl:3[0-3]') ORDER BY id`, id),
     [{ status: 'ok', signal: null, exit_code: 0 }, { status: 'ok', signal: null, exit_code: 0 }, { status: 'error', signal: 'tool_error', exit_code: null },
       { status: 'error', signal: 'tool_error', exit_code: null }, { status: 'ok', signal: null, exit_code: null }, { status: 'ok', signal: null, exit_code: null }]);
   assert.deepEqual(query(p, `SELECT session_id, signal FROM events WHERE run_id = ? AND (ref LIKE '%rollout-cx-sub.jsonl:%' OR ref LIKE '%:part:%' AND session_id = 'oc-main' AND tool = 'edit') AND kind = 'tool_result'`, id),

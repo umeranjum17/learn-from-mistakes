@@ -14,16 +14,17 @@ const WRAPPER = /^\s*(?:<(?!image\b)[\w-]+[\s>]|# AGENTS\.md instructions)/;
 // The exit code a shell call reports in its own header, the lines before the first Output: line; else the JSON
 // metadata a legacy shell returns; a code-mode script's first nonzero nested "exit_code". ponytail: a script that prints
 // "exit_code" as data reads as one (about 1 in 2000 here).
-const HEADER_EXIT = /^(?:Process exited with code |Exit code: )(\d+)/m;
+const HEADER_EXIT = /^(?:Chunk ID: .*\n)?(?:Wall time: .*\n)?(?:Process exited with code |Exit code: )(\d+)/;
 const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
 const exitOf = (text, tool) => {
   if (tool === 'exec') {
     const codes = [...text.matchAll(/"exit_code":\s*(\d+)/g)].map((x) => Number(x[1]));
     return codes.find(Boolean) ?? codes[0] ?? null;
   }
+  if (!['exec_command', 'shell', 'local_shell_call'].includes(tool)) return null;
   const end = text.search(/^Output:/m), m = end < 0 ? null : HEADER_EXIT.exec(text.slice(0, end));
   if (m) return Number(m[1]);
-  if (tool !== 'local_shell_call' && tool !== 'shell') return null;
+  if (tool === 'exec_command') return null;
   const code = json(text)?.metadata?.exit_code;
   return Number.isInteger(code) ? code : null;
 };
@@ -61,8 +62,7 @@ async function parse(file, { session, sub, excerpt }) {
       } else if (['function_call_output', 'custom_tool_call_output', 'local_shell_call_output'].includes(p.type)) {
         const call = calls.get(p.call_id), text = textOf(p.output);
         const exit = exitOf(text, call?.tool);
-        // A code-mode script that threw starts "Script failed"; a patch that did not apply says so or ends patch_apply_end false.
-        const error = Boolean(exit) || /^(?:Script failed|apply_patch verification failed)/.test(text) || badPatch.has(p.call_id);
+        const error = Boolean(exit) || badPatch.has(p.call_id);
         const signal = !error ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
         events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(text) : '' });
         if (error && call) failed.add(call.key);

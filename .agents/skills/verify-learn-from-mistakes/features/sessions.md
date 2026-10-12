@@ -14,10 +14,11 @@ its parent session. Codex sessions are the threads `${CODEX_HOME:-~/.codex}/stat
 lists (opened read-only): a thread counts by its `cwd` column, its rollout file is
 streamed when its mtime is in range, and a subagent thread (`source` names a
 `thread_spawn.parent_thread_id`) belongs to the top of its spawn chain. Its signals:
-`Process exited with code N` or `Exit code: N` (N not 0) in a call's output, else the
-first nonzero `"exit_code": N` a code-mode script printed (a script's `cmd: "..."` literals
-decide `test_fail`), an output starting `Script failed` or `apply_patch verification failed`,
-`patch_apply_end` with `success: false`, and `turn_aborted` with reason `interrupted`; its own
+`Process exited with code N` or `Exit code: N` (N not 0) in the header of a shell call's output
+(`exec_command`, `shell`, `local_shell_call`: the lines before `Output:`, starting the output), else a
+legacy shell's JSON `metadata.exit_code`; a code-mode script's first nonzero nested `"exit_code": N`
+(its `cmd: "..."` literals decide `test_fail`); `patch_apply_end` with `success: false`; and
+`turn_aborted` with reason `interrupted`. Other tools never give an exit code from their text. Its own
 user-role inputs (`# AGENTS.md instructions`, `<environment_context>`, tags with attributes such
 as `<codex_internal_context source="goal">`, but not an `<image name=...>` label) are not person
 messages. OpenCode sessions come from every `*.db` in
@@ -78,7 +79,7 @@ in its parent session, the other dir, `.lfm/`, marker (after an attached file), 
 missing-rollout and foreign-db sessions skipped, a bad line, a bad part and a text part with
 no text in `skipped`, exactly 2 corrections (not the goal wrapper, not the message after an
 interrupt), 2 interrupts, 2 retries, 3 test failures (one inside a code-mode script), 3
-nonzero exits and 7 tool errors (failed patches by their text, one naming `npm test` in a `cmd:` literal; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a log with `Exit code: 1` and no `Output:` line, is not one), planted keys redacted, the
+nonzero exits and 5 tool errors (failed patches by their `patch_apply_end`, one naming `npm test` in a `cmd:` literal; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a non-shell tool whose output reads `Exit code: 1` after `Output:`, is not one), planted keys redacted, the
 `invocations` ids of both agents skipped on a second run, and every OpenCode database
 byte-identical after both runs. The helper drives
 `retro-sessions` (one synthetic Claude Code, Codex and OpenCode session each in its
