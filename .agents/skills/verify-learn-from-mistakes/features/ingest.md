@@ -22,11 +22,11 @@ file's sha256 is identical before and after every ingest. `--package` reruns it
 through the installed bin (`packed-npm-test`).
 
 ## Gotchas
-The store holds every gated repo; only this project's rows are read (its `repos` row by checkout path or `origin`), so a copy of `gate.sqlite` needs its `repos.working_path` set to the copy, as the helper and the journeys do.
+The store holds every gated repo; only this project's failed steps are read (its `repos` row by checkout path or `origin`, or a git worktree of it; a store with no `repos` table exits 2). A copy of `gate.sqlite` needs its `repos.working_path` set to the copy, as the helper and the journeys do.
 A missing or unreadable store exits 2 with `next: remove the <id> source or point its path at
 your no-mistakes state.sqlite` (journey `an unreadable source or input file is a usage error`).
-The store digest covers only the columns the fixed query selects for failed
-steps, including their run's branch: a non-failed step or an unselected column
-keeps it, by design. It is not a file-byte hash;
+The store digest covers the rows the fixed query selects for this repo's failed
+steps, as read (redacted error, cause tag, their run's branch): a non-failed step,
+another repo's row or an unselected column keeps it, by design. It is not a file-byte hash;
 read-only proof still uses the evidence SHA256 manifests.
 Private runs use caller-owned baselines and offline stores without sidecars.

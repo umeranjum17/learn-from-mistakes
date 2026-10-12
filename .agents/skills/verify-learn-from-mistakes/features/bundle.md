@@ -21,11 +21,8 @@ would pass `caps.bundle_chars` (at least 1000; smaller exits 2) are dropped and 
 last `Dropped <n> items ...` line counts them. Within a section, the first item
 that does not fit drops it and every later item of that section, so the clusters
 shown are always the top ones and their numbers have no gap.
-The no-mistakes source reads only this repo's failed steps (a `repos` row whose
-`working_path` is the git toplevel `detect` matches, or one of its git worktrees,
-or whose `upstream_url` is its `origin`) and stores their errors redacted (the
-`match` rules still see the raw error); its source hash is over those redacted
-rows. A store with no `repos` table exits 2.
+The no-mistakes source's repo scoping, error redaction and store digest are in
+[ingest.md](ingest.md); the bundle only shows what that source keeps.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi retro --foreground`, then read
