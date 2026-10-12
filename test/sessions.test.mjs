@@ -4,7 +4,7 @@
 // LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -238,7 +238,7 @@ causes:
 });
 
 test('the bundle has ids, refs and redacted excerpts, pointers and counts only with excerpts off, no other repo\'s rows, and keeps to its cap', () => {
-  const { p, lfm } = setup();
+  const { p, lfm, env } = setup();
   const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
   // One defect bullet and one failed gate step of this repo per planted shape, and a failed step of another repo in the same store.
   const one = PLANTED.filter(([t]) => !t.includes('\n'));
@@ -290,6 +290,20 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal([...off.text.matchAll(/^- \[r\d+\] /gm)].length, records.length);
   assert.equal([...off.text.matchAll(/^### \[c\d+\] /gm)].length, clusters.length);
 
+  // A config in a subdirectory of the checkout counts this repo's gate rows, matched by its checkout, and no other repo's.
+  const store = new DatabaseSync(join(p, 'gate.sqlite'));
+  store.prepare('UPDATE repos SET working_path = ?, upstream_url = ? WHERE working_path = ?').run(realpathSync(p), 'https://example.invalid/umer/moved.git', '/elsewhere/p');
+  const mine = store.prepare(`SELECT count(*) AS n FROM step_results s JOIN runs r ON r.id = s.run_id JOIN repos o ON o.id = r.repo_id
+    WHERE s.status = 'failed' AND o.working_path = ?`).get(realpathSync(p)).n;
+  store.close();
+  const sub = join(p, 'app');
+  mkdirSync(sub);
+  writeFileSync(join(sub, '.learn-from-mistakes.yaml'), `sources:\n  gate: { type: no-mistakes, path: ${join(p, 'gate.sqlite')} }\n`);
+  const nested = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', sub], { encoding: 'utf8', env });
+  assert.equal(nested.status, 0, nested.stderr);
+  assert.ok(mine > 0, 'no failed gate step of this repo');
+  assert.equal(decode(nested.stdout).sources.find((s) => s.type === 'no-mistakes').items, mine);
+
   // The cap: items that would pass it are dropped, and counted.
   writeFileSync(cfg, `${examples}caps: { bundle_chars: 1000 }\n`);
   const capped = bundleOf(lfm('retro', '--foreground'));
@@ -299,6 +313,13 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const metricsOnly = bundleOf(lfm('retro', '--foreground')); // the metrics fill it; the later headings still fit
   assert.ok(metricsOnly.text.length <= 1000 && metricsOnly.text.includes('## Unlabelled defect records'), `${metricsOnly.text.length} characters`);
   assert.match(capped.text, /^Dropped \d+ items to keep the bundle under 1000 characters\.$/m);
+  for (let cap = 1000; cap <= 4000; cap += 150) { // once a cluster does not fit, no smaller one below it is admitted
+    writeFileSync(cfg, `${examples}caps: { bundle_chars: ${cap} }\n`);
+    const b = bundleOf(lfm('retro', '--foreground'));
+    const nums = [...b.text.matchAll(/^### \[c(\d+)\]/gm)].map((c) => Number(c[1]));
+    assert.deepEqual(nums, nums.map((_, i) => i + 1), `clusters ${nums} under ${cap}`);
+    assert.ok(b.text.length <= cap, `${b.text.length} characters under ${cap}`);
+  }
   writeFileSync(cfg, `${examples}caps: { bundle_chars: 999 }\n`);
   assert.match(lfm('retro', '--foreground').stderr, /caps\.bundle_chars must be at least 1000$/m);
 });

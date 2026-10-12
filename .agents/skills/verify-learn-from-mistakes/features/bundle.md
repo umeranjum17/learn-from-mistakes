@@ -17,11 +17,14 @@ characters; with `excerpts: off` there is none, only pointers and counts.
 `redact()` from `src/redact.mjs` runs on every string the step writes, from every
 source (session excerpts, defect bullets, gate errors, refs, ids). Items that
 would pass `caps.bundle_chars` (at least 1000; smaller exits 2) are dropped and a
-last `Dropped <n> items ...` line counts them.
+last `Dropped <n> items ...` line counts them. Within a section, the first item
+that does not fit drops it and every later item of that section, so the clusters
+shown are always the top ones and their numbers have no gap.
 The no-mistakes source reads only this repo's failed steps (a `repos` row whose
-`working_path` is the project or one of its git worktrees, or whose
-`upstream_url` is its `origin`) and stores their errors redacted (the `match`
-rules still see the raw error); a store with no `repos` table exits 2.
+`working_path` is the git toplevel `detect` matches, or one of its git worktrees,
+or whose `upstream_url` is its `origin`) and stores their errors redacted (the
+`match` rules still see the raw error); its source hash is over those redacted
+rows. A store with no `repos` table exits 2.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi retro --foreground`, then read
@@ -37,7 +40,10 @@ all); clusters are numbered and ranked by count; every `[e]` and `[r]` id is a
 row of the run; every item has its excerpt. `excerpts: off` gives the same items
 with no excerpt and no record or session text; `caps: { bundle_chars: 1000 }`
 keeps the file under 1000 characters with the dropped line, also when 40 more
-causes' metrics fill it before the later headings, and 999 exits 2.
+causes' metrics fill it before the later headings, and 999 exits 2; a sweep of
+caps from 1000 to 4000 keeps the cluster numbers a gapless prefix. A config in a
+subdirectory of the checkout, with the repo row matched by its checkout path,
+reads this repo's gate rows and not the other repo's.
 `test/cli.test.mjs` asserts 4 steps per run, the example's bundle sections, the
 `bundle:` attach line, and that a store with no `repos` table exits 2.
 The helper's `retro-v2` drive (`excerpts: off`) checks the bundle has no
