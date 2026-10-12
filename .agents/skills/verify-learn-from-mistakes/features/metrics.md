@@ -8,15 +8,19 @@ and the run output (`retro`, `status`) adds `window` (`current_start`,
 `previous_start`) and `metrics[]{name,current,previous}`. `current` runs from
 `now - window` with no end; `previous` is the same length before it. Collect
 saves the two starts, so `rerun --resume` counts over the same windows.
-Each source gives its own numbers through its `metrics(rows, window)`: the
-sessions source `tool_error_rate`, `corrections_per_session`, `interrupts`,
-`retries` (its `events`); the markdown-log source `defects` (its records dated in
-the window, from the new `records` table, which also holds failed gate rows).
+Each source type gives its numbers through its `metrics(rows, window)` over the
+rows of all its sources, and names them in `metricNames`: the sessions type
+`tool_error_rate`, `corrections_per_session`, `interrupts`, `retries` (its
+`events`); the markdown-log type `defects` (its records dated in the window, summed
+over every defect log, from the new `records` table, which also holds failed gate
+rows). A type with no source in the config gives its names n/a.
 `cause_count:<cause>` counts the events and records tagged with that cause in
 the window. `collect` tags them through `causes.<c>.match`: a no-mistakes source
 by `error_contains` in the row's error, a sessions source by any of `signal`,
-`tool` and `text_contains` (looked for in the whole text the excerpt comes from,
-so `excerpts: off` tags the same events); the first fitting rule wins. A target
+`tool` and `text_contains` (checked on the text of signal events only: failed tool
+results, retries and corrections; a successful call or a plain message is never
+checked, so it matches nothing there; `excerpts: off` tags the same events); the
+first fitting rule wins. A target
 no source measures, a cause with no `match`, session numbers with no session in
 the window and a defect log with no dates are `n/a`, never 0.
 
@@ -55,5 +59,6 @@ Remove the config and `.lfm/` after.
 ## Gotchas
 The current window has no end, so an event a clock puts slightly after the read
 still counts. A defect bullet dated `YYYY-MM-DD` counts from midnight UTC. Two
-sources of one type give the same metric names; the last one wins. `gate_failures`
+sources of one type are read together: two defect logs sum into one `defects`.
+A metric whose source type is not configured is n/a. `gate_failures`
 and the github metrics come in later slices; targets are not compared yet.

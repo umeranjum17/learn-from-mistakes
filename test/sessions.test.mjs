@@ -101,8 +101,8 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.equal(empty.status, 0, empty.stderr);
   writeFileSync(cfg, examples);
   assert.deepEqual(decode(empty.stdout).sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 0, sessions: 0, skipped: 0 });
-  assert.deepEqual(decode(empty.stdout).metrics, ['tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
-    .map((name) => ({ name, current: 'n/a', previous: 'n/a' }))); // the sessions numbers, then the targets no source measures
+  assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
+    .map((name) => ({ name, current: 'n/a', previous: 'n/a' }))); // the numbers of the types with no source here, then the targets no source measures
 
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
@@ -115,8 +115,8 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   // This window: the 4 sessions and 2 dated defects. The last: s-main's 4 Read results (3 failed), 1 correction and
   // 1 defect. An event or defect older than both is stored, never counted. A cause with no match rule is n/a; the gate
   // rule's rows are from March, so 0.
-  assert.deepEqual(run.metrics, [['tool_error_rate', 0.5, 0.75], ['corrections_per_session', 0.25, 1], ['interrupts', 1, 0], ['retries', 1, 0],
-    ['defects', 2, 1], ['cause_count:fetch-test-fails', 1, 0], ['cause_count:missing-file', 0, 3], ['cause_count:server-memory-kill', 'n/a', 'n/a'],
+  assert.deepEqual(run.metrics, [['defects', 2, 1], ['tool_error_rate', 0.5, 0.75], ['corrections_per_session', 0.25, 1], ['interrupts', 1, 0], ['retries', 1, 0],
+    ['cause_count:fetch-test-fails', 1, 0], ['cause_count:missing-file', 0, 3], ['cause_count:server-memory-kill', 'n/a', 'n/a'],
     ['cause_count:shared-cache-lock', 'n/a', 'n/a'], ['cause_count:agent-exit-wait', 0, 0], ['first_pass', 'n/a', 'n/a'], ['p90_hours_to_merge', 'n/a', 'n/a'],
     ['escaped', 'n/a', 'n/a']].map(([name, current, previous]) => ({ name, current, previous })));
   assert.equal(Date.parse(run.window.current_start) - Date.parse(run.window.previous_start), 7 * 86_400_000);
@@ -160,4 +160,21 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.deepEqual(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND excerpt != ''`, second.run.id), [{ n: 0 }]);
   assert.deepEqual(tags(second.run.id), tags(id)); // text_contains reads the whole text, not the excerpt
   assert.deepEqual(query(p, 'SELECT count(*) AS n FROM events WHERE run_id = ?', id), [{ n: 39 }]); // the first run keeps its events
+});
+
+test('two defect logs of one type sum into defects; a config with only a no-mistakes source gives n/a for every sessions and defect number', () => {
+  const { p, lfm } = setup();
+  const cfg = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(join(p, 'a.md'), `## ${day(1)}\n\n- [tests] A one.\n- [tests] A two.\n- [tests] A three.\n`);
+  writeFileSync(join(p, 'b.md'), `## ${day(2)}\n\n- [build] B one.\n- [build] B two.\n`);
+  writeFileSync(cfg, 'sources:\n  a: { type: markdown-log, path: a.md }\n  b: { type: markdown-log, path: b.md }\n');
+  const logs = lfm('retro', '--foreground');
+  assert.equal(logs.status, 0, logs.stderr);
+  assert.deepEqual(decode(logs.stdout).metrics.find((m) => m.name === 'defects'), { name: 'defects', current: 5, previous: 0 });
+
+  writeFileSync(cfg, 'sources:\n  gate: { type: no-mistakes, path: gate.sqlite }\n');
+  const gate = lfm('retro', '--foreground');
+  assert.equal(gate.status, 0, gate.stderr);
+  assert.deepEqual(decode(gate.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
+    .map((name) => ({ name, current: 'n/a', previous: 'n/a' })));
 });
