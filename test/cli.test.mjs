@@ -21,7 +21,7 @@ function setup() {
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
   const raw = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: tmp, env });
-  return { p: join(tmp, 'p'), lfm, raw };
+  return { p: join(tmp, 'p'), lfm, raw, env };
 }
 const inputs = (p) => [join(p, 'labels.jsonl'), join(p, 'proposals.jsonl')];
 const report = (lfm, p, ...extra) => lfm('report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], ...extra);
@@ -211,7 +211,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   const withConfig = (extra, base = v1) => { writeFileSync(cfgFile, base + extra); try { return lfm('ingest'); } finally { writeFileSync(cfgFile, v1); } };
   const bad = (rule) => new RegExp(`^error: .*\\.learn-from-mistakes\\.yaml: ${rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm');
   for (const [run, code, error, next] of [
-    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs)', HELP],
+    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun)', HELP],
     [() => raw('--bogus'), 2, 'unknown option "--bogus"', HELP], // a bare unknown flag points at --help
     [() => raw('report', '--bogus'), 2, 'unknown option "--bogus"', /^next: learn-from-mistakes-axi report \[--dir <dir>\]/m],
     [() => raw('change'), 2, '"change" must be followed by "applied"', CHANGE],
@@ -235,7 +235,10 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
-    [() => raw('retro'), 2, 'retro runs only in this process for now: pass --foreground', /^next: learn-from-mistakes-axi retro --foreground \[--dir <dir>\]/m],
+    [() => raw('retro', '--wait', '8'), 2, '--wait "8" must be a time like 30s, 8m or 1h', /^next: learn-from-mistakes-axi retro \[--wait \[<time>\] \| --foreground\]/m],
+    [() => raw('retro', '--wait', '1m', '--foreground'), 2, 'pass --wait or --foreground, not both', /^next: learn-from-mistakes-axi retro \[/m],
+    [() => raw('rerun'), 2, 'rerun starts a new run in a later version: pass --resume to finish a run that did not complete', /^next: learn-from-mistakes-axi rerun --resume \[--run <id>\]/m],
+    [() => raw('rerun', '--resume', '--foreground'), 2, 'rerun does not take --foreground', /^next: learn-from-mistakes-axi rerun --resume /m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
     [() => withConfig('worker: { runner: 3 }\n'), 2, bad('worker.runner must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
@@ -756,7 +759,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   git('init', '-q');
   const none = lfm('status'); // before any run: nothing to read, and reads never create state
   assert.equal(none.status, 3, none.stderr);
-  assert.match(none.stderr, /^next: learn-from-mistakes-axi retro --foreground   # ingest and report as a saved run \(keep your --dir\)$/m);
+  assert.match(none.stderr, /^next: learn-from-mistakes-axi retro --wait 8m   # ingest and report as a saved run \(keep your --dir\)$/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout), { runs: [] });
   assert.ok(!existsSync(join(p, '.lfm')));
 
@@ -807,7 +810,7 @@ allow_premium: false
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
   assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
-  assert.match(failed.stderr, /^next: learn-from-mistakes-axi retro --foreground   # run again after fixing the report step/m);
+  assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
   assert.deepEqual(JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout), run);
   const missing = lfm('status', '--run', '99');
@@ -831,4 +834,59 @@ allow_premium: false
   assert.match(corrupt.stderr, /^error: .*lfm\.sqlite: not a usable run store/m);
   assert.match(corrupt.stderr, /^next: mv .*lfm\.sqlite <elsewhere>/m);
   assert.doesNotMatch(corrupt.stderr, /\n\s+at /); // no stack trace
+});
+
+test('retro runs in a detached worker; a killed worker is interrupted and rerun --resume finishes it', async () => {
+  const { p, lfm, env } = setup();
+  const waited = lfm('retro', '--wait', '1m', '--json');
+  assert.equal(waited.status, 0, waited.stderr);
+  assert.doesNotMatch(waited.stderr, /ExperimentalWarning/);
+  const first = JSON.parse(waited.stdout);
+  assert.equal(first.run.status, 'completed');
+  assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed']);
+
+  // Without --wait, retro returns while the worker runs: spawnSync ends only when no process holds its pipes.
+  const slowEnv = { ...env, LFM_TEST_SLOW_STEP: 'report' }; // the worker inherits it: report sleeps 60 s
+  const started = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: slowEnv });
+  assert.equal(started.status, 0, started.stderr);
+  const { run } = JSON.parse(started.stdout);
+  after(() => { try { process.kill(run.pid, 'SIGKILL'); } catch {} }); // a failed assertion must not leave the slow worker behind
+  assert.equal(run.status, 'running');
+  assert.match(started.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the steps so far, while the run goes on in the background`, 'm'));
+  let steps;
+  for (let i = 0; i < 100; i++) { // up to 20 s for the worker to reach the slow step
+    steps = JSON.parse(lfm('status', '--json').stdout).steps;
+    if (steps[1].status === 'running') break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  assert.deepEqual(steps.map((s) => s.status), ['completed', 'running']);
+  const busy = lfm('retro');
+  assert.equal(busy.status, 2, busy.stderr);
+  assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
+
+  process.kill(run.pid, 'SIGKILL'); // a crash: no trap runs, so only reconcile can see it
+  for (let i = 0; i < 50 && JSON.parse(lfm('status', '--json').stdout).run.status === 'running'; i++) await new Promise((r) => setTimeout(r, 100));
+  const killed = lfm('status', '--json');
+  assert.equal(killed.status, 0, killed.stderr);
+  const k = JSON.parse(killed.stdout);
+  assert.equal(k.run.status, 'interrupted');
+  assert.equal(k.run.error, 'report: the worker stopped before the step ended');
+  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'interrupted']);
+  assert.match(killed.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
+
+  const next = lfm('retro', '--wait', '--json'); // the interrupted run blocks nothing; a bare --wait waits 8 minutes
+  assert.equal(next.status, 0, next.stderr);
+  assert.equal(JSON.parse(next.stdout).run.status, 'completed');
+
+  const resumed = lfm('rerun', '--resume', '--run', String(run.id), '--wait', '1m', '--json');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const r = JSON.parse(resumed.stdout);
+  assert.equal(r.run.status, 'completed');
+  assert.equal(r.run.error, null);
+  assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed']);
+  assert.deepEqual(r.steps[0], k.steps[0], 'the completed collect step was not run again');
+  const again = lfm('rerun', '--resume', '--run', String(run.id));
+  assert.equal(again.status, 2, again.stderr);
+  assert.match(again.stderr, new RegExp(`^error: run ${run.id} already completed$`, 'm'));
+  assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs.map((x) => x.status), ['completed', 'completed', 'completed']);
 });

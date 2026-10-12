@@ -19,7 +19,7 @@ registry. Today: `markdown-log` and `no-mistakes`, unchanged. A type with no
 reader yet (`sessions`, `github`) exits 2 `sources.<id>.type must be one of ...`.
 
 ## How to get to it (user POV)
-Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro --foreground`.
+Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro --wait 8m`.
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journeys: the `retro --foreground ...` journey runs a
