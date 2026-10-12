@@ -273,6 +273,25 @@ test('doctor fails a BYOKit worker with no model and no catalogue default, and n
   assert.deepEqual([line.level, line.detail, line.fix], ['fail', 'BYOKit has no default model for opencode-go', `set worker.model in ${config}`]);
 });
 
+// Two BYOKit roles on one route are the same identity only when they call the same model: an unset model is the
+// catalogue default, so a judge on another model is not a clash, and a judge on that default is.
+test('doctor compares BYOKit roles by the model each calls: another model is no clash, the same model is', async () => {
+  const { provider } = await import('@byokit/accounts');
+  const fast = provider('chatgpt').models.fast;
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  const identity = (judgeModel) => {
+    writeFileSync(config, readFileSync(config, 'utf8')
+      .replace(/^worker: .*$/m, 'worker: { runner: "byokit:chatgpt", model: "" }')
+      .replace(/^judge: .*$/m, `judge: { runner: "byokit:chatgpt", model: "${judgeModel}" }`));
+    return JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'identity');
+  };
+  assert.equal(identity('umer-cheap-1').level, 'ok');
+  const clash = identity(fast);
+  assert.equal(clash.level, 'fail');
+  assert.match(clash.detail, /^the worker and the judge are both byokit:chatgpt /);
+});
+
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
 // absent one is a fail with the login fix. The HOME is synthetic, and the auth.json in it is a placeholder.
 for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (exit 3); auth.json present'], [false, 'fail', 'pi auth check failed (exit 3); no auth.json']]) {
