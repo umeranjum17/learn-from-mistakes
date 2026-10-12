@@ -10,6 +10,6 @@
   "bin": { "lfm": "bin/lfm.mjs" },
   "files": ["bin", "skills"],
   "engines": { "node": ">=22.13" },
-  "scripts": { "test": "node --test" },
+  "scripts": { "pretest": "npm ci", "test": "node --test" },
   "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" }
 }
