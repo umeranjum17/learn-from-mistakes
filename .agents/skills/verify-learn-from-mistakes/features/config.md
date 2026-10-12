@@ -9,7 +9,7 @@ string), `window` (`<n>d`), `targets` (a known metric or `cause_count:<cause>` t
 quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts`
 (`on|off`), `caps` (`invocations`, `bundle_chars`, `timeout` such as `20m`),
 `signoff` (`auto|off`), `allow_premium` (boolean). The global file adds
-`runner_path: {<runner>: <bin>}` and `runner_args: {<runner>: [..]}`. An unknown key
+`runner_path: {<runner>: <bin>}` (a bare name stays a PATH lookup) and `runner_args: {<runner>: [..]}`. An unknown key
 or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only
 loaded and checked: nothing reads `window`, the runners or the caps yet.
 

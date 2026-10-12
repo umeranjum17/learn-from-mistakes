@@ -208,7 +208,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   const known = '(known: server-memory-kill, shared-cache-lock, agent-exit-wait; "other" is reserved)';
   const applied = (...args) => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', ...args);
   const cfgFile = join(p, '.learn-from-mistakes.yaml'), v1 = readFileSync(cfgFile, 'utf8');
-  const withConfig = (extra) => { writeFileSync(cfgFile, v1 + extra); try { return lfm('ingest'); } finally { writeFileSync(cfgFile, v1); } };
+  const withConfig = (extra, base = v1) => { writeFileSync(cfgFile, base + extra); try { return lfm('ingest'); } finally { writeFileSync(cfgFile, v1); } };
   const bad = (rule) => new RegExp(`^error: .*\\.learn-from-mistakes\\.yaml: ${rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm');
   for (const [run, code, error, next] of [
     [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs)', HELP],
@@ -247,6 +247,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
     [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
+    [() => withConfig('', v1.replace(/^name: .*$/m, 'name: 123')), 2, bad('name must be a string'), HELP],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
     const r = run();
@@ -556,6 +557,8 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   const noPath = lfm('ingest'); // each source type checks its own keys; a type with no reader yet is refused
   assert.equal(noPath.status, 2, noPath.stderr);
   assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes$/m); // a list is not a type
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs\.type must be one of markdown-log, no-mistakes$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');

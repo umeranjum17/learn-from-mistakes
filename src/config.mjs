@@ -51,7 +51,7 @@ function loadGlobal() {
   const runner_path = mapping(g.runner_path ?? {}, [...RUNNERS, 'acp'], `${file}: runner_path`);
   for (const [k, v] of Object.entries(runner_path)) {
     check(typeof v === 'string' && v, `${file}: runner_path.${k}`, 'a path to the agent binary');
-    runner_path[k] = expand(v, LFM_HOME);
+    if (v.includes('/')) runner_path[k] = expand(v, LFM_HOME); // a bare name stays a PATH lookup
   }
   const runner_args = mapping(g.runner_args ?? {}, [...RUNNERS, 'acp'], `${file}: runner_args`);
   for (const [k, v] of Object.entries(runner_args)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: runner_args.${k}`, 'a list of strings');
@@ -66,12 +66,13 @@ export function loadConfig(dir) {
 name: my-project
 sources:
   log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi guide   # the full config, then ingest, label and report');
+  if (p.name !== undefined) check(typeof p.name === 'string', `${file}: name`, 'a string');
   mapping(p, ['name', 'worker', 'judge', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', 'allow_premium'], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
     const where = `${file}: sources.${id}`;
     const type = mapping(s, null, where).type;
-    if (!Object.hasOwn(SOURCES, type)) throw new UsageError(`${where}.type must be one of ${Object.keys(SOURCES).join(', ')}`);
+    if (typeof type !== 'string' || !Object.hasOwn(SOURCES, type)) throw new UsageError(`${where}.type must be one of ${Object.keys(SOURCES).join(', ')}`);
     sources[id] = SOURCES[type].validate(s, where, dir);
   }
   const causes = mapping(p.causes ?? {}, null, `${file}: causes`);
