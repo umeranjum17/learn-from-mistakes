@@ -81,7 +81,7 @@ export function readLedger(file) {
       && typeof e.id === 'string' && e.id && typeof e.cause === 'string' && e.cause
       && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
       && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)))
-      && (e.metric === undefined || (typeof e.metric === 'string' && e.metric === oneLine(e.metric)))
+      && (e.metric === undefined || (typeof e.metric === 'string' && e.metric)) // as the cause it defaults from: a metric name, never prose
       && (e.tripwire === undefined || (typeof e.tripwire === 'string' && RULE.test(e.tripwire))) && (e.kind === undefined || KINDS.includes(e.kind));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
     else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${shown(e.id)}`);
