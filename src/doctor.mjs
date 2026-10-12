@@ -51,7 +51,7 @@ export async function doctor(dir, opts) {
         const items = got.records ?? got.rows;
         r = { level: 'ok', detail: `${items.length} items, ${items.filter((x) => Date.parse(x.date || x.at) >= since).length} in the last ${cfg.window}` };
       }
-    } catch (e) { if (!(e instanceof UsageError)) throw e; r = { level: 'fail', detail: e.message, fix: e.next }; }
+    } catch (e) { if (!(e instanceof UsageError)) throw e; r = { level: 'fail', detail: e.message.replace(`source ${id}: `, ''), fix: e.next }; }
     add(r.level, `source ${id}`, `${s.type}: ${r.detail}`, r.fix);
   }
 
@@ -77,7 +77,7 @@ export async function doctor(dir, opts) {
       const p = spawnSync(which(binName(cfg, key)), probe.args, { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] });
       const shown = `${r.runner} ${probe.args.join(' ')}`;
       if (p.error || p.signal) add('warn', `${name} login`, `${shown} did not finish (${p.error?.code ?? p.signal})`, probe.fix);
-      else add(probe.ok(p) ? 'ok' : 'fail', `${name} login`, probe.ok(p) ? `${shown}: logged in` : `${shown}: not logged in (exit ${p.status})`, probe.fix);
+      else add(probe.ok(p) ? 'ok' : 'fail', `${name} login`, probe.ok(p) ? `${shown}: logged in` : `${shown}: not logged in${p.status ? ` (exit ${p.status})` : ''}`, probe.fix);
     } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     const fromEnv = name === 'worker' && (process.env.LFM_MODEL ?? '').trim();
     const cheap = MODELS[key]?.[0];
