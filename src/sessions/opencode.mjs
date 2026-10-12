@@ -4,7 +4,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { TEST } from './claude.mjs';
+import { inputText, TEST } from './claude.mjs';
 
 export const root = () => join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode');
 
@@ -46,7 +46,7 @@ function parse(q, file, { id, session, sub, excerpt }) {
     if (p.type !== 'tool') continue;
     const s = p.state ?? {}, key = `${p.tool}\0${JSON.stringify(s.input)}`;
     const retry = failed.has(key); // the same call again after it failed
-    events.push({ ...at, kind: 'tool_call', tool: p.tool, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(JSON.stringify(s.input)) : '' });
+    events.push({ ...at, kind: 'tool_call', tool: p.tool, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(s.input)) : '' });
     if (!['completed', 'error'].includes(s.status)) continue; // still running when the session was last saved
     const exit = typeof s.metadata?.exit === 'number' ? s.metadata.exit : null;
     const error = s.status === 'error' || Boolean(exit);

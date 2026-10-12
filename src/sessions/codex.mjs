@@ -4,7 +4,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { TEST } from './claude.mjs';
+import { inputText, TEST } from './claude.mjs';
 
 export const root = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'state_5.sqlite');
 
@@ -48,7 +48,7 @@ async function parse(file, { session, sub, excerpt }) {
         const key = `${p.name}\0${raw}`;
         calls.set(p.call_id, { tool: p.name ?? p.type, key, command });
         const retry = failed.has(key); // the same call again after it failed
-        events.push({ ...at, kind: 'tool_call', tool: p.name ?? p.type, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(String(raw)) : '' });
+        events.push({ ...at, kind: 'tool_call', tool: p.name ?? p.type, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(args && typeof args === 'object' && !Array.isArray(args.command) ? inputText(args) : command) : '' });
       } else if (['function_call_output', 'custom_tool_call_output', 'local_shell_call_output'].includes(p.type)) {
         const call = calls.get(p.call_id), text = textOf(p.output);
         const exit = exitOf(text);

@@ -334,6 +334,8 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
     const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND agent = ? AND signal = ? ORDER BY id LIMIT 1', id, agent, signal);
     assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
   }
+  assert.deepEqual(query(p, `SELECT agent, excerpt FROM events WHERE run_id = ? AND signal = 'retry' ORDER BY agent`, id),
+    [{ agent: 'codex', excerpt: 'cat missing.txt' }, { agent: 'opencode', excerpt: 'a.js' }]); // a retried call's input as plain text
   assertNoPlanted(p, [r, lfm('status', '--json'), lfm('report', '--full')]);
 
   // A session id the run store recorded as the tool's own agent run is skipped next time, for each agent.
