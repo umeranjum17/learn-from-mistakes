@@ -60,7 +60,7 @@ function run(name, command, args, expected = 0, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
   save(`${name}.stdout`, result.stdout ?? '');
   save(`${name}.stderr`, result.stderr ?? '');
-  commands.push({ name, command, args, cwd: repo, status: result.status, error: result.error?.message });
+  commands.push({ name, command, args, env: extraEnv, cwd: repo, status: result.status, error: result.error?.message });
   save('commands.json', commands);
   assert.equal(result.status, expected, `${name}: inspect private stderr/stdout logs`);
 }
