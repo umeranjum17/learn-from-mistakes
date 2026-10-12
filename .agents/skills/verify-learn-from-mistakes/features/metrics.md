@@ -9,7 +9,8 @@ and the run output (`retro`, `status`) adds `window` (`current_start`,
 Each metric with a `targets:` entry (config or the defaults) saves its `target`
 per window (NULL when there is no target). The output compares the unrounded
 stored value with the target and shows `met`, `missed` or `n/a` for the current
-window, and empty strings for a metric with no target; it rounds the number to 3 decimals. `current` runs from
+window (empty strings for a metric with no target); it prints the number rounded
+to 3 decimals. `current` runs from
 `now - window` with no end; `previous` is the same length before it. Collect
 saves the two starts, so `rerun --resume` counts over the same windows.
 Each source type gives its numbers through its `metrics(rows, window)` over the
