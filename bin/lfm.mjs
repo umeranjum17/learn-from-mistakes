@@ -71,6 +71,10 @@ function stateDir(cfg) {
     if (e.code !== 'EEXIST') throw new UsageError(`${file}: cannot write (${e.code})`);
     // git reads only a regular .gitignore; a directory or symlink there would leave the state committable
     if (!lstatSync(file).isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`);
+    let text;
+    try { text = readFileSync(file, 'utf8'); } catch (e2) { throw new UsageError(`${file}: cannot read (${e2.code})`); }
+    const lines = text.split(/\r?\n/);
+    if (!lines.includes('*') || lines.some((l) => l.startsWith('!'))) throw new UsageError(`${file}: does not ignore all of .lfm, so state could be committed; make it contain the line *`);
   }
 }
 

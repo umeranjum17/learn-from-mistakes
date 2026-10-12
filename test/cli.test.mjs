@@ -48,14 +48,40 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
   assert.match(git('status', '--porcelain', '--ignored'), /^!! \.lfm\/$/m); // ignored, not merely absent
   assert.ok(!existsSync(join(p, '.gitignore')), 'the project\'s own .gitignore is never touched');
 
-  const { p: q, lfm: lfmQ } = setup(); // a .gitignore the owner already put there is left byte-identical
+  const { p: q, lfm: lfmQ } = setup(); // a deficient owner .gitignore refuses every write, before any state
   const mine = Buffer.from('# mine\n!keep.md\n*.jsonl\n');
   mkdirSync(join(q, '.lfm'));
   writeFileSync(join(q, '.lfm', '.gitignore'), mine);
-  assert.equal(lfmQ('ingest').status, 0);
-  assert.equal(lfmQ('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234').status, 0);
+  for (const args of [['ingest'], ['change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234']]) {
+    const r = lfmQ(...args);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /\.gitignore: does not ignore all of \.lfm, so state could be committed; make it contain the line \*/);
+    assert.match(r.stderr, /next: /);
+  }
   assert.ok(readFileSync(join(q, '.lfm', '.gitignore')).equals(mine));
-  assert.ok(existsSync(join(q, '.lfm', 'records.jsonl')));
+  assert.deepEqual(readdirSync(join(q, '.lfm')), ['.gitignore']);
+
+  for (const owned of ['*\n', '# mine\n*\n']) { // an owner file that ignores everything is accepted byte-identical
+    rmSync(join(q, '.lfm'), { recursive: true });
+    mkdirSync(join(q, '.lfm'));
+    writeFileSync(join(q, '.lfm', '.gitignore'), owned);
+    assert.equal(lfmQ('ingest').status, 0);
+    assert.equal(lfmQ('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234').status, 0);
+    assert.equal(readFileSync(join(q, '.lfm', '.gitignore'), 'utf8'), owned);
+    assert.ok(existsSync(join(q, '.lfm', 'records.jsonl')));
+  }
+
+  rmSync(join(q, '.lfm'), { recursive: true }); // '*' un-ignored back is still committable, so refused
+  mkdirSync(join(q, '.lfm'));
+  const negated = Buffer.from('*\n!records.jsonl\n');
+  writeFileSync(join(q, '.lfm', '.gitignore'), negated);
+  for (const args of [['ingest'], ['change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234']]) {
+    const r = lfmQ(...args);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /\.gitignore: does not ignore all of \.lfm, so state could be committed; make it contain the line \*/);
+  }
+  assert.ok(readFileSync(join(q, '.lfm', '.gitignore')).equals(negated));
+  assert.deepEqual(readdirSync(join(q, '.lfm')), ['.gitignore']);
 
   rmSync(join(q, '.lfm'), { recursive: true }); // a .gitignore git would not read stops every write, before any state
   mkdirSync(join(q, '.lfm', '.gitignore'), { recursive: true });
