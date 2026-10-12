@@ -30,6 +30,14 @@ export async function detect(dir) {
   } finally { db?.close(); }
 }
 
+// doctor: readable, the failed steps in the window, and the ones with no time, which the window cannot place.
+export async function doctor(source, entry, ctx) {
+  const { rows } = await read(source, entry, ctx);
+  const timed = rows.filter((r) => r.at);
+  const inWin = timed.filter((r) => Date.parse(r.at) >= ctx.readFrom).length;
+  return { level: 'ok', detail: `${rows.length} failed steps, ${inWin} in the window, ${rows.length - timed.length} skipped (no time)` };
+}
+
 // Its identity is the sha256 of the rows read, so it follows content, not file time. A row takes the first cause
 // whose match rule names this source and whose error_contains is in its error.
 // node:sqlite is loaded here, and only here, so runs that never read a store never warn about it.
