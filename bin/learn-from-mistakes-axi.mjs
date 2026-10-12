@@ -27,6 +27,8 @@ const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 export function readText(file, name = file, next = undefined) {
   try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${name}: cannot read (${e.code})`, next); }
 }
+// A path printed inside a command the user copies: quoted unless it is only plain path characters.
+export const shq = (p) => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replaceAll("'", "'\\''")}'`);
 
 // Create the state dir before a write. The in-project default gets a `*` .gitignore whenever it has none,
 // so its record text can never be committed; a file the user already has there is never overwritten.

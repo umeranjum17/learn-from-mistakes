@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, detect, INSTALL, MODELS, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
 
@@ -20,13 +20,13 @@ export async function doctor(dir, opts) {
   const git = which('git');
   const repo = git && spawnSync(git, ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).status === 0;
   if (!git) add('warn', 'git', 'git is not on PATH: worktree sessions are not matched', 'install git');
-  else add(repo ? 'ok' : 'warn', 'git', repo ? 'a git repo' : `${dir} is not in a git repo: worktree sessions are not matched`, `git -C ${dir} init`);
+  else add(repo ? 'ok' : 'warn', 'git', repo ? 'a git repo' : `${dir} is not in a git repo: worktree sessions are not matched`, `git -C ${shq(dir)} init`);
 
   let cfg;
   try { cfg = loadConfig(dir); } catch (e) {
     if (!(e instanceof UsageError)) throw e;
     // Every config error starts with the file it is in: the project config or the global $LFM_HOME/config.yaml.
-    add('fail', 'config', e.message.split('\n')[0], e.message.startsWith('no ') ? `learn-from-mistakes-axi init --dir ${dir}   # writes a working config` : `edit ${e.message.split(':')[0]}   # then run doctor again`);
+    add('fail', 'config', e.message.split('\n')[0], e.message.startsWith('no ') ? `learn-from-mistakes-axi init --dir ${shq(dir)}   # writes a working config` : `edit ${shq(e.message.split(':')[0])}   # then run doctor again`);
     return checks;
   }
   add('ok', 'config', join(dir, PROJECT_FILE));
@@ -35,12 +35,12 @@ export async function doctor(dir, opts) {
   else if (repo) {
     const ignored = spawnSync(git, ['-C', dir, 'check-ignore', '-q', join(cfg.state, 'lfm.sqlite')]).status === 0;
     add(ignored ? 'ok' : 'fail', 'state', ignored ? `${cfg.state} is git-ignored` : `${cfg.state} is not git-ignored, so run records could be committed`,
-      `learn-from-mistakes-axi init --dir ${dir}   # writes .lfm/.gitignore`);
+      `learn-from-mistakes-axi init --dir ${shq(dir)}   # writes .lfm/.gitignore`);
   }
 
   // Each source's own doctor hook: readable, its count in the window, and the entries it skipped.
   const since = Date.now() - parseInt(cfg.window, 10) * 86_400_000;
-  if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', `learn-from-mistakes-axi init --dir ${dir}   # lists the sources it finds as gaps`);
+  if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', `learn-from-mistakes-axi init --dir ${shq(dir)}   # lists the sources it finds as gaps`);
   for (const [id, s] of Object.entries(cfg.sources)) {
     let r;
     try { r = await SOURCES[s.type].doctor(id, s, { readFrom: since, causes: cfg.causes }); }
@@ -94,7 +94,7 @@ export async function doctor(dir, opts) {
   for (const a of list.filter((x) => x.usable && RUNNERS[x.runner].skills)) {
     const home = join(RUNNERS[a.runner].skills(process.env), 'learn-from-mistakes');
     const at = [home, join(dir, '.claude', 'skills', 'learn-from-mistakes'), join(dir, '.agents', 'skills', 'learn-from-mistakes')].find((d) => existsSync(join(d, 'SKILL.md')));
-    add(at ? 'ok' : 'warn', `skill ${a.runner}`, at ? join(at, 'SKILL.md') : `not installed in ${home}`, `mkdir -p ${home} && cp ${SKILL} ${home}/`);
+    add(at ? 'ok' : 'warn', `skill ${a.runner}`, at ? join(at, 'SKILL.md') : `not installed in ${home}`, `mkdir -p ${shq(home)} && cp ${shq(SKILL)} ${shq(`${home}/`)}`);
   }
   const signoff = cfg.signoff !== 'off' && which('sign-off');
   add(cfg.signoff === 'off' || signoff ? 'ok' : 'warn', 'sign-off', cfg.signoff === 'off' ? 'off: questions go in report.txt'
