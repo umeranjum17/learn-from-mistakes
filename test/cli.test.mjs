@@ -540,11 +540,11 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: missing.md }\n');
   const missing = lfm('ingest');
   assert.equal(missing.status, 2, missing.stderr);
-  assert.match(missing.stderr, /missing\.md: cannot read \(ENOENT\)/);
+  assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\)$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);
-  assert.match(store.stderr, /^error: .*no-state\.sqlite: no such file$/m);
+  assert.match(store.stderr, /^error: source gate: no such file$/m);
   assert.match(store.stderr, /^next: remove the gate source or point its path at your no-mistakes state\.sqlite$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
@@ -764,10 +764,22 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const f = JSON.parse(failed.stdout);
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
   assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'failed']);
+  assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi retro --foreground   # run again after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json', '--limit', '1').stdout).runs, [f.run]);
   assert.deepEqual(JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout), run);
   const missing = lfm('status', '--run', '99');
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /^error: no run 99$/m);
+
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: gone.md }\n  store: { type: no-mistakes, path: gone.sqlite }\n');
+  const unreadable = lfm('retro', '--foreground', '--json');
+  assert.equal(unreadable.status, 1, unreadable.stderr);
+  assert.equal(JSON.parse(unreadable.stdout).run.error, 'collect: source log: cannot read (ENOENT)');
+  assert.match(unreadable.stderr, /^error: collect: source log: cannot read \(ENOENT\)$/m);
+  assert.ok(!unreadable.stdout.includes(p) && !unreadable.stderr.includes(p), 'a source path must not reach machine output');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  store: { type: no-mistakes, path: gone.sqlite }\n');
+  const noStore = lfm('retro', '--foreground', '--json');
+  assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file');
+  assert.ok(!noStore.stdout.includes(p) && !noStore.stderr.includes(p), 'a source path must not reach machine output');
 });

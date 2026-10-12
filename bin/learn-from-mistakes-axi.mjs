@@ -29,8 +29,8 @@ function readYaml(file) {
   try { text = readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return undefined; throw new UsageError(`${file}: ${e.message}`); }
   try { return parse(text) ?? {}; } catch (e) { throw new UsageError(`${file}: ${e.message.split('\n')[0]}`); }
 }
-function readText(file) {
-  try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${file}: cannot read (${e.code})`); }
+function readText(file, name = file) {
+  try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${name}: cannot read (${e.code})`); }
 }
 function mapping(value, keys, where) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new UsageError(`${where} must be a mapping`);
@@ -98,7 +98,7 @@ export function stateDir(cfg) {
 
 // Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.
 function readLog(source, path) {
-  const text = readText(path);
+  const text = readText(path, `source ${source}`);
   const seen = new Map();
   let date = '';
   const records = [];
@@ -120,7 +120,7 @@ function readLog(source, path) {
 // node:sqlite is loaded here, and only here, so runs that never read a store never warn about it.
 async function readStore(source, path) {
   const fix = `remove the ${source} source or point its path at your no-mistakes state.sqlite`;
-  if (!existsSync(path)) throw new UsageError(`${path}: no such file`, fix);
+  if (!existsSync(path)) throw new UsageError(`source ${source}: no such file`, fix);
   let db;
   try {
     const { DatabaseSync } = await import('node:sqlite');
@@ -131,7 +131,7 @@ async function readStore(source, path) {
       at: r.t ? new Date(r.t > 1e11 ? r.t : r.t * 1000).toISOString() : '', error: r.error ?? '' })),
       hash: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
   } catch (e) {
-    throw new UsageError(`${path}: not a readable no-mistakes store (${e.message})`, fix);
+    throw new UsageError(`source ${source}: not a readable no-mistakes store (${e.message})`, fix);
   } finally { db?.close(); }
 }
 
@@ -233,7 +233,7 @@ function readInput(file, flag, explicit, rerun) {
   return readJsonl(file, { rerun });
 }
 
-// Reads every configured source into the state dir and returns each source's id, type, path, item count and hash.
+// Reads every configured source into the state dir and returns each source's id, type, item count and hash.
 export async function ingest(cfg) {
   stateDir(cfg);
   const records = [], rows = [], sources = [];
@@ -241,7 +241,7 @@ export async function ingest(cfg) {
     const got = await (s.type === 'markdown-log' ? readLog(id, s.path) : readStore(id, s.path));
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
-    sources.push({ id, type: s.type, path: s.path, items: (got.records ?? got.rows).length, hash: got.hash });
+    sources.push({ id, type: s.type, items: (got.records ?? got.rows).length, hash: got.hash });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
@@ -584,6 +584,7 @@ async function runCommand(cmd, cfg, opts) {
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --foreground', 'ingest and report as a saved run', opts));
   else if (out.run.status === 'failed') {
+    console.error(`error: ${out.run.error}`);
     hint(withContext('learn-from-mistakes-axi retro --foreground', `run again after fixing the ${out.steps.find((s) => s.status === 'failed').name} step`, opts));
     if (cmd === 'retro') process.exitCode = 1;
   } else hint(withContext('learn-from-mistakes-axi report', 'the counts this run read', opts));
