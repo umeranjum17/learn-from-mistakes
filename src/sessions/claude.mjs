@@ -55,7 +55,7 @@ async function parse(file, { session, keep, sub, excerpt }) {
         events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, excerpt: signal ? excerpt(text) : '' });
         if (error && call && !declined) failed.add(call.key);
         else if (!error && call) failed.delete(call.key); // a later repeat is no longer a retry
-        afterError = error;
+        afterError ||= error;
       }
       // A subagent's user messages come from its parent agent, never from a person.
       const text = blocks.filter((b) => b?.type === 'text').map((b) => b.text).join('\n');

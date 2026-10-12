@@ -70,4 +70,4 @@ The cwd test reads at most the lines before the first record with a cwd, so
 other projects' files are not parsed whole. `returnCodeInterpretation` marks a
 benign nonzero exit (such as grep with no match), so it is not a failure.
 A tool use the user turned down is not a tool error; the interrupt or the
-correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none. Codex, OpenCode, Pi and Gemini readers come later.
+correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error. Codex, OpenCode, Pi and Gemini readers come later.
