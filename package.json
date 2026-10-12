@@ -12,5 +12,6 @@
   "files": ["bin", "src", "skills"],
   "engines": { "node": ">=22.13" },
   "scripts": { "pretest": "npm ci", "test": "npm run build:skill -- --check && node --test", "build:skill": "node scripts/build-skill.mjs" },
-  "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" }
+  "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" },
+  "optionalDependencies": { "@byokit/accounts": "^0.22.0", "@byokit/secrets": "^0.5.1", "@earendil-works/pi-ai": "0.87.1" }
 }

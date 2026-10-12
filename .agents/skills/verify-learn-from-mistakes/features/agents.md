@@ -1,4 +1,4 @@
-# Agent runners (`agents`, `agents --test <runner>`)
+# Agent runners (`agents`, `agents --test <runner>`, `byokit:<route>`)
 
 ## Sub-features
 `src/runners/index.mjs` holds the runner table (claude, codex, opencode, pi, gemini,
@@ -24,6 +24,32 @@ retry twice; quota text never retries. The agent process group is killed at the
 timeout (SIGTERM, SIGKILL after 3 s); after exit a grandchild holding stdout gets
 5 s before the pipes close.
 
+BYOKit runner (`src/runners/byokit.mjs`, optional packages `@byokit/accounts`,
+`@byokit/secrets` and `@earendil-works/pi-ai`, loaded only for it): `byokit:<route>`
+as `worker.runner`/`judge.runner` or `agents --test byokit:<route>` makes one plain
+model call in process, no agent CLI, tools `none`. Its role identity is the route
+plus model. Two kinds of route:
+- sign-in plans `byokit:chatgpt` and `byokit:claude`: the sign-in in this
+  computer's BYOKit machine store (member `lfm`, seal service `byokit`). No model
+  set: the catalogue's `fast` model (`gpt-6-luna` for chatgpt); claude has no
+  cheap model, so the role needs one. Signed out: exit 1 with BYOKit's words and
+  a sign-in `next:`.
+- plan key routes from BYOKit's route list (`via: plan_key` aliases, such as
+  `byokit:opencode-go`): the key from the variable the route names
+  (`OPENCODE_API_KEY`), held in an in-memory key store with an in-memory account
+  index for the one call, so nothing reaches a BYOKit store; the pi-ai model from
+  pi-ai's built-in list (the role's model is required; an unknown one names
+  itself). OpenCode Go also gets an `x-opencode-session` header, which BYOKit's
+  key call drops (gap 6 in the evidence). Key not set: exit 1 and `next: set
+  OPENCODE_API_KEY to your OpenCode Go key`.
+Any other name is refused before a call, with the ready plan routes (the sign-in plans and the plan key routes whose BYOKit readiness is `ready`). As worker or judge it is a `problem:` in `agents` (exit 1, the same list). With no usable agent CLI and BYOKit installed, the `next:` hint names the ready routes; without BYOKit, the install hint. A busy
+provider (BYOKit `overloaded`/`network`, or 429/503/529 text) retries twice. Its
+doctor hook `doctor(route)` (for `doctor`, Slice 9) returns `node` (Node >= 22.18)
+and the sign-in state from `accounts.status`, or whether the key variable is set
+(no paid call); a missing package gives the install command.
+`LFM_TEST_BYOKIT_BASE` (tests only) points BYOKit's `apiBase`, or a key route's
+model `baseUrl`, at a stand-in.
+
 Argv (confirmed live on claude 2.1.296, opencode 1.18.25 and pi 1.0.0; codex, gemini 0.56.0 and acpx 0.19.3 from `--help` and source):
 - claude: `-p --output-format json [--model M] --tools "" --no-session-persistence --strict-mcp-config`, prompt on stdin. Not `--bare`: it never reads an OAuth login ("Not logged in").
 - codex: `exec [-m M] -s read-only --ephemeral --skip-git-repo-check -o <run>/out-<step>.txt -`, prompt on stdin.
@@ -45,7 +71,20 @@ marker and `OPENCODE_PERMISSION` (including `--test acp:fake-agent`), gemini and
 acp listed as not offered and refused as pinned worker or judge, pi's exit-0 error,
 an ACP agent that writes (exit 1), a global `runner_args` entry, and a hung (killed
 at `caps.timeout: 2s`), leaking (grandchild holds stdout), writing (`x.txt`,
-exit 1) and overloaded-once (retried) agent. The helper drives `agents --json`
+exit 1) and overloaded-once (retried) agent. The `byokit:` journeys run the real
+CLI against BYOKit's stand-in OpenAI (`mockOpenAI`) with a sign-in seeded into the
+throwaway HOME's machine store (DBus pointed at a missing socket, so the seal is a
+host key file there and no session keyring is touched): signed out (exit 1 and
+the sign-in fix), the doctor hook before and after sign-in, one `--test` call
+(model `gpt-6-luna`, marker in the input, only `prompt-byokit-chatgpt.md` in the
+run dir), a busy-once retry, a byokit judge beside a claude worker, the same route
+as worker and judge (clash); `byokit:opencode-go` against a local Responses
+stand-in (no model: exit 1; no key: exit 1 and the fix, no request; then one call
+with `Bearer <key>`, a session header, the model, the marker, only the prompt file
+in the run dir and no BYOKit store in HOME; an unknown model), grok (refused with
+the route list, and as a worker `agents` exits 1 with that `problem:`), no agent CLI on PATH
+(the `next:` hint lists the ready routes), claude with no model,
+and the hook from a copy with no `node_modules` (install command). The helper drives `agents --json`
 on the host PATH in its scratch HOME to capture evidence (no live call).
 
 Real-product proof (outside the repo; small cost; `$SCR` scratch, `$SELF` this checkout,
@@ -63,6 +102,25 @@ lfm agents --test pi                                # the desktop's own pi login
 lfm agents --test gemini                            # the desktop's own gemini login, if any
 LFM_HOME=$SCR/lfm-home lfm agents --test acp:pi     # config.yaml: runner_path.acp (a working acpx), runner_args.acp: [--model, <a ready model>]
 ls -A .lfm/runs/test-*; git status --short
+```
+
+BYOKit (live, small cost; a lab BYOKit sign-in for member `lfm` in `$LAB`, never the
+captain's store; DBus pointed nowhere so the seal stays a host key file under `$LAB/.local/state`):
+
+```sh
+labenv env DBUS_SESSION_BUS_ADDRESS=unix:path=$SCR/no-bus XDG_STATE_HOME=$LAB/.local/state lfm agents --test byokit:chatgpt
+labenv env DBUS_SESSION_BUS_ADDRESS=unix:path=$SCR/no-bus XDG_STATE_HOME=$LAB/.local/state node --input-type=module \
+  -e 'console.log(JSON.stringify(await (await import(process.argv[1])).doctor("chatgpt")))' $SELF/src/runners/byokit.mjs
+```
+
+BYOKit plan key route (live, small cost): the desktop's own OpenCode Go key, read in
+place into the one command's environment (never copied, linked or saved; never
+printed), with the role model set in `.learn-from-mistakes.yaml`
+(`worker: { runner: "byokit:opencode-go", model: muse-spark-1.3-contributor }`):
+
+```sh
+OPENCODE_API_KEY=$(node -p 'require(process.argv[1])["opencode-go"].key' ~/.local/share/opencode/auth.json) \
+  lfm agents --test byokit:opencode-go
 ```
 
 Each `--test` prints `reply` and `offered`, or the real

@@ -10,7 +10,8 @@ import { encode as toonEncode } from '@toon-format/toon';
 import { loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { init } from '../src/init.mjs';
-import { agents, INSTALL, RUNNERS } from '../src/runners/index.mjs';
+import * as byokit from '../src/runners/byokit.mjs';
+import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
 import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -354,7 +355,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
   --step <name>       (logs) the step: collect or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
-  --test <runner>     (agents) one live call to that agent CLI, or acp:<target> through acpx (costs tokens): it must answer and write no file
+  --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
   --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)
   --judge <runner>    (init) the agent CLI that checks it (default: the first usable one that differs from the worker)
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
@@ -508,10 +509,11 @@ async function main() {
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
-  // An acp target names the run dir, so it is a plain name: no path, no leading dot.
+  // An acp target or a byokit route names the run dir, so it is a plain name: no path, no leading dot.
   for (const k of ['test', 'worker', 'judge']) {
-    if (opts[k] !== undefined && (opts[k] === 'acp' || !Object.hasOwn(RUNNERS, opts[k].replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
-      throw new UsageError(`--${k} ${shown(opts[k])} must be a runner: ${Object.keys(RUNNERS).filter((r) => r !== 'acp').join(', ')} or acp:<target>`, form);
+    if (opts[k] !== undefined && !/^(acp|byokit):[a-z0-9][\w.-]*$/.test(opts[k]) && (opts[k] === 'acp' || !Object.hasOwn(RUNNERS, opts[k].replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
+      const list = Object.keys(RUNNERS).filter((r) => r !== 'acp').join(', ');
+      throw new UsageError(`--${k} ${shown(opts[k])} must be a runner: ${k === 'test' ? `${list}, acp:<target> or byokit:<route>` : `${list} or acp:<target>`}`, form);
     }
   }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
@@ -591,10 +593,16 @@ async function agentsCommand(opts) {
   const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
-  if (!out.agents.some((a) => a.usable)) hint(INSTALL_FIX);
-  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
-  else if (roles.includes('judge')) hint(out.judge.bin ? JUDGE_FIX : AGENTS_FIX);
-  else hint(withContext(`learn-from-mistakes-axi agents --test ${(out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable)).runner.replace(/^acp$/, 'acp:<target>')}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
+  const pick = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner;
+  const next = pick?.replace(/^acp$/, 'acp:<target>');
+  const bk = byokit.problem();
+  const readyRoutes = async () => (await byokit.readyRoutes()).map((r) => `byokit:${r}`).join(', ');
+  if (!next && !bk) hint(`set worker.runner and judge.runner in ${PROJECT_FILE} to byokit:<route>; ready: ${await readyRoutes()}`);
+  else if (!next) hint(`install an agent CLI, set runner_path in $LFM_HOME/config.yaml, or for byokit:<route>: ${bk.fix}   # then run agents again`);
+  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI or byokit:<route>, or use a model one agent CLI lists`);
+  else if (roles.includes('judge') && out.judge.problem === CLASH) hint(JUDGE_FIX);
+  else if (roles.includes('judge')) hint(`install an agent CLI, or set judge.runner in ${PROJECT_FILE} to byokit:<route>; ${bk ? bk.fix : `ready: ${await readyRoutes()}`}`);
+  else hint(withContext(`learn-from-mistakes-axi agents --test ${next}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 
 // `init` prints the config it wrote or found (with its gaps and any source detection it skipped, with the cause), and
