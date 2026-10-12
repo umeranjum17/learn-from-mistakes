@@ -28,7 +28,7 @@ export function which(name) {
   }
 }
 
-const binName = (cfg, runner) => cfg.runner_path?.[runner] ?? RUNNERS[runner].bin ?? runner;
+export const binName = (cfg, runner) => cfg.runner_path?.[runner] ?? RUNNERS[runner].bin ?? runner;
 
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
@@ -58,7 +58,7 @@ function roleModel(cfg, name, runner, env = process.env) {
 }
 
 // The identity rule: a role is the real path of its binary plus its model. An empty model on the same binary is equal.
-const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
+export const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
 
 // Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
 // that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
@@ -181,8 +181,9 @@ export async function agents(cfg, opts) {
     const dir = join(cfg.state, 'runs', `test-${step}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    const got = await call(cfg, { runner, target, model: a.model, dir, runId: 'test', step, prompt: TEST, text: true });
-    return { test: { runner: opts.test, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
+    const model = opts.model ?? a.model; // doctor --live tests the judge with the judge's model
+    const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST, text: true });
+    return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
   }
   const out = { agents: list };
   if (cfg.worker) {

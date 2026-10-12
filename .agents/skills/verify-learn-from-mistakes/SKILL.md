@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real learn-from-mistakes-axi init, ingest/count/report and retro/status/runs/attach/logs/abort/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi init, doctor, ingest/count/report and retro/status/runs/attach/logs/abort/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 metadata:
   internal: true
 ---
@@ -35,12 +35,13 @@ an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well, a 
 synthetic session in the scratch HOME with a sessions `match` rule (`retro-sessions`: its metrics and `cause_count`), `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
 and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
-judge clash (exit 2; live proof in [features/init.md](features/init.md)),
+judge clash (exit 2; live proof in [features/init.md](features/init.md)), `doctor` on that
+project (exit 0) and with its defect log gone (exit 1, a fail with `fix:`; live proof in [features/doctor.md](features/doctor.md)),
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
 canary -- are owned by `test/cli.test.mjs` (runner argv and failures by
-`test/runners.test.mjs`, init by `test/init.test.mjs`); the helper does not duplicate them.
+`test/runners.test.mjs`, init and doctor by `test/init.test.mjs`); the helper does not duplicate them.
 
 ```sh
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli
@@ -61,7 +62,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0 (`config-bad-runner` and `init-pinned-clash` must be 2), all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-runner` and `init-pinned-clash` must be 2, `doctor-missing-log` 1), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 
