@@ -111,14 +111,21 @@ async function start(cfg, db, id, opts) {
 }
 
 // The hidden `_work <id> <owner pid>` command: the detached worker. It takes the run from the process that
-// started it, and leaves alone a run that ended or that another worker owns. A signal cancels the run; a kill
-// leaves it for reconcile.
+// started it, and leaves alone a run that ended or that another worker owns. A signal is handled between
+// steps: a synchronous step finishes first, and a run that already ended is left as it is. A kill leaves it
+// for reconcile.
 export async function worker(cfg, id, owner) {
   const db = await openStore(cfg.state, false);
   const taken = db?.prepare(`UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND status = 'running' AND pid IN (?, ?)`)
     .run(process.pid, startTime(process.pid), iso(Date.now()), id, owner, process.pid).changes;
   if (!taken) throw new UsageError(`run ${id} is not running, or another process owns it`);
-  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { stop(db, id, 'cancelled', `cancelled by ${sig}`); process.exit(1); });
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    process.on(sig, () => {
+      if (!db.prepare(`SELECT 1 FROM runs WHERE id = ? AND status = 'running'`).get(id)) return;
+      stop(db, id, 'cancelled', `cancelled by ${sig}`);
+      process.exit(1);
+    });
+  }
   await work(cfg, db, id);
 }
 
