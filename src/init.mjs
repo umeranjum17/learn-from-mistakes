@@ -57,7 +57,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
   return {
     config: file, status: written ? 'written' : 'already set up', ignored: written ? [] : changes,
-    worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model },
+    worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, judgeBin: judge.bin,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
     gaps, skipped,
   };

@@ -588,7 +588,7 @@ async function initCommand(opts) {
   if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: the worker (${out.worker.runner}) and the judge (${out.judge.runner}) see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
   if (out.gaps.some((g) => g.startsWith('worker:'))) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
-  else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(out.gaps.some((g) => g.startsWith('judge:') && g.includes('own work')) ? JUDGE_FIX : AGENTS_FIX);
+  else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(out.judgeBin ? JUDGE_FIX : AGENTS_FIX);
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }
 
