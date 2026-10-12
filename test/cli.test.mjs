@@ -236,6 +236,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
     [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n  more: { type: sessions }\n')), 2,
       bad("sources.s: sources.more already reads every agent's sessions; keep one and narrow it with agents"), HELP],
+    [() => withConfig('', v1.replace('sources:\n', 'sources:\n  prs: { type: github }\n  more: { type: github }\n')), 2,
+      bad("sources.prs: sources.more already reads the PRs of origin's GitHub repo; keep one"), HELP],
     ...[['source: log', 'causes.env.match.source must name a no-mistakes or sessions source'], ['source: gate, signal: test_fail', 'causes.env.match: unknown key signal'],
       ['source: s', 'causes.env.match needs a signal, tool or text_contains'], ['source: s, tool: ""', 'causes.env.match.tool must be a non-empty string'],
       ['source: s, signal: oops', 'causes.env.match.signal must be one of tool_error, nonzero_exit, test_fail, correction, interrupt, retry'],

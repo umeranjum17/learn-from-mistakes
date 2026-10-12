@@ -1,6 +1,7 @@
 // End-to-end: init and a retro with a github source in a throwaway git repo whose origin is on GitHub. PATH holds a fake
 // gh that records its argv and answers with synthetic GraphQL pages written here, plus git and two fake agent CLIs; no
-// call reaches GitHub. The pages give known first-pass, hours-to-merge, rework, revert and escape numbers in both windows.
+// call reaches GitHub. The pages give known first-pass, hours-to-merge, rework, revert and escape numbers in both windows,
+// and repeat a PR across two pages, as a PR updated between the two reads would be.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -22,11 +23,10 @@ process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_PAGES, after + '
 `;
 const ago = (hours) => new Date(Date.now() - hours * 3_600_000).toISOString();
 // A PR merged `merged` hours ago after `open` hours open; commits are [hours ago, check state] pairs.
-function pr(number, title, { open = 1, merged, closed, body = '', bot = false, commits, total } = {}) {
-  const end = merged ?? closed;
-  commits ??= [[end + open + 1, 'SUCCESS']]; // one commit, before the PR opened
+function pr(number, title, { open = 1, merged, body = '', bot = false, commits, total } = {}) {
+  commits ??= [[merged + open + 1, 'SUCCESS']]; // one commit, before the PR opened
   return { number, title, body, author: { __typename: bot ? 'Bot' : 'User', login: bot ? 'dependabot' : 'umer' },
-    createdAt: ago(end + open), updatedAt: ago(end), mergedAt: merged === undefined ? null : ago(merged), closedAt: ago(end),
+    createdAt: ago(merged + open), updatedAt: ago(merged), mergedAt: ago(merged),
     labels: { nodes: [{ name: 'demo' }] }, reviews: { nodes: [{ state: 'APPROVED' }] },
     commits: { totalCount: total ?? commits.length, nodes: commits.map(([h, state]) => ({ commit: { authoredDate: ago(h), statusCheckRollup: { state } } })) } };
 }
@@ -44,18 +44,23 @@ function setup() {
   for (const name of ['claude', 'opencode']) writeFileSync(join(bin, name), '#!/bin/sh\necho "1.0.0"\n');
   for (const name of ['gh', 'claude', 'opencode']) chmodSync(join(bin, name), 0o755);
   // Two pages, newest update first; the second ends with a PR updated before the read range, so no third page is asked for.
+  const demo = pr(10, 'feat: add a demo page', { open: 4, merged: 26, body: `Umer's page. Demo value: ${SECRET}` }); // first pass
   writeFileSync(join(pages, 'first.json'), page([
+    pr(19, 'Fixture update', { merged: 3, body: 'New pages for #10.' }), // not a fix: no escape from #10
     pr(13, 'chore(deps): bump yaml', { merged: 4, bot: true }), // 1 h, a bot: not in first_pass
-    pr(15, 'feat: abandoned idea', { closed: 10 }), // closed, never merged: in no number
+    pr(18, 'Reverted #3', { merged: 6 }), // reverts #3
+    pr(17, 'Fixes #12 retry loop', { merged: 8 }), // escapes #12
     pr(16, 'fix: keep an empty body', { merged: 11, body: 'Follow-up to #5; see #110.' }), // escapes #5, never #11
     pr(14, 'Revert "feat: add retries"', { merged: 19, body: 'Reverts umer/umer-app#12' }), // reverts #12
-    pr(10, 'feat: add a demo page', { open: 4, merged: 26, body: `Umer's page. Demo value: ${SECRET}` }), // first pass
+    demo,
   ], 'second'));
   writeFileSync(join(pages, 'second.json'), page([
+    demo, // updated again between the two reads: counted once
     pr(11, 'feat: add a form', { open: 10, merged: 40, commits: [[52, 'FAILURE'], [46, 'SUCCESS'], [44, 'SUCCESS']] }), // CI rework, then other rework
     pr(12, 'feat: add retries', { open: 2, merged: 58 }),
     pr(5, 'feat: parse the body', { open: 10, merged: 200 }), // last window; escaped
     pr(6, 'feat: a long branch', { open: 5, merged: 215, total: 150 }), // last window; partial
+    pr(3, 'feat: a small tweak', { merged: 230 }), // last window; reverted
     pr(2, 'feat: old work', { merged: 400 }), // before the read range of two 7d windows
   ], 'third'));
   const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, FAKE_PAGES: pages };
@@ -74,11 +79,11 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   const r = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const run = JSON.parse(r.stdout);
-  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 9 }]); // 9 PRs merged or closed in the range; #2 is older
+  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 12 }]); // 12 PRs merged in the range; #2 is older
   const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
   assert.deepEqual(numbers, {
-    merged: [6, 2], first_pass: [60, 50], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [10, 10],
-    rework_ci: [1, 0], rework_other: [1, 0], reverted: [1, 0], escaped: [0, 1],
+    merged: [9, 3], first_pass: [75, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [10, 10],
+    rework_ci: [1, 0], rework_other: [1, 0], reverted: [1, 1], escaped: [1, 1],
   });
   const gql = calls().slice(1);
   assert.equal(gql.length, 2, 'the read stops at the first PR updated before the range');
@@ -92,9 +97,21 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
     const rows = Object.fromEntries(db.prepare(`SELECT ref, text, data FROM records WHERE source = 'prs'`).all().map((x) => [x.ref, x]));
     assert.match(rows['PR #10'].text, /^feat: add a demo page\n\nUmer's page\. Demo value: \[redacted\]$/);
     assert.equal(JSON.parse(rows['PR #6'].data).partial, true);
-    assert.deepEqual(JSON.parse(rows['PR #11'].data), { merged: true, bot: false, hours: 10, rework_ci: 1, rework_other: 1, reverted: false, escaped: false,
+    assert.deepEqual(JSON.parse(rows['PR #11'].data), { bot: false, hours: 10, rework_ci: 1, rework_other: 1, reverted: false, escaped: false,
       partial: false, labels: ['demo'], changes_requested: 0 });
   } finally { db.close(); }
+
+  // excerpts: off keeps the numbers and stores no PR title or body.
+  const cfg = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(cfg, readFileSync(cfg, 'utf8').replace(/^excerpts: on\b/m, 'excerpts: off'));
+  const off = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(off.status, 0, off.stderr);
+  assert.deepEqual(JSON.parse(off.stdout).metrics.find((m) => m.name === 'merged'), run.metrics.find((m) => m.name === 'merged'));
+  const db2 = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  try {
+    const texts = db2.prepare(`SELECT text FROM records WHERE source = 'prs' AND run_id = (SELECT max(id) FROM runs)`).all().map((x) => x.text);
+    assert.deepEqual([texts.length, texts.filter(Boolean)], [12, []]);
+  } finally { db2.close(); }
 });
 
 test('a missing or logged-out gh and a non-GitHub origin fail the source with the fix, never the origin URL', () => {

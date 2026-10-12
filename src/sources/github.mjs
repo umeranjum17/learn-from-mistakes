@@ -1,7 +1,8 @@
-// github: the pull requests merged or closed in the read range, from the GitHub repo the project's `origin` names,
+// github: the pull requests merged in the read range, from the GitHub repo the project's `origin` names,
 // read through the user's own `gh` login (`gh api graphql`, read-only, one query paged newest first). Each PR is one
-// record: its title and body (redacted), with the facts its metrics count in `data`. A later merged PR titled
-// "Revert" that names #N reverts PR N; a later merged PR whose title starts with "fix" and names #N is an escape from it.
+// record: its title and body (redacted; empty with `excerpts: off`), with the facts its metrics count in `data`. A later
+// merged PR whose title starts with "Revert" (Reverts, Reverted) and names #N reverts PR N; a later merged PR whose title
+// starts with "fix" (fix:, fix(scope):, Fixes, Fixed) and names #N is an escape from it.
 // A PR with more than 100 commits is read from its first 100 and marked partial.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -13,9 +14,9 @@ import { which } from '../runners/index.mjs';
 
 const QUERY = `query($owner: String!, $name: String!, $after: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: [MERGED, CLOSED], first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    pullRequests(states: [MERGED], first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
-      nodes { number title body author { __typename login } createdAt updatedAt mergedAt closedAt
+      nodes { number title body author { __typename login } createdAt updatedAt mergedAt
         labels(first: 20) { nodes { name } } reviews(first: 50) { nodes { state } }
         commits(first: 100) { totalCount nodes { commit { authoredDate statusCheckRollup { state } } } } }
     }
@@ -47,13 +48,13 @@ export function detect(dir) {
   return { type: 'github' };
 }
 
-export async function read(source, { dir }, { readFrom = 0 } = {}) {
+export async function read(source, { dir }, { readFrom = 0, excerpts = true } = {}) {
   const fail = (why, fix) => { throw new UsageError(`source ${source}: ${why}`, `remove sources.${source} from ${PROJECT_FILE}, or ${fix}`); };
   const r = repo(dir);
   if (!r) fail(`the project's git origin is not a GitHub repo`, 'git remote add origin https://github.com/<owner>/<repo>');
   const bin = which('gh');
   if (!bin) fail('gh is not on PATH', 'install the GitHub CLI (https://cli.github.com), then gh auth login');
-  const nodes = [];
+  const nodes = new Map(); // by number: a PR updated between two page reads moves up and comes back on the next page
   for (let after = null; ;) {
     const p = gh(bin, r, ['api', 'graphql', '-f', `query=${QUERY}`, '-f', `owner=${r.owner}`, '-f', `name=${r.name}`, ...(after ? ['-f', `after=${after}`] : [])]);
     if (p.error || p.status !== 0) {
@@ -62,33 +63,32 @@ export async function read(source, { dir }, { readFrom = 0 } = {}) {
     }
     let page;
     try { page = JSON.parse(p.stdout).data.repository.pullRequests; } catch { fail(`gh api graphql gave no pull requests for ${r.owner}/${r.name}`, 'check gh auth status and the repo name'); }
-    nodes.push(...page.nodes);
-    // Newest update first: a PR merged or closed in the range was updated in it, so an older update ends the read.
+    for (const n of page.nodes) nodes.set(n.number, n);
+    // Newest update first: a PR merged in the range was updated in it, so an older update ends the read.
     if (!page.pageInfo.hasNextPage || !page.nodes.length || Date.parse(page.nodes.at(-1).updatedAt) < readFrom) break;
     after = page.pageInfo.endCursor;
   }
-  const prs = nodes.filter((n) => Date.parse(n.mergedAt ?? n.closedAt) >= readFrom);
-  const merged = prs.filter((n) => n.mergedAt);
+  const merged = [...nodes.values()].filter((n) => Date.parse(n.mergedAt) >= readFrom);
   const names = (n, number) => new RegExp(`#${number}(?!\\d)`).test(`${n.title}\n${n.body}`);
   const later = (title, n) => merged.some((m) => title.test(m.title) && m.mergedAt > n.mergedAt && names(m, n.number));
-  const rows = prs.map((n) => {
+  const rows = merged.map((n) => {
     const commits = n.commits.nodes.map((c) => c.commit), opened = Date.parse(n.createdAt);
     // A commit after the PR opened is rework; it is CI rework when the commit before it had failing checks.
     const rework = commits.map((c, i) => Date.parse(c.authoredDate) > opened && (['FAILURE', 'ERROR'].includes(commits[i - 1]?.statusCheckRollup?.state) ? 'ci' : 'other'));
-    return { source, ts: n.mergedAt ?? n.closedAt, ref: `PR #${n.number}`, text: redact(`${n.title}\n\n${n.body ?? ''}`.trim()), data: {
-      merged: Boolean(n.mergedAt), bot: n.author?.__typename === 'Bot', hours: n.mergedAt ? (Date.parse(n.mergedAt) - opened) / 3_600_000 : null,
+    return { source, ts: n.mergedAt, ref: `PR #${n.number}`, text: excerpts ? redact(`${n.title}\n\n${n.body ?? ''}`.trim()) : '', data: {
+      bot: n.author?.__typename === 'Bot', hours: (Date.parse(n.mergedAt) - opened) / 3_600_000,
       rework_ci: rework.filter((x) => x === 'ci').length, rework_other: rework.filter((x) => x === 'other').length,
-      reverted: Boolean(n.mergedAt) && later(/^revert\b/i, n), escaped: Boolean(n.mergedAt) && later(/^fix\b/i, n),
+      reverted: later(/^revert(s|ed)?\b/i, n), escaped: later(/^fix(es|ed)?\b/i, n),
       partial: n.commits.totalCount > commits.length, labels: n.labels.nodes.map((l) => l.name),
       changes_requested: n.reviews.nodes.filter((v) => v.state === 'CHANGES_REQUESTED').length } };
   });
   return { prs: rows, hash: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
 }
 
-// doctor: readable, the PRs merged or closed in the window, and the partial ones (over 100 commits).
+// doctor: readable, the PRs merged in the window, and the partial ones (over 100 commits).
 export async function doctor(source, entry, ctx) {
   const { prs } = await read(source, entry, ctx);
-  return { level: 'ok', detail: `${prs.length} PRs merged or closed in the window, ${prs.filter((r) => r.data.partial).length} partial (over 100 commits)` };
+  return { level: 'ok', detail: `${prs.length} PRs merged in the window, ${prs.filter((r) => r.data.partial).length} partial (over 100 commits)` };
 }
 
 // The numbers over the PRs merged in the window. first_pass is the share of merged PRs by people (not bots) with no
@@ -96,7 +96,7 @@ export async function doctor(source, entry, ctx) {
 export const metricNames = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped'];
 export const metricRows = 'records';
 export function metrics(rows, window) {
-  const prs = inWindow(rows, window).map((r) => JSON.parse(r.data)).filter((d) => d.merged);
+  const prs = inWindow(rows, window).map((r) => JSON.parse(r.data));
   const people = prs.filter((d) => !d.bot), hours = prs.map((d) => d.hours).sort((a, b) => a - b);
   const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places;
   const rank = (p) => (hours.length ? round(hours[Math.ceil(p * hours.length) - 1], 2) : null);
