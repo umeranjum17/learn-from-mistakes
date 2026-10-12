@@ -83,7 +83,7 @@ try {
   copyFileSync(labels, join(staged, 'labels.jsonl'));
   copyFileSync(proposals, join(staged, 'proposals.jsonl'));
   // Reuse, don't duplicate, negative/duplicate/occurrence/unread journey coverage.
-  run('npm-test', 'npm', ['test']);
+  run('npm-test', 'npm', ['test', '--ignore-scripts']);
   const cli = join(repo, 'bin/lfm.mjs');
   const stagedLabels = join(staged, 'labels.jsonl');
   const stagedProposals = join(staged, 'proposals.jsonl');
