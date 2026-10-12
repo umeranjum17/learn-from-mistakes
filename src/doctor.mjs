@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
-import { loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
+import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, detect, INSTALL, MODELS, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
 
 const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
@@ -28,7 +28,8 @@ export async function doctor(dir, opts) {
   try { cfg = loadConfig(dir); } catch (e) {
     if (!(e instanceof UsageError)) throw e;
     // Every config error starts with the file it is in: the project config or the global $LFM_HOME/config.yaml.
-    add('fail', 'config', e.message.split('\n')[0], e.message.startsWith('no ') ? `learn-from-mistakes-axi init --dir ${shq(dir)}   # writes a working config` : `edit ${shq(e.message.split(':')[0])}   # then run doctor again`);
+    const from = [join(dir, PROJECT_FILE), globalFile()].find((f) => e.message.startsWith(f));
+    add('fail', 'config', e.message.split('\n')[0], e.message.startsWith('no ') ? `learn-from-mistakes-axi init --dir ${shq(dir)}   # writes a working config` : `edit ${shq(from)}   # then run doctor again`);
     return checks;
   }
   add('ok', 'config', join(dir, PROJECT_FILE));
@@ -64,9 +65,9 @@ export async function doctor(dir, opts) {
       continue;
     }
     const route = byokit.routeOf(r.runner);
-    if (route) { // BYOKit's own checks for its sign-in or plan key, with no paid call; its node row is the node check above
+    if (route) { // BYOKit's own checks for its sign-in or plan key, with no paid call
       add('ok', name, `${r.runner}, a BYOKit route`);
-      for (const c of await byokit.doctor(route)) if (c.label !== 'node') add(c.status, `${name} login`, c.detail, c.fix);
+      for (const c of await byokit.doctor(route)) add(c.status, `${name} login`, c.detail, c.fix);
     } else {
       add('ok', name, `${r.runner} ${a.version}, tools ${a.tools}`);
       // Login: the agent's own status command where it has one, else whether its login file or key variable exists.
