@@ -9,8 +9,8 @@ runner whose tool-off mode is not confirmed live (gemini, acp) has `problem:
 not offered: <why>` and is never resolved as worker or judge (a pinned one gives
 `problem: worker: gemini is not offered: ...`); `--test` still runs on it (a pass does not offer it). An acp target is a plain
 name (`[a-z0-9][\w.-]*`): it names the run dir, so a path or `..` exits 2.
-`agents` prints each runner: usable, version, tools (`off`, or `read-only` for
-Codex and Gemini), login presence (file and variable names only, never contents), the
+`agents` prints each runner: usable, version, tools (`off`, `read-only` for
+Codex and Gemini, or `unconfirmed` for acp), login presence (file and variable names only, never contents), the
 default model (the first table model for that runner, or the configured model
 where the runner's table lists it or the role pins that runner) and the real binary path. With a project config it adds the
 resolved `worker` and `judge` by the identity rule (real binary path + model; an
