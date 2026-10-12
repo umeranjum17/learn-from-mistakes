@@ -70,7 +70,7 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -109,6 +109,16 @@ try {
   drive('retro', 'retro', '--foreground'); // a saved run in the staged .lfm/lfm.sqlite
   drive('status', 'status');
   drive('runs', 'runs');
+  // Config v2: every new key loads and the run completes the same steps; a bad runner exits 2 naming the key.
+  const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
+  Object.assign(config, { worker: { runner: 'auto', model: '' }, judge: { runner: 'acp:gemini', model: 'cheap-model' }, window: '7d',
+    targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
+    caps: { invocations: 12, bundle_chars: 60000, timeout: '20m' }, signoff: 'auto', allow_premium: false });
+  writeFileSync(stagedConfig, stringify(config));
+  drive('retro-v2', 'retro', '--foreground', '--json');
+  writeFileSync(stagedConfig, stringify({ ...config, worker: { runner: 3 } }));
+  run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
+  writeFileSync(stagedConfig, stringify(config));
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });
@@ -116,7 +126,7 @@ try {
     const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
-    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');

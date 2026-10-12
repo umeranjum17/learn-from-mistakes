@@ -207,6 +207,9 @@ test('every rejected input names what was wrong and a next step, never the whole
   const CHANGE = /^next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> \[--at <time>\]/m;
   const known = '(known: server-memory-kill, shared-cache-lock, agent-exit-wait; "other" is reserved)';
   const applied = (...args) => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', ...args);
+  const cfgFile = join(p, '.learn-from-mistakes.yaml'), v1 = readFileSync(cfgFile, 'utf8');
+  const withConfig = (extra, base = v1) => { writeFileSync(cfgFile, base + extra); try { return lfm('ingest'); } finally { writeFileSync(cfgFile, v1); } };
+  const bad = (rule) => new RegExp(`^error: .*\\.learn-from-mistakes\\.yaml: ${rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm');
   for (const [run, code, error, next] of [
     [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs)', HELP],
     [() => raw('--bogus'), 2, 'unknown option "--bogus"', HELP], // a bare unknown flag points at --help
@@ -235,6 +238,16 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('retro'), 2, 'retro runs only in this process for now: pass --foreground', /^next: learn-from-mistakes-axi retro --foreground \[--dir <dir>\]/m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
+    [() => withConfig('worker: { runner: 3 }\n'), 2, bad('worker.runner must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
+    [() => withConfig('judge: { runner: claude, model: 5 }\n'), 2, bad('judge.model must be a string'), HELP],
+    [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
+    [() => withConfig('targets: { first_pass: 70 }\n'), 2, bad('targets.first_pass must be a quoted "<op> <number>", such as ">= 70"'), HELP],
+    [() => withConfig('targets: { speed: ">= 1" }\n'), 2, /^error: .*: targets: speed must be a metric \(merged, first_pass, .*, or cause_count:<cause>\)$/m, HELP],
+    [() => withConfig('caps: { timeout: 20 }\n'), 2, bad('caps.timeout must be a duration such as 90s, 20m or 1h'), HELP],
+    [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
+    [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
+    [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
+    [() => withConfig('', v1.replace(/^name: .*$/m, 'name: 123')), 2, bad('name must be a string'), HELP],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
     const r = run();
@@ -540,6 +553,14 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   const missing = lfm('ingest');
   assert.equal(missing.status, 2, missing.stderr);
   assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\)$/m);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log }\n  prs: { type: github }\n');
+  const noPath = lfm('ingest'); // each source type checks its own keys; a type with no reader yet is refused
+  assert.equal(noPath.status, 2, noPath.stderr);
+  assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes$/m); // a list is not a type
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs\.type must be one of markdown-log, no-mistakes$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);
@@ -755,6 +776,28 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.deepEqual(JSON.parse(status.stdout), run);
   assert.deepEqual(decode(lfm('runs').stdout), { runs: [run.run] });
   assert.doesNotMatch(git('status', '--porcelain', '--untracked-files=all'), /\.lfm/);
+
+  // A v2 config with every key, and a global config with the runner keys, loads and runs the same steps.
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}worker: { runner: auto, model: "" }
+judge: { runner: "acp:gemini", model: cheap-model }
+window: 30d
+targets: { first_pass: ">= 70", p90_hours_to_merge: "<= 8", escaped: "<= 0", "cause_count:server-memory-kill": "<= 1" }
+followup: { min_sessions: 3, min_days: 2 }
+excerpts: off
+caps: { invocations: 12, bundle_chars: 60000, timeout: 20m }
+signoff: auto
+allow_premium: false
+`);
+  mkdirSync(join(p, '..', 'home'), { recursive: true });
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_path: { claude: ~/bin/claude }\nrunner_args: { codex: [--profile, cheap] }\n');
+  const v2 = lfm('retro', '--foreground', '--json');
+  assert.equal(v2.status, 0, v2.stderr);
+  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['report', 'completed']]);
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_args: { codex: --profile }\n');
+  const badGlobal = lfm('status');
+  assert.equal(badGlobal.status, 2, badGlobal.stderr);
+  assert.match(badGlobal.stderr, /^error: .*config\.yaml: runner_args\.codex must be a list of strings$/m);
+  rmSync(join(p, '..', 'home', 'config.yaml'));
 
   writeFileSync(join(p, 'defects.md'), ''); // a failed step fails the run with exit 1 and saves the error
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');

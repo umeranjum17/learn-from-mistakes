@@ -3,13 +3,11 @@
 // <project>/.lfm by default, which the tool git-ignores itself.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
 // labels.jsonl; this file only parses, dedups and counts.
-import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
-import { parse } from 'yaml';
+import { loadConfig, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { retro, runs, status } from '../src/run.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -19,56 +17,10 @@ export class UsageError extends Error {
 }
 export class InputError extends UsageError { code = 1; } // a line in a file the run reads is bad, not the command
 export class EmptyError extends UsageError { code = 3; } // nothing to read
-const LFM_HOME = process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
-const PROJECT_FILE = '.learn-from-mistakes.yaml';
-const TYPES = ['markdown-log', 'no-mistakes'];
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
-function readYaml(file) {
-  let text;
-  try { text = readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return undefined; throw new UsageError(`${file}: ${e.message}`); }
-  try { return parse(text) ?? {}; } catch (e) { throw new UsageError(`${file}: ${e.message.split('\n')[0]}`); }
-}
-function readText(file, name = file) {
+export function readText(file, name = file) {
   try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${name}: cannot read (${e.code})`); }
-}
-function mapping(value, keys, where) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new UsageError(`${where} must be a mapping`);
-  for (const k of Object.keys(value)) if (keys && !keys.includes(k)) throw new UsageError(`${where}: unknown key ${k}`);
-  return value;
-}
-const expand = (p, dir) => resolve(dir, p.replace(/^~(?=\/|$)/, homedir()));
-
-function loadConfig(dir) {
-  const global = mapping(readYaml(join(LFM_HOME, 'config.yaml')) ?? {}, ['state_root'], join(LFM_HOME, 'config.yaml'));
-  const file = join(dir, PROJECT_FILE);
-  const p = readYaml(file);
-  if (p === undefined) throw new UsageError(`no ${PROJECT_FILE} in ${dir} (or pass --dir <project>); a minimal one:
-name: my-project
-sources:
-  log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi guide   # the full config, then ingest, label and report');
-  mapping(p, ['name', 'sources', 'causes', 'repeat'], file);
-  const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
-  for (const [id, s] of Object.entries(sources)) {
-    mapping(s, ['type', 'path'], `${file}: sources.${id}`);
-    if (!TYPES.includes(s.type)) throw new UsageError(`${file}: sources.${id}.type must be one of ${TYPES.join(', ')}`);
-    if (typeof s.path !== 'string') throw new UsageError(`${file}: sources.${id}.path must be a string`);
-    s.path = expand(s.path, dir);
-  }
-  const causes = mapping(p.causes ?? {}, null, `${file}: causes`);
-  for (const [id, c] of Object.entries(causes)) {
-    mapping(c, ['description', 'match'], `${file}: causes.${id}`);
-    if (typeof c.description !== 'string') throw new UsageError(`${file}: causes.${id}.description must be a string`);
-    if (c.match === undefined) continue;
-    const m = mapping(c.match, ['source', 'error_contains'], `${file}: causes.${id}.match`);
-    if (sources[m.source]?.type !== 'no-mistakes') throw new UsageError(`${file}: causes.${id}.match.source must name a no-mistakes source`);
-    if (typeof m.error_contains !== 'string' || !m.error_contains) throw new UsageError(`${file}: causes.${id}.match.error_contains must be a non-empty string`);
-  }
-  const repeat = { min_incidents: 3, min_days: 2, ...mapping(p.repeat ?? {}, ['min_incidents', 'min_days'], `${file}: repeat`) };
-  for (const [k, v] of Object.entries(repeat)) if (!Number.isInteger(v) || v < 1) throw new UsageError(`${file}: repeat.${k} must be a positive integer`);
-  const name = p.name ?? basename(dir);
-  if (global.state_root) return { name, sources, causes, repeat, state: join(expand(String(global.state_root), LFM_HOME), name) };
-  return { name, sources, causes, repeat, state: join(dir, '.lfm'), ignore: true };
 }
 
 // Create the state dir before a write. The in-project default gets a `*` .gitignore whenever it has none,
@@ -94,45 +46,6 @@ export function stateDir(cfg) {
     if (!lines.includes('*') || lines.some((l) => l.startsWith('!'))) throw new UsageError(`${file}: does not ignore all of .lfm, so state could be committed; make it contain the line *`,
       "echo '*' >> <project>/.lfm/.gitignore   # ignore all of .lfm, and delete any line starting with !");
   }
-}
-
-// Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.
-function readLog(source, path) {
-  const text = readText(path, `source ${source}`);
-  const seen = new Map();
-  let date = '';
-  const records = [];
-  text.split('\n').forEach((line, i) => {
-    if (line.startsWith('## ')) date = line.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '';
-    if (!line.startsWith('- ')) return;
-    const body = line.slice(2).trim();
-    let id = createHash('sha256').update(body.toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
-    const n = (seen.get(id) ?? 0) + 1;
-    seen.set(id, n);
-    if (n > 1) id += `~${n}`;
-    records.push({ id, source, line: i + 1, date: body.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? date, text: body });
-  });
-  return { records, hash: createHash('sha256').update(text).digest('hex') };
-}
-
-// Failed pipeline steps from a no-mistakes state database, opened read-only. One fixed query; no user SQL.
-// Its identity is the sha256 of the rows read, so it follows content, not file time.
-// node:sqlite is loaded here, and only here, so runs that never read a store never warn about it.
-async function readStore(source, path) {
-  const fix = `remove the ${source} source or point its path at your no-mistakes state.sqlite`;
-  if (!existsSync(path)) throw new UsageError(`source ${source}: no such file`, fix);
-  let db;
-  try {
-    const { DatabaseSync } = await import('node:sqlite');
-    db = new DatabaseSync(path, { readOnly: true });
-    const rows = db.prepare(`SELECT s.id, s.run_id, s.step_name, s.error, COALESCE(s.completed_at, s.started_at) AS t, r.branch
-      FROM step_results s JOIN runs r ON r.id = s.run_id WHERE s.status = 'failed' ORDER BY t, s.id`).all();
-    return { rows: rows.map((r) => ({ id: r.id, source, run: r.run_id, step: r.step_name, branch: r.branch,
-      at: r.t ? new Date(r.t > 1e11 ? r.t : r.t * 1000).toISOString() : '', error: r.error ?? '' })),
-      hash: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
-  } catch (e) {
-    throw new UsageError(`source ${source}: not a readable no-mistakes store (${e.message})`, fix);
-  } finally { db?.close(); }
 }
 
 // `ingest` (a state file this tool wrote: missing or corrupt is exit 2, fixed by ingest again) or
@@ -238,7 +151,7 @@ export async function ingest(cfg) {
   stateDir(cfg);
   const records = [], rows = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const got = await (s.type === 'markdown-log' ? readLog(id, s.path) : readStore(id, s.path));
+    const got = await SOURCES[s.type].read(id, s);
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
     sources.push({ id, type: s.type, items: (got.records ?? got.rows).length, hash: got.hash });
