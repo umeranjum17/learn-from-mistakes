@@ -18,3 +18,7 @@ this line is not JSON
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t5","is_error":true,"content":"File does not exist."}]}}
 {"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"That file is gone."}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:05.000Z","message":{"role":"user","content":"Thanks, now add the README."}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:01:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t6","name":"Read","input":{"file_path":"a.md"}},{"type":"tool_use","id":"t7","name":"Read","input":{"file_path":"b.md"}}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:01:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t6","is_error":true,"content":"File does not exist."}]},"toolUseResult":"Error: File does not exist."}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:01:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t7","content":"# b"}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:01:05.000Z","message":{"role":"user","content":"No, do the other file."}}
