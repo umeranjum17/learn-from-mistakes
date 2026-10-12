@@ -17,16 +17,18 @@ Checks, in order:
   skipped records in files written in this window; markdown-log and no-mistakes: readable, the count in the window, and the skipped entries). A read
   error is a fail with the source's own fix (a missing defect log: `check sources.<id>.path in
   .learn-from-mistakes.yaml, or create it: touch <path>`). No sources at all: warn.
-- `agent <runner>`: each runner binary found; one that is not offered (gemini, acp) or
-  whose `--version` fails is a warn with its reason, never a fail.
 - `worker`/`judge`: the role resolves to a usable, offered runner (`resolveRoles`), with
-  version and tools; a role pinned to a not-offered runner is a warn, any other
-  unresolved role a fail.
+  version and tools; a role pinned to a not-offered runner (gemini, acp) or to a runner with
+  no usable binary is a fail, its fix naming the offered runners; no offered runner at all
+  is a fail with the install command.
 - `worker login`/`judge login`: the agent's own status command through `which()`, its
   output never printed: `codex login status` (exit 0), `opencode auth list` (a
   credential or environment variable count above 0), `pi auth check --no-refresh
   --model <m>` (exit 0; with no model, the login file). A negative answer is a fail
-  with the login command; a probe that does not finish in 20 s is a warn. Claude and
+  with the login command; a probe that does not finish in 20 s is a warn. pi is the one
+  exception: a probe that fails for any reason (exit, error, signal, timeout) is checked
+  against `~/.pi/agent/auth.json` by existence only: present is a warn with the exit code,
+  absent is a fail with `pi # then /login`. Claude and
   Gemini: login file or key variable presence (warn when none: it may be in the keychain).
 - `worker model`/`judge model`: no model and no `models.json` default is a warn; a
   premium name (`opus`, `sonnet`, `sol`) is a fail unless `allow_premium: true`
@@ -75,5 +77,5 @@ the correct answer for that HOME.
 
 ## Gotchas
 A shim that reads `$HOME` (such as a wrapper that starts a mise node) fails `--version`
-under a lab HOME, so that runner is a warn `agent <runner>` and is not picked.
+under a lab HOME, so that runner is not picked (a role pinned to it is a fail).
 Never run the login probes against the captain's own HOME in a proof: use `labenv`.
