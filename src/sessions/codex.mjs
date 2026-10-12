@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { inputText, json, TEST, textOf } from './claude.mjs';
 
-export const root = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'state_5.sqlite');
+export const STORE_VAR = 'CODEX_HOME';
+export const root = () => join(process.env[STORE_VAR] || join(homedir(), '.codex'), 'state_5.sqlite');
 
 // Messages Codex itself adds as user input: AGENTS.md text and tags such as <environment_context> or
 // <codex_internal_context source="goal">. An <image name=...> label starts a person's message with an image.

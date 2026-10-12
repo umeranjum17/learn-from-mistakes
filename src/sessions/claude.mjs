@@ -6,7 +6,8 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-export const root = () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
+export const STORE_VAR = 'CLAUDE_CONFIG_DIR';
+export const root = () => join(process.env[STORE_VAR] || join(homedir(), '.claude'), 'projects');
 
 // A command that runs tests, at its start or after ;, &&, || or a pipe (env assignments before it are fine).
 export const TEST = /(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*(?:(?:npm|pnpm|yarn|bun|deno|go|cargo|make|mix|dotnet)\s+(?:run\s+)?test\b|(?:npx\s+)?(?:jest|vitest|pytest|mocha|rspec|phpunit)\b|node\s+--test\b|python3?\s+-m\s+(?:pytest|unittest)\b)/;
