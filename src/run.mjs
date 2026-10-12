@@ -3,11 +3,12 @@
 // `--foreground` runs them in this process. Each step writes its status, its error or its output.
 // The process that owns a running run is saved as its pid and start time; a running run whose owner is
 // gone is interrupted, and `rerun --resume` runs it again from its first step that is not completed.
+// Each step writes its lines to <state dir>/runs/<id>/<step>.log; `attach` follows them and `logs` prints one.
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildReport, EmptyError, ingest, InputError, stateDir, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -15,8 +16,9 @@ const BIN = fileURLToPath(new URL('../bin/learn-from-mistakes-axi.mjs', import.m
 const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
   // Reads the sources; session events go to the `events` table. It can run again: it first drops the run's events.
-  collect: async (cfg, db, id) => {
+  collect: async (cfg, db, id, log) => {
     const { sources, events, read_from } = await ingest(cfg);
+    for (const s of sources) log(sourceLine(s, false));
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     db.exec('BEGIN');
@@ -31,12 +33,14 @@ const STEPS = {
     return { read_from, sources };
   },
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
-  report: (cfg) => {
+  report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, {}, REPORT);
     if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
+    log(summaryLine(model));
     return model;
   },
 };
+const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
 const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,7 +70,7 @@ function reconcile(db) {
 
 function blockRunning(db, opts) {
   const active = db.prepare(`SELECT id FROM runs WHERE status = 'running'`).get();
-  if (active) throw new UsageError(`run ${active.id} is still running`, withContext(`learn-from-mistakes-axi status --run ${active.id}`, 'its steps so far', opts));
+  if (active) throw new UsageError(`run ${active.id} is still running`, withContext(`learn-from-mistakes-axi attach --run ${active.id}`, `follow it to the end, or abort --run ${active.id} to stop it`, opts));
 }
 
 export async function retro(cfg, opts) {
@@ -78,22 +82,27 @@ export async function retro(cfg, opts) {
     const now = iso(Date.now());
     const { lastInsertRowid } = db.prepare(`INSERT INTO runs (status, pid, pid_started_at, created_at, updated_at) VALUES ('running', ?, ?, ?, ?)`)
       .run(process.pid, startTime(process.pid), now, now); // this process owns the run until the worker takes it
+    dropRunDir(cfg, lastInsertRowid);
     Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(lastInsertRowid, name, ord));
     return lastInsertRowid;
   });
   return start(cfg, db, id, opts);
 }
 
+// `rerun --resume` runs a run again from its first step that is not completed; a plain `rerun` starts a new
+// run with the current config, and returns the run it was started from.
 export async function rerun(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (!db) pick(cfg, db, opts); // throws: no saved runs
+  if (!db || !opts.resume) { const from = pick(cfg, db, opts); return { ...await retro(cfg, opts), from }; } // pick throws: no saved runs, or no such run
   const id = locked(db, () => {
     reconcile(db);
     const id = pick(cfg, db, opts);
     const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
     if (status === 'completed') throw new UsageError(`run ${id} already completed`, withContext('learn-from-mistakes-axi retro --wait 8m', 'a new run', opts));
     blockRunning(db, opts);
+    const reset = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status != 'completed'`).all(id).map((s) => s.name);
     db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND status != 'completed'`).run(id);
+    for (const name of reset) dropLog(cfg, id, name);
     db.prepare(`UPDATE runs SET status = 'running', error = NULL, pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ?`).run(process.pid, startTime(process.pid), iso(Date.now()), id);
     return id;
   });
@@ -104,7 +113,7 @@ export async function rerun(cfg, opts) {
 // and, with --wait, polls the store until the run ends or the wait is over.
 async function start(cfg, db, id, opts) {
   if (opts.foreground) { await work(cfg, db, id); return show(db, id); }
-  const dir = join(cfg.state, 'runs', String(id));
+  const dir = runDir(cfg, id);
   mkdirSync(dir, { recursive: true });
   const log = openSync(join(dir, 'worker.log'), 'a');
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', BIN, '_work', String(id), String(process.pid), '--dir', cfg.dir],
@@ -144,23 +153,33 @@ export async function worker(cfg, id, owner) {
   await work(cfg, db, id);
 }
 
+// Runs the steps that are not completed, in order. A run that ended meanwhile (abort marked it cancelled)
+// runs no further step and keeps its status.
 async function work(cfg, db, id) {
   const step = db.prepare('UPDATE steps SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, error = ?, output_json = ? WHERE run_id = ? AND name = ?');
+  const running = db.prepare(`SELECT 1 FROM runs WHERE id = ? AND status = 'running'`);
+  const [slow, slowMs = 60_000] = (process.env.LFM_TEST_SLOW_STEP ?? '').split(':'); // set only by tests: <step>[:<ms>]
+  mkdirSync(runDir(cfg, id), { recursive: true });
   let failed, error = null;
   for (const { name } of db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status != 'completed' ORDER BY ord`).all(id)) {
+    if (!running.get(id)) return;
+    const file = join(runDir(cfg, id), `${name}.log`);
+    writeFileSync(file, ''); // the log holds the step's latest attempt
+    const log = (line) => appendFileSync(file, `${line}\n`);
     step.run('running', iso(Date.now()), null, null, null, id, name);
     try {
-      if (process.env.LFM_TEST_SLOW_STEP === name) await sleep(60_000); // set only by tests: a step slow enough to kill the worker in
-      const out = JSON.stringify(await STEPS[name](cfg, db, id)); // before the completed time is read
+      if (slow === name) await sleep(Number(slowMs));
+      const out = JSON.stringify(await STEPS[name](cfg, db, id, log)); // before the completed time is read
       step.run('completed', null, iso(Date.now()), null, out, id, name);
     } catch (e) {
       failed = e;
       error = `${name}: ${e.message}`;
+      log(`error: ${e.message}`);
       step.run('failed', null, iso(Date.now()), e.message, null, id, name);
       break;
     }
   }
-  db.prepare('UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(failed ? 'failed' : 'completed', error, iso(Date.now()), id);
+  db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(failed ? 'failed' : 'completed', error, iso(Date.now()), id);
   if (failed && !(failed instanceof UsageError)) throw failed; // a bug, not a run outcome: keep its stack
 }
 
@@ -175,6 +194,91 @@ export async function status(cfg, opts) {
   const db = await openStore(cfg.state, false);
   if (db) locked(db, () => reconcile(db));
   return show(db, pick(cfg, db, opts));
+}
+
+// `attach`: prints each step's state changes and new log lines until the run ends, polling every second.
+export async function attach(cfg, opts) {
+  const print = opts.json ? console.error : console.log; // --json keeps stdout one JSON document
+  const db = await openStore(cfg.state, false);
+  const id = pick(cfg, db, opts);
+  const seen = {}; // step name -> the status and the count of log lines already printed
+  for (;;) {
+    locked(db, () => reconcile(db));
+    const ended = db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status !== 'running'; // read before the steps: none of their lines is missed
+    for (const s of db.prepare('SELECT name, status FROM steps WHERE run_id = ? ORDER BY ord').all(id)) {
+      const was = seen[s.name] ??= { status: 'pending', lines: 0 };
+      const changed = s.status !== was.status;
+      if (changed && s.status === 'running') print(`${s.name}: running`);
+      const lines = logLines(cfg, id, s.name);
+      for (const line of lines.slice(was.lines)) print(`${s.name}: ${line}`);
+      if (changed && s.status !== 'running') print(`${s.name}: ${s.status}`);
+      Object.assign(was, { status: s.status, lines: lines.length });
+    }
+    if (ended) return show(db, id);
+    await sleep(1000);
+  }
+}
+
+// A new run takes an id that an earlier run may have had once the store was removed: its logs go with it.
+function dropRunDir(cfg, id) {
+  const dir = runDir(cfg, id);
+  try { rmSync(dir, { recursive: true, force: true }); } catch (e) {
+    throw new UsageError(`${dir}: cannot remove (${e.code})`, `rm -r ${dir}   # the logs of an earlier run with this id`);
+  }
+}
+
+// A step that is run again starts with no lines: the log of its failed attempt is removed.
+function dropLog(cfg, id, name) {
+  const file = join(runDir(cfg, id), `${name}.log`);
+  try { rmSync(file, { force: true }); } catch (e) {
+    throw new UsageError(`${file}: cannot remove (${e.code})`, `rm ${file}   # the step log of the attempt that is run again`);
+  }
+}
+
+// A step's whole log lines (none before it starts); a line still being written is left for the next read.
+function logLines(cfg, id, name) {
+  const file = join(runDir(cfg, id), `${name}.log`);
+  try { return readFileSync(file, 'utf8').split('\n').slice(0, -1); } catch (e) {
+    if (e.code === 'ENOENT') return [];
+    throw new UsageError(`${file}: cannot read (${e.code})`, `chmod u+r ${file}   # the step log`);
+  }
+}
+
+export async function logs(cfg, opts) {
+  const db = await openStore(cfg.state, false);
+  if (db) locked(db, () => reconcile(db));
+  const id = pick(cfg, db, opts);
+  const step = db.prepare('SELECT name, status FROM steps WHERE run_id = ? AND name = ?').get(id, opts.step);
+  if (!step) {
+    const names = db.prepare('SELECT name FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => s.name).join(', ');
+    throw new UsageError(`run ${id} has no step "${opts.step}" (steps: ${names})`, withContext(`learn-from-mistakes-axi logs --step collect --run ${id}`, 'one of its steps', opts));
+  }
+  const lines = logLines(cfg, id, step.name);
+  return { step: step.name, run: id, status: step.status, lines: `${lines.length} total`, log: lines.map((line) => ({ line })) };
+}
+
+// `abort`: SIGTERM to the worker, whose trap marks the run cancelled, then the run is marked cancelled here
+// too. A worker inside a long synchronous step reads the signal only after it, so after 3 s it gets SIGKILL.
+export async function abort(cfg, opts) {
+  const db = await openStore(cfg.state, false);
+  if (db) locked(db, () => reconcile(db));
+  const id = opts.run || !db ? pick(cfg, db, opts) : db.prepare(`SELECT id FROM runs WHERE status = 'running'`).get()?.id;
+  if (id == null) throw new UsageError('no run is running', withContext('learn-from-mistakes-axi runs', 'the saved runs', opts));
+  const r = db.prepare('SELECT status, pid, pid_started_at FROM runs WHERE id = ?').get(id);
+  if (r.status !== 'running') throw new UsageError(`run ${id} is not running (${r.status})`, withContext('learn-from-mistakes-axi runs', 'the saved runs', opts));
+  for (const sig of ['SIGTERM', 'SIGKILL']) {
+    if (startTime(r.pid) !== r.pid_started_at) break; // the worker has ended, or the pid is now another process
+    try { process.kill(r.pid, sig); } catch (e) {
+      if (e.code !== 'ESRCH') throw new UsageError(`run ${id}: cannot send ${sig} to its worker, pid ${r.pid} (${e.code})`, `kill ${r.pid}   # as the user that started the run`);
+    }
+    for (let i = 0; i < 30 && startTime(r.pid) === r.pid_started_at; i++) await sleep(100);
+  }
+  locked(db, () => {
+    stop(db, id, 'cancelled', 'cancelled by abort');
+    const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
+    if (status !== 'cancelled') throw new UsageError(`run ${id} is not running (${status})`, withContext('learn-from-mistakes-axi runs', 'the saved runs', opts));
+  });
+  return show(db, id);
 }
 
 export async function runs(cfg) {
