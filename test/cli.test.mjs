@@ -56,6 +56,21 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
   assert.equal(lfmQ('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234').status, 0);
   assert.ok(readFileSync(join(q, '.lfm', '.gitignore')).equals(mine));
   assert.ok(existsSync(join(q, '.lfm', 'records.jsonl')));
+
+  rmSync(join(q, '.lfm'), { recursive: true }); // a .gitignore git would not read stops every write, before any state
+  mkdirSync(join(q, '.lfm', '.gitignore'), { recursive: true });
+  for (const args of [['ingest'], ['change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234']]) {
+    const r = lfmQ(...args);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /\.gitignore: not a regular file, so git would not ignore the state/);
+  }
+  assert.deepEqual(readdirSync(join(q, '.lfm')), ['.gitignore']);
+  rmSync(join(q, '.lfm'), { recursive: true });
+  writeFileSync(join(q, '.lfm'), 'a stray file'); // a non-directory .lfm is a usage error, never a stack trace
+  const stray = lfmQ('ingest');
+  assert.equal(stray.status, 2, stray.stderr);
+  assert.match(stray.stderr, /\.lfm: cannot create the state dir \(EEXIST\)/);
+  assert.doesNotMatch(stray.stderr, /\n\s+at /);
 });
 
 test('same-named projects keep separate state; a global state_root still wins', () => {

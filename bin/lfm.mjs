@@ -4,7 +4,7 @@
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
 // labels.jsonl; this file only parses, dedups and counts.
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -61,12 +61,17 @@ function loadConfig(dir) {
   return { name, sources, causes, repeat, state: join(dir, '.lfm'), ignore: true };
 }
 
-// Create the state dir before a write. The in-project default gets a `*` .gitignore so its record text
-// can never be committed; one the user already has there is never overwritten.
+// Create the state dir before a write. The in-project default gets a `*` .gitignore whenever it has none,
+// so its record text can never be committed; a file the user already has there is never overwritten.
 function stateDir(cfg) {
-  mkdirSync(cfg.state, { recursive: true });
+  try { mkdirSync(cfg.state, { recursive: true }); } catch (e) { throw new UsageError(`${cfg.state}: cannot create the state dir (${e.code})`); }
   if (!cfg.ignore) return;
-  try { writeFileSync(join(cfg.state, '.gitignore'), '*\n', { flag: 'wx' }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  const file = join(cfg.state, '.gitignore');
+  try { writeFileSync(file, '*\n', { flag: 'wx' }); } catch (e) {
+    if (e.code !== 'EEXIST') throw new UsageError(`${file}: cannot write (${e.code})`);
+    // git reads only a regular .gitignore; a directory or symlink there would leave the state committable
+    if (!lstatSync(file).isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`);
+  }
 }
 
 // Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.

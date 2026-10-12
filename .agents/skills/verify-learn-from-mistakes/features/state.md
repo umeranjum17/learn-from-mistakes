@@ -18,7 +18,8 @@ In a project with `.learn-from-mistakes.yaml`: `lfm ingest` prints
 (git-initialised copy: `change applied` then `ingest`/`report` create `.lfm/` with
 `*`, records hold full text, `git status --porcelain --untracked-files=all` has no
 `.lfm` line and `--ignored` shows `!! .lfm/`; a pre-existing owner `.gitignore` is
-byte-identical after ingest and change applied) and
+byte-identical after ingest and change applied; a `.gitignore` directory or a
+stray `.lfm` file exits 2 naming the path, before any state is written) and
 `same-named projects keep separate state; a global state_root still wins`.
 `--package` reruns both through the installed bin (`packed-npm-test`). The
 helper keeps a copy of the staged `.lfm/` as `state/` in the evidence folder.
