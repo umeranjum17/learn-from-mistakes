@@ -103,7 +103,7 @@ export async function read({ readFrom, keep, excerpt, skip }) {
           skipped += sub?.skipped ?? 0;
         }
       }
-    } finally { db?.close(); }
+    } catch (e) { e.path ??= file; throw e; } finally { db?.close(); }
   }
   return { events, sessions, skipped };
 }

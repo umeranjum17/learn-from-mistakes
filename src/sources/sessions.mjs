@@ -56,7 +56,7 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
   for (const a of agents) {
     let got;
     try { got = await READERS[a].read({ readFrom, keep, excerpt, skip }); } catch (e) {
-      throw new UsageError(`source ${source}: cannot read a ${a} session (${e.code ?? e.message})`, `chmod -R u+r <the ${a} session store>   # the tool only reads it`);
+      throw new UsageError(`source ${source}: cannot read a ${a} session store at ${e.path ?? READERS[a].root()}: ${e.code ?? e.message}`, `chmod -R u+r <the ${a} session store>   # the tool only reads it`);
     }
     for (const e of got.events) {
       const x = typeof e.excerpt === 'object' ? e.excerpt : { text: '', hits: [] };

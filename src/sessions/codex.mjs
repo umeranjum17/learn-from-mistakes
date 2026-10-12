@@ -28,6 +28,9 @@ const exitOf = (text, tool) => {
   return Number.isInteger(code) ? code : null;
 };
 
+// The script a shell runs, so TEST reads `npm test` in `bash -lc 'npm test'` (an argv joined by spaces, or a string).
+const unwrap = (c) => c.replace(/^(?:\S*\/)?(?:ba|z|da)?sh -l?c (["']?)([\s\S]*)\1$/, '$2');
+
 // One rollout's events, streamed line by line. Returns null when the first user message carries the lfm-run: marker.
 async function parse(file, { session, sub, excerpt }) {
   const events = [], calls = new Map(), failed = new Set(), badPatch = new Set();
@@ -51,8 +54,8 @@ async function parse(file, { session, sub, excerpt }) {
         const raw = p.arguments ?? p.input ?? JSON.stringify(p.action ?? null), args = json(raw);
         // A code-mode script names its commands as cmd: "..." literals; the test check reads them one after another.
         const script = p.type === 'custom_tool_call' && p.name === 'exec';
-        const command = typeof args?.cmd === 'string' ? args.cmd : Array.isArray(args?.command) ? args.command.join(' ')
-          : script ? [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => x[2]).join('; ') : '';
+        const command = typeof args?.cmd === 'string' ? unwrap(args.cmd) : Array.isArray(args?.command) ? unwrap(args.command.join(' '))
+          : script ? [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => unwrap(x[2])).join('; ') : '';
         const key = `${p.name}\0${raw}`;
         calls.set(p.call_id, { tool: p.name ?? p.type, key, command });
         const retry = failed.has(key); // the same call again after it failed
