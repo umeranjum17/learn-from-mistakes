@@ -39,6 +39,20 @@ test('help and version work without a project file', () => {
   assert.equal(raw('frobnicate').status, 2); // an unknown command is still a usage error
 });
 
+test('runs that never read a store print no ExperimentalWarning', () => {
+  const { p, lfm, raw } = setup();
+  for (const r of [raw('--version'), raw('--help')]) {
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stderr, /ExperimentalWarning/);
+  }
+  // A markdown-log-only project never loads node:sqlite, so ingest and report stay quiet too.
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  for (const r of [lfm('ingest'), lfm('report')]) {
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stderr, /ExperimentalWarning/);
+  }
+});
+
 test('every rejected input names what was wrong and a next step, never the whole usage', () => {
   const { p, lfm, raw } = setup();
   assert.equal(lfm('ingest').status, 0);

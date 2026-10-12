@@ -6,7 +6,6 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { encode as toonEncode } from '@toon-format/toon';
 import { parse } from 'yaml';
 
@@ -89,11 +88,13 @@ function readLog(source, path) {
 
 // Failed pipeline steps from a no-mistakes state database, opened read-only. One fixed query; no user SQL.
 // Its identity is the sha256 of the rows read, so it follows content, not file time.
-function readStore(source, path) {
+// node:sqlite is loaded here, and only here, so runs that never read a store never warn about it.
+async function readStore(source, path) {
   const fix = `remove the ${source} source or point its path at your no-mistakes state.sqlite`;
   if (!existsSync(path)) throw new UsageError(`${path}: no such file`, fix);
   let db;
   try {
+    const { DatabaseSync } = await import('node:sqlite');
     db = new DatabaseSync(path, { readOnly: true });
     const rows = db.prepare(`SELECT s.id, s.run_id, s.step_name, s.error, COALESCE(s.completed_at, s.started_at) AS t, r.branch
       FROM step_results s JOIN runs r ON r.id = s.run_id WHERE s.status = 'failed' ORDER BY t, s.id`).all();
@@ -203,11 +204,11 @@ function readInput(file, flag, explicit, rerun) {
   return readJsonl(file, { rerun });
 }
 
-function ingest(cfg, opts) {
+async function ingest(cfg, opts) {
   mkdirSync(cfg.state, { recursive: true });
   const records = [], rows = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const got = s.type === 'markdown-log' ? readLog(id, s.path) : readStore(id, s.path);
+    const got = await (s.type === 'markdown-log' ? readLog(id, s.path) : readStore(id, s.path));
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
     sources.push({ id, type: s.type, path: s.path, items: (got.records ?? got.rows).length, hash: got.hash });
@@ -388,7 +389,7 @@ const FORMS = {
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why'];
 const PROBLEM_LINES = 20;
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('-h') || argv.includes('--help')) { console.log(HELP); return; }
   if (argv.includes('-v') || argv.includes('--version')) { console.log(VERSION); return; }
@@ -420,7 +421,7 @@ function main() {
     i += 2;
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
-  if (cmd === 'ingest') { ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
+  if (cmd === 'ingest') { await ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
   if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   const rerun = withContext(`lfm ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
@@ -441,7 +442,7 @@ function main() {
   hint(a.records.size && !a.labels.size ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
 }
 
-try { main(); } catch (e) {
+try { await main(); } catch (e) {
   if (!(e instanceof UsageError)) throw e;
   console.error(`error: ${e.message}`);
   hint(e.next);
