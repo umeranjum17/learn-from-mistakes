@@ -21,7 +21,10 @@ so only types with a reader are written: `markdown-log` takes the first of
 `defects.md`, `docs/defects.md`, `DEFECTS.md` (as `log`); `no-mistakes` takes
 `$NM_HOME/state.sqlite` (made absolute; else `~/.no-mistakes/state.sqlite`, written with `~`)
 when its `repos` table has a row whose `working_path` is the project's git top
-level or whose `upstream_url` is its `origin` URL (as `gate`). A store that
+level or whose `upstream_url` is its `origin` URL (as `gate`); `sessions` is
+written as `{ type: sessions, agents: [auto] }` when an agent session store exists
+(Claude Code: `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`). A detect hook returns
+one config entry; init writes it under `log`, `gate`, or else the type name. A store that
 cannot be read is listed under `skipped` with its cause; init goes on.
 `excerpts: on` is written (`--no-excerpts` writes `off`), and the text output
 ends with one line naming the worker and judge runners that see redacted
@@ -35,7 +38,7 @@ excerpts. Init makes the state dir (`.lfm/` with its `*` `.gitignore`).
 `test/init.test.mjs` owns the journeys with fake `claude`/`opencode` binaries as
 the whole PATH, a throwaway HOME and LFM_HOME, and a synthetic no-mistakes store
 under `NM_HOME` with a `repos` row for the project: the written config (worker,
-different judge, `docs/defects.md` and the store detected), `.lfm/.gitignore`,
+different judge, `docs/defects.md`, the store and an empty session store detected), `.lfm/.gitignore`,
 `git status`, a second init byte-identical, `retro --foreground` completing on
 the written config, gaps on an existing config, `--no-excerpts`, the
 one-agent judge gap (and `agents` exit 1), and the refusals (pinned clash,

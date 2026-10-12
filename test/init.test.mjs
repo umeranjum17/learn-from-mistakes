@@ -1,5 +1,6 @@
 // End-to-end: the real CLI runs `init` in a throwaway git repo, with fake agent CLIs (PATH holds only them), a throwaway
-// HOME and LFM_HOME, and a synthetic no-mistakes store under NM_HOME that has a row for the repo.
+// HOME (with an empty Claude Code session store) and LFM_HOME, and a synthetic no-mistakes store under NM_HOME that has a row
+// for the repo.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,7 +17,7 @@ function setup(agents) {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-init-'));
   after(() => rmSync(tmp, { recursive: true, force: true }));
   const p = join(tmp, 'umer-app'), bin = join(tmp, 'bin'), nm = join(tmp, 'nm');
-  for (const d of [join(p, 'docs'), bin, nm]) mkdirSync(d, { recursive: true });
+  for (const d of [join(p, 'docs'), bin, nm, join(tmp, 'home', '.claude', 'projects')]) mkdirSync(d, { recursive: true });
   execFileSync('git', ['-C', p, 'init', '-q']);
   writeFileSync(join(p, 'docs', 'defects.md'), readFileSync(new URL('../examples/defects.md', import.meta.url)));
   for (const name of agents) {
@@ -44,7 +45,8 @@ test('init writes a working config once: a worker and a different judge, the sou
   assert.deepEqual(out.gaps, []);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual(yaml, { name: 'umer-app', worker: { runner: 'claude', model: '' }, judge: { runner: 'opencode', model: '' }, excerpts: 'on',
-    sources: { log: { type: 'markdown-log', path: 'docs/defects.md' }, gate: { type: 'no-mistakes', path: join(nm, 'state.sqlite') } } });
+    sources: { log: { type: 'markdown-log', path: 'docs/defects.md' }, gate: { type: 'no-mistakes', path: join(nm, 'state.sqlite') },
+      sessions: { type: 'sessions', agents: ['auto'] } } });
   assert.equal(readFileSync(join(p, '.lfm', '.gitignore'), 'utf8'), '*\n');
   assert.equal(execFileSync('git', ['-C', p, 'status', '--short'], { encoding: 'utf8' }), '?? .learn-from-mistakes.yaml\n?? docs/\n');
   const text = lfm('init');
@@ -55,14 +57,15 @@ test('init writes a working config once: a worker and a different judge, the sou
   assert.equal(again.status, 0, again.stderr);
   assert.equal(JSON.parse(again.stdout).status, 'already set up');
   assert.deepEqual(readFileSync(config), bytes);
-  const run = lfm('retro', '--foreground', '--json'); // the written config runs: both detected sources are read
+  const run = lfm('retro', '--foreground', '--json'); // the written config runs: every detected source is read
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
 
   writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten; its gaps are listed
   const gaps = JSON.parse(lfm('init', '--json').stdout);
   assert.deepEqual(gaps.gaps, ['sources: markdown-log found at docs/defects.md, not configured (add it as log)',
-    'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)']);
+    'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)',
+    'sources: sessions found, not configured (add it as sessions)']);
   assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
   rmSync(config);
   assert.equal(lfm('init', '--no-excerpts').status, 0);
