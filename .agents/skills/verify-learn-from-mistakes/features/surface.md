@@ -4,7 +4,7 @@
 `--help`/`-h`, `guide` (the agent procedure) and `--version`/`-v` without reading config; a bare command (or a
 leading flag) runs the report; default TOON output; `--json` under the versioned
 `lfm-report.v1` schema; `--full` adds allow-listed non-content ids (source row ids; change ids live in [change.md](change.md)); a
-`next:` hint after every command.
+`next:` hint after every working command (stdout for `--help` and `guide`).
 
 ## How to get to it (user POV)
 From an installed package: `learn-from-mistakes-axi --help`, `learn-from-mistakes-axi --version`, `learn-from-mistakes-axi` (report),

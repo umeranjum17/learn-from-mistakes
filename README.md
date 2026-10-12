@@ -7,18 +7,12 @@
 `learn-from-mistakes-axi` is an [AXI](https://axi.md), which means -
 
 - It's just a CLI any capable agent can run without setup (`npx -y learn-from-mistakes-axi`).
-- It's built for agents: TOON output by default, `--json` and `--full` when asked, a contextual `next:` hint after every command, and the bare command does the main job (the report).
+- It's built for agents: TOON output by default, `--json` and `--full` when asked, a contextual `next:` hint that names the likely next command, and the bare command does the main job (the report).
 - The skill below only handles discovery; agents learn the tool by using it.
 
-## Why
-
-Agent fleets write down what went wrong: a defect log, a pipeline's failed steps. The same cause turns up again and again, yet nobody counts it, so the fix never gets priority. Counting by keyword is wrong too: "database is locked" in one tool is not the same cause as in another.
-
-`learn-from-mistakes-axi` splits the work. Your agent reads each record and judges what happened, following the CLI's own `guide`. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
+## Quick Start
 
 > **Not published to npm yet.** The `npx -y learn-from-mistakes-axi` commands below work once the package is published. Until then, run the CLI from a checkout (see [Manual CLI](#manual-cli)).
-
-## Quick Start
 
 Install the skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
@@ -26,7 +20,7 @@ Install the skill in the [Agent Skills](https://agentskills.io) format with [`np
 npx -y skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g -a claude-code -y
 ```
 
-That is the entire setup - no npm install needed.
+That is the entire setup - no npm install needed once the package is published.
 `-a` names your agent (`claude-code`, `codex` or `opencode`; repeat it for several) and `-y` skips the installer's questions.
 The skill teaches your agent to run the tool through `npx -y learn-from-mistakes-axi`, so the CLI comes along on demand.
 It stays a short stub and sends the agent to `npx -y learn-from-mistakes-axi --help` and `guide` for the current procedure, so an installed copy cannot go stale against a newer CLI.
@@ -58,7 +52,13 @@ Run `npx -y learn-from-mistakes-axi --help` and tell me what keeps going wrong i
 
 Nothing in Firstmate changes; the tool only reads its records.
 
-1. Install the skill into the Firstmate home (the clone): run the Quick Start command there without `-g` to put it in the home's `.agents/skills`, or keep `-g` for every project.
+1. Install the skill into the Firstmate home (the clone). In the home, without `-g`:
+
+   ```sh
+   npx -y skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -a <agent> -y
+   ```
+
+   `-a codex` or `-a opencode` puts it in the home's `.agents/skills`; `-a claude-code` puts it in `.claude/skills`. Or keep `-g` for every project.
 2. Put `.learn-from-mistakes.yaml` in the home root. The log source is your defect log, for example `data/defects.md`; the no-mistakes store is optional:
 
    ```yaml
@@ -97,6 +97,12 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
 3. Ask your agent to use the learn-from-mistakes skill (or to follow `learn-from-mistakes-axi guide`). It writes `labels.jsonl` and `proposals.jsonl` in the state dir.
 4. Run `learn-from-mistakes-axi` for the report. A bare command, or `report`, prints the repeated causes for the project you are in. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
 
+## Why
+
+Agent fleets write down what went wrong: a defect log, a pipeline's failed steps. The same cause turns up again and again, yet nobody counts it, so the fix never gets priority. Counting by keyword is wrong too: "database is locked" in one tool is not the same cause as in another.
+
+`learn-from-mistakes-axi` splits the work. Your agent reads each record and judges what happened, following the CLI's own `guide`. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
+
 ## Command line
 
 ```
@@ -117,7 +123,7 @@ Every command stays useful:
 - `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
 - `change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
 - `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
-- Each command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
+- Each working command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout; `--help` and `guide` print theirs on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
 
