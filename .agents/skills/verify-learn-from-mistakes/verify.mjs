@@ -7,6 +7,7 @@ import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, r
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { parse, stringify } from 'yaml';
 
 const repo = realpathSync(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -57,7 +58,8 @@ const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch,
   npm_config_cache: join(scratch, 'npm-cache') };
 delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
 delete env.LFM_HOME; // no global config: the CLI keeps state in the staged project's own .lfm/
-delete env.CLAUDE_CONFIG_DIR; // the sessions drive reads only the synthetic store in the scratch HOME
+delete env.CLAUDE_CONFIG_DIR; // the sessions drive reads only the synthetic stores in the scratch HOME and XDG dir
+delete env.CODEX_HOME;
 const commands = [];
 function run(name, command, args, expected = 0, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
@@ -73,7 +75,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/init.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/init.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -128,7 +130,7 @@ try {
   drive('retro-v2', 'retro', '--foreground', '--json');
   writeFileSync(stagedConfig, stringify({ ...config, worker: { runner: 3 } }));
   run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
-  // Sessions: one synthetic Claude Code session in the scratch HOME, run in the staged project, with a failed test.
+  // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
   const at = { cwd: staged, sessionId: 's-verify', timestamp: new Date().toISOString() };
@@ -137,12 +139,35 @@ try {
     { type: 'assistant', ...at, message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } }] } },
     { type: 'user', ...at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'Exit code 1' }] } },
   ].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const rollout = join(env.HOME, '.codex', 'sessions', 'rollout-verify.jsonl');
+  mkdirSync(dirname(rollout), { recursive: true });
+  writeFileSync(rollout, [
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Umer: run the tests.' }] } },
+    { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"npm test"}', call_id: 'c1' } },
+    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'Chunk ID: a1\nWall time: 0.1 seconds\nProcess exited with code 1\nOriginal token count: 1\nOutput:\n1 failing' } },
+  ].map((r) => JSON.stringify({ timestamp: at.timestamp, ...r })).join('\n') + '\n');
+  const threads = new DatabaseSync(join(env.HOME, '.codex', 'state_5.sqlite'));
+  threads.exec('CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, source TEXT, cwd TEXT)');
+  threads.prepare('INSERT INTO threads VALUES (?, ?, 1, ?, ?)').run('cx-verify', rollout, 'cli', staged);
+  threads.close();
+  mkdirSync(join(env.XDG_DATA_HOME, 'opencode'), { recursive: true });
+  const oc = new DatabaseSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db')), now = Date.now();
+  oc.exec(`CREATE TABLE session (id TEXT, parent_id TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER);
+    CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, data TEXT); CREATE TABLE part (id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)`);
+  oc.prepare('INSERT INTO session VALUES (?, NULL, ?, ?, ?)').run('oc-verify', staged, now, now);
+  oc.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run('m1', 'oc-verify', now, '{"role":"user"}');
+  oc.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?)').run('p1', 'm1', 'oc-verify', now, '{"type":"text","text":"Umer: run the tests."}');
+  oc.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run('m2', 'oc-verify', now + 1, '{"role":"assistant"}');
+  oc.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?)').run('p2', 'm2', 'oc-verify', now + 1, JSON.stringify({ type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'npm test' }, metadata: { exit: 1 } } }));
+  oc.close();
+  const ocBefore = createHash('sha256').update(readFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'))).digest('hex');
   writeFileSync(stagedConfig, stringify({ ...config, sources: { ...config.sources, sessions: { type: 'sessions' } },
     causes: { ...config.causes, 'test-fails': { description: 'The tests fail.', match: { source: 'sessions', signal: 'test_fail' } } } }));
   drive('retro-sessions', 'retro', '--foreground', '--json');
   const out = JSON.parse(readFileSync(join(evidence, 'retro-sessions.stdout'), 'utf8')), metric = (n) => out.metrics.find((m) => m.name === n)?.current;
-  assert.ok(out.sources.find((s) => s.type === 'sessions').sessions === 1 && metric('tool_error_rate') === 1, 'the sessions source does not read the synthetic session');
-  assert.equal(metric('cause_count:test-fails'), 1, 'the sessions match rule does not tag the failed test run');
+  assert.ok(out.sources.find((s) => s.type === 'sessions').sessions === 3 && metric('tool_error_rate') === 1, 'the sessions source does not read the three synthetic sessions');
+  assert.equal(metric('cause_count:test-fails'), 3, 'the sessions match rule does not tag the failed test run');
+  assert.equal(createHash('sha256').update(readFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'))).digest('hex'), ocBefore, 'the OpenCode store changed');
   writeFileSync(stagedConfig, stringify(config));
   run('agents', process.execPath, [cli, 'agents', '--json']); // the host's agent CLIs, scratch HOME, no live call
   // init in a fresh project holding only a defect log, with two fake agent CLIs as the whole PATH; a second init
@@ -166,7 +191,7 @@ try {
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
       'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');

@@ -1,10 +1,12 @@
-// End-to-end: a retro with a sessions source reads a synthetic Claude Code store (test/fixtures/sessions/claude),
-// counts only this repo's sessions, skips the tool's own runs, and keeps planted secrets out of the store and output.
+// End-to-end: a retro with a sessions source reads synthetic Claude Code, Codex and OpenCode stores
+// (test/fixtures/sessions/, and sqlite files made here), counts only this repo's sessions, skips the tool's own runs,
+// never changes a store, and keeps planted secrets out of the store and output.
 // Its metrics step gives the numbers for this window and the last, with the events the cause match rules tagged.
 // LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -65,9 +67,19 @@ function setup() {
   missing-file: { description: The agent reads a file that is not there., match: { source: sessions, signal: tool_error, tool: Read } }
 `));
   writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(1)}\n\n- [tests] Umer's fetch tests failed.\n- [tests] Again.\n\n## ${day(10)}\n\n- [tests] Once last week.\n`);
-  const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude };
+  const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude,
+    CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
-  return { tmp, p, claude, env, lfm };
+  return { tmp, p, tree, claude, env, fill, lfm };
+}
+
+// No planted value reaches any output or any file under .lfm/.
+function assertNoPlanted(p, outputs) {
+  const state = readdirSync(join(p, '.lfm'), { recursive: true }).map((f) => { try { return readFileSync(join(p, '.lfm', f), 'latin1'); } catch { return ''; } });
+  for (const [, needle] of PLANTED) {
+    for (const o of outputs) assert.ok(!o.stdout.includes(needle) && !o.stderr.includes(needle), `${needle} in output`);
+    for (const bytes of state) assert.ok(!bytes.includes(needle), `${needle} in .lfm`);
+  }
 }
 
 const query = (p, sql, ...args) => {
@@ -140,12 +152,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
     const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND signal = ? ORDER BY id LIMIT 1', id, signal);
     assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
   }
-  const outputs = [r, lfm('status', '--json'), lfm('runs'), lfm('ingest'), lfm('report', '--json'), lfm('report', '--full')];
-  const state = readdirSync(join(p, '.lfm'), { recursive: true }).map((f) => { try { return readFileSync(join(p, '.lfm', f), 'latin1'); } catch { return ''; } });
-  for (const [, needle] of PLANTED) {
-    for (const o of outputs) assert.ok(!o.stdout.includes(needle) && !o.stderr.includes(needle), `${needle} in output`);
-    for (const bytes of state) assert.ok(!bytes.includes(needle), `${needle} in .lfm`);
-  }
+  assertNoPlanted(p, [r, lfm('status', '--json'), lfm('runs'), lfm('ingest'), lfm('report', '--json'), lfm('report', '--full')]);
   assert.ok(!r.stdout.includes(claude) && !r.stdout.includes('UMER_FIXTURES'), 'no session path or text in the retro output');
 
   // A session id the run store recorded as the tool's own agent run is skipped next time; excerpts: off keeps none.
@@ -231,4 +238,137 @@ causes:
   const report = JSON.parse(lfm('report', '--json').stdout);
   assert.equal(report.causes.find((c) => c.cause === 'timeout-hit').store.rows, failed);
   assert.equal(report.causes.find((c) => c.cause === 'wait-delay')?.store.rows ?? 0, 0);
+});
+
+// An OpenCode store: sessions [id, directory, messages, { parent, at }], each message [role, parts, error name].
+function opencodeDb(file, sessions) {
+  mkdirSync(join(file, '..'), { recursive: true });
+  const db = new DatabaseSync(file);
+  db.exec(`PRAGMA journal_mode = WAL;
+    CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL);
+    CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL);
+    CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)`);
+  let n = 0;
+  for (const [id, directory, messages, { parent = null, at = Date.now() - 86_400_000 } = {}] of sessions) {
+    db.prepare('INSERT INTO session VALUES (?, ?, ?, ?, ?)').run(id, parent, directory, at, at + 60_000);
+    for (const [role, parts, error] of messages) {
+      const m = `msg_${String((n += 1)).padStart(3, '0')}`;
+      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run(m, id, at + n, JSON.stringify({ role, ...(error && { error: { name: error, data: {} } }) }));
+      for (const part of parts) db.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?)').run(`prt_${String((n += 1)).padStart(3, '0')}`, m, id, at + n, typeof part === 'string' ? part : JSON.stringify(part));
+    }
+  }
+  db.close();
+}
+const text = (t, extra) => ({ type: 'text', text: t, ...extra });
+const tool = (name, input, state) => ({ type: 'tool', tool: name, callID: `call-${name}`, state: { input, ...state } });
+const sha = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
+
+test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps planted secrets out', () => {
+  const { tmp, p, tree, env, fill, lfm } = setup();
+  const codex = join(env.CODEX_HOME, 'sessions'), src = new URL('fixtures/sessions/codex/sessions', import.meta.url).pathname;
+  for (const f of readdirSync(src, { recursive: true })) {
+    if (!f.endsWith('.jsonl')) continue;
+    mkdirSync(join(codex, f, '..'), { recursive: true });
+    writeFileSync(join(codex, f), fill(readFileSync(join(src, f), 'utf8')));
+  }
+  const rollout = (id) => join(codex, '2026', '10', '02', `rollout-${id}.jsonl`), old = new Date(Date.now() - 60 * 86_400_000);
+  utimesSync(rollout('cx-old'), old, old);
+  const threads = new DatabaseSync(join(env.CODEX_HOME, 'state_5.sqlite'));
+  threads.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at INTEGER NOT NULL, source TEXT NOT NULL, cwd TEXT NOT NULL)');
+  for (const [i, [id, file, cwd, source = 'cli']] of [['cx-main', 'cx-main', p], ['cx-sub', 'cx-sub', p, JSON.stringify({ subagent: { thread_spawn: { parent_thread_id: 'cx-main', depth: 1 } } })],
+    ['cx-tree', 'cx-tree', join(tree, 'src'), 'exec'], ['cx-marker', 'cx-marker', p], ['cx-other', 'cx-other', join(tmp, 'elsewhere')],
+    ['cx-lfm', 'cx-other', join(p, '.lfm', 'runs', '1')], ['cx-old', 'cx-old', p], ['cx-gone', 'cx-gone', p]].entries()) {
+    threads.prepare('INSERT INTO threads VALUES (?, ?, ?, ?, ?)').run(id, rollout(file), 1_000 + i, source, cwd);
+  }
+  threads.close();
+
+  const secrets = (from, to) => PLANTED.slice(from, to).map(([t]) => t).join(' ');
+  const oc = join(env.XDG_DATA_HOME, 'opencode'), failing = [['user', [text('Umer: run it.')]], ['assistant', [tool('bash', { command: 'false' }, { status: 'completed', output: '', metadata: { exit: 1 } })]]];
+  opencodeDb(join(oc, 'opencode.db'), [
+    ['oc-main', p, [
+      ['user', [text('Umer: the lint fails, fix it.')]],
+      ['assistant', [tool('bash', { command: 'npm run lint' }, { status: 'completed', output: '1 problem', metadata: { exit: 1 } }),
+        tool('read', { filePath: 'a.js' }, { status: 'error', error: `${secrets(0, -10)} END` })]],
+      ['user', [text('Called the Read tool', { synthetic: true }), text(`Umer: use src/a.js, ${secrets(-10)} END`)]],
+      ['assistant', [text('Reading src/a.js.'), tool('read', { filePath: 'a.js' }, { status: 'completed', output: 'ok' })]],
+      ['user', [{ type: 'text' }, { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==' }]],
+      ['assistant', [tool('bash', { command: 'sleep 100' }, { status: 'error', error: 'Tool execution aborted' })], 'MessageAbortedError'],
+      ['user', [text('Umer: wait, use the other script.')]], // after an interrupt, not a correction
+      ['assistant', [tool('bash', { command: 'npx vitest run' }, { status: 'error', error: 'vitest crashed' }), tool('bash', { command: 'ls' }, { status: 'running' }), '{not json']],
+    ]],
+    ['oc-sub', p, [['user', [text('Find the loader.')]], ['assistant', [tool('edit', { filePath: 'b.js' }, { status: 'error', error: 'Could not find oldString' })]],
+      ['user', [text('Try src/.')]]], { parent: 'oc-main' }],
+    ['oc-marker', p, [['user', [text('prompt-3.md', { synthetic: true }), { type: 'file', filename: 'prompt-3.md' }, text('"lfm-run:3:verify Follow the instructions in the attached file."')]], ...failing.slice(1)]],
+    ['oc-other', join(tmp, 'elsewhere'), failing], ['oc-lfm', join(p, '.lfm', 'runs', '2'), failing],
+    ['oc-old', p, failing, { at: Date.now() - 60 * 86_400_000 }],
+  ]);
+  opencodeDb(join(oc, 'channel.db'), [['oc-tree', tree, [['user', [text('Umer: hi')]], ['assistant', [text('Hello.')]]]]]);
+  const notes = new DatabaseSync(join(oc, 'notes.db')); // another program's database in the same dir
+  notes.exec('CREATE TABLE notes (body TEXT)');
+  notes.close();
+  const stores = ['opencode.db', 'channel.db', 'notes.db'].map((f) => join(oc, f)), before = stores.map(sha);
+
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [codex, opencode] }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const run = decode(r.stdout);
+  // this repo, a worktree subdir and a subagent of a kept session; not the other dir, .lfm/, the marker run, an old
+  // session, a missing rollout or another program's database. Bad records: a non-JSON line, a non-JSON part and a text
+  // part with no text.
+  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 64, sessions: 4, skipped: 3 });
+  assert.deepEqual(Object.fromEntries(run.metrics.filter((m) => ['tool_error_rate', 'corrections_per_session', 'interrupts', 'retries'].includes(m.name)).map((m) => [m.name, m.current])),
+    { tool_error_rate: 0.542, corrections_per_session: 0.5, interrupts: 2, retries: 2 });
+  const id = run.run.id;
+  assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
+    [{ agent: 'codex', session_id: 'cx-main', n: 35 }, { agent: 'codex', session_id: 'cx-tree', n: 8 }, { agent: 'opencode', session_id: 'oc-main', n: 19 }, { agent: 'opencode', session_id: 'oc-tree', n: 2 }]);
+  const signals = query(p, 'SELECT agent, signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2', id);
+  // The goal wrapper and the message after an interrupt are not corrections; a failed patch and a failed exec script are.
+  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['codex correction 1', 'codex interrupt 1', 'codex nonzero_exit 3', 'codex retry 1', 'codex test_fail 3', 'codex tool_error 3',
+    'opencode correction 1', 'opencode interrupt 1', 'opencode nonzero_exit 1', 'opencode retry 1', 'opencode test_fail 1', 'opencode tool_error 2']);
+  assert.deepEqual(query(p, `SELECT tool, exit_code FROM events WHERE run_id = ? AND signal IN ('test_fail', 'nonzero_exit') ORDER BY id`, id),
+    [{ tool: 'exec_command', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'exec', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'local_shell_call', exit_code: 1 }, { tool: 'exec_command', exit_code: 1 }, { tool: 'bash', exit_code: 1 }, { tool: 'bash', exit_code: null }]);
+  // A successful exec_command whose output has "Exit code: 2" or a JSON "exit_code" body is not an error; a failed
+  // apply_patch naming npm test is a tool error, not a test failure; a non-shell tool's "Exit code: 1" after Output: or
+  // an MCP function's JSON exit_code is not read as an exit.
+  assert.deepEqual(query(p, `SELECT status, signal, exit_code FROM events WHERE run_id = ? AND kind = 'tool_result' AND (ref GLOB '*rollout-cx-main.jsonl:2[1-9]' OR ref GLOB '*rollout-cx-main.jsonl:3[0-3]') ORDER BY id`, id),
+    [{ status: 'ok', signal: null, exit_code: 0 }, { status: 'ok', signal: null, exit_code: 0 }, { status: 'error', signal: 'tool_error', exit_code: null },
+      { status: 'error', signal: 'tool_error', exit_code: null }, { status: 'ok', signal: null, exit_code: null }, { status: 'ok', signal: null, exit_code: null }]);
+  assert.deepEqual(query(p, `SELECT session_id, signal FROM events WHERE run_id = ? AND (ref LIKE '%rollout-cx-sub.jsonl:%' OR ref LIKE '%:part:%' AND session_id = 'oc-main' AND tool = 'edit') AND kind = 'tool_result'`, id),
+    [{ session_id: 'cx-main', signal: 'nonzero_exit' }, { session_id: 'oc-main', signal: 'tool_error' }]); // subagents count in their parent session
+  for (const [agent, signal] of [['codex', 'test_fail'], ['codex', 'correction'], ['opencode', 'tool_error'], ['opencode', 'correction']]) {
+    const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND agent = ? AND signal = ? ORDER BY id LIMIT 1', id, agent, signal);
+    assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
+  }
+  assert.deepEqual(query(p, `SELECT agent, excerpt FROM events WHERE run_id = ? AND signal = 'retry' ORDER BY agent`, id),
+    [{ agent: 'codex', excerpt: 'cat missing.txt' }, { agent: 'opencode', excerpt: 'a.js' }]); // a retried call's input as plain text
+  assertNoPlanted(p, [r, lfm('status', '--json'), lfm('report', '--full')]);
+
+  // A session id the run store recorded as the tool's own agent run is skipped next time, for each agent.
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  db.exec(`CREATE TABLE invocations (id INTEGER PRIMARY KEY, session_id TEXT); INSERT INTO invocations (session_id) VALUES ('cx-main'), ('oc-main')`);
+  db.close();
+  const again = lfm('retro', '--foreground', '--json');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(JSON.parse(again.stdout).sources.find((s) => s.type === 'sessions').sessions, 2);
+  assert.deepEqual(stores.map(sha), before, 'a session store changed');
+});
+
+test('a Codex state store that is not a database fails the retro with an error naming codex', () => {
+  const { p, env, lfm } = setup();
+  mkdirSync(env.CODEX_HOME, { recursive: true });
+  writeFileSync(join(env.CODEX_HOME, 'state_5.sqlite'), 'not a sqlite database\n'.repeat(64));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [codex] }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 1, r.stdout);
+  assert.ok(r.stderr.includes(`cannot read a codex session store at ${join(env.CODEX_HOME, 'state_5.sqlite')}`), r.stderr);
+});
+
+test('an OpenCode store that is not a database fails the retro with an error naming opencode', () => {
+  const { p, env, lfm } = setup();
+  mkdirSync(join(env.XDG_DATA_HOME, 'opencode'), { recursive: true });
+  writeFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'), 'not a sqlite database\n'.repeat(64));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [opencode] }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 1, r.stdout);
+  assert.ok(r.stderr.includes(`cannot read a opencode session store at ${join(env.XDG_DATA_HOME, 'opencode', 'opencode.db')}`), r.stderr);
 });

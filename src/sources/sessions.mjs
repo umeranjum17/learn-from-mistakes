@@ -13,8 +13,10 @@ import { inWindow } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
 import * as claude from '../sessions/claude.mjs';
+import * as codex from '../sessions/codex.mjs';
+import * as opencode from '../sessions/opencode.mjs';
 
-const READERS = { claude };
+const READERS = { claude, codex, opencode };
 export const SIGNALS = ['tool_error', 'nonzero_exit', 'test_fail', 'correction', 'interrupt', 'retry'];
 
 export function validate(s, where, dir) {
@@ -54,7 +56,7 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
   for (const a of agents) {
     let got;
     try { got = await READERS[a].read({ readFrom, keep, excerpt, skip }); } catch (e) {
-      throw new UsageError(`source ${source}: cannot read a ${a} session (${e.code ?? e.message})`, `chmod -R u+r <the ${a} session store>   # the tool only reads it`);
+      throw new UsageError(`source ${source}: cannot read a ${a} session store at ${e.path ?? READERS[a].root()}: ${e.code ?? e.message}`, `chmod -R u+r <the ${a} session store>   # the tool only reads it`);
     }
     for (const e of got.events) {
       const x = typeof e.excerpt === 'object' ? e.excerpt : { text: '', hits: [] };

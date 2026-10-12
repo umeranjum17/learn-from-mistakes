@@ -44,8 +44,9 @@ checks that an overlapping pair gives the first rule in both metrics and report.
 `test/cli.test.mjs` asserts 3 steps per run, that `rerun --resume` keeps the
 completed `metrics` step and its numbers, and rejects bad `match` rules and a
 second sessions source (exit 2).
-The helper's `retro-sessions` drive adds a sessions rule and checks
-`tool_error_rate` and its `cause_count` are 1 in `current`.
+The helper's `retro-sessions` drive adds a sessions rule over its three synthetic
+sessions (Claude Code, Codex, OpenCode) and checks `tool_error_rate` is 1 and the
+`test-fails` `cause_count` is 3 in `current`.
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 

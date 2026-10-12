@@ -27,8 +27,8 @@ so only types with a reader are written: `markdown-log` takes the first of
 `$NM_HOME/state.sqlite` (made absolute; else `~/.no-mistakes/state.sqlite`, written with `~`)
 when its `repos` table has a row whose `working_path` is the project's git top
 level or whose `upstream_url` is its `origin` URL (as `gate`); `sessions` is
-written as `{ type: sessions, agents: [auto] }` when an agent session store exists
-(Claude Code: `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`). A detect hook returns
+written as `{ type: sessions, agents: [auto] }` when any agent session store exists
+(store paths in [sessions.md](sessions.md)). A detect hook returns
 one config entry; init writes it under `log`, `gate`, or else the type name. A store that
 cannot be read is listed under `skipped` with its cause; init goes on.
 `excerpts: on` is written (`--no-excerpts` writes `off`), and the text output
