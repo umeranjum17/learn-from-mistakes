@@ -301,9 +301,12 @@ function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics');
   const metrics = new Map();
-  for (const m of db.prepare('SELECT window, name, value FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
-    if (!metrics.has(m.name)) metrics.set(m.name, { name: m.name });
-    metrics.get(m.name)[m.window] = m.value ?? 'n/a';
+  // A metric with a target shows it and whether this window met it; one without has both empty.
+  for (const m of db.prepare('SELECT window, name, value, target, met FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
+    if (!metrics.has(m.name)) metrics.set(m.name, { name: m.name, current: 'n/a', previous: 'n/a', target: '', met: '' });
+    const row = metrics.get(m.name);
+    row[m.window] = m.value ?? 'n/a';
+    if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: m.target ? ['missed', 'met'][m.met] ?? 'n/a' : '' });
   }
   return {
     run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },

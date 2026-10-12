@@ -103,9 +103,13 @@ try {
   if (!mode) { // the synthetic config names the cause; a private run never records a change
     drive('changes-empty', 'changes', '--json'); // config only, before any change
     drive('change-applied', 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--at', '2026-01-02T03:04:05Z',
+      '--metric', 'cause_count:server-memory-kill', '--tripwire', '<= 0', '--kind', 'rule',
       '--what', 'Run builds in their own memory group', '--why', 'The memory killer stopped the server three times', '--json');
+    run('change-bad-tripwire', process.execPath, [cli, 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--tripwire', '< x', '--dir', staged], 2);
     drive('changes', 'changes');
     drive('changes-json', 'changes', '--json');
+    const [chg] = JSON.parse(readFileSync(join(evidence, 'changes-json.stdout'), 'utf8')).changes;
+    assert.deepEqual([chg.metric, chg.tripwire, chg.kind], ['cause_count:server-memory-kill', '<= 0', 'rule'], 'the export does not show the ledger fields');
   }
   drive('report', 'report', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
@@ -162,12 +166,15 @@ try {
   oc.close();
   const ocBefore = createHash('sha256').update(readFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'))).digest('hex');
   writeFileSync(stagedConfig, stringify({ ...config, sources: { ...config.sources, sessions: { type: 'sessions' } },
-    causes: { ...config.causes, 'test-fails': { description: 'The tests fail.', match: { source: 'sessions', signal: 'test_fail' } } } }));
+    causes: { ...config.causes, 'test-fails': { description: 'The tests fail.', match: { source: 'sessions', signal: 'test_fail' } } },
+    targets: { ...config.targets, 'tool_error_rate': '<= 0.05', 'cause_count:test-fails': '<= 3' } }));
   drive('retro-sessions', 'retro', '--foreground', '--json');
   const out = JSON.parse(readFileSync(join(evidence, 'retro-sessions.stdout'), 'utf8')), metric = (n) => out.metrics.find((m) => m.name === n)?.current;
   assert.ok(out.sources.find((s) => s.type === 'sessions').sessions === 3 && metric('tool_error_rate') === 1, 'the sessions source does not read the three synthetic sessions');
   assert.equal(metric('cause_count:test-fails'), 3, 'the sessions match rule does not tag the failed test run');
   assert.equal(createHash('sha256').update(readFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'))).digest('hex'), ocBefore, 'the OpenCode store changed');
+  const met = (n) => out.metrics.find((m) => m.name === n)?.met;
+  assert.deepEqual([met('tool_error_rate'), met('cause_count:test-fails'), met('first_pass')], ['missed', 'met', 'n/a'], 'targets are not compared');
   writeFileSync(stagedConfig, stringify(config));
   run('agents', process.execPath, [cli, 'agents', '--json']); // the host's agent CLIs, scratch HOME, no live call
   // init in a fresh project holding only a defect log, with two fake agent CLIs as the whole PATH; a second init
