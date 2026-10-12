@@ -241,7 +241,11 @@ export async function abort(cfg, opts) {
     }
     for (let i = 0; i < 30 && startTime(r.pid) === r.pid_started_at; i++) await sleep(100);
   }
-  locked(db, () => stop(db, id, 'cancelled', 'cancelled by abort'));
+  locked(db, () => {
+    stop(db, id, 'cancelled', 'cancelled by abort');
+    const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
+    if (status !== 'cancelled') throw new UsageError(`run ${id} is not running (${status})`, withContext('learn-from-mistakes-axi runs', 'the saved runs', opts));
+  });
   return show(db, id);
 }
 
