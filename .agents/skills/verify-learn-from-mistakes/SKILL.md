@@ -28,12 +28,13 @@ HOME/XDG/TMPDIR, runs the existing `npm test` journeys, then the public CLI on c
 of `examples`. Originals are hashed before and after; scratch is removed even
 when a CLI check fails. No model, network, pipeline, or release is started by the
 default journey. It also drives the bare command and `report`/`--json`/`--full`,
-and (synthetic only) `change applied --what --why` plus the `changes` export,
+and (synthetic only) `change applied --metric --tripwire --kind --what --why` plus the `changes` export
+(and a rejected `--tripwire "< x"`, exit 2),
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
 then a detached `retro --wait 1m` run, `attach` and `logs --step collect` on it,
 an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well, a sessions source over one
-synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule (`retro-sessions`: its metrics and `cause_count`), `agents --json` on the host PATH
+synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule and targets (`retro-sessions`: its metrics, `cause_count` and met/missed/n/a), `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
 and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
 judge clash (exit 2; live proof in [features/init.md](features/init.md)),
@@ -62,7 +63,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0 (`config-bad-runner` and `init-pinned-clash` must be 2), all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-runner`, `change-bad-tripwire` and `init-pinned-clash` must be 2), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 

@@ -24,6 +24,8 @@ const MIGRATIONS = [
   // Each metric in this window (current) and the last (previous); NULL is n/a.
   `CREATE TABLE IF NOT EXISTS metrics (run_id INTEGER NOT NULL REFERENCES runs(id), window TEXT NOT NULL, name TEXT NOT NULL, value NUMERIC,
     PRIMARY KEY (run_id, window, name))`,
+  // The metric's target ("<op> <number>", NULL with none), kept as it was when the run ran.
+  'ALTER TABLE metrics ADD COLUMN target TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
