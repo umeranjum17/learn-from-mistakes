@@ -194,6 +194,12 @@ The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every 
 
 A rejected `change applied` never touches the ledger. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
 
+## Model
+
+The label/propose reading is agent work: do it on Go Muse (opencode-go/muse-spark-1.3-contributor) by default.
+Cheap alternates are claude-haiku-5-5 and gpt-6-luna. Never take Opus, Sonnet or Sol as the default.
+To use your own model instead, set LFM_MODEL to its id (`learn-from-mistakes-axi guide` then names it in the procedure).
+
 ## What it does not do
 
 `learn-from-mistakes-axi` never edits your sources, instructions or config, and it makes no network or model calls. It does not apply the recommended changes or measure whether they worked; `change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.
