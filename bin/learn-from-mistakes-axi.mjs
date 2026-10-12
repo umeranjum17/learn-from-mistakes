@@ -506,6 +506,7 @@ async function runCommand(cmd, cfg, opts) {
     out = await { retro, status, runs, rerun }[cmd](cfg, opts);
   } catch (e) {
     if (e.code !== 'ERR_SQLITE_ERROR') throw e;
+    if (e.message.includes('UNIQUE constraint failed')) throw new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
     throw new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
   }
   console.log(render(out, opts.json));
@@ -515,11 +516,13 @@ async function runCommand(cmd, cfg, opts) {
   else if (out.run.status === 'failed') {
     console.error(`error: ${out.run.error}`);
     const step = out.steps.find((s) => s.status === 'failed')?.name;
-    hint(withContext('learn-from-mistakes-axi retro --wait 8m', `run again after fixing ${step ? `the ${step} step` : 'the cause'}`, opts));
+    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it after fixing ${step ? `the ${step} step` : 'the cause'}; completed steps are not run again`, opts));
     if (cmd !== 'status') process.exitCode = 1;
   } else if (out.run.status !== 'completed') { // interrupted or cancelled
     console.error(`error: ${out.run.error}`);
-    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again; the worker's output: ${join(cfg.state, 'runs', String(out.run.id), 'worker.log')}`, opts));
+    const log = join(cfg.state, 'runs', String(out.run.id), 'worker.log');
+    const output = existsSync(log) ? `; the worker's output: ${log}` : '';
+    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));
     if (cmd !== 'status') process.exitCode = 1;
   } else hint(withContext('learn-from-mistakes-axi report', 'the counts this run read', opts));
 }

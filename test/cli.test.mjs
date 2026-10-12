@@ -810,7 +810,7 @@ allow_premium: false
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
   assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
-  assert.match(failed.stderr, /^next: learn-from-mistakes-axi retro --wait 8m   # run again after fixing the report step/m);
+  assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
   assert.deepEqual(JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout), run);
   const missing = lfm('status', '--run', '99');
