@@ -54,10 +54,12 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
   return { ...out, hash: createHash('sha256').update(JSON.stringify(out.events)).digest('hex') };
 }
 
-// Per-session numbers; n/a, never 0, when there is nothing to divide or count.
-export function metrics(events) {
-  const count = (f) => events.filter(f).length;
-  const sessions = count((e) => e.kind === 'session_start'), results = count((e) => e.kind === 'tool_result');
+// Per-session numbers over the events at or after `since` (ms, the run window's start); a session counts when it has
+// one of them. n/a, never 0, when there is nothing to divide or count.
+export function metrics(events, since) {
+  const inWindow = events.filter((e) => Date.parse(e.ts) >= since);
+  const count = (f) => inWindow.filter(f).length;
+  const sessions = new Set(inWindow.map((e) => e.session_id)).size, results = count((e) => e.kind === 'tool_result');
   const ratio = (n, d) => (d ? Math.round((n / d) * 1000) / 1000 : 'n/a');
   return {
     tool_error_rate: ratio(count((e) => e.kind === 'tool_result' && ['tool_error', 'nonzero_exit', 'test_fail'].includes(e.signal)), results),

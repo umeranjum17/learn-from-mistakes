@@ -152,8 +152,8 @@ function readInput(file, flag, explicit, rerunHint) {
 export async function ingest(cfg, skip = new Set()) {
   stateDir(cfg);
   // This window and the last, and far enough back to have before-numbers for every applied change.
-  const w = parseInt(cfg.window, 10) * 86_400_000;
-  const readFrom = Math.min(Date.now() - 2 * w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
+  const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w;
+  const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
   const records = [], rows = [], events = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     const src = SOURCES[s.type], got = await src.read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip });
@@ -161,7 +161,7 @@ export async function ingest(cfg, skip = new Set()) {
     rows.push(...(got.rows ?? []));
     events.push(...(got.events ?? []));
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events).length, hash: got.hash,
-      ...(got.events && { sessions: got.sessions, skipped: got.skipped, metrics: src.metrics(got.events) }) });
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped, metrics: src.metrics(got.events, since) }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));

@@ -124,7 +124,7 @@ try {
   // Sessions: one synthetic Claude Code session in the scratch HOME, run in the staged project, with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
-  const at = { cwd: staged, sessionId: 's-verify', timestamp: '2026-10-12T09:00:00.000Z' };
+  const at = { cwd: staged, sessionId: 's-verify', timestamp: new Date().toISOString() };
   writeFileSync(join(store, 's-verify.jsonl'), [
     { type: 'user', ...at, message: { role: 'user', content: 'Umer: run the tests.' } },
     { type: 'assistant', ...at, message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } }] } },
