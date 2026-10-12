@@ -104,7 +104,7 @@ async function start(cfg, db, id, opts) {
   // Hand the run to the worker unless it has already taken it.
   db.prepare('UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND pid = ?').run(child.pid, startTime(child.pid), iso(Date.now()), id, process.pid);
   for (const end = Date.now() + (opts.wait ?? 0); Date.now() < end; await sleep(250)) {
-    reconcile(db);
+    locked(db, () => reconcile(db));
     if (db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status !== 'running') break;
   }
   return show(db, id);
@@ -150,13 +150,13 @@ function pick(cfg, db, opts) {
 
 export async function status(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (db) reconcile(db);
+  if (db) locked(db, () => reconcile(db));
   return show(db, pick(cfg, db, opts));
 }
 
 export async function runs(cfg) {
   const db = await openStore(cfg.state, false);
-  if (db) reconcile(db);
+  if (db) locked(db, () => reconcile(db));
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 

@@ -884,7 +884,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(r.run.status, 'completed');
   assert.equal(r.run.error, null);
   assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed']);
-  assert.deepEqual(r.steps[0], k.steps[0], 'the completed collect step ran again');
+  assert.deepEqual(r.steps[0], k.steps[0], 'the completed collect step was not run again');
   const again = lfm('rerun', '--resume', '--run', String(run.id));
   assert.equal(again.status, 2, again.stderr);
   assert.match(again.stderr, new RegExp(`^error: run ${run.id} already completed$`, 'm'));
