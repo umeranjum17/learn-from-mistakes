@@ -21,7 +21,11 @@ const PLANTED = [
   [`-----BEGIN ${'PRIVATE KEY'}-----\nMIIE${'I'.repeat(40)}\n-----END PRIVATE KEY-----`, 'I'.repeat(40)],
   [`Bearer ${'J'.repeat(24)}`, 'J'.repeat(24)], [`API_TOKEN=${'K'.repeat(12)}`, 'K'.repeat(12)],
   [`"password": "${'L'.repeat(12)}"`, 'L'.repeat(12)], ['umer@example.com', 'umer@example.com'],
+  [`password="correct horse ${'M'.repeat(8)}"`, 'M'.repeat(8)], [`Authorization: Basic ${'N'.repeat(20)}`, 'N'.repeat(20)],
+  [`secret=abc,${'O'.repeat(10)}`, 'O'.repeat(10)],
 ];
+
+const planted = (from, to) => JSON.stringify(PLANTED.slice(from, to).map(([t]) => t).join(' ')).slice(1, -1); // as JSON string text
 
 function setup() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-sessions-'));
@@ -33,7 +37,7 @@ function setup() {
   git('-c', 'user.name=Umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init');
   git('worktree', 'add', '-q', '--detach', tree);
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
-    .replaceAll('$SECRETS', JSON.stringify(PLANTED.map(([t]) => t).join(' ')).slice(1, -1));
+    .replaceAll('$SECRETS_A', planted(0, 9)).replaceAll('$SECRETS_B', planted(9));
   const src = new URL('fixtures/sessions/claude/projects', import.meta.url).pathname;
   for (const f of readdirSync(src, { recursive: true })) {
     if (!f.endsWith('.jsonl')) continue;
@@ -42,6 +46,7 @@ function setup() {
   }
   const old = new Date(Date.now() - 60 * 86_400_000); // before the read range of two 7d windows
   utimesSync(join(claude, 'projects', '-repo', 's-old.jsonl'), old, old);
+  utimesSync(join(claude, 'projects', '-repo', 's-main.jsonl'), old, old); // its subagent file changed later, so it is read
   const cfg = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(cfg, readFileSync(cfg, 'utf8').replace('sources:\n', 'sources:\n  sessions: { type: sessions }\n'));
   const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude };
@@ -56,10 +61,13 @@ const query = (p, sql, ...args) => {
 
 test('a retro reads this repo\'s Claude Code sessions, skips its own runs and keeps planted secrets out', () => {
   const { p, claude, env, lfm } = setup();
+  const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
 
-  // No sessions yet: 0 sessions and every number n/a, never 0.
+  // No sessions yet, and no other source: the run completes with 0 sessions and every number n/a, never 0.
+  writeFileSync(cfg, 'sources:\n  sessions: { type: sessions }\n');
   const empty = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: join(claude, '..', 'none') } });
   assert.equal(empty.status, 0, empty.stderr);
+  writeFileSync(cfg, examples);
   assert.deepEqual(decode(empty.stdout).sources.find((s) => s.type === 'sessions'),
     { id: 'sessions', type: 'sessions', items: 0, sessions: 0, skipped: 0, metrics: { tool_error_rate: 'n/a', corrections_per_session: 'n/a', interrupts: 'n/a', retries: 'n/a' } });
 
@@ -78,10 +86,12 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.deepEqual(sub, [{ session_id: 's-main', tool: 'Grep', signal: 'tool_error' }]); // a subagent file is read
   assert.deepEqual(query(p, `SELECT exit_code FROM events WHERE run_id = ? AND signal = 'test_fail'`, id).map((e) => e.exit_code), [1, 1]);
 
-  // Every planted shape is redacted in the excerpts, and no planted value reaches the store, state or output.
-  const [failure] = query(p, `SELECT excerpt FROM events WHERE run_id = ? AND signal = 'test_fail' ORDER BY id LIMIT 1`, id);
-  assert.equal(failure.excerpt.match(/\[redacted\]/g).length, PLANTED.length, failure.excerpt);
-  assert.ok(failure.excerpt.length <= 300);
+  // Every planted shape is redacted in the excerpts (a tool error, the retried call as JSON, a correction), all
+  // within the kept 300 characters, and no planted value reaches the store, state or output.
+  for (const signal of ['test_fail', 'retry', 'correction']) {
+    const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND signal = ? ORDER BY id LIMIT 1', id, signal);
+    assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
+  }
   const outputs = [r, lfm('status', '--json'), lfm('runs'), lfm('ingest'), lfm('report', '--json'), lfm('report', '--full')];
   const state = readdirSync(join(p, '.lfm'), { recursive: true }).map((f) => { try { return readFileSync(join(p, '.lfm', f), 'latin1'); } catch { return ''; } });
   for (const [, needle] of PLANTED) {
@@ -94,7 +104,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
   db.exec(`CREATE TABLE invocations (id INTEGER PRIMARY KEY, session_id TEXT); INSERT INTO invocations (session_id) VALUES ('s-own')`);
   db.close();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}excerpts: off\n`);
+  writeFileSync(cfg, `${examples}excerpts: off\n`);
   const off = lfm('retro', '--foreground', '--json');
   assert.equal(off.status, 0, off.stderr);
   const second = JSON.parse(off.stdout);

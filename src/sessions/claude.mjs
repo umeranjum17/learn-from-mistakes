@@ -8,7 +8,8 @@ import { createInterface } from 'node:readline';
 
 export const root = () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
 
-const TEST = /\b(?:test|tests|jest|vitest|pytest|mocha|rspec)\b/;
+// A command that runs tests, at its start or after ;, &&, || or a pipe (env assignments before it are fine).
+const TEST = /(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*(?:(?:npm|pnpm|yarn|bun|deno|go|cargo|make|mix|dotnet)\s+(?:run\s+)?test\b|(?:npx\s+)?(?:jest|vitest|pytest|mocha|rspec|phpunit)\b|node\s+--test\b|python3?\s+-m\s+(?:pytest|unittest)\b)/;
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
 const list = (dir, opts) => { try { return readdirSync(dir, opts); } catch { return []; } };
 const fresh = (file, from) => { try { return statSync(file).mtimeMs >= from; } catch { return false; } };
@@ -51,6 +52,7 @@ async function parse(file, { session, keep, sub, excerpt }) {
         const signal = !error || declined ? null : interrupted ? 'interrupt' : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
         events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, excerpt: signal ? excerpt(text) : '' });
         if (error && call && !declined) failed.add(call.key);
+        else if (!error && call) failed.delete(call.key); // a later repeat is no longer a retry
         afterError = error;
       }
       // A subagent's user messages come from its parent agent, never from a person.
@@ -82,16 +84,18 @@ export async function read({ readFrom, keep, excerpt, skip }) {
     const dir = join(root(), d.name);
     for (const f of list(dir)) {
       const session = f.slice(0, -'.jsonl'.length);
-      if (!f.endsWith('.jsonl') || skip.has(session) || !fresh(join(dir, f), readFrom)) continue;
+      if (!f.endsWith('.jsonl') || skip.has(session)) continue;
+      // A subagent can still write after its parent file last changed: either one being fresh reads the session.
+      const subs = list(join(dir, session, 'subagents'), { recursive: true }).filter((p) => /^agent-.*\.jsonl$/.test(basename(p)))
+        .map((p) => join(dir, session, 'subagents', p)).filter((p) => fresh(p, readFrom));
+      if (!fresh(join(dir, f), readFrom) && !subs.length) continue;
       const main = await parse(join(dir, f), { session, keep, excerpt });
       if (!main) continue;
       sessions += 1;
       events.push({ agent: 'claude', session_id: session, ts: main.start, ref: `${join(dir, f)}:1`, kind: 'session_start', excerpt: '' }, ...main.events);
       skipped += main.skipped;
-      const subs = list(join(dir, session, 'subagents'), { recursive: true }).filter((p) => /^agent-.*\.jsonl$/.test(basename(p)));
       for (const p of subs) {
-        if (!fresh(join(dir, session, 'subagents', p), readFrom)) continue;
-        const got = await parse(join(dir, session, 'subagents', p), { session, sub: true, excerpt });
+        const got = await parse(p, { session, sub: true, excerpt });
         events.push(...(got?.events ?? []));
         skipped += got?.skipped ?? 0;
       }

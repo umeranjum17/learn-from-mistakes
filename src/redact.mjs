@@ -9,9 +9,11 @@ const RULES = [
   [/\bAKIA[0-9A-Z]{16}\b/g, R],
   [/\bAIza[0-9A-Za-z_-]{30,}/g, R],
   [/\beyJ[\w-]+\.eyJ[\w-]+\.[\w-]*/g, R], // JWTs
-  [/\b(Bearer\s+)[\w.~+/=-]+/gi, `$1${R}`],
-  // KEY=value, key: value and "key": "value" where the key name has token, secret, password, key or auth
-  [/(["']?)([\w.-]*(?:token|secret|passw(?:or)?d|key|auth)[\w.-]*)\1(\s*[:=]\s*)(["']?)[^\s"',;}]+\4/gi, `$1$2$1$3$4${R}$4`],
+  [/\b((?:Bearer|Basic|Token)\s+)[\w.~+/=-]+/gi, `$1${R}`],
+  // KEY=value, key: value and "key": "value" (JSON-escaped too) where the key name has token, secret, password,
+  // key or auth. A quoted value is replaced whole, to its closing quote or the end; a bare one to a space or quote.
+  [new RegExp(String.raw`((?:\\?["'])?[\w.-]*(?:token|secret|passw(?:or)?d|key|auth)[\w.-]*(?:\\?["'])?\s*[:=]\s*)` +
+    String.raw`(?:\\"(?:(?!\\")[\s\S])*(?:\\"|$)|"(?:[^"\\]|\\.)*(?:"|$)|'(?:[^'\\]|\\.)*(?:'|$)|[^\s"'\\}\]&]+)`, 'gi'), `$1${R}`],
   [/[\w.%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g, R],
 ];
 
