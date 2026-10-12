@@ -91,7 +91,7 @@ test('agents lists each agent CLI with version, login presence and default model
   assert.equal(own.status, 0, own.stderr);
   const toon = decode(own.stdout);
   assert.deepEqual(toon.agents.map((a) => [a.runner, a.model]), [['claude', MODELS.claude[0]], ['codex', 'gpt-6-luna'], ['opencode', MODELS.opencode[0]],
-    ['pi', MODELS.pi[0]], ['gemini', MODELS.gemini[0]], ['acp', '']]);
+    ['pi', ''], ['gemini', ''], ['acp', '']]);
   assert.equal(toon.worker.runner, 'codex');
   assert.equal(toon.worker.model, 'gpt-6-luna');
 
@@ -163,9 +163,9 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
   assert.equal(oc.permission, '{"*":"deny"}');
   assert.match(readFileSync(join(run('opencode'), 'prompt-opencode.md'), 'utf8'), /^lfm-run:test:opencode\nThis tests that your tools are off/);
   const [pi] = calls('pi'), [gm] = calls('gemini'), [ax] = calls('acpx');
-  assert.deepEqual(pi.args, ['-p', '--model', MODELS.pi[0], '--mode', 'json', '--no-session', '--no-tools', '--no-context-files', '--no-skills', '--no-extensions']);
+  assert.deepEqual(pi.args, ['-p', '--mode', 'json', '--no-session', '--no-tools', '--no-context-files', '--no-skills', '--no-extensions']);
   assert.match(pi.stdin, /^lfm-run:test:pi\nThis tests that your tools are off/);
-  assert.deepEqual(gm.args, ['-p', 'lfm-run:test:gemini Follow the instructions above.', '-m', MODELS.gemini[0], '-o', 'json', '--approval-mode', 'plan', '--skip-trust', '-e', 'none']);
+  assert.deepEqual(gm.args, ['-p', 'lfm-run:test:gemini Follow the instructions above.', '-o', 'json', '--approval-mode', 'plan', '--skip-trust', '-e', 'none']);
   assert.match(gm.stdin, /^lfm-run:test:gemini\nThis tests that your tools are off/);
   assert.deepEqual(ax.args, ['--cwd', run('acp-fake-agent'), '--format', 'json', '--json-strict', '--deny-all', '--allowed-tools', '', '--non-interactive-permissions', 'deny',
     'fake-agent', 'exec', '--file', '-']);

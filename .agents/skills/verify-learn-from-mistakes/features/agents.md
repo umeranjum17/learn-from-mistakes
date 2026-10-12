@@ -2,7 +2,7 @@
 
 ## Sub-features
 `src/runners/index.mjs` holds the runner table (claude, codex, opencode, pi, gemini,
-acp, in auto order; acp runs as `acp:<target>` through the `acpx` binary) and `src/models.json` the cheap default models per runner (data, no id in
+acp, in auto order; acp runs as `acp:<target>` through the `acpx` binary) and `src/models.json` the default models per runner where it lists one (data, no id in
 code). A runner is usable when its binary (global `runner_path`, else PATH) runs
 `--version` with exit 0; a broken shim is not usable and shows the cause. A usable
 runner whose tool-off mode is not confirmed live (gemini, acp) has `problem:
@@ -11,7 +11,7 @@ not offered: <why>` and is never resolved as worker or judge (a pinned one gives
 name (`[a-z0-9][\w.-]*`): it names the run dir, so a path or `..` exits 2.
 `agents` prints each runner: usable, version, tools (`off`, `read-only` for
 Codex and Gemini, or `unconfirmed` for acp), login presence (file and variable names only, never contents), the
-default model (the first table model for that runner, or the configured model
+default model (the first table model for that runner, or the runner's own default when its table is empty, or the configured model
 where the runner's table lists it or the role pins that runner) and the real binary path. With a project config it adds the
 resolved `worker` and `judge` by the identity rule (real binary path + model; an
 empty model on the same binary is equal); a judge clash exits 1 with `problem:`
