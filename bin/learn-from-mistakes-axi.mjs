@@ -109,7 +109,7 @@ function oneLine(text) {
   return [...t].length >= 1 && [...t].length <= 200 && !UNPRINTABLE.test(t) ? t : undefined;
 }
 // A stored metric: 1-200 characters, one line. A tab stays, since a cause key may hold one and the default metric is built from it.
-const storedMetric = (m) => [...m].length >= 1 && [...m].length <= 200 && !/[^\P{Cc}\t]|[\u2028\u2029]/u.test(m);
+const storedMetric = (m) => [...m].length >= 1 && [...m].length <= 200 && !UNPRINTABLE.test(m.replaceAll('\t', ''));
 
 // ponytail: single-writer ledger. The id is the highest chg-<n> + 1 and the write is one
 // O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
