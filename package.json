@@ -9,7 +9,7 @@
   "bugs": { "url": "https://github.com/umeranjum17/learn-from-mistakes/issues" },
   "type": "module",
   "bin": { "learn-from-mistakes-axi": "bin/learn-from-mistakes-axi.mjs" },
-  "files": ["bin", "skills"],
+  "files": ["bin", "src", "skills"],
   "engines": { "node": ">=22.13" },
   "scripts": { "pretest": "npm ci", "test": "npm run build:skill -- --check && node --test", "build:skill": "node scripts/build-skill.mjs" },
   "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" }

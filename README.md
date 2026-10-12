@@ -113,6 +113,9 @@ learn-from-mistakes-axi count     print the counts (same projection as `report`)
 learn-from-mistakes-axi report    print the report; --full adds evidence ids, --json prints JSON
 learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>]   record an applied change in the ledger
 learn-from-mistakes-axi changes   print every applied change (lfm-changes.v1) with its what and why
+learn-from-mistakes-axi retro --foreground   ingest and report as one saved run, in this process
+learn-from-mistakes-axi status    print the last saved run and its steps (--run <id> for another)
+learn-from-mistakes-axi runs      list the saved runs, newest first (the last 10)
 learn-from-mistakes-axi --help    show the commands and options
 learn-from-mistakes-axi --version show the version
 ```
@@ -123,6 +126,7 @@ Every command stays useful:
 - `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
 - `change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
 - `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
+- `retro --foreground` saves a run in `<state dir>/lfm.sqlite`: a `runs` row with its status, and one `steps` row each for `collect` (ingest) and `report` (the counts with the labels already in the state dir). A failed step fails the run and exits 1; `status` and `runs` show the saved runs, and `status` exits 3 before the first one.
 - Each working command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout; `--help` and `guide` print theirs on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
@@ -179,9 +183,9 @@ causes[1]:
 
 ## Privacy
 
-The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
+The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name a source by its config id (for example `source log: cannot read (ENOENT)`) rather than its path, and never echo record text.
 
-The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every record, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose. It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `ingest` and `change applied` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from.
+The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every record, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose. It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `ingest`, `change applied` and `retro` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from.
 
 ## Exit codes
 

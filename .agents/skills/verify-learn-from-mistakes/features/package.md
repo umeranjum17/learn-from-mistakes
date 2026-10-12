@@ -3,7 +3,7 @@
 ## Sub-features
 A minimal installable single-bin package that carries its standalone skill and
 public package metadata; a fresh prefix installs the exact packed tarball and its
-real `learn-from-mistakes-axi` bin drives the report.
+real `learn-from-mistakes-axi` bin drives the report and a saved run.
 
 ## How to get to it (user POV)
 `npm pack`, then `npm install -g --prefix <fresh> <tarball>`, then run
@@ -13,9 +13,10 @@ real `learn-from-mistakes-axi` bin drives the report.
 Run the helper with `--package`:
 `node .agents/skills/verify-learn-from-mistakes/verify.mjs <evidence> --package`.
 It records `pack.json`, `pack.manifest.txt` and the packed-command logs. The
-manifest must include `package/bin/learn-from-mistakes-axi.mjs`, `package/package.json` and the skill,
+manifest must include `package/bin/learn-from-mistakes-axi.mjs`, `package/src/run.mjs`, `package/src/store.mjs`, `package/package.json` and the skill,
 and must exclude `test`/`examples`. The installed bin's `report --json` must be
-`lfm-report.v1`, its `changes --json` must be `lfm-changes.v1`, the whole
+`lfm-report.v1`, its `changes --json` must be `lfm-changes.v1`, its
+`retro --foreground --json` must be a `completed` run with 2 steps (`packed-retro`), the whole
 `npm test` suite must pass again with `LFM_CLI` set to the installed bin
 (`packed-npm-test`), and the packaged skill file must exist in the installed prefix.
 
