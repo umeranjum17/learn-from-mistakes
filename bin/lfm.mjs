@@ -129,7 +129,7 @@ function analyse(cfg, files) {
     if (!records.has(l.id)) problems.push(`${at}: unknown record id ${l.id}`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for ${l.id}`);
     else if (typeof l.event !== 'boolean' || typeof l.why !== 'string' || !l.why.trim()) problems.push(`${at}: needs event (true/false) and why`);
-    else if (l.event && !(l.cause in cfg.causes) && l.cause !== 'other') problems.push(`${at}: cause ${l.cause} is not in the config`);
+    else if (l.event && !Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other') problems.push(`${at}: cause ${l.cause} is not in the config`);
     else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names unknown record ${l.duplicate_of}`);
     else if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) problems.push(`${at}: occurrences must be a positive integer`);
     else labels.set(l.id, l);
@@ -139,13 +139,13 @@ function analyse(cfg, files) {
     const d = labels.get(id)?.duplicate_of;
     return !d || seen.has(id) || labels.get(d)?.cause !== labels.get(id).cause || !labels.get(d).event ? id : root(d, seen.add(id));
   };
-  const groups = {};
+  const groups = Object.create(null);
   const group = (cause) => (groups[cause] ??= { cause, description: cfg.causes[cause]?.description ?? 'Events no listed cause names.',
     log: { roots: new Map(), records: [], days: new Set() }, store: { rows: [], days: new Set() } });
   for (const l of labels.values()) {
     if (!l.event) continue;
     const g = group(l.cause).log, r = records.get(l.id), k = root(l.id);
-    g.roots.set(k, Math.max(g.roots.get(k) ?? 0, labels.get(k).occurrences ?? 1));
+    g.roots.set(k, labels.get(k).occurrences ?? 1);
     g.records.push({ ...r, label: l });
     if (r.date) g.days.add(r.date);
   }

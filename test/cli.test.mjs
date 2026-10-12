@@ -148,6 +148,18 @@ test('bad input is counted, never echoed; unresolved refs exit 1', () => {
   assert.match(lfm('count').stderr, /unknown key colour/);
 });
 
+test('prototype-named causes are counted as problems, never crash or vanish', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  writeFileSync(join(p, 'proto.jsonl'), '{"id":"2034b8c4ce57","event":true,"cause":"constructor","why":"x"}\n');
+  writeFileSync(join(p, 'proto-proposals.jsonl'), '{"cause":"constructor","target":"t","owner":"o","change":"c","refs":["2034b8c4ce57"]}\n');
+  const r = lfm('report', '--labels', join(p, 'proto.jsonl'), '--proposals', join(p, 'proto-proposals.jsonl'));
+  assert.equal(r.status, 1, r.stderr);
+  const model = decode(r.stdout);
+  assert.equal(model.problems, 2); // the label and the proposal are each counted
+  assert.ok(!model.causes.some((c) => c.cause === 'constructor'));
+});
+
 test('empty input exits 3 with a next command', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, 'defects.md'), '');
