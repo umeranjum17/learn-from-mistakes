@@ -70,7 +70,7 @@ name without its canary contents, models from `src/models.json`, a broken shim,
 marker and `OPENCODE_PERMISSION` (including `--test acp:fake-agent`), gemini and
 acp listed as not offered and refused as pinned worker or judge, pi's exit-0 error,
 an ACP agent that writes (exit 1), a global `runner_args` entry, and a hung (killed
-at `caps.timeout: 2s`), leaking (grandchild holds stdout), writing (`x.txt`,
+at `caps.timeout: 10s`), leaking (grandchild holds stdout), writing (`x.txt`,
 exit 1) and overloaded-once (retried) agent. The `byokit:` journeys run the real
 CLI against BYOKit's stand-in OpenAI (`mockOpenAI`) with a sign-in seeded into the
 throwaway HOME's machine store (DBus pointed at a missing socket, so the seal is a

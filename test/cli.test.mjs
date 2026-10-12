@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,10 +14,16 @@ import { decode } from '@toon-format/toon';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
+// The example gate store's one repo is the copy: the no-mistakes source reads only this project's rows.
+function own(p) {
+  const db = new DatabaseSync(join(p, 'gate.sqlite'));
+  try { db.prepare('UPDATE repos SET working_path = ?').run(realpathSync(p)); } finally { db.close(); }
+}
 function setup() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
   after(() => rmSync(tmp, { recursive: true }));
   cpSync(new URL('../examples', import.meta.url).pathname, join(tmp, 'p'), { recursive: true });
+  own(join(tmp, 'p'));
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
   const raw = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: tmp, env });
@@ -561,6 +567,13 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(store.status, 2, store.stderr);
   assert.match(store.stderr, /^error: source gate: no such file$/m);
   assert.match(store.stderr, /^next: remove the gate source or point its path at your no-mistakes state\.sqlite$/m);
+  const flat = new DatabaseSync(join(p, 'flat.sqlite')); // no repos table: its rows cannot be told from other repos' rows
+  flat.exec(`CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT); CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT, step_name TEXT, status TEXT, error TEXT, started_at INTEGER, completed_at INTEGER)`);
+  flat.close();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: flat.sqlite }\n');
+  const flatRun = lfm('ingest');
+  assert.equal(flatRun.status, 2, flatRun.stderr);
+  assert.match(flatRun.stderr, /^error: source gate: not a readable no-mistakes store \(no such table: repos\)$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);
@@ -806,7 +819,13 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.doesNotMatch(r.stderr, /ExperimentalWarning/); // the examples read a store, so node:sqlite loads
   const run = decode(r.stdout);
   assert.equal(run.run.status, 'completed');
-  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['report', 'completed']]);
+  // The bundle: the metrics; the example's records and gate rows are all from March, before this window.
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^\| defects \| 0 \| 0 \|  \|$/m);
+  assert.match(bundle, /^No follow-ups yet\.$/m);
+  assert.match(bundle, /^No session event has a failure signal in this window\.$/m);
+  assert.match(bundle, /^No record in this window lacks a cause\.$/m);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
@@ -833,7 +852,7 @@ allow_premium: false
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_path: { claude: ~/bin/claude }\nrunner_args: { codex: [--profile, cheap] }\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
-  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['report', 'completed']]);
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_args: { codex: --profile }\n');
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
@@ -922,7 +941,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(r.run.status, 'completed');
   assert.equal(r.run.error, null);
   assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed']);
-  assert.deepEqual(r.steps.slice(0, 3), k.steps.slice(0, 3), 'the completed collect, metrics and followup steps were not run again');
+  assert.deepEqual(r.steps.slice(0, 4), k.steps.slice(0, 4), 'the completed collect, metrics, followup and bundle steps were not run again');
   assert.deepEqual(r.metrics, k.metrics);
   const again = lfm('rerun', '--resume', '--run', String(run.id));
   assert.equal(again.status, 2, again.stderr);
@@ -945,7 +964,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const lines = attached.stdout.split('\n');
   const at = (re) => lines.findIndex((l) => re.test(l));
   const order = [/^collect: log +markdown-log +13 items$/, /^collect: gate +no-mistakes +5 items$/, /^collect: completed$/,
-    /^report: running$/, /^report: repeated: /, /^report: completed$/, /^run:$/];
+    /^bundle: bundle\.md: \d+ items, 0 dropped, \d+ characters$/, /^report: running$/, /^report: repeated: /, /^report: completed$/, /^run:$/];
   assert.ok(order.every((re) => at(re) >= 0), attached.stdout);
   assert.deepEqual(order.map(at), order.map(at).toSorted((a, b) => a - b), attached.stdout);
   assert.doesNotMatch(attached.stdout, /sha256/);
@@ -960,7 +979,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.doesNotMatch(log.stdout, /sha256/);
   const nope = lfm('logs', '--step', 'analyse');
   assert.equal(nope.status, 2, nope.stderr);
-  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "analyse" \\(steps: collect, metrics, followup, report\\)$`, 'm'));
+  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "analyse" \\(steps: collect, metrics, followup, bundle, report\\)$`, 'm'));
 
   // abort stops a running run: its worker ends and the run is cancelled; a new retro is not blocked.
   const slow = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'report' } });

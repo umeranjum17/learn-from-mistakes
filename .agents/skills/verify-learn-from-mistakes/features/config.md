@@ -11,7 +11,7 @@ quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts`
 `signoff` (`auto|off`), `allow_premium` (boolean). The global file adds
 `runner_path: {<runner>: <bin>}` (a bare name is looked up on absolute PATH entries only) and `runner_args: {<runner>: [..]}`. An unknown key
 or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only
-loaded and checked: only the sessions and github sources read `excerpts`; `agents` and `init` resolve `worker`/`judge`; nothing reads the caps yet.
+loaded and checked: the sessions and github sources and the bundle step read `excerpts`; the bundle step reads `caps.bundle_chars`, runners read `caps.timeout`, `agents` and `init` resolve `worker`/`judge`; nothing reads `caps.invocations` yet.
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys), `read` and `detect` (init); `collect`/`ingest` call the

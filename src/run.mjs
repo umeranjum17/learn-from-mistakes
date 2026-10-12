@@ -9,6 +9,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { bundle } from './bundle.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { locked, openStore } from './store.mjs';
@@ -44,6 +45,12 @@ const STEPS = {
   metrics: (cfg, db, id) => metrics(cfg, db, id, collected(db, id)),
   // Each applied change's metric before and after it, and a verdict: keep, fix, rollback, delete or no-data.
   followup: (cfg, db, id, log) => followup(cfg, db, id, collected(db, id), log),
+  // The file the run's agents read: <run dir>/bundle.md, with its counts in the step log.
+  bundle: (cfg, db, id, log) => {
+    const out = bundle(cfg, db, id, join(runDir(cfg, id), 'bundle.md'), collected(db, id));
+    log(`bundle.md: ${out.items} items, ${out.dropped} dropped, ${out.chars} characters`);
+    return out;
+  },
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, {}, REPORT);
