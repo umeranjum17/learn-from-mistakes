@@ -14,9 +14,14 @@ const STEPS = {
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     db.exec('BEGIN');
-    db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
-    for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.ref, e.excerpt);
-    db.exec('COMMIT');
+    try {
+      db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
+      for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.ref, e.excerpt);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
     return { read_from, sources };
   },
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.

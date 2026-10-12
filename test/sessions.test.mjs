@@ -13,6 +13,9 @@ import { decode } from '@toon-format/toon';
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 // One planted value per redaction shape, built here so no key-shaped string sits in the repo. [text, what must never show]
 const PLANTED = [
+  [`sk${'_live_'}${'P'.repeat(24)}`, 'P'.repeat(24)], [`sk${'_test_'}${'S'.repeat(24)}`, 'S'.repeat(24)],
+  [`rk${'_live_'}${'T'.repeat(24)}`, 'T'.repeat(24)], [`--password ${'Q'.repeat(12)}`, 'Q'.repeat(12)],
+  [`--token ${'R'.repeat(12)}`, 'R'.repeat(12)],
   [`sk-proj${'A'.repeat(30)}`, 'A'.repeat(30)], [`sk-ant-api03${'B'.repeat(30)}`, 'B'.repeat(30)],
   [`gh${'p_'}${'C'.repeat(36)}`, 'C'.repeat(36)], [`github${'_pat_'}${'D'.repeat(40)}`, 'D'.repeat(40)],
   [`gh${'o_'}${'E'.repeat(36)}`, 'E'.repeat(36)], [`xo${'xb-'}1234567890-umerslack`, 'umerslack'],
@@ -26,6 +29,7 @@ const PLANTED = [
 ];
 
 const planted = (from, to) => JSON.stringify(PLANTED.slice(from, to).map(([t]) => t).join(' ')).slice(1, -1); // as JSON string text
+const day = (back) => new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
 
 function setup() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-sessions-'));
@@ -37,7 +41,8 @@ function setup() {
   git('-c', 'user.name=Umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init');
   git('worktree', 'add', '-q', '--detach', tree);
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
-    .replaceAll('$SECRETS_A', planted(0, 9)).replaceAll('$SECRETS_B', planted(9));
+    .replace(/2026-10-0([1-3])T/g, (_, d) => `${day(3 - Number(d))}T`) // the last three days, so inside the window
+    .replaceAll('$SECRETS_A', planted(0, -8)).replaceAll('$SECRETS_B', planted(-8));
   const src = new URL('fixtures/sessions/claude/projects', import.meta.url).pathname;
   for (const f of readdirSync(src, { recursive: true })) {
     if (!f.endsWith('.jsonl')) continue;
@@ -77,11 +82,11 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.equal(run.run.status, 'completed');
   // this repo, a subdir and a worktree; not the other project, a sibling dir, .lfm/, the marker run or an old file
   assert.deepEqual(run.sources.find((s) => s.type === 'sessions'),
-    { id: 'sessions', type: 'sessions', items: 20, sessions: 4, skipped: 2, metrics: { tool_error_rate: 0.6, corrections_per_session: 0.25, interrupts: 1, retries: 1 } });
+    { id: 'sessions', type: 'sessions', items: 25, sessions: 4, skipped: 2, metrics: { tool_error_rate: 0.5, corrections_per_session: 0.25, interrupts: 1, retries: 1 } });
   const id = run.run.id;
   assert.deepEqual(query(p, 'SELECT DISTINCT session_id FROM events WHERE run_id = ? ORDER BY 1', id).map((e) => e.session_id), ['s-main', 's-own', 's-sub', 's-tree']);
   const signals = Object.fromEntries(query(p, 'SELECT signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY signal', id).map((e) => [e.signal, e.n]));
-  assert.deepEqual(signals, { correction: 1, interrupt: 1, retry: 1, test_fail: 2, tool_error: 1 }); // 3 tool errors
+  assert.deepEqual(signals, { correction: 2, interrupt: 1, retry: 1, test_fail: 2, tool_error: 2 }); // one old error and correction are stored, not counted
   const sub = query(p, `SELECT session_id, tool, signal FROM events WHERE run_id = ? AND ref LIKE '%/subagents/agent-a1.jsonl:%' AND kind = 'tool_result'`, id);
   assert.deepEqual(sub, [{ session_id: 's-main', tool: 'Grep', signal: 'tool_error' }]); // a subagent file is read
   assert.deepEqual(query(p, `SELECT exit_code FROM events WHERE run_id = ? AND signal = 'test_fail'`, id).map((e) => e.exit_code), [1, 1]);
@@ -110,5 +115,5 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const second = JSON.parse(off.stdout);
   assert.equal(second.sources.find((s) => s.type === 'sessions').sessions, 3);
   assert.deepEqual(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND excerpt != ''`, second.run.id), [{ n: 0 }]);
-  assert.deepEqual(query(p, 'SELECT count(*) AS n FROM events WHERE run_id = ?', id), [{ n: 20 }]); // the first run keeps its events
+  assert.deepEqual(query(p, 'SELECT count(*) AS n FROM events WHERE run_id = ?', id), [{ n: 25 }]); // the first run keeps its events
 });
