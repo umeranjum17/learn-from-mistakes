@@ -7,10 +7,14 @@ import { InputError, stateDir } from '../../bin/learn-from-mistakes-axi.mjs';
 import * as claude from './claude.mjs';
 import * as codex from './codex.mjs';
 import * as opencode from './opencode.mjs';
+import * as pi from './pi.mjs';
+import * as gemini from './gemini.mjs';
+import * as acp from './acp.mjs';
 
-export const RUNNERS = { claude, codex, opencode }; // in auto order
+export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // in auto order; acp runs as acp:<target>
 export const MODELS = JSON.parse(readFileSync(new URL('../models.json', import.meta.url), 'utf8'));
 const FIX = 'learn-from-mistakes-axi agents   # check the agent CLI is usable and logged in';
+export const INSTALL = 'claude, codex, opencode, pi or gemini';
 const TRANSIENT = /\b(429|503|529)\b|overloaded|rate_limit|ECONNRESET/i;
 const QUOTA = /quota|usage_limit|usage limit|session limit|credit balance/i;
 const tail = (text) => text.trim().split('\n').slice(-3).join(' ').slice(-300);
@@ -23,17 +27,20 @@ function which(name) {
   }
 }
 
-// A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not).
+const binName = (cfg, runner) => cfg.runner_path?.[runner] ?? RUNNERS[runner].bin ?? runner;
+
+// A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
+// as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
 export function detect(cfg) {
   return Object.entries(RUNNERS).map(([runner, mod]) => {
-    const found = which(cfg.runner_path?.[runner] ?? runner);
+    const found = which(binName(cfg, runner));
     const { files, vars } = mod.login(process.env);
     const login = [...files.filter((f) => existsSync(f)).map((f) => basename(f)), ...vars.filter((v) => process.env[v])].join(' ') || 'not found (it may be in the system keychain)';
     const a = { runner, usable: false, version: '', tools: mod.tools, login, model: roleModel(cfg, 'worker', runner), bin: found ? realpathSync(found) : '', problem: '' };
-    if (!found) return { ...a, problem: `${cfg.runner_path?.[runner] ?? runner} is not on PATH` };
+    if (!found) return { ...a, problem: `${binName(cfg, runner)} is not on PATH` };
     const v = spawnSync(found, ['--version'], { encoding: 'utf8', timeout: 10000 });
     if (v.status !== 0) return { ...a, problem: `--version failed: ${tail(`${v.stderr ?? ''}${v.stdout ?? ''}`) || v.error?.code || `exit ${v.status}`}` };
-    return { ...a, usable: true, version: v.stdout.match(/\d+(\.\d+)+\S*/)?.[0] ?? v.stdout.trim().split('\n')[0] };
+    return { ...a, usable: true, version: v.stdout.match(/\d+(\.\d+)+\S*/)?.[0] ?? v.stdout.trim().split('\n')[0], problem: mod.unconfirmed ?? '' };
   });
 }
 
@@ -57,13 +64,14 @@ const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b
 // its own work.
 export function resolveRole(cfg, name, agents, worker) {
   const want = cfg[name];
-  if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: configuredModel(cfg, name), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
+  const key = want.runner.replace(/^acp:.*/, 'acp');
+  if (want.runner !== 'auto' && !RUNNERS[key]) return { runner: want.runner, model: configuredModel(cfg, name), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
   const model = configuredModel(cfg, name);
-  const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || lists(a.runner, model) : a.runner === want.runner));
+  const pool = agents.filter((a) => !a.problem && (want.runner === 'auto' ? !model || lists(a.runner, model) : a.runner === key));
   if (!pool.length) {
-    const a = agents.find((x) => x.runner === want.runner) ?? agents.find((x) => lists(x.runner, model));
-    const reason = a?.runner === want.runner ? `${a.runner} is not usable` : `${a?.runner} lists model ${model} but is not usable`;
-    return { runner: want.runner, model, bin: '', problem: a ? `${reason}: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
+    const a = agents.find((x) => x.runner === key) ?? agents.find((x) => lists(x.runner, model));
+    const reason = `${a?.runner === key ? a.runner : `${a?.runner} lists model ${model} but`} ${a?.usable ? 'is' : 'is not usable:'} ${a?.problem}`;
+    return { runner: want.runner, model, bin: '', problem: a ? reason : model ? `no usable agent CLI lists model ${model}` : `no usable agent CLI (install ${INSTALL})` };
   }
   let last;
   for (const a of pool) {
@@ -114,14 +122,14 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Calls one runner in `dir` and returns the JSON object it answered (with `text`, a plain-text answer as { reply }).
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
-export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpawn, text }) {
+export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, text }) {
   const mod = RUNNERS[runner];
-  const bin = which(cfg.runner_path?.[runner] ?? runner);
+  const bin = which(binName(cfg, runner));
   if (!bin) throw new InputError(`${runner}: not on PATH`, FIX);
   const marker = `lfm-run:${runId}:${step}`;
   const promptFile = join(dir, `prompt-${step}.md`);
   writeFileSync(promptFile, `${marker}\n${prompt}`);
-  const cmd = mod.command({ model, dir, step, prompt: promptFile, marker, extra: cfg.runner_args?.[runner] ?? [] });
+  const cmd = mod.command({ model, dir, step, target, prompt: promptFile, marker, extra: cfg.runner_args?.[runner] ?? [] });
   const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
   const timeout = cfg.caps.timeout;
   for (let attempt = 0; ; attempt++) {
@@ -152,14 +160,16 @@ Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 export async function agents(cfg, opts) {
   const list = detect(cfg);
   if (opts.test) {
-    const a = list.find((x) => x.runner === opts.test);
+    const [runner, target] = opts.test.split(/:(.*)/);
+    const a = list.find((x) => x.runner === runner);
     if (!a.usable) throw new InputError(`${a.runner} is not usable: ${a.problem}`, FIX);
     stateDir(cfg);
-    const dir = join(cfg.state, 'runs', `test-${a.runner}`);
+    const step = opts.test.replace(':', '-');
+    const dir = join(cfg.state, 'runs', `test-${step}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    const got = await call(cfg, { runner: a.runner, model: a.model, dir, runId: 'test', step: a.runner, prompt: TEST, text: true });
-    return { test: { runner: a.runner, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200) } };
+    const got = await call(cfg, { runner, target, model: a.model, dir, runId: 'test', step, prompt: TEST, text: true });
+    return { test: { runner: opts.test, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
   }
   const out = { agents: list };
   if (cfg.worker) {

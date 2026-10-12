@@ -1,4 +1,4 @@
-// End-to-end: the real CLI starts fake claude, codex and opencode binaries (PATH holds only them) in a copy of the
+// End-to-end: the real CLI starts fake claude, codex, opencode, pi, gemini and acpx binaries (PATH holds only them) in a copy of the
 // examples, with a throwaway HOME and LFM_HOME. Each fake records its argv, cwd, stdin and env, then answers like its agent.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -12,7 +12,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
 const SECRET = 'CANARY-login-secret-5d1e';
 // FAKE_<RUNNER>: ok (default), broken (--version exits 1), hang, grandchild (holds stdout after exit), write, flaky (529 once),
-// prose (answers in plain text, no JSON), error (claude's own is_error result), empty-error (claude's is_error result with no text), stale (codex writes its answer then 529s; the retry writes nothing).
+// prose (answers in plain text, no JSON), error (claude's is_error result; pi's error message, exit 0), empty-error (claude's is_error result with no text), stale (codex writes its answer then 529s; the retry writes nothing).
 const FAKE = `
 const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const name = path.basename(process.argv[1]), args = process.argv.slice(2), mode = process.env['FAKE_' + name.toUpperCase()] || 'ok';
@@ -31,6 +31,11 @@ else {
   if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: mode === 'error' || mode === 'empty-error', result: mode === 'empty-error' ? undefined : mode === 'error' ? "The model's tool call could not be parsed" : text }));
   if (name === 'codex') { if (mode !== 'stale') fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
   if (name === 'opencode') console.log(JSON.stringify({ type: 'text', part: { text: 'thinking' } }) + '\\n' + JSON.stringify({ type: 'text', part: { text } }));
+  if (name === 'pi') console.log(JSON.stringify({ type: 'session' }) + '\\n' + JSON.stringify({ type: 'message_end', message: mode === 'error'
+    ? { role: 'assistant', content: [], stopReason: 'error', errorMessage: '400: Model is unavailable.' }
+    : { role: 'assistant', content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'text', text }], stopReason: 'stop' } }));
+  if (name === 'gemini') console.log(JSON.stringify({ response: text, stats: {} }));
+  if (name === 'acpx') for (const t of [text.slice(0, 5), text.slice(5)]) console.log(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } } } }));
 }
 `;
 
@@ -41,7 +46,7 @@ function setup() {
   cpSync(new URL('../examples', import.meta.url).pathname, p, { recursive: true });
   for (const d of [bin, log, join(home, '.claude')]) mkdirSync(d, { recursive: true });
   writeFileSync(join(home, '.claude', '.credentials.json'), SECRET); // codex and opencode stay logged out
-  for (const name of ['claude', 'codex', 'opencode']) {
+  for (const name of ['claude', 'codex', 'opencode', 'pi', 'gemini', 'acpx']) {
     writeFileSync(join(bin, name), `#!${process.execPath}\n${FAKE}`);
     chmodSync(join(bin, name), 0o755);
   }
@@ -62,15 +67,21 @@ test('agents lists each agent CLI with version, login presence and default model
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   const by = Object.fromEntries(out.agents.map((a) => [a.runner, a]));
-  assert.deepEqual(Object.keys(by), ['claude', 'codex', 'opencode']);
+  assert.deepEqual(Object.keys(by), ['claude', 'codex', 'opencode', 'pi', 'gemini', 'acp']);
   assert.equal(by.claude.usable, true);
   assert.equal(by.claude.version, '1.2.3');
   assert.equal(by.claude.login, '.credentials.json'); // the file name only, never its contents
   assert.equal(by.opencode.login, 'not found (it may be in the system keychain)');
   assert.equal(by.codex.usable, false);
   assert.match(by.codex.problem, /--version failed: No version is set for shim: codex/);
-  for (const a of out.agents) assert.equal(a.model, MODELS[a.runner][0]); // defaults come from src/models.json
-  assert.deepEqual([by.claude.tools, by.codex.tools, by.opencode.tools], ['off', 'read-only', 'off']);
+  for (const a of out.agents) assert.equal(a.model, MODELS[a.runner]?.[0] ?? ''); // defaults come from src/models.json; acp: the target's own
+  assert.deepEqual(out.agents.map((a) => a.tools), ['off', 'read-only', 'off', 'off', 'read-only', 'off']);
+  assert.equal(by.acp.bin, join(tmp, 'bin', 'acpx'));
+  assert.equal(by.pi.problem, ''); // offered: its tool-off mode is confirmed live
+  for (const r of ['gemini', 'acp']) { // usable, so --test can check them, but never picked as worker or judge
+    assert.equal(by[r].usable, true);
+    assert.match(by[r].problem, /^not offered: /);
+  }
   assert.deepEqual(out.worker, { runner: 'claude', model: MODELS.claude[0], bin: join(tmp, 'bin', 'claude'), problem: '' });
   assert.equal(out.judge.runner, 'opencode'); // the first usable identity that differs from the worker's
   assert.ok(!(r.stdout + r.stderr).includes('CANARY'), 'login contents never print');
@@ -79,7 +90,8 @@ test('agents lists each agent CLI with version, login presence and default model
   const own = lfm({ LFM_MODEL: 'gpt-6-luna' }, 'agents'); // a listed model moves the auto worker to the CLI that lists it
   assert.equal(own.status, 0, own.stderr);
   const toon = decode(own.stdout);
-  assert.deepEqual(toon.agents.map((a) => [a.runner, a.model]), [['claude', MODELS.claude[0]], ['codex', 'gpt-6-luna'], ['opencode', MODELS.opencode[0]]]);
+  assert.deepEqual(toon.agents.map((a) => [a.runner, a.model]), [['claude', MODELS.claude[0]], ['codex', 'gpt-6-luna'], ['opencode', MODELS.opencode[0]],
+    ['pi', MODELS.pi[0]], ['gemini', MODELS.gemini[0]], ['acp', '']]);
   assert.equal(toon.worker.runner, 'codex');
   assert.equal(toon.worker.model, 'gpt-6-luna');
 
@@ -114,18 +126,29 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   assert.equal(two.status, 0, two.stderr);
 });
 
+test('a runner whose tool-off mode is not confirmed is never worker or judge, and says why', () => {
+  const { lfm, config } = setup();
+  config('worker: { runner: gemini }\njudge: { runner: acp:fake-agent }\n');
+  const r = lfm({}, 'agents', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^problem: worker: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode/m);
+  assert.match(r.stderr, /^problem: judge: acp is not offered: acpx --deny-all only denies the permission requests an agent sends/m);
+});
+
 test('agents --test starts each runner tool-off in its run dir, with the marker first and the runner default model', () => {
   const { p, lfm, calls, config, tmp } = setup();
   mkdirSync(join(tmp, 'lfm-home'));
   writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), 'runner_args: { codex: [--ignore-rules] }\n');
   config('caps: { timeout: 30s }\n');
-  for (const runner of ['claude', 'codex', 'opencode']) {
+  for (const runner of ['claude', 'codex', 'opencode', 'pi', 'gemini', 'acp:fake-agent']) {
     const r = lfm({}, 'agents', '--test', runner, '--json');
     assert.equal(r.status, 0, r.stderr);
-    const dir = join(p, '.lfm', 'runs', `test-${runner}`);
-    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner][0], tools: runner === 'codex' ? 'read-only' : 'off', dir,
-      reply: `hello from ${runner}` });
-    const [c] = calls(runner);
+    const bin = runner === 'acp:fake-agent' ? 'acpx' : runner, step = runner.replace(':', '-');
+    const dir = join(p, '.lfm', 'runs', `test-${step}`);
+    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner]?.[0] ?? '', tools: ['codex', 'gemini'].includes(runner) ? 'read-only' : 'off', dir,
+      reply: `hello from ${bin}`, offered: !['gemini', 'acp:fake-agent'].includes(runner) });
+    if (bin !== runner) assert.match(r.stderr, /^next: learn-from-mistakes-axi agents .*# why acp:fake-agent is not offered as worker or judge/m);
+    const [c] = calls(bin);
     assert.equal(c.cwd, dir);
     assert.ok(!existsSync(join(dir, 'x.txt')));
   }
@@ -139,6 +162,14 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
     '--', 'lfm-run:test:opencode Follow the instructions in the attached file.']);
   assert.equal(oc.permission, '{"*":"deny"}');
   assert.match(readFileSync(join(run('opencode'), 'prompt-opencode.md'), 'utf8'), /^lfm-run:test:opencode\nThis tests that your tools are off/);
+  const [pi] = calls('pi'), [gm] = calls('gemini'), [ax] = calls('acpx');
+  assert.deepEqual(pi.args, ['-p', '--model', MODELS.pi[0], '--mode', 'json', '--no-session', '--no-tools', '--no-context-files', '--no-skills', '--no-extensions']);
+  assert.match(pi.stdin, /^lfm-run:test:pi\nThis tests that your tools are off/);
+  assert.deepEqual(gm.args, ['-p', 'lfm-run:test:gemini Follow the instructions above.', '-m', MODELS.gemini[0], '-o', 'json', '--approval-mode', 'plan', '--skip-trust', '-e', 'none']);
+  assert.match(gm.stdin, /^lfm-run:test:gemini\nThis tests that your tools are off/);
+  assert.deepEqual(ax.args, ['--cwd', run('acp-fake-agent'), '--format', 'json', '--json-strict', '--deny-all', '--allowed-tools', '', '--non-interactive-permissions', 'deny',
+    'fake-agent', 'exec', '--file', '-']);
+  assert.match(ax.stdin, /^lfm-run:test:acp-fake-agent\nThis tests that your tools are off/);
   assert.deepEqual(readdirSync(join(p, '.lfm')).sort(), ['.gitignore', 'runs']);
 });
 
@@ -195,6 +226,13 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   assert.equal(stale.status, 1, stale.stderr);
   assert.match(stale.stderr, /^error: codex: the answer holds no JSON object: empty$/m);
   assert.equal(calls('codex').length - before, 2); // the 529 and the retry
+
+  const piErr = lfm({ FAKE_PI: 'error' }, 'agents', '--test', 'pi'); // pi exits 0 on a failed call; its error message is the cause
+  assert.equal(piErr.status, 1);
+  assert.match(piErr.stderr, /^error: pi: 400: Model is unavailable\.$/m);
+  const acpWrite = lfm({ FAKE_ACPX: 'write' }, 'agents', '--test', 'acp:fake-agent'); // an ACP agent that runs tools without asking
+  assert.equal(acpWrite.status, 1);
+  assert.match(acpWrite.stderr, /^error: acp wrote x\.txt in its run dir .*test-acp-fake-agent: its tools are not off$/m);
 
   const none = lfm({ PATH: '/nonexistent' }, 'agents', '--test', 'claude');
   assert.equal(none.status, 1);
