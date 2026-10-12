@@ -69,7 +69,7 @@ Every command stays useful:
 
 - Default output is **TOON** (compact, token-lean). `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema.
 - `--full` adds allow-listed evidence **ids** (record ids, store row ids, proposal refs) — never record text.
-- Each command ends with a `next:` hint on stderr, so an agent can chain `ingest → report → --full → --json` without reading the docs.
+- Each command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
 

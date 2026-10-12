@@ -155,6 +155,7 @@ test('prototype-named causes are counted as problems, never crash or vanish', ()
   writeFileSync(join(p, 'proto-proposals.jsonl'), '{"cause":"constructor","target":"t","owner":"o","change":"c","refs":["2034b8c4ce57"]}\n');
   const r = lfm('report', '--labels', join(p, 'proto.jsonl'), '--proposals', join(p, 'proto-proposals.jsonl'));
   assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /next: lfm report .*--labels .*--proposals/); // the re-run keeps the inputs it was given
   const model = decode(r.stdout);
   assert.equal(model.problems, 2); // the label and the proposal are each counted
   assert.ok(!model.causes.some((c) => c.cause === 'constructor'));
@@ -166,6 +167,7 @@ test('empty input exits 3 with a next command', () => {
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
   const ing = lfm('ingest');
   assert.match(ing.stdout, /log +markdown-log +0 items/);
+  assert.match(ing.stdout, /then lfm count .*--dir/); // the labelling step keeps the dir it was told to use
   assert.match(ing.stderr, /next: lfm\b.*--dir/); // the report hint keeps the dir it was told to use
   const r = lfm('count');
   assert.equal(r.status, 3);

@@ -100,7 +100,7 @@ function readJsonl(file, required) {
   });
 }
 
-function ingest(cfg) {
+function ingest(cfg, opts) {
   mkdirSync(cfg.state, { recursive: true });
   const records = [], rows = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
@@ -114,7 +114,7 @@ function ingest(cfg) {
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   for (const s of sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  ${s.hash.startsWith('mtime') ? s.hash : `sha256 ${s.hash.slice(0, 12)}`}`);
-  console.log(`state: ${cfg.state}\nnext: label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then lfm count`);
+  console.log(`state: ${cfg.state}\nnext: label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`);
 }
 
 function analyse(cfg, files) {
@@ -255,7 +255,7 @@ function main() {
     else throw new UsageError(USAGE);
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
-  if (cmd === 'ingest') { ingest(cfg); hint(withContext('lfm', 'the report for this project', opts)); return; }
+  if (cmd === 'ingest') { ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
   const a = analyse(cfg, opts);
   if (!a.records.size && !a.rows.length) {
     console.error('no records or rows in the sources: nothing to count');
@@ -264,8 +264,8 @@ function main() {
   }
   console.log(render(project(a, full), json));
   if (a.problems.length) {
-    console.error(`problems: ${a.problems.length}   # fix labels.jsonl or proposals.jsonl, then run lfm report`);
-    hint(NEXT(json, full, opts));
+    console.error(`problems: ${a.problems.length}   # fix labels.jsonl or proposals.jsonl`);
+    hint(withContext(`lfm report${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts));
     process.exit(1);
   }
   hint(NEXT(json, full, opts));
