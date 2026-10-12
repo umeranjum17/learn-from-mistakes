@@ -78,7 +78,7 @@ export function metrics(events, window) {
   const rows = inWindow(events, window);
   const count = (f) => rows.filter(f).length;
   const sessions = new Set(rows.map((e) => e.session_id)).size, results = count((e) => e.kind === 'tool_result');
-  const ratio = (n, d) => (d ? Math.round((n / d) * 1000) / 1000 : null);
+  const ratio = (n, d) => (d ? n / d : null);
   return {
     tool_error_rate: ratio(count((e) => e.kind === 'tool_result' && ['tool_error', 'nonzero_exit', 'test_fail'].includes(e.signal)), results),
     corrections_per_session: ratio(count((e) => e.signal === 'correction'), sessions),

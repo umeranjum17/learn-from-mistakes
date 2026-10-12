@@ -103,13 +103,13 @@ const measure = (e) => ({ metric: e.metric ?? `cause_count:${e.cause}`, tripwire
 const UNPRINTABLE = /[\p{Cc}\u2028\u2029]/u;
 // A value the user typed, safe to echo: quoted, or a placeholder when long or not printable.
 const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
-// Owner text for --what/--why: trimmed, 1-200 characters, no line breaks or control characters.
-function oneLine(text) {
+// Owner text for --what/--why: trimmed, 1-200 characters, no line breaks or control characters. A stored metric
+// allows a tab, since a cause key may hold one and the default metric is built from it.
+function oneLine(text, { allowTab = false } = {}) {
   const t = text.trim();
-  return [...t].length >= 1 && [...t].length <= 200 && !UNPRINTABLE.test(t) ? t : undefined;
+  return [...t].length >= 1 && [...t].length <= 200 && !UNPRINTABLE.test(allowTab ? t.replaceAll('\t', '') : t) ? t : undefined;
 }
-// A stored metric: 1-200 characters, one line. A tab stays, since a cause key may hold one and the default metric is built from it.
-const storedMetric = (m) => [...m].length >= 1 && [...m].length <= 200 && !UNPRINTABLE.test(m.replaceAll('\t', ''));
+const storedMetric = (m) => oneLine(m, { allowTab: true }) !== undefined;
 
 // ponytail: single-writer ledger. The id is the highest chg-<n> + 1 and the write is one
 // O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
@@ -143,6 +143,7 @@ function recordChange(cfg, opts, json) {
   const entries = cleanLedger(file, opts);
   const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
   const { metric, kind } = measure({ cause: opts.cause, metric: opts.metric, kind: opts.kind });
+  if (!storedMetric(metric)) throw new UsageError(`metric ${shown(metric)} must be one line of 1-200 characters, with no control characters or line separators`, form);
   const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at, metric,
     ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind };
   stateDir(cfg);

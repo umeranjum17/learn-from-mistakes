@@ -749,6 +749,26 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.deepEqual(JSON.parse(exported('--json').stdout).changes.slice(5).map((c) => c.metric), ['cause_count:spaced\tcause ', 'cause_count:agent-exit-wait']);
 });
 
+test('change applied refuses a metric the ledger would not read back, and writes nothing', () => {
+  const { p, lfm } = setup();
+  const cfgFile = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(cfgFile, readFileSync(cfgFile, 'utf8').replace('causes:\n', `causes:\n  "line\\u2028break":\n    description: A key with a line separator.\n  ${'x'.repeat(190)}:\n    description: A key too long for a metric.\n`));
+  const ledger = join(p, '.lfm', 'changes.jsonl');
+  assert.equal(lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234').status, 0);
+  const before = readFileSync(ledger);
+  for (const cause of ['line break', 'x'.repeat(190)]) {
+    const byDefault = lfm('change', 'applied', '--cause', cause, '--ref', 'abc1234');
+    assert.equal(byDefault.status, 2, cause);
+    assert.match(byDefault.stderr, /^error: metric \(invalid value\) must be one line of 1-200 characters/m);
+    const explicit = lfm('change', 'applied', '--cause', cause, '--ref', 'abc1234', '--metric', `cause_count:${cause}`);
+    assert.equal(explicit.status, 2, cause);
+    assert.ok(readFileSync(ledger).equals(before), `refused input changed the ledger: ${cause}`);
+  }
+  const exported = lfm('changes', '--json');
+  assert.equal(exported.status, 0, exported.stderr); // the ledger still reads
+  assert.equal(JSON.parse(exported.stdout).changes.length, 1);
+});
+
 test('empty input exits 3 with a next command', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, 'defects.md'), '');

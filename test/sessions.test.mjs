@@ -381,3 +381,23 @@ test('an OpenCode store that is not a database fails the retro with an error nam
   assert.equal(r.status, 1, r.stdout);
   assert.ok(r.stderr.includes(`cannot read a opencode session store at ${join(env.XDG_DATA_HOME, 'opencode', 'opencode.db')}`), r.stderr);
 });
+
+test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0.05", shown as 0.05', () => {
+  const { p, claude, lfm } = setup();
+  rmSync(join(claude, 'projects'), { recursive: true });
+  const now = new Date().toISOString();
+  const call = (id) => ({ type: 'assistant', cwd: p, timestamp: now, message: { content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: `${id}.txt` } }] } });
+  const result = (id, i) => ({ type: 'user', cwd: p, timestamp: now, message: { content: [{ type: 'tool_result', tool_use_id: id, content: i < 25 ? 'File does not exist.' : 'ok', ...(i < 25 && { is_error: true }) }] } });
+  const ids = Array.from({ length: 496 }, (_, i) => `t${i}`);
+  mkdirSync(join(claude, 'projects', '-repo'), { recursive: true });
+  writeFileSync(join(claude, 'projects', '-repo', 's-rate.jsonl'), ids.flatMap((id, i) => [call(id), result(id, i)]).map((r) => JSON.stringify(r)).join('\n'));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions }\ntargets: { tool_error_rate: "<= 0.05" }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const row = decode(r.stdout).metrics.find((m) => m.name === 'tool_error_rate');
+  assert.equal(row.current, 0.05);
+  assert.equal(row.target, '<= 0.05');
+  assert.equal(row.met, 'missed');
+  const [stored] = query(p, `SELECT value, met FROM metrics WHERE run_id = ? AND name = 'tool_error_rate' AND window = 'current'`, decode(r.stdout).run.id);
+  assert.deepEqual(stored, { value: 25 / 496, met: 0 });
+});
