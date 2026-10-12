@@ -881,10 +881,11 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.equal(attached.status, 0, attached.stderr);
   const lines = attached.stdout.split('\n');
   const at = (re) => lines.findIndex((l) => re.test(l));
-  const order = [/^collect: log +markdown-log +13 items  sha256 [0-9a-f]{12}$/, /^collect: gate +no-mistakes +5 items/, /^collect: completed$/,
+  const order = [/^collect: log +markdown-log +13 items$/, /^collect: gate +no-mistakes +5 items$/, /^collect: completed$/,
     /^report: running$/, /^report: repeated: /, /^report: completed$/, /^run:$/];
   assert.ok(order.every((re) => at(re) >= 0), attached.stdout);
   assert.deepEqual(order.map(at), order.map(at).toSorted((a, b) => a - b), attached.stdout);
+  assert.doesNotMatch(attached.stdout, /sha256/);
   assert.equal(decode(attached.stdout.slice(attached.stdout.indexOf('run:\n'))).run.status, 'completed');
   assert.match(attached.stderr, /^next: learn-from-mistakes-axi report /m);
 
@@ -892,7 +893,8 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.equal(log.status, 0, log.stderr);
   const l = JSON.parse(log.stdout);
   assert.deepEqual([l.step, l.run, l.status, l.lines, l.log.length], ['collect', first.id, 'completed', '2 total', 2]);
-  assert.match(l.log[0].line, /^log +markdown-log +13 items/);
+  assert.match(l.log[0].line, /^log +markdown-log +13 items$/);
+  assert.doesNotMatch(log.stdout, /sha256/);
   const nope = lfm('logs', '--step', 'analyse');
   assert.equal(nope.status, 2, nope.stderr);
   assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "analyse" \\(steps: collect, report\\)$`, 'm'));
@@ -920,7 +922,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.equal(again.status, 2, again.stderr);
   assert.match(again.stderr, new RegExp(`^error: run ${run.id} is not running \\(cancelled\\)$`, 'm'));
 
-  // A plain rerun starts a new run with the same settings and names the run it started from; the cancelled run stays as it was.
+  // A plain rerun starts a new run with the current config and names the run it started from; the cancelled run stays as it was.
   const rerun = lfm('rerun', '--run', String(run.id), '--wait', '1m', '--json');
   assert.equal(rerun.status, 0, rerun.stderr);
   assert.match(rerun.stderr, new RegExp(`^rerun: started run ${run.id + 1} from run ${run.id}$`, 'm'));

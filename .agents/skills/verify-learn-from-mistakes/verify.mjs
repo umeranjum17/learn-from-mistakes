@@ -118,7 +118,7 @@ try {
   run('retro-slow', process.execPath, [cli, 'retro', '--dir', staged], 0, { LFM_TEST_SLOW_STEP: 'report:20000' }); // test-only flag: report sleeps 20 s, so a failed abort leaves no long worker
   drive('abort', 'abort', '--json'); // the worker ends and the run is cancelled
   assert.equal(JSON.parse(readFileSync(join(evidence, 'abort.stdout'), 'utf8')).run.status, 'cancelled', 'abort does not cancel the run');
-  drive('rerun', 'rerun', '--wait', '1m'); // a new run with the same settings
+  drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
   // Config v2: every new key loads and the run completes the same steps; a bad runner exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { worker: { runner: 'auto', model: '' }, judge: { runner: 'acp:gemini', model: 'cheap-model' }, window: '7d',

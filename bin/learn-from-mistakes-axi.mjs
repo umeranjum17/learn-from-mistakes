@@ -148,7 +148,7 @@ function readInput(file, flag, explicit, rerunHint) {
   return readJsonl(file, { rerunHint });
 }
 
-export const sourceLine = (s) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`;
+export const sourceLine = (s, hash = true) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items${hash ? `  sha256 ${s.hash.slice(0, 12)}` : ''}`;
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts and numbers of a sessions source), the session events, and the start of the read range.
@@ -336,7 +336,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   attach              print the run's step states and log lines as they come, until it ends
   logs --step <name>  print one step's log lines
   abort               stop the running run: its worker ends and the run is cancelled
-  rerun               start a new run with the same settings as --run <id> (default: the last run), and say
+  rerun               start a new run with the current config; --run <id> names the run it follows (default: the last run), and say
                       which run it started from; --resume finishes that interrupted, cancelled or failed run
                       from its first step that is not completed
   agents              list the agent CLIs the tool can start: usable, version, login presence, default model

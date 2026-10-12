@@ -34,7 +34,7 @@ sends SIGTERM to the worker (only when its pid still has the saved start time),
 and SIGKILL after 3 s if it is still alive, then marks the run `cancelled`; it
 exits 2 when no run is running (3 before the first run), and its `next:` names
 `rerun --resume --run <id>`. A plain `rerun [--run <id>]` starts a new run with the
-same settings (today all in the config) and prints `rerun: started run <new> from run <id>`;
+current config; `--run <id>` names the run it follows, and it prints `rerun: started run <new> from run <id>`;
 `retro` while a run is running exits 2 and names it, with `next: ... attach --run <id>`.
 The store commands silence only node:sqlite's `ExperimentalWarning` (Node 22),
 and the worker starts with `--disable-warning=ExperimentalWarning`.
