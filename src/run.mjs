@@ -14,7 +14,19 @@ const RUN = 'id, status, pid, created_at, updated_at, error';
 const BIN = fileURLToPath(new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url));
 const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
-  collect: async (cfg) => ({ sources: await ingest(cfg) }),
+  // Reads the sources; session events go to the `events` table. It can run again: it first drops the run's events.
+  collect: async (cfg, db, id) => {
+    const own = db.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'invocations'`).get() // the tool's own agent sessions
+      ? db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id) : [];
+    const { sources, events, read_from } = await ingest(cfg, new Set(own));
+    const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, ref, excerpt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    db.exec('BEGIN');
+    db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
+    for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.ref, e.excerpt);
+    db.exec('COMMIT');
+    return { read_from, sources };
+  },
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
   report: (cfg) => {
     const { model, problems } = buildReport(cfg, {}, REPORT);
@@ -136,7 +148,8 @@ async function work(cfg, db, id) {
     step.run('running', iso(Date.now()), null, null, null, id, name);
     try {
       if (process.env.LFM_TEST_SLOW_STEP === name) await sleep(60_000); // set only by tests: a step slow enough to kill the worker in
-      step.run('completed', null, iso(Date.now()), null, JSON.stringify(await STEPS[name](cfg)), id, name);
+      const out = JSON.stringify(await STEPS[name](cfg, db, id)); // before the completed time is read
+      step.run('completed', null, iso(Date.now()), null, out, id, name);
     } catch (e) {
       failed = e;
       error = `${name}: ${e.message}`;
@@ -167,9 +180,12 @@ export async function runs(cfg) {
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
+// The run, its steps and, once collect is done, what each source read: counts and numbers, never content or hashes.
 function show(db, id) {
+  const collect = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id)?.output_json;
   return {
     run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),
+    ...(collect && { sources: JSON.parse(collect).sources.map(({ hash, ...s }) => s) }),
   };
 }
