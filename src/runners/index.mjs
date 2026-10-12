@@ -39,12 +39,13 @@ export function detect(cfg) {
 
 // The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
 const configuredModel = (cfg, name) => (name === 'worker' ? (process.env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
+const lists = (runner, model) => !!MODELS[runner]?.includes(model);
 
 // A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
 // it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
 function roleModel(cfg, name, runner) {
   const model = configuredModel(cfg, name);
-  if (model && (cfg[name]?.runner === runner || MODELS[runner]?.includes(model))) return model;
+  if (model && (cfg[name]?.runner === runner || lists(runner, model))) return model;
   return MODELS[runner]?.[0] ?? '';
 }
 
@@ -58,9 +59,9 @@ export function resolveRole(cfg, name, agents, worker) {
   const want = cfg[name];
   if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: configuredModel(cfg, name), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
   const model = configuredModel(cfg, name);
-  const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || MODELS[a.runner]?.includes(model) : a.runner === want.runner));
+  const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || lists(a.runner, model) : a.runner === want.runner));
   if (!pool.length) {
-    const a = agents.find((x) => x.runner === want.runner) ?? agents.find((x) => MODELS[x.runner]?.includes(model));
+    const a = agents.find((x) => x.runner === want.runner) ?? agents.find((x) => lists(x.runner, model));
     const reason = a?.runner === want.runner ? `${a.runner} is not usable` : `${a?.runner} lists model ${model} but is not usable`;
     return { runner: want.runner, model, bin: '', problem: a ? `${reason}: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
   }
@@ -123,6 +124,7 @@ export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpa
   const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
   const timeout = cfg.caps.timeout;
   for (let attempt = 0; ; attempt++) {
+    for (const f of cmd.outputs ?? []) rmSync(join(dir, f), { force: true });
     const r = await spawnOnce(bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
     const wrote = readdirSync(dir).filter((f) => !before.has(f));
     if (wrote.length) throw new InputError(`${runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, FIX);
