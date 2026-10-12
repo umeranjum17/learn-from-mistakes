@@ -197,10 +197,12 @@ test('the TOON report ends with one repeated summary line; --json is unchanged',
   assert.doesNotMatch(json.stdout, /^repeated: /m);
   assert.equal(JSON.parse(json.stdout).schema, 'lfm-report.v1');
   // Nothing repeated prints none, with ids and counts only, never record text.
+  // With nothing repeated every stock proposal would be a problem, so this reports with none.
+  writeFileSync(join(p, 'empty.jsonl'), '');
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')
     .replace('min_incidents: 3', 'min_incidents: 99'));
   assert.equal(lfm('ingest').status, 0);
-  const calm = report(lfm, p);
+  const calm = lfm('report', '--labels', inputs(p)[0], '--proposals', join(p, 'empty.jsonl'));
   assert.equal(calm.status, 0, calm.stderr);
   assert.equal(summaryOf(calm.stdout), 'repeated: none');
   assert.doesNotMatch(calm.stdout, /memory killer stopped|wait delay expired/i);
@@ -244,7 +246,10 @@ test('a store row with no timestamp still counts as a row but never as a day', (
     UPDATE step_results SET started_at = NULL, completed_at = NULL WHERE id = 'step-4';`); // 3 matching rows on one day, 1 undated
   w.close();
   assert.equal(lfm('ingest').status, 0);
-  const r = report(lfm, p, '--json');
+  // agent-exit-wait no longer repeats, so its stock proposal would be a problem; report without it.
+  const kept = readFileSync(join(p, 'proposals.jsonl'), 'utf8').split('\n').filter((l) => !l.includes('"agent-exit-wait"')).join('\n');
+  writeFileSync(join(p, 'dated.jsonl'), kept);
+  const r = lfm('report', '--labels', inputs(p)[0], '--proposals', join(p, 'dated.jsonl'), '--json');
   assert.equal(r.status, 0, r.stderr);
   const c = JSON.parse(r.stdout).causes.find((x) => x.cause === 'agent-exit-wait');
   assert.deepEqual(c.store, { matched: true, rows: 4, days: 1 });
@@ -346,6 +351,25 @@ test('bad input is counted, never echoed; unresolved refs exit 1', () => {
   appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'colour: blue\n');
   assert.equal(lfm('count').status, 2);
   assert.match(lfm('count').stderr, /unknown key colour/);
+});
+
+test('proposals follow the guide: repeated causes only, target, owner, at most five', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  const good = (cause) => JSON.stringify({ cause, target: 't', owner: 'o', change: 'c', refs: ['2034b8c4ce57'] });
+  const ref = ['2034b8c4ce57'];
+  for (const [file, lines, line, message] of [
+    ['unrepeated.jsonl', `${good('other')}\n`, 1, 'cause "other" did not repeat; propose only for repeated causes'],
+    ['no-target.jsonl', `${JSON.stringify({ cause: 'server-memory-kill', owner: 'o', change: 'c', refs: ref })}\n`, 1, 'no target'],
+    ['no-owner.jsonl', `${JSON.stringify({ cause: 'server-memory-kill', target: 't', owner: '   ', change: 'c', refs: ref })}\n`, 1, 'no owner'],
+    ['sixth.jsonl', `${Array.from({ length: 6 }, () => good('server-memory-kill')).join('\n')}\n`, 6, 'more than five proposals; keep the five strongest'],
+  ]) {
+    writeFileSync(join(p, file), lines);
+    const r = lfm('report', '--labels', inputs(p)[0], '--proposals', join(p, file));
+    assert.equal(r.status, 1, file);
+    assert.equal(decode(r.stdout).problems, 1, `${file}: the report still prints with the problem counted`);
+    assert.ok(r.stderr.split('\n').includes(`problem: ${file}:${line}: ${message}`), `${file}\n${r.stderr}`);
+  }
 });
 
 test('prototype-named causes are counted as problems, never crash or vanish', () => {

@@ -276,12 +276,17 @@ function analyse(cfg, files, rerun) {
     const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
-  const proposals = readInput(pf, 'proposals', files.proposals, rerun).map((p) => {
+  const repeatedByCause = new Map(list.map((g) => [g.cause, g.repeated]));
+  const proposals = readInput(pf, 'proposals', files.proposals, rerun).map((p, index) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
     const missing = refs.filter((ref) => !resolves(ref));
     const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
-      : !refs.length ? 'no evidence refs' : missing.length ? `${missing.length} of ${refs.length} refs not found` : !p.change ? 'no change text' : '';
+      : !refs.length ? 'no evidence refs' : missing.length ? `${missing.length} of ${refs.length} refs not found` : !p.change ? 'no change text'
+      : !repeatedByCause.get(p.cause) ? `cause ${shown(p.cause)} did not repeat; propose only for repeated causes`
+      : typeof p.target !== 'string' || !p.target.trim() ? 'no target'
+      : typeof p.owner !== 'string' || !p.owner.trim() ? 'no owner'
+      : index >= 5 ? 'more than five proposals; keep the five strongest' : '';
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
     return { ...p, refs: refs.filter(resolves), ok: !bad };
   });
