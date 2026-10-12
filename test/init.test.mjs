@@ -97,12 +97,15 @@ test('a pinned judge steers the auto worker onto a different agent CLI, and the 
 test('an empty or relative PATH entry never runs an agent CLI from the project dir', () => {
   const { p, env, config } = setup([]);
   writeFileSync(join(p, 'claude'), '#!/bin/sh\necho ran > ran.txt\necho "1.0.0"\n');
+  writeFileSync(join(p, 'git'), '#!/bin/sh\necho ran > ran-git.txt\n');
   chmodSync(join(p, 'claude'), 0o755);
+  chmodSync(join(p, 'git'), 0o755);
   for (const PATH of [`${env.PATH}:`, `.:${env.PATH}`]) {
     const r = spawnSync(process.execPath, [CLI, 'init', '--dir', p, '--json'], { encoding: 'utf8', cwd: p, env: { ...env, PATH } });
     assert.equal(r.status, 1, r.stdout + r.stderr);
     assert.match(r.stderr, /^error: worker: no usable agent CLI/m);
     assert.ok(!existsSync(join(p, 'ran.txt')), `the project-dir claude ran with PATH ${PATH}`);
+    assert.ok(!existsSync(join(p, 'ran-git.txt')), `the project-dir git ran with PATH ${PATH}`);
     assert.ok(!existsSync(config));
   }
 });

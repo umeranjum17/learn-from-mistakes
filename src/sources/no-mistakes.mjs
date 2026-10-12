@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource } from '../config.mjs';
+import { which } from '../runners/index.mjs';
 
 export const validate = pathSource;
 
@@ -15,7 +16,8 @@ export async function detect(dir) {
   const home = process.env.NM_HOME && resolve(process.env.NM_HOME);
   const path = join(home || join(homedir(), '.no-mistakes'), 'state.sqlite');
   if (!existsSync(path)) return;
-  const git = (...args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).stdout?.trim();
+  const bin = which('git');
+  const git = (...args) => bin && spawnSync(bin, ['-C', dir, ...args], { encoding: 'utf8' }).stdout?.trim();
   let db;
   try {
     const { DatabaseSync } = await import('node:sqlite');
