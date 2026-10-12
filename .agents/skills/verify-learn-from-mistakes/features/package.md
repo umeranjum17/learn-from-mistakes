@@ -15,7 +15,9 @@ Run the helper with `--package`:
 It records `pack.json`, `pack.manifest.txt` and the packed-command logs. The
 manifest must include `package/bin/lfm.mjs`, `package/package.json` and the skill,
 and must exclude `test`/`examples`. The installed bin's `report --json` must be
-`lfm-report.v1`, and the packaged skill file must exist in the installed prefix.
+`lfm-report.v1`, its `changes --json` must be `lfm-changes.v1`, the whole
+`npm test` suite must pass again with `LFM_CLI` set to the installed bin
+(`packed-npm-test`), and the packaged skill file must exist in the installed prefix.
 
 ## Gotchas
 This is the only journey that resolves the declared dependencies, so it uses the

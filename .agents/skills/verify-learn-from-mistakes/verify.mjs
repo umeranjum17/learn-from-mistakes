@@ -56,8 +56,8 @@ const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch,
   XDG_CONFIG_HOME: join(scratch, 'xdg'), XDG_CACHE_HOME: join(scratch, 'xdg'), XDG_DATA_HOME: join(scratch, 'xdg'), XDG_RUNTIME_DIR: join(scratch, 'runtime'),
   LFM_HOME: join(evidence, 'state'), npm_config_cache: join(scratch, 'npm-cache') };
 const commands = [];
-function run(name, command, args, expected = 0) {
-  const result = spawnSync(command, args, { cwd: repo, env, encoding: 'utf8' });
+function run(name, command, args, expected = 0, extraEnv = {}) {
+  const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
   save(`${name}.stdout`, result.stdout ?? '');
   save(`${name}.stderr`, result.stderr ?? '');
   commands.push({ name, command, args, cwd: repo, status: result.status, error: result.error?.message });
@@ -92,6 +92,13 @@ try {
   drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
   drive('count-unread', 'count');
   drive('count-labelled', 'count', '--labels', stagedLabels);
+  if (!mode) { // the synthetic config names the cause; a private run never records a change
+    drive('changes-empty', 'changes', '--json'); // config only, before any change
+    drive('change-applied', 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--at', '2026-01-02T03:04:05Z',
+      '--what', 'Run builds in their own memory group', '--why', 'The memory killer stopped the server three times', '--json');
+    drive('changes', 'changes');
+    drive('changes-json', 'changes', '--json');
+  }
   drive('report', 'report', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
@@ -113,6 +120,12 @@ try {
     run('packed-help', installed, ['--help']);
     run('packed-report', installed, ['report', '--json', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals]);
     assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v1', 'packed bin does not drive the report');
+    if (!mode) {
+      run('packed-changes', installed, ['changes', '--json', '--dir', staged]);
+      assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-changes.stdout'), 'utf8')).schema, 'lfm-changes.v1', 'packed bin does not drive the export');
+    }
+    // The same e2e journeys (the ledger and lfm-changes.v1 export included), driven through the installed bin.
+    run('packed-npm-test', 'npm', ['test', '--ignore-scripts'], 0, { LFM_CLI: installed });
     assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');
     save('pack.json', { tarball: tarball.slice(evidence.length + 1), sha256: createHash('sha256').update(readFileSync(tarball)).digest('hex'), files: manifest.length });
   }

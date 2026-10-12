@@ -67,9 +67,11 @@ Exit 1 means a label, proposal, or change-ledger problem; the output counts the 
 ## 6. Record a change you applied
 
 ```sh
-lfm change applied --cause <cause id> --ref <git sha or sha256:...>   # --at <ISO-8601> to backdate
+lfm change applied --cause <cause id> --ref <git sha or sha256:...> --what "<what changed>" --why "<why>"   # --at <ISO-8601> to backdate
 ```
 
 - `<cause>` must be a cause key from the config; `other` is never recordable.
 - `<ref>` is the version id of the change: a git commit sha (7-40 hex) or `sha256:<64 hex>` of the changed file.
-- The ledger holds ids, cause keys and times only — there is no free-text field — and the report then shows per cause `changes: { count, last_at }` (`--full` adds `change_ids`/`change_refs`).
+- `--what` and `--why` are optional, one line of 1-200 characters each. Write them for others to read: they leave the privacy bound through `lfm changes`, so never paste record text or label prose into them.
+- The report then shows per cause `changes: { count, last_at }` (`--full` adds `change_ids`/`change_refs`) and never prints `what`/`why`.
+- `lfm changes` (`--json` for JSON) prints every applied change under the `lfm-changes.v1` schema: `project`, and per change `id`, `cause`, `ref`, `at`, `what`, `why`. Other tools join on `project` + `id`.
