@@ -4,9 +4,11 @@
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
 
@@ -65,6 +67,37 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   assert.equal(causes['agent-exit-wait'].store.rows, 4); // typed store rows matched, never added to log
   assert.equal(causes['other'].repeated, false);
   assert.deepEqual(toon.coverage, { labelled: 13, total_records: 13, unlabelled: 0 });
+});
+
+test('ingest identifies the store by the rows it read, not its mtime, and never writes the store', () => {
+  const { p, home, lfm } = setup();
+  const db = join(p, 'gate.sqlite');
+  const bytes = () => createHash('sha256').update(readFileSync(db)).digest('hex');
+  const ingest = () => {
+    const before = bytes();
+    const r = lfm('ingest');
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(bytes(), before); // the read leaves the store's bytes as they were
+    const short = r.stdout.match(/^gate +no-mistakes +5 items  sha256 ([0-9a-f]{12})$/m)?.[1];
+    assert.ok(short, r.stdout);
+    const hash = JSON.parse(readFileSync(join(home, 'state', 'example', 'sources.json'), 'utf8')).sources.find((s) => s.id === 'gate').hash;
+    assert.match(hash, /^[0-9a-f]{64}$/);
+    assert.equal(hash.slice(0, 12), short);
+    return hash;
+  };
+  const first = ingest();
+  utimesSync(db, new Date('2001-02-03T04:05:06Z'), new Date('2001-02-03T04:05:06Z')); // same rows, new mtime
+  assert.equal(ingest(), first);
+
+  const w = new DatabaseSync(db);
+  w.prepare("UPDATE step_results SET error = 'not read' WHERE id = 'step-2'").run(); // a completed step: new bytes, same rows read
+  assert.equal(ingest(), first);
+  const { atime, mtime } = statSync(db);
+  w.prepare("UPDATE step_results SET error = 'lint: 3 errors' WHERE id = 'step-5'").run(); // one failed step's text
+  w.close();
+  utimesSync(db, atime, mtime); // changed rows, same mtime
+  assert.equal(statSync(db).mtimeMs, mtime.getTime());
+  assert.notEqual(ingest(), first);
 });
 
 test('next hints compose the flags already used so both report chains terminate at full+json', () => {
