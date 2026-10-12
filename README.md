@@ -177,7 +177,7 @@ causes[1]:
 
 ## For sign-off and other tools
 
-`learn-from-mistakes-axi changes --json` is the machine contract for applied changes, so a retro can join its own verdict (for example "Helped? yes/no/unclear") on a change:
+`learn-from-mistakes-axi changes --json` is the machine contract for applied changes, so another tool can join its own results on a change (for example a "Helped? yes/no/unclear" verdict, which this tool does not write yet):
 
 ```json
 {
