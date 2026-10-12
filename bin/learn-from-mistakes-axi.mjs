@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir.
+// learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir,
+// <project>/.lfm by default, which the tool git-ignores itself.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
 // labels.jsonl; this file only parses, dedups and counts.
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { encode as toonEncode } from '@toon-format/toon';
@@ -63,8 +64,31 @@ sources:
   const repeat = { min_incidents: 3, min_days: 2, ...mapping(p.repeat ?? {}, ['min_incidents', 'min_days'], `${file}: repeat`) };
   for (const [k, v] of Object.entries(repeat)) if (!Number.isInteger(v) || v < 1) throw new UsageError(`${file}: repeat.${k} must be a positive integer`);
   const name = p.name ?? basename(dir);
-  const root = global.state_root ? expand(String(global.state_root), LFM_HOME) : join(LFM_HOME, 'state');
-  return { name, sources, causes, repeat, state: join(root, name) };
+  if (global.state_root) return { name, sources, causes, repeat, state: join(expand(String(global.state_root), LFM_HOME), name) };
+  return { name, sources, causes, repeat, state: join(dir, '.lfm'), ignore: true };
+}
+
+// Create the state dir before a write. The in-project default gets a `*` .gitignore whenever it has none,
+// so its record text can never be committed; a file the user already has there is never overwritten.
+function stateDir(cfg) {
+  try { mkdirSync(cfg.state, { recursive: true }); } catch (e) {
+    throw new UsageError(`${cfg.state}: cannot create the state dir (${e.code})`, cfg.ignore
+      ? 'mv <project>/.lfm <elsewhere>   # free .lfm for the state dir, or set state_root in $LFM_HOME/config.yaml'
+      : 'edit state_root in $LFM_HOME/config.yaml   # a dir lfm can create and write');
+  }
+  if (!cfg.ignore) return;
+  const file = join(cfg.state, '.gitignore');
+  try { writeFileSync(file, '*\n', { flag: 'wx' }); } catch (e) {
+    if (e.code !== 'EEXIST') throw new UsageError(`${file}: cannot write (${e.code})`, 'chmod u+rwx <project>/.lfm   # the tool writes .lfm/.gitignore there');
+    // git reads only a regular .gitignore; a directory or symlink there would leave the state committable
+    if (!lstatSync(file).isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`,
+      'rm -r <project>/.lfm/.gitignore   # the tool then writes one that ignores all of .lfm');
+    let text;
+    try { text = readFileSync(file, 'utf8'); } catch (e2) { throw new UsageError(`${file}: cannot read (${e2.code})`, 'chmod u+r <project>/.lfm/.gitignore   # the tool checks it ignores all of .lfm'); }
+    const lines = text.split(/\r?\n/);
+    if (!lines.includes('*') || lines.some((l) => l.startsWith('!'))) throw new UsageError(`${file}: does not ignore all of .lfm, so state could be committed; make it contain the line *`,
+      "echo '*' >> <project>/.lfm/.gitignore   # ignore all of .lfm, and delete any line starting with !");
+  }
 }
 
 // Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.
@@ -185,7 +209,7 @@ function recordChange(cfg, opts, json) {
   const entries = cleanLedger(file, opts);
   const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
   const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
-  mkdirSync(cfg.state, { recursive: true });
+  stateDir(cfg);
   appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
   console.log(render(entry, json)); // what/why leave only through `learn-from-mistakes-axi changes`
   hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts));
@@ -205,7 +229,7 @@ function readInput(file, flag, explicit, rerun) {
 }
 
 async function ingest(cfg, opts) {
-  mkdirSync(cfg.state, { recursive: true });
+  stateDir(cfg);
   const records = [], rows = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     const got = await (s.type === 'markdown-log' ? readLog(id, s.path) : readStore(id, s.path));
@@ -359,7 +383,7 @@ function summaryLine(model) {
 const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
   guide               print the agent procedure: config, ingest, label, propose, report
-  ingest              read the configured sources (read-only) into the state dir
+  ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
   count               print the counts (same projection as \`report\`)
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
