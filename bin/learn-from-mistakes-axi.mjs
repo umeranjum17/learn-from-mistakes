@@ -336,8 +336,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   attach              print the run's step states and log lines as they come, until it ends
   logs --step <name>  print one step's log lines
   abort               stop the running run: its worker ends and the run is cancelled
-  rerun               start a new run with the same settings; --resume finishes an interrupted, cancelled
-                      or failed run from its first step that is not completed
+  rerun               start a new run with the same settings as --run <id> (default: the last run), and say
+                      which run it started from; --resume finishes that interrupted, cancelled or failed run
+                      from its first step that is not completed
   agents              list the agent CLIs the tool can start: usable, version, login presence, default model
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
@@ -538,11 +539,12 @@ async function runCommand(cmd, cfg, opts) {
     throw new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
   }
   console.log(render(out, opts.json));
+  if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --wait 8m', 'ingest and report as a saved run', opts));
   else if (cmd === 'logs') hint(withContext(`learn-from-mistakes-axi status --run ${out.run}`, 'the run and all its steps', opts));
   else if (out.run.status === 'running') hint(withContext(`learn-from-mistakes-axi attach --run ${out.run.id}`, `${opts.wait ? 'still running; ' : ''}follow its steps while the run goes on in the background`, opts));
-  else if (cmd === 'abort') hint(withContext(`learn-from-mistakes-axi rerun --run ${out.run.id} --wait 8m`, `start it again; rerun --resume --run ${out.run.id} skips its completed steps`, opts));
+  else if (cmd === 'abort') hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, 'finish it from its first step that is not completed', opts));
   else if (out.run.status === 'failed') {
     console.error(`error: ${out.run.error}`);
     const step = out.steps.find((s) => s.status === 'failed')?.name;

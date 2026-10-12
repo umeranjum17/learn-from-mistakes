@@ -32,8 +32,9 @@ moves the step lines to stderr). `logs --step <name> [--run <id>]` prints
 exits 2 naming the run's steps. `abort [--run <id>]` (default: the running run)
 sends SIGTERM to the worker (only when its pid still has the saved start time),
 and SIGKILL after 3 s if it is still alive, then marks the run `cancelled`; it
-exits 2 when no run is running (3 before the first run). A plain `rerun [--run <id>]` starts a new run with
-the same settings (today all in the config); `retro` while a run is running
+exits 2 when no run is running (3 before the first run), and its `next:` names `rerun --resume --run <id>`. A plain
+`rerun [--run <id>]` starts a new run with the same settings (today all in the config) and prints
+`rerun: started run <new> from run <id>`; `retro` while a run is running
 exits 2 and names it, with `next: ... attach --run <id>`.
 The store commands silence only node:sqlite's `ExperimentalWarning` (Node 22),
 and the worker starts with `--disable-warning=ExperimentalWarning`.
@@ -65,8 +66,9 @@ with `collect` byte-identical (not run again); a second resume exits 2.
 the `repeated:` line and `report: completed` in that order, then the completed run,
 and exits 0; `logs --step collect --json` gives `2 total` lines; `logs --step analyse`
 exits 2; with a 60 s report step, a second `retro` exits 2 naming the run, `abort`
-gives `cancelled` (`report: cancelled by SIGTERM`, the worker pid gone), a second
-`abort` exits 2; `rerun --run <id> --wait 1m` completes a new run.
+gives `cancelled` (`report: cancelled by SIGTERM`, the worker pid gone) and its
+`next:` names `rerun --resume --run <id>`, a second `abort` exits 2; `rerun --run <id> --wait 1m`
+completes a new run and prints `rerun: started run <new> from run <id>`.
 The rejected-input rows cover a bad `--wait`, `--wait` with `--foreground`,
 `logs` without `--step`, a bad `--step`, `attach --wait` and a bad `--run`. The helper drives
 `retro --foreground`, `retro --wait 1m`, `status`, `runs`, `attach`, `logs --step collect`,

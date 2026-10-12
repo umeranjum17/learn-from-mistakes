@@ -912,7 +912,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.equal(a.run.error, 'report: cancelled by SIGTERM'); // the worker's own trap ended it
   assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'cancelled']);
   assert.throws(() => process.kill(run.pid, 0), { code: 'ESRCH' }, 'the worker is gone');
-  assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --run ${run.id} --wait 8m   # start it again`, 'm'));
+  assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
   const idle = lfm('abort');
   assert.equal(idle.status, 2, idle.stderr);
   assert.match(idle.stderr, /^error: no run is running$/m);
@@ -920,11 +920,12 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.equal(again.status, 2, again.stderr);
   assert.match(again.stderr, new RegExp(`^error: run ${run.id} is not running \\(cancelled\\)$`, 'm'));
 
-  // A plain rerun starts a new run with the same settings; the cancelled run stays as it was.
+  // A plain rerun starts a new run with the same settings and names the run it started from; the cancelled run stays as it was.
   const rerun = lfm('rerun', '--run', String(run.id), '--wait', '1m', '--json');
   assert.equal(rerun.status, 0, rerun.stderr);
+  assert.match(rerun.stderr, new RegExp(`^rerun: started run ${run.id + 1} from run ${run.id}$`, 'm'));
   const r = JSON.parse(rerun.stdout);
-  assert.equal(r.run.id, run.id + 1);
+  assert.deepEqual([r.run.id, r.from], [run.id + 1, run.id]);
   assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed']);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs.map((x) => x.status), ['completed', 'cancelled', 'completed']);
 });
