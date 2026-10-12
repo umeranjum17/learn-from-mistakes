@@ -128,7 +128,11 @@ function ingest(cfg, opts) {
 function analyse(cfg, files) {
   const records = new Map(readJsonl(join(cfg.state, 'records.jsonl'), true).map((r) => [r.id, r]));
   const rows = readJsonl(join(cfg.state, 'rows.jsonl'), true);
-  const meta = JSON.parse(readFileSync(join(cfg.state, 'sources.json'), 'utf8'));
+  const metaFile = join(cfg.state, 'sources.json');
+  if (!existsSync(metaFile)) throw new UsageError(`${metaFile} missing: run lfm ingest first`);
+  let meta;
+  try { meta = JSON.parse(readText(metaFile)); } catch (e) { if (e instanceof UsageError) throw e; throw new UsageError(`${metaFile}: not valid JSON`); }
+  if (!meta || typeof meta !== 'object' || !Array.isArray(meta.sources)) throw new UsageError(`${metaFile}: not valid sources state (run lfm ingest again)`);
   const problems = [];
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
