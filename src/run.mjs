@@ -5,7 +5,7 @@
 // gone is interrupted, and `rerun --resume` runs it again from its first step that is not completed.
 // Each step writes its lines to <state dir>/runs/<id>/<step>.log; `attach` follows them and `logs` prints one.
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
@@ -99,7 +99,9 @@ export async function rerun(cfg, opts) {
     const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
     if (status === 'completed') throw new UsageError(`run ${id} already completed`, withContext('learn-from-mistakes-axi retro --wait 8m', 'a new run', opts));
     blockRunning(db, opts);
+    const reset = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status != 'completed'`).all(id).map((s) => s.name);
     db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND status != 'completed'`).run(id);
+    for (const name of reset) dropLog(cfg, id, name);
     db.prepare(`UPDATE runs SET status = 'running', error = NULL, pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ?`).run(process.pid, startTime(process.pid), iso(Date.now()), id);
     return id;
   });
@@ -213,6 +215,14 @@ export async function attach(cfg, opts) {
     }
     if (ended) return show(db, id);
     await sleep(1000);
+  }
+}
+
+// A step that is run again starts with no lines: the log of its failed attempt is removed.
+function dropLog(cfg, id, name) {
+  const file = join(runDir(cfg, id), `${name}.log`);
+  try { rmSync(file, { force: true }); } catch (e) {
+    throw new UsageError(`${file}: cannot remove (${e.code})`, `rm ${file}   # the step log of the attempt that is run again`);
   }
 }
 
