@@ -157,6 +157,34 @@ test('help, guide and version work without a project file', () => {
   assert.equal(raw('frobnicate').status, 2); // an unknown command is still a usage error
 });
 
+test('the agent model default is cheap, with an LFM_MODEL override, never opus/sonnet/sol', () => {
+  const premium = [/opus/i, /sonnet/i, /\bsol\b/i]; // a line naming one must be the never-default ban
+  const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
+  after(() => rmSync(tmp, { recursive: true }));
+  const cleanEnv = () => { const e = { ...process.env, LFM_HOME: join(tmp, 'home') }; delete e.LFM_MODEL; return e; };
+  const guide = (env) => spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8', cwd: tmp, env });
+  const dflt = guide(cleanEnv()); // the real CLI with no override set
+  assert.equal(dflt.status, 0, dflt.stderr);
+  assert.ok(dflt.stdout.includes('opencode-go/muse-spark-1.3-contributor'), 'guide defaults to Go Muse');
+  const over = guide({ ...cleanEnv(), LFM_MODEL: 'my-own-model' }); // the user override resolves
+  assert.equal(over.status, 0, over.stderr);
+  assert.ok(over.stdout.includes('my-own-model'), 'guide names the LFM_MODEL override');
+  const sources = {
+    guide: dflt.stdout, // the agent procedure an agent follows
+    skill: readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8'),
+    readme: readFileSync(new URL('../README.md', import.meta.url), 'utf8'),
+  };
+  for (const [name, text] of Object.entries(sources)) {
+    assert.ok(text.includes('opencode-go/muse-spark-1.3-contributor'), `${name} states the Go Muse default`);
+    assert.ok(text.includes('LFM_MODEL'), `${name} documents the user model override`);
+    for (const line of text.split('\n')) {
+      if (premium.some((re) => re.test(line))) {
+        assert.match(line, /never/i, `${name} takes a premium model as a default: ${line.trim()}`);
+      }
+    }
+  }
+});
+
 test('runs that never read a store print no ExperimentalWarning', () => {
   const { p, lfm, raw } = setup();
   for (const r of [raw('--version'), raw('--help')]) {

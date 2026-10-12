@@ -413,8 +413,16 @@ next: learn-from-mistakes-axi report --full  # add the evidence ids
 next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
 next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date, what and why`;
 // The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
-const GUIDE = `learn-from-mistakes-axi guide: you judge each record, the CLI counts. Never edit the sources,
+// The CLI itself makes no network or model calls; the model lines below only tell the agent
+// which session model to use for the judging work. LFM_MODEL lets the user pick their own;
+// the default stays cheap.
+const MODEL_DEFAULT = 'opencode-go/muse-spark-1.3-contributor';
+const sessionModel = () => (process.env.LFM_MODEL ?? '').trim() || MODEL_DEFAULT;
+const guideText = () => `learn-from-mistakes-axi guide: you judge each record, the CLI counts. Never edit the sources,
 AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
+
+Model: do this work on ${sessionModel()} (LFM_MODEL set: your own model; unset: ${MODEL_DEFAULT}).
+Cheap alternates are claude-haiku-5-5 and gpt-6-luna. Never take Opus, Sonnet or Sol as the default.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>
@@ -514,7 +522,7 @@ async function main() {
     } else opts[flag.slice(2)] = argv[i + 1];
     i += 2;
   }
-  if (cmd === 'guide') { console.log(GUIDE); return; }
+  if (cmd === 'guide') { console.log(guideText()); return; }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') { await ingest(cfg, opts); hint(withContext('learn-from-mistakes-axi', 'the report for this project', opts)); return; }
   if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }

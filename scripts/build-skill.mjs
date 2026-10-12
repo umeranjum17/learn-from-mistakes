@@ -36,6 +36,13 @@ You do not need ${bin} installed - invoke it with \`${npx} <command>\`.
 If its output shows a follow-up command starting with \`${bin}\`, run it as \`${npx} ...\` instead.
 Never edit the sources or instruction files; your output is a report and recommendations only.
 
+## Model
+
+Do this work on Go Muse (opencode-go/muse-spark-1.3-contributor) by default.
+Cheap alternates are claude-haiku-5-5 and gpt-6-luna. Never take Opus, Sonnet or Sol as the default.
+To use your own model instead, set LFM_MODEL to its id (\`${npx} guide\` then names it).
+The CLI itself makes no network or model calls.
+
 ## Request
 
 $ARGUMENTS
