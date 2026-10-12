@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { isMetric, loadConfig, loadGlobal, METRIC_RULE, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import * as byokit from '../src/runners/byokit.mjs';
 import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
@@ -23,8 +24,8 @@ export class InputError extends UsageError { code = 1; } // a line in a file the
 export class EmptyError extends UsageError { code = 3; } // nothing to read
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
-export function readText(file, name = file) {
-  try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${name}: cannot read (${e.code})`); }
+export function readText(file, name = file, next = undefined) {
+  try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${name}: cannot read (${e.code})`, next); }
 }
 
 // Create the state dir before a write. The in-project default gets a `*` .gitignore whenever it has none,
@@ -338,10 +339,12 @@ export function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
   init                write .learn-from-mistakes.yaml if the project has none: a worker and a different judge from the
                       agent CLIs found, and the sources found; otherwise print it and its gaps. Either way, make the state dir .lfm/ and its .gitignore
+  doctor              check node, git, the config, .lfm ignored, each source, the worker and judge (usable, login, model,
+                      a different identity), the skill per agent CLI and sign-off: ok, warn or fail, with a fix: line; exit 1 on a fail
   guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
   count               print the counts (same projection as \`report\`)
@@ -373,12 +376,13 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
   --step <name>       (logs) the step: collect or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
+  --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
   --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)
   --judge <runner>    (init) the agent CLI that checks it (default: the first usable one that differs from the worker)
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
   --no-skill, -y      (init) accepted for scripts: init installs no skill and asks nothing
-  --json (init, report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
+  --json (init, doctor, report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
@@ -387,6 +391,7 @@ the report is privacy-bounded: identifiers and counts only, never record text, l
 const HELP = `${USAGE}
 
 next: learn-from-mistakes-axi init           # write the config for the project you are in
+next: learn-from-mistakes-axi doctor         # what is wrong, and the fix for each
 next: learn-from-mistakes-axi guide          # the procedure an agent follows to label and report
 next: learn-from-mistakes-axi                # the report for the project you are in
 next: learn-from-mistakes-axi --dir <project>   # point at a project with .learn-from-mistakes.yaml
@@ -465,6 +470,7 @@ const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} int
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   init: 'learn-from-mistakes-axi init [--worker <runner>] [--judge <runner>] [--no-excerpts] [--no-skill] [-y] [--dir <dir>] [--json]',
+  doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
   count: 'learn-from-mistakes-axi count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
@@ -484,7 +490,7 @@ const JUDGE_FIX = `set judge.runner and judge.model in ${PROJECT_FILE} to an age
 const AGENTS_FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
 const INSTALL_FIX = `install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml   # then run agents again`;
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--worker', '--judge'];
-const SWITCHES = ['--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
+const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -501,7 +507,7 @@ async function main() {
     cmd = 'change-applied';
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)`);
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -537,6 +543,7 @@ async function main() {
   }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
   if (cmd === 'init') { await initCommand(opts); return; }
+  if (cmd === 'doctor') { await doctorCommand(opts); return; }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
     for (const s of (await ingest(cfg)).sources) console.log(sourceLine(s));
@@ -622,6 +629,17 @@ async function agentsCommand(opts) {
   else if (roles.includes('judge') && out.judge.problem === CLASH) hint(JUDGE_FIX);
   else if (roles.includes('judge')) hint(`install an agent CLI, or set judge.runner in ${PROJECT_FILE} to byokit:<route>; ${bk ? bk.fix : `ready: ${await readyRoutes()}`}`);
   else hint(withContext(`learn-from-mistakes-axi agents --test ${next}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
+}
+
+// `doctor` prints one line per check and an indented fix: line under each one that is not ok; any fail exits 1.
+async function doctorCommand(opts) {
+  quietSqlite();
+  const checks = await doctor(opts.dir ?? resolve('.'), opts);
+  const fails = checks.filter((c) => c.level === 'fail').length;
+  if (opts.json) console.log(JSON.stringify({ checks, fails }, null, 2));
+  else for (const c of checks) console.log(`${c.level.padEnd(4)} ${c.label.padEnd(15)} ${c.detail}${c.fix ? `\n     fix: ${c.fix}` : ''}`);
+  if (fails) process.exitCode = 1;
+  hint(withContext(fails ? 'learn-from-mistakes-axi doctor' : 'learn-from-mistakes-axi retro --wait 8m', fails ? `again after the ${fails === 1 ? 'fix' : `${fails} fixes`} above` : 'read the sources as a saved run', opts));
 }
 
 // `init` prints the config it wrote or found (with its gaps and any source detection it skipped, with the cause), and
