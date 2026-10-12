@@ -50,12 +50,12 @@ export function stateDir(cfg) {
 
 // `ingest` (a state file this tool wrote: missing or corrupt is exit 2, fixed by ingest again) or
 // `rerun` (labels/proposals the caller wrote: a bad line is an input problem, exit 1).
-function readJsonl(file, { ingest, rerun }) {
+function readJsonl(file, { ingest, rerunHint }) {
   if (!existsSync(file)) { if (ingest) throw new UsageError(`${file} missing`, ingest); return []; }
   return readText(file).split('\n').flatMap((l, i) => {
     if (!l.trim()) return [];
     try { return [{ ...JSON.parse(l), _line: i + 1 }]; } catch {
-      throw ingest ? new UsageError(`${file}:${i + 1}: not valid JSON`, ingest) : new InputError(`${file}:${i + 1}: not valid JSON`, rerun);
+      throw ingest ? new UsageError(`${file}:${i + 1}: not valid JSON`, ingest) : new InputError(`${file}:${i + 1}: not valid JSON`, rerunHint);
     }
   });
 }
@@ -141,9 +141,9 @@ function exportChanges(cfg, opts, json) {
   else hint(json ? withContext('learn-from-mistakes-axi report', 'the per-cause counts', opts) : withContext('learn-from-mistakes-axi changes --json', 'the same export as JSON', opts));
 }
 
-function readInput(file, flag, explicit, rerun) {
+function readInput(file, flag, explicit, rerunHint) {
   if (explicit && !existsSync(file)) throw new UsageError(`--${flag} ${file}: no such file`, `--${flag} <an existing ${flag}.jsonl>   # or leave --${flag} out to read the state dir`);
-  return readJsonl(file, { rerun });
+  return readJsonl(file, { rerunHint });
 }
 
 // Reads every configured source into the state dir and returns each source's id, type, item count and hash.
@@ -163,7 +163,7 @@ export async function ingest(cfg) {
   return sources;
 }
 
-function analyse(cfg, files, rerun) {
+function analyse(cfg, files, rerunHint) {
   const reingest = withContext('learn-from-mistakes-axi ingest', 'read the configured sources into the state dir', files);
   const records = new Map(readJsonl(join(cfg.state, 'records.jsonl'), { ingest: reingest }).map((r) => [r.id, r]));
   const rows = readJsonl(join(cfg.state, 'rows.jsonl'), { ingest: reingest });
@@ -179,7 +179,7 @@ function analyse(cfg, files, rerun) {
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
   // Problem lines name file:line and the rule broken, never a record id (a hash of private
   // text) or a ref; a cause is echoed only through `shown`.
-  for (const l of readInput(lf, 'labels', files.labels, rerun)) {
+  for (const l of readInput(lf, 'labels', files.labels, rerunHint)) {
     const at = `${basename(lf)}:${l._line}`;
     if (!records.has(l.id)) problems.push(`${at}: unknown record id (its record text changed or it was never ingested)`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for the record labelled at line ${labels.get(l.id)._line}`);
@@ -218,7 +218,7 @@ function analyse(cfg, files, rerun) {
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
   const repeatedByCause = new Map(list.map((g) => [g.cause, g.repeated]));
-  const proposals = readInput(pf, 'proposals', files.proposals, rerun).map((p, index) => {
+  const proposals = readInput(pf, 'proposals', files.proposals, rerunHint).map((p, index) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
     const missing = refs.filter((ref) => !resolves(ref));
@@ -235,8 +235,8 @@ function analyse(cfg, files, rerun) {
 }
 
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
-export function buildReport(cfg, files, rerun, full) {
-  const a = analyse(cfg, files, rerun);
+export function buildReport(cfg, files, rerunHint, full) {
+  const a = analyse(cfg, files, rerunHint);
   if (!a.records.size && !a.rows.length) throw new EmptyError('no records or rows in the sources: nothing to count',
     withContext('learn-from-mistakes-axi ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', files));
   return { model: project(a, full), problems: a.problems };
@@ -479,15 +479,15 @@ async function main() {
   if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   if (['retro', 'status', 'runs', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
-  const rerun = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
-  const { model, problems } = buildReport(cfg, opts, rerun, full);
+  const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
+  const { model, problems } = buildReport(cfg, opts, rerunHint, full);
   console.log(render(model, json));
   if (!json) console.log(summaryLine(model));
   if (problems.length) {
     for (const p of problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
     if (problems.length > PROBLEM_LINES) console.error(`problem: ... and ${problems.length - PROBLEM_LINES} more`);
     console.error(`problems: ${problems.length}   # fix the inputs or the change ledger`);
-    hint(rerun);
+    hint(rerunHint);
     process.exitCode = 1;
     return;
   }
