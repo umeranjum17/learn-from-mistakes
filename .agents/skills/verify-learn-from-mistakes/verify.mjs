@@ -183,7 +183,7 @@ try {
   save('result.json', { commandsPassed: passed, inputsUnchanged: JSON.stringify(before) === JSON.stringify(after),
     limitation: 'Review output against the skill feature map; trusted no-mistakes prompt consumption is a separate proof.' });
   if (existsSync(join(staged, '.lfm'))) cpSync(join(staged, '.lfm'), join(evidence, 'state'), { recursive: true }); // retain the ingest artifacts
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 5 }); // retries ENOTEMPTY/EBUSY from late writers
   assert.deepEqual(after, before, 'Original inputs changed; proof fails');
 }
 console.log(`CLI commands and existing e2e suite passed. Review private evidence: ${evidence}`);
