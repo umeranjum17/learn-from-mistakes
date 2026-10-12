@@ -11,7 +11,8 @@ import * as sessions from './sources/sessions.mjs';
 
 export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // The source registry: one file per source type, each exporting validate (check and normalise its config entry)
-// and read (its items). A source may also export metrics (its numbers from what it read), detect (a config entry
+// and read (its items). A source may also export metricNames and metrics (its numbers from what it read; a type with
+// no source in the config gives its metricNames as n/a), detect (a config entry
 // for init) and doctor (a check line); init and doctor call these two in later slices. A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions };
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];

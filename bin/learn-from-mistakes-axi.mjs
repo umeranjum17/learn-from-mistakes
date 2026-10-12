@@ -278,7 +278,7 @@ function project(a, full) {
       repeated: g.repeated,
       by: g.by,
       log: { incidents: g.incidents, records: g.log.records.length, days: g.log.days.size },
-      store: { matched: a.cfg.sources[a.cfg.causes[g.cause]?.match?.source]?.type === 'no-mistakes', rows: g.store.rows.length, days: g.store.days.size },
+      store: { matched: Boolean(a.cfg.causes[g.cause]?.match), rows: g.store.rows.length, days: g.store.days.size },
       proposals: { count: ps.length, unchecked: ps.filter((p) => !p.ok).length },
       changes: { count: applied.length, last_at: applied.length ? applied.map((c) => c.at).sort().at(-1) : '' },
     };

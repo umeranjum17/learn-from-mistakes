@@ -25,5 +25,6 @@ export function read(source, { path }) {
   return { records, hash: createHash('sha256').update(text).digest('hex') };
 }
 
-// defects: the records dated in the window; n/a when no record has a date.
+// defects: the records dated in the window, over every markdown-log source; n/a when no record has a date.
+export const metricNames = ['defects'];
 export const metrics = (rows, window) => ({ defects: rows.some((r) => r.ts) ? inWindow(rows, window).length : null });

@@ -68,6 +68,7 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
 
 // Per-session numbers over the events in the window; a session counts when it has one of them.
 // null (n/a), never 0, when there is nothing to divide or count.
+export const metricNames = ['tool_error_rate', 'corrections_per_session', 'interrupts', 'retries'];
 export function metrics(events, window) {
   const rows = inWindow(events, window);
   const count = (f) => rows.filter(f).length;
