@@ -20,7 +20,8 @@ would pass `caps.bundle_chars` (at least 1000; smaller exits 2) are dropped and 
 last `Dropped <n> items ...` line counts them.
 The no-mistakes source reads only this repo's failed steps (a `repos` row whose
 `working_path` is the project or one of its git worktrees, or whose
-`upstream_url` is its `origin`); a store with no `repos` table exits 2.
+`upstream_url` is its `origin`) and stores their errors redacted (the `match`
+rules still see the raw error); a store with no `repos` table exits 2.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi retro --foreground`, then read
@@ -35,7 +36,8 @@ value and no other-repo row reaches `bundle.md` (the other row is not read at
 all); clusters are numbered and ranked by count; every `[e]` and `[r]` id is a
 row of the run; every item has its excerpt. `excerpts: off` gives the same items
 with no excerpt and no record or session text; `caps: { bundle_chars: 1000 }`
-keeps the file under 1000 characters with the dropped line, and 999 exits 2.
+keeps the file under 1000 characters with the dropped line, also when 40 more
+causes' metrics fill it before the later headings, and 999 exits 2.
 `test/cli.test.mjs` asserts 4 steps per run, the example's bundle sections, the
 `bundle:` attach line, and that a store with no `repos` table exits 2.
 The helper's `retro-v2` drive (`excerpts: off`) checks the bundle has no

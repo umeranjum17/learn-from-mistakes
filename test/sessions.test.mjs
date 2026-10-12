@@ -260,6 +260,8 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   for (const [, needle] of PLANTED) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
   assert.ok(!on.text.includes('OTHER-REPO-CANARY') && !on.text.includes('step-other'), 'another repo\'s gate row in bundle.md');
   assert.deepEqual(query(p, `SELECT count(*) AS n FROM records WHERE text LIKE '%OTHER-REPO-CANARY%'`), [{ n: 0 }]); // never read at all
+  const stored = query(p, `SELECT text FROM records WHERE run_id = ? AND source = 'gate'`, on.id).map((r) => r.text).join('\n');
+  for (const [, needle] of one) assert.ok(!stored.includes(needle), `${needle} stored from a gate error`); // kept redacted
   assert.match(on.text, /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
   assert.match(on.text, /^No follow-ups yet\.$/m);
   // Clusters by tool and signal, the largest first, each with its latest events; then the records no rule tagged.
@@ -273,7 +275,9 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND id IN (${events})`, on.id)[0].n, events.length); // ids are store rows
   assert.equal(query(p, `SELECT count(*) AS n FROM records WHERE run_id = ? AND cause IS NULL AND id IN (${records})`, on.id)[0].n, records.length);
   const quotes = on.text.match(/^  > .+$/gm);
-  assert.ok(quotes.length >= records.length && quotes.every((q) => q.length <= 304), 'an item without its excerpt, or one over 300 characters');
+  assert.ok(quotes.every((q) => q.length <= 304), 'an excerpt over 300 characters');
+  assert.equal(on.text.match(/^- \[r\d+\] .+\n  > .+$/gm).length, records.length, 'a record without its excerpt');
+  assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
   assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
 
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
@@ -290,6 +294,10 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   writeFileSync(cfg, `${examples}caps: { bundle_chars: 1000 }\n`);
   const capped = bundleOf(lfm('retro', '--foreground'));
   assert.ok(capped.text.length <= 1000, `${capped.text.length} characters`);
+  const more = Array.from({ length: 40 }, (_, i) => `  c${i}: { description: d }\n`).join('');
+  writeFileSync(cfg, `${examples.replace('causes:\n', `causes:\n${more}`)}caps: { bundle_chars: 1000 }\n`);
+  const metricsOnly = bundleOf(lfm('retro', '--foreground')); // the metrics fill it; the later headings still fit
+  assert.ok(metricsOnly.text.length <= 1000 && metricsOnly.text.includes('## Unlabelled defect records'), `${metricsOnly.text.length} characters`);
   assert.match(capped.text, /^Dropped \d+ items to keep the bundle under 1000 characters\.$/m);
   writeFileSync(cfg, `${examples}caps: { bundle_chars: 999 }\n`);
   assert.match(lfm('retro', '--foreground').stderr, /caps\.bundle_chars must be at least 1000$/m);

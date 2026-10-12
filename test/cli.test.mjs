@@ -767,6 +767,12 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const run = decode(r.stdout);
   assert.equal(run.run.status, 'completed');
   assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['bundle', 'completed'], ['report', 'completed']]);
+  // The bundle: the metrics; the example's records and gate rows are all from March, before this window.
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^\| defects \| 0 \| 0 \|  \|$/m);
+  assert.match(bundle, /^No follow-ups yet\.$/m);
+  assert.match(bundle, /^No session event has a failure signal in this window\.$/m);
+  assert.match(bundle, /^No record in this window lacks a cause\.$/m);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
