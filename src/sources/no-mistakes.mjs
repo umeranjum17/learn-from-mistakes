@@ -38,6 +38,14 @@ export async function detect(dir) {
   } finally { db?.close(); }
 }
 
+// doctor: readable, the failed steps in the window, and the ones with no time, which the window cannot place.
+export async function doctor(source, entry, ctx) {
+  const { rows } = await read(source, entry, ctx);
+  const timed = rows.filter((r) => r.at);
+  const inWin = timed.filter((r) => Date.parse(r.at) >= ctx.readFrom).length;
+  return { level: 'ok', detail: `${rows.length} failed steps, ${inWin} in the window, ${rows.length - timed.length} skipped (no time)` };
+}
+
 // One store holds the runs of every repo no-mistakes gates, so only this repo's rows are read: a repo row whose
 // checkout is this project's (the git toplevel detect matches) or one of its worktrees, or whose upstream URL is its origin.
 // Its identity is the sha256 of the rows read, so it follows content, not file time. A row takes the first cause

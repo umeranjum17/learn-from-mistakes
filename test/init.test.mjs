@@ -206,7 +206,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const fails = bad.out.checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'identity']);
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
-  assert.match(fails[0].fix, /^touch .*defects\.md   # or set sources\.log\.path/);
+  assert.match(fails[0].fix, /^check sources\.log\.path in \.learn-from-mistakes\.yaml, or create it: touch .*defects\.md$/);
   assert.match(fails[1].fix, /allow_premium: true$/);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
@@ -219,4 +219,16 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const fixed = doctor();
   assert.equal(fixed.status, 0, fixed.stdout);
   assert.equal(fixed.out.fails, 0);
+});
+
+test('doctor fails a worker pinned to a runner that is not offered, and names the offered runners in its fix', () => {
+  const { lfm, config } = setup(['claude', 'gemini']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.match(fails[0].detail, /^gemini is not offered: /);
+  assert.equal(fails[0].fix, 'set worker.runner in .learn-from-mistakes.yaml to claude');
 });

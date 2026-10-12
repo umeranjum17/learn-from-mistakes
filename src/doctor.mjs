@@ -38,20 +38,13 @@ export async function doctor(dir, opts) {
       'learn-from-mistakes-axi init   # writes .lfm/.gitignore');
   }
 
-  // Each source: its own doctor hook, else a read; the item count is for this window.
-  const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w;
+  // Each source's own doctor hook: readable, its count in the window, and the entries it skipped.
+  const since = Date.now() - parseInt(cfg.window, 10) * 86_400_000;
   if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', 'learn-from-mistakes-axi init   # lists the sources it finds as gaps');
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const mod = SOURCES[s.type];
     let r;
-    try {
-      if (mod.doctor) r = await mod.doctor(id, s, { readFrom: since, causes: cfg.causes });
-      else {
-        const got = await mod.read(id, s, { causes: cfg.causes });
-        const items = got.records ?? got.rows;
-        r = { level: 'ok', detail: `${items.length} items, ${items.filter((x) => Date.parse(x.date || x.at) >= since).length} in the last ${cfg.window}` };
-      }
-    } catch (e) { if (!(e instanceof UsageError)) throw e; r = { level: 'fail', detail: e.message.replace(`source ${id}: `, ''), fix: e.next }; }
+    try { r = await SOURCES[s.type].doctor(id, s, { readFrom: since, causes: cfg.causes }); }
+    catch (e) { if (!(e instanceof UsageError)) throw e; r = { level: 'fail', detail: e.message.replace(`source ${id}: `, ''), fix: e.next }; }
     add(r.level, `source ${id}`, `${s.type}: ${r.detail}`, r.fix);
   }
 
@@ -65,8 +58,9 @@ export async function doctor(dir, opts) {
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     if (!r.bin) {
-      add(a?.usable && mod?.unconfirmed ? 'warn' : 'fail', name, r.problem, list.some((x) => x.usable && !x.problem)
-        ? `set ${name}.runner in ${PROJECT_FILE} to a usable agent CLI   # learn-from-mistakes-axi agents lists them`
+      const offered = list.filter((x) => x.usable && !x.problem).map((x) => x.runner);
+      add('fail', name, r.problem, offered.length
+        ? `set ${name}.runner in ${PROJECT_FILE} to ${offered.join(' or ')}`
         : `install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml`);
       continue;
     }
