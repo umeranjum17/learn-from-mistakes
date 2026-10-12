@@ -271,6 +271,11 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   const missing = lfm('ingest');
   assert.equal(missing.status, 2, missing.stderr);
   assert.match(missing.stderr, /missing\.md: cannot read \(ENOENT\)/);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
+  const store = lfm('ingest');
+  assert.equal(store.status, 2, store.stderr);
+  assert.match(store.stderr, /^error: .*no-state\.sqlite: no such file$/m);
+  assert.match(store.stderr, /^next: remove the gate source or point its path at your no-mistakes state\.sqlite$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);
@@ -281,11 +286,12 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
 });
 
 test('an explicit labels or proposals path that does not exist is a usage error', () => {
-  const { p, lfm } = setup();
+  const { p, home, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);
   const unlabelled = lfm('report');
   assert.equal(unlabelled.status, 0); // the default state-dir inputs may be absent before labelling
-  assert.match(unlabelled.stderr, /^next: label records\.jsonl into labels\.jsonl/m); // with zero labels, labelling is the next step
+  const records = join(home, 'state', 'example', 'records.jsonl');
+  assert.ok(unlabelled.stderr.split('\n').some((l) => l.startsWith(`next: label ${records} into labels.jsonl`)), unlabelled.stderr); // with zero labels, labelling the named file is the next step
   const labels = lfm('report', '--labels', join(p, 'typo-labels.jsonl'));
   assert.equal(labels.status, 2, labels.stdout);
   assert.match(labels.stderr, /typo-labels\.jsonl: no such file/);

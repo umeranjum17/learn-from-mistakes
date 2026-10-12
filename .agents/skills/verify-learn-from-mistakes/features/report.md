@@ -18,7 +18,7 @@ bad-input journey retains two unread long records (coverage falls), counts the m
 ref `nope` as one problem and exits 1 without printing it on stdout (stderr names it on a
 `problem: refs.jsonl:1:` line); malformed JSON exits 1 with `error: <file>:<line>: not valid JSON`;
 unknown IDs count as a problem and a second label names only the line of the first, never the real
-record id; with zero labels the `next:` hint is the labelling step; unknown config key `colour` is
+record id; with zero labels the `next:` hint is the labelling step and names the absolute `records.jsonl` path; unknown config key `colour` is
 rejected. The empty-input journey exits 3, says nothing to count and prints a
 `next: lfm ingest` hint. These are driven by the real CLI, not new unit tests.
 

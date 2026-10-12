@@ -90,7 +90,8 @@ function readLog(source, path) {
 // Failed pipeline steps from a no-mistakes state database, opened read-only. One fixed query; no user SQL.
 // Its identity is the sha256 of the rows read, so it follows content, not file time.
 function readStore(source, path) {
-  if (!existsSync(path)) throw new UsageError(`${path}: no such file`);
+  const fix = `remove the ${source} source or point its path at your no-mistakes state.sqlite`;
+  if (!existsSync(path)) throw new UsageError(`${path}: no such file`, fix);
   let db;
   try {
     db = new DatabaseSync(path, { readOnly: true });
@@ -100,7 +101,7 @@ function readStore(source, path) {
       at: r.t ? new Date(r.t > 1e11 ? r.t : r.t * 1000).toISOString() : '', error: r.error ?? '' })),
       hash: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
   } catch (e) {
-    throw new UsageError(`${path}: not a readable no-mistakes store (${e.message})`);
+    throw new UsageError(`${path}: not a readable no-mistakes store (${e.message})`, fix);
   } finally { db?.close(); }
 }
 
@@ -216,7 +217,7 @@ function ingest(cfg, opts) {
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   for (const s of sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
-  console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(opts)}`);
+  console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);
   if (!Object.keys(cfg.causes).some((c) => c !== 'other')) hint('no causes configured: every label will be other; ask your agent to propose causes');
 }
 
@@ -376,7 +377,7 @@ const NEXT = (json, full, opts) => {
   const detail = full || json ? '--full --json' : '--full';
   return withContext(`lfm report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
 };
-const LABEL_STEP = (opts) => `label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`;
+const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} into labels.jsonl in the same dir (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`;
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   ingest: 'lfm ingest [--dir <dir>]',
@@ -434,7 +435,7 @@ function main() {
     hint(rerun);
     process.exit(1);
   }
-  hint(a.records.size && !a.labels.size ? LABEL_STEP(opts) : NEXT(json, full, opts));
+  hint(a.records.size && !a.labels.size ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
 }
 
 try { main(); } catch (e) {
