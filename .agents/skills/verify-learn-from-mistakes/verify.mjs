@@ -119,8 +119,13 @@ try {
   assert.equal(out('version').trim(), JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version);
   // Privacy canary: private prose in a label and a proposal must never reach any output.
   const canary = 'CANARY-verify-private-1f4d';
-  writeFileSync(stagedLabels, readFileSync(stagedLabels, 'utf8').replace('"why":"', `"why":"${canary} `));
-  writeFileSync(stagedProposals, readFileSync(stagedProposals, 'utf8').replace('"change":"', `"change":"${canary} `));
+  const plant = (file, anchor, text) => {
+    const before = readFileSync(file, 'utf8');
+    assert.ok(before.includes(anchor), `${file} has no ${anchor} to carry the canary`);
+    writeFileSync(file, before.replace(anchor, text));
+  };
+  plant(stagedLabels, '"why":"', `"why":"${canary} `);
+  plant(stagedProposals, '"change":"', `"change":"${canary} `);
   for (const extra of [[], ['--json'], ['--full', '--json']]) {
     const r = spawnSync(process.execPath, [cli, 'report', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals, ...extra], { cwd: repo, env, encoding: 'utf8' });
     commands.push({ name: `canary${extra.join('') || '-default'}`, command: process.execPath, args: [cli, 'report', ...extra], cwd: repo, status: r.status });

@@ -109,12 +109,14 @@ test('--full adds only allow-listed ids, never record text', () => {
 test('private canary prose never reaches default, --json, --full or stderr', () => {
   const { p, lfm } = setup();
   appendFileSync(join(p, 'defects.md'), `- [runner] ${CANARY} stopped the server -> 1 h -> OPEN.\n`);
-  const labels = readFileSync(join(p, 'labels.jsonl'), 'utf8').replace('Memory killer stopped', `${CANARY} Memory killer stopped`);
+  const plant = (text, anchor) => {
+    assert.ok(text.includes(anchor), `fixture has no "${anchor}" to carry the canary`);
+    return text.replace(anchor, `${CANARY} ${anchor}`);
+  };
   const canaryLabels = join(p, `${CANARY}-labels.jsonl`);
-  writeFileSync(canaryLabels, labels);
-  const proposals = readFileSync(join(p, 'proposals.jsonl'), 'utf8').replace('Run builds in their own memory group', `${CANARY} Run builds in their own memory group`);
+  writeFileSync(canaryLabels, plant(readFileSync(join(p, 'labels.jsonl'), 'utf8'), 'Memory killer stopped'));
   const canaryProposals = join(p, `${CANARY}-proposals.jsonl`);
-  writeFileSync(canaryProposals, proposals);
+  writeFileSync(canaryProposals, plant(readFileSync(join(p, 'proposals.jsonl'), 'utf8'), 'Run builds in their own memory group'));
   assert.equal(lfm('ingest').status, 0);
   for (const extra of [[], ['--json'], ['--full'], ['--full', '--json']]) {
     const r = lfm('report', '--labels', canaryLabels, '--proposals', canaryProposals, ...extra);
