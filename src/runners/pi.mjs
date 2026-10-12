@@ -6,7 +6,7 @@ export const tools = 'off';
 export const login = (env) => ({ files: [join(env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'auth.json')], vars: [] });
 export const skills = () => join(homedir(), '.pi', 'agent', 'skills');
 // Needs a model to name the provider; with none, the login file is the check. --no-refresh: a check never refreshes a token.
-export const loginStatus = (model) => model && { args: ['auth', 'check', '--no-refresh', '--model', model], ok: (r) => r.status === 0, fix: 'pi   # then /login' };
+export const loginStatus = (model) => model && { args: ['auth', 'check', '--no-refresh', '--model', model], ok: (r) => r.status === 0, fix: 'pi   # then /login', file: login(process.env).files[0] };
 export const command = ({ model, extra }) => ({
   args: ['-p', ...(model ? ['--model', model] : []), '--mode', 'json', '--no-session', '--no-tools', '--no-context-files', '--no-skills', '--no-extensions', ...extra],
   stdin: true,
