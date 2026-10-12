@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real learn-from-mistakes-axi ingest/count/report and retro/status/runs/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi init, ingest/count/report and retro/status/runs/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 metadata:
   internal: true
 ---
@@ -31,13 +31,15 @@ and (synthetic only) `change applied --what --why` plus the `changes` export,
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
 then a detached `retro --wait 1m` run as well, a sessions source over one
-synthetic session in the scratch HOME (`retro-sessions`), and `agents --json` on the host PATH
+synthetic session in the scratch HOME (`retro-sessions`), `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
+and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
+judge clash (exit 2; live proof in [features/init.md](features/init.md)),
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
 canary -- are owned by `test/cli.test.mjs` (runner argv and failures by
-`test/runners.test.mjs`); the helper does not duplicate them.
+`test/runners.test.mjs`, init by `test/init.test.mjs`); the helper does not duplicate them.
 
 ```sh
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli
@@ -58,7 +60,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0 (`config-bad-runner` must be 2), all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-runner` and `init-pinned-clash` must be 2), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 

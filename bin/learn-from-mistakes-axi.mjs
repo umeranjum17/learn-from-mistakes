@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { init } from '../src/init.mjs';
 import { agents, RUNNERS } from '../src/runners/index.mjs';
 import { openStore } from '../src/store.mjs';
 
@@ -319,8 +320,10 @@ function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes|retro|status|runs|rerun|agents>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|change applied|changes|retro|status|runs|rerun|agents>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
+  init                write .learn-from-mistakes.yaml if the project has none: a worker and a different judge from the
+                      agent CLIs found, and the sources found; otherwise print it and its gaps. Makes the state dir
   guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
   count               print the counts (same projection as \`report\`)
@@ -344,7 +347,11 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   --run <id>          (status, rerun) the saved run (default: the last one)
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --test <runner>     (agents) one live call to that agent CLI (costs tokens): it must answer and write no file
-  --json (report, count, change applied, changes, retro, status, runs, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
+  --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)
+  --judge <runner>    (init) the agent CLI that checks it (default: the first usable one that differs from the worker)
+  --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
+  --no-skill, -y      (init) accepted for scripts: init installs no skill and asks nothing
+  --json (init, report, count, change applied, changes, retro, status, runs, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
@@ -352,6 +359,7 @@ the report is privacy-bounded: identifiers and counts only, never record text, l
 \`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
+next: learn-from-mistakes-axi init           # write the config for the project you are in
 next: learn-from-mistakes-axi guide          # the procedure an agent follows to label and report
 next: learn-from-mistakes-axi                # the report for the project you are in
 next: learn-from-mistakes-axi --dir <project>   # point at a project with .learn-from-mistakes.yaml
@@ -427,6 +435,7 @@ const NEXT = (json, full, opts) => {
 const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} into labels.jsonl in the same dir (see learn-from-mistakes-axi guide), then ${withContext('learn-from-mistakes-axi count', 'the counts', opts)}`;
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
+  init: 'learn-from-mistakes-axi init [--worker <runner>] [--judge <runner>] [--no-excerpts] [--no-skill] [-y] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
   count: 'learn-from-mistakes-axi count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
@@ -439,8 +448,9 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun --resume [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--test'];
-const SWITCHES = ['--json', '--full', '--foreground', '--resume'];
+const JUDGE_FIX = `set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`;
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--test', '--worker', '--judge'];
+const SWITCHES = ['--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -457,7 +467,7 @@ async function main() {
     cmd = 'change-applied';
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun, agents)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, guide, ingest, count, report, change applied, changes, retro, status, runs, rerun, agents)`);
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -466,7 +476,7 @@ async function main() {
     if (!flag.startsWith('-')) throw new UsageError(`unexpected argument ${shown(flag)}`, next);
     if (!VALUE_FLAGS.includes(flag) && !SWITCHES.includes(flag)) throw new UsageError(`unknown option ${shown(flag)}`, next);
     if (!form.includes(`${flag} `) && !form.includes(`${flag}]`)) throw new UsageError(`${name} does not take ${flag}`, next);
-    if (SWITCHES.includes(flag)) { opts[flag.slice(2)] = true; i += 1; continue; }
+    if (SWITCHES.includes(flag)) { opts[flag.replace(/^--?/, '')] = true; i += 1; continue; }
     if (flag === '--wait' && !/^[^-]/.test(argv[i + 1] ?? '')) { opts.wait = '8m'; i += 1; continue; } // a bare --wait waits 8 minutes
     if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`, next ?? form);
     if (['--dir', '--labels', '--proposals'].includes(flag)) {
@@ -484,8 +494,11 @@ async function main() {
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'rerun' && !opts.resume) throw new UsageError('rerun starts a new run in a later version: pass --resume to finish a run that did not complete', form);
-  if (opts.test !== undefined && !Object.hasOwn(RUNNERS, opts.test)) throw new UsageError(`--test ${shown(opts.test)} must be a runner: ${Object.keys(RUNNERS).join(', ')}`, form);
+  for (const k of ['test', 'worker', 'judge']) {
+    if (opts[k] !== undefined && !Object.hasOwn(RUNNERS, opts[k])) throw new UsageError(`--${k} ${shown(opts[k])} must be a runner: ${Object.keys(RUNNERS).join(', ')}`, form);
+  }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
+  if (cmd === 'init') { await initCommand(opts); return; }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
     for (const s of (await ingest(cfg)).sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
@@ -512,12 +525,15 @@ async function main() {
   hint(model.coverage.total_records && !model.coverage.labelled ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
 }
 
-// retro, status, runs and rerun open the run store. node:sqlite warns it is experimental on Node 22, so these
+// retro, status, runs and rerun open the run store, and init may read a no-mistakes store. node:sqlite warns it is experimental on Node 22, so these
 // commands drop that one warning; every other warning still prints.
-async function runCommand(cmd, cfg, opts) {
+function quietSqlite() {
   const print = process.listeners('warning');
   process.removeAllListeners('warning');
   process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') for (const f of print) f(w); });
+}
+async function runCommand(cmd, cfg, opts) {
+  quietSqlite();
   const file = join(cfg.state, 'lfm.sqlite');
   let out;
   try {
@@ -557,8 +573,21 @@ async function agentsCommand(opts) {
   if (roles.length) process.exitCode = 1;
   if (!out.agents.some((a) => a.usable)) hint('install claude, codex or opencode, or set runner_path in $LFM_HOME/config.yaml   # then run agents again');
   else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
-  else if (roles.includes('judge')) hint(`set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`);
+  else if (roles.includes('judge')) hint(JUDGE_FIX);
   else hint(withContext(`learn-from-mistakes-axi agents --test ${out.agents.find((a) => a.usable).runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
+}
+
+// `init` prints the config it wrote or found (with its gaps and any source detection it skipped, with the cause), and
+// one line on who sees record excerpts. A gap does not fail it: the config is written, and the hint names the fix.
+async function initCommand(opts) {
+  quietSqlite();
+  const out = await init(opts.dir ?? resolve('.'), opts);
+  console.log(render(out, opts.json));
+  if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: the worker (${out.worker.runner}) and the judge (${out.judge.runner}) see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
+    : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
+  if (out.gaps.some((g) => g.startsWith('worker:'))) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
+  else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(JUDGE_FIX);
+  else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.
