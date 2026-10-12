@@ -56,12 +56,12 @@ const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b
 // its own work.
 export function resolveRole(cfg, name, agents, worker) {
   const want = cfg[name];
-  if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: want.model, bin: '', problem: `runner ${want.runner} has no adapter in this version` };
+  if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: configuredModel(cfg, name), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
   const model = configuredModel(cfg, name);
   const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || MODELS[a.runner]?.includes(model) : a.runner === want.runner));
   if (!pool.length) {
     const a = agents.find((x) => x.runner === want.runner);
-    return { runner: want.runner, model: want.model, bin: '', problem: a ? `${a.runner} is not usable: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
+    return { runner: want.runner, model, bin: '', problem: a ?`${a.runner} is not usable: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
   }
   let last;
   for (const a of pool) {
