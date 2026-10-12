@@ -60,8 +60,9 @@ export function resolveRole(cfg, name, agents, worker) {
   const model = configuredModel(cfg, name);
   const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || MODELS[a.runner]?.includes(model) : a.runner === want.runner));
   if (!pool.length) {
-    const a = agents.find((x) => x.runner === want.runner);
-    return { runner: want.runner, model, bin: '', problem: a ?`${a.runner} is not usable: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
+    const a = agents.find((x) => x.runner === want.runner) ?? agents.find((x) => MODELS[x.runner]?.includes(model));
+    const reason = a?.runner === want.runner ? `${a.runner} is not usable` : `${a?.runner} lists model ${model} but is not usable`;
+    return { runner: want.runner, model, bin: '', problem: a ? `${reason}: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
   }
   let last;
   for (const a of pool) {
@@ -87,6 +88,8 @@ function spawnOnce(bin, args, { cwd, env, input, timeoutMs, onSpawn }) {
       done({ ...exit, out, err, timedOut, ...extra });
     };
     const timer = setTimeout(() => { timedOut = true; kill('SIGTERM'); late = setTimeout(() => finish(), 3000); }, timeoutMs);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { err += d; });
     child.on('error', (e) => finish({ spawnError: e }));
