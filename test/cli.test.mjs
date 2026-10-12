@@ -232,8 +232,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
-    [() => raw('retro'), 2, 'retro runs only in this process for now: pass --foreground', /^next: learn-from-mistakes-axi retro --foreground \[--window <n>d\]/m],
-    [() => raw('retro', '--foreground', '--window', '7'), 2, '--window "7" must be a whole number of days, such as 7d', /^next: learn-from-mistakes-axi retro --foreground /m],
+    [() => raw('retro'), 2, 'retro runs only in this process for now: pass --foreground', /^next: learn-from-mistakes-axi retro --foreground \[--dir <dir>\]/m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--limit', 'all'), 2, '--limit "all" must be a whole number from 1', /^next: learn-from-mistakes-axi runs \[--limit <n>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
@@ -741,14 +740,12 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout), { runs: [] });
   assert.ok(!existsSync(join(p, '.lfm')));
 
-  const r = lfm('retro', '--foreground', '--window', '3d');
+  const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /ExperimentalWarning/); // the examples read a store, so node:sqlite loads
   const run = decode(r.stdout);
   assert.equal(run.run.status, 'completed');
   assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['report', 'completed']]);
-  assert.equal(Date.parse(run.run.window_end) - Date.parse(run.run.window_start), 3 * 864e5);
-  assert.equal(Date.parse(run.run.window_start) - Date.parse(run.run.prev_start), 3 * 864e5);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();

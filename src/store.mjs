@@ -6,7 +6,6 @@ import { join } from 'node:path';
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY, status TEXT NOT NULL,
-    window_start TEXT NOT NULL, window_end TEXT NOT NULL, prev_start TEXT NOT NULL, read_from TEXT NOT NULL,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT)`,
   `CREATE TABLE IF NOT EXISTS steps (run_id INTEGER NOT NULL REFERENCES runs(id), name TEXT NOT NULL, ord INTEGER NOT NULL,
     status TEXT NOT NULL, started_at TEXT, completed_at TEXT, error TEXT, output_json TEXT, PRIMARY KEY (run_id, name))`,

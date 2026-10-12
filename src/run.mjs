@@ -1,11 +1,9 @@
 // A retro run: one `runs` row and one `steps` row per step, saved in the run store and run in order
 // in this process (`retro --foreground`). Each step writes its status, its error or its output.
-import { join } from 'node:path';
-import { buildReport, EmptyError, ingest, InputError, readLedger, stateDir, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { buildReport, EmptyError, ingest, InputError, stateDir, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { openStore } from './store.mjs';
 
-const DAY = 864e5;
-const RUN = 'id, status, window_start, window_end, prev_start, read_from, created_at, updated_at, error';
+const RUN = 'id, status, created_at, updated_at, error';
 const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
   collect: async (cfg) => ({ sources: await ingest(cfg) }),
@@ -18,15 +16,11 @@ const STEPS = {
 };
 const iso = (ms) => new Date(ms).toISOString();
 
-export async function retro(cfg, opts) {
-  const span = Number((opts.window ?? '7d').slice(0, -1)) * DAY;
+export async function retro(cfg) {
   stateDir(cfg);
   const db = await openStore(cfg.state, true);
-  const end = Date.now(), start = end - span, prev = start - span;
-  // Read back far enough that each tracked change has a window of data from before it.
-  const changed = readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - span).filter(Number.isFinite);
-  const { lastInsertRowid: id } = db.prepare(`INSERT INTO runs (status, window_start, window_end, prev_start, read_from, created_at, updated_at)
-    VALUES ('running', ?, ?, ?, ?, ?, ?)`).run(iso(start), iso(end), iso(prev), iso(Math.min(prev, ...changed)), iso(end), iso(end));
+  const now = iso(Date.now());
+  const { lastInsertRowid: id } = db.prepare(`INSERT INTO runs (status, created_at, updated_at) VALUES ('running', ?, ?)`).run(now, now);
   const names = Object.keys(STEPS);
   names.forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(id, name, ord));
   const step = db.prepare('UPDATE steps SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, error = ?, output_json = ? WHERE run_id = ? AND name = ?');
