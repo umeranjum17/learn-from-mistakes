@@ -215,10 +215,10 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('attach', '--wait', '1m'), 2, 'attach does not take --wait', /^next: learn-from-mistakes-axi attach \[--run <id>\]/m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
-    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be a runner: claude, codex, opencode, pi, gemini or acp:<target>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
-    [() => raw('agents', '--test', 'acp:../..'), 2, '--test "acp:../.." must be a runner: claude, codex, opencode, pi, gemini or acp:<target>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m], // a target never leaves runs/
-    [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be a runner: claude, codex, opencode, pi, gemini or acp:<target>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
-    [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be a runner: claude, codex, opencode, pi, gemini or acp:<target>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'acp:../..'), 2, '--test "acp:../.." must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m], // a target never leaves runs/
+    [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
     [() => withConfig('worker: { runner: 3 }\n'), 2, bad('worker.runner must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
     [() => withConfig('judge: { runner: claude, model: 5 }\n'), 2, bad('judge.model must be a string'), HELP],

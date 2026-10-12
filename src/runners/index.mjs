@@ -10,6 +10,7 @@ import * as opencode from './opencode.mjs';
 import * as pi from './pi.mjs';
 import * as gemini from './gemini.mjs';
 import * as acp from './acp.mjs';
+import * as byokit from './byokit.mjs';
 
 export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // in auto order; acp runs as acp:<target>
 export const MODELS = JSON.parse(readFileSync(new URL('../models.json', import.meta.url), 'utf8'));
@@ -58,13 +59,23 @@ function roleModel(cfg, name, runner, env = process.env) {
 }
 
 // The identity rule: a role is the real path of its binary plus its model. An empty model on the same binary is equal.
+export const CLASH = 'the judge resolves to the worker\'s agent and model, so it would judge its own work';
+const WORKER_CLASH = 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
+const clashOf = (name) => (name === 'judge' ? CLASH : WORKER_CLASH);
 const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
 
 // Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
 // that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
 // its own work.
-export function resolveRole(cfg, name, agents, worker, env = process.env) {
+export async function resolveRole(cfg, name, agents, worker, env = process.env) {
   const want = cfg[name];
+  const route = want.runner.match(/^byokit:(.+)/)?.[1];
+  if (route) { // in process: its identity is the route itself
+    const r = { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: '' };
+    const p = await byokit.check(route);
+    if (p) return { ...r, problem: `${p.problem}: ${p.fix}` };
+    return worker && same(r, worker) ? { ...r, problem: clashOf(name) } : r;
+  }
   const key = want.runner.replace(/^acp:.*/, 'acp');
   if (want.runner !== 'auto' && !RUNNERS[key]) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
   const model = configuredModel(cfg, name, env);
@@ -80,18 +91,17 @@ export function resolveRole(cfg, name, agents, worker, env = process.env) {
     last = { runner: a.runner, model: roleModel(cfg, name, a.runner, env), bin: a.bin, problem: '' };
     if (!worker || !same(last, worker)) return last;
   }
-  const clash = name === 'judge' ? 'the judge resolves to the worker\'s agent and model, so it would judge its own work' : 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
-  return { ...last, problem: clash };
+  return { ...last, problem: clashOf(name) };
 }
 
 // The pinned role is resolved first, so the auto role takes a runner that differs from it; both auto: the worker first.
-export function resolveRoles(cfg, agents, env = process.env) {
+export async function resolveRoles(cfg, agents, env = process.env) {
   if (cfg.worker.runner === 'auto' && cfg.judge.runner !== 'auto') {
-    const judge = resolveRole(cfg, 'judge', agents, undefined, env);
-    return { worker: resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge, env), judge };
+    const judge = await resolveRole(cfg, 'judge', agents, undefined, env);
+    return { worker: await resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge, env), judge };
   }
-  const worker = resolveRole(cfg, 'worker', agents, undefined, env);
-  return { worker, judge: resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
+  const worker = await resolveRole(cfg, 'worker', agents, undefined, env);
+  return { worker, judge: await resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
 }
 
 // One process: detached, so a timeout stops its whole group; after exit, a grandchild holding stdout gets 5 s, then
@@ -136,29 +146,37 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, text }) {
+  const route = runner.match(/^byokit:(.+)/)?.[1];
+  const p = route && await byokit.check(route);
+  if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
+  if (route) model = await byokit.modelOf(route, model);
+  if (route && !model) throw new InputError(`${runner}: BYOKit's catalogue has no cheap model for ${route}`, `set the role's model, such as worker: { runner: "${runner}", model: <model> }`);
   const mod = RUNNERS[runner];
-  const bin = which(binName(cfg, runner));
-  if (!bin) throw new InputError(`${runner}: not on PATH`, FIX);
+  const bin = route ? runner : which(binName(cfg, runner));
+  const fix = route ? await byokit.signIn(route) : FIX;
+  if (!bin) throw new InputError(`${runner}: not on PATH`, fix);
   const marker = `lfm-run:${runId}:${step}`;
   const promptFile = join(dir, `prompt-${step}.md`);
   writeFileSync(promptFile, `${marker}\n${prompt}`);
-  const cmd = mod.command({ model, dir, step, target, prompt: promptFile, marker, extra: cfg.runner_args?.[runner] ?? [] });
+  const cmd = route ? {} : mod.command({ model, dir, step, target, prompt: promptFile, marker, extra: cfg.runner_args?.[runner] ?? [] });
   const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
   const timeout = cfg.caps.timeout;
   for (let attempt = 0; ; attempt++) {
     for (const f of cmd.outputs ?? []) rmSync(join(dir, f), { force: true });
-    const r = await spawnOnce(bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
+    const r = route
+      ? { code: 0, err: '', ...(await byokit.ask({ route, model, prompt: `${marker}\n${prompt}`, timeoutMs: ms(timeout) })) }
+      : await spawnOnce(bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
     const wrote = readdirSync(dir).filter((f) => !before.has(f));
-    if (wrote.length) throw new InputError(`${runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, FIX);
-    if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (caps.timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, FIX);
-    if (r.spawnError) throw new InputError(`${runner}: cannot start ${bin} (${r.spawnError.code})`, FIX);
-    const got = mod.answer(r.out, { dir, step });
+    if (wrote.length) throw new InputError(`${runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, fix);
+    if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (caps.timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, fix);
+    if (r.spawnError) throw new InputError(`${runner}: cannot start ${bin} (${r.spawnError.code})`, fix);
+    const got = route ? r : mod.answer(r.out, { dir, step });
     const cause = got.error || (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');
-    if (cause && TRANSIENT.test(cause) && !QUOTA.test(cause) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
-    if (cause) throw new InputError(`${runner}: ${cause}`, FIX);
+    if (cause && (got.transient || (TRANSIENT.test(cause) && !QUOTA.test(cause))) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
+    if (cause) throw new InputError(`${runner}: ${cause}`, fix);
     const obj = json(got.text ?? '');
     if (!obj && text && got.text?.trim()) return { reply: got.text.trim() };
-    if (!obj) throw new InputError(`${runner}: the answer holds no JSON object: ${tail(got.text ?? '') || 'empty'}`, FIX);
+    if (!obj) throw new InputError(`${runner}: the answer holds no JSON object: ${tail(got.text ?? '') || 'empty'}`, fix);
     return obj;
   }
 }
@@ -173,9 +191,13 @@ Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 export async function agents(cfg, opts) {
   const list = detect(cfg);
   if (opts.test) {
-    const [runner, target] = opts.test.split(/:(.*)/);
-    const a = list.find((x) => x.runner === runner);
+    const route = opts.test.match(/^byokit:(.+)/)?.[1];
+    const [runner, target] = route ? [opts.test] : opts.test.split(/:(.*)/);
+    const a = route ? { runner, usable: true, tools: byokit.tools } : list.find((x) => x.runner === runner);
     if (!a.usable) throw new InputError(`${a.runner} is not usable: ${a.problem}`, FIX);
+    const p = route && await byokit.check(route);
+    if (p) throw new InputError(`${a.runner}: ${p.problem}`, p.fix);
+    if (route) a.model = await byokit.modelOf(route, roleModel(cfg, 'worker', opts.test));
     stateDir(cfg);
     const step = opts.test.replace(':', '-');
     const dir = join(cfg.state, 'runs', `test-${step}`);
@@ -186,7 +208,7 @@ export async function agents(cfg, opts) {
   }
   const out = { agents: list };
   if (cfg.worker) {
-    Object.assign(out, resolveRoles(cfg, list));
+    Object.assign(out, await resolveRoles(cfg, list));
   }
   return out;
 }

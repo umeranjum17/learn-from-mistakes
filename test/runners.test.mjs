@@ -1,12 +1,14 @@
 // End-to-end: the real CLI starts fake claude, codex, opencode, pi, gemini and acpx binaries (PATH holds only them) in a copy of the
 // examples, with a throwaway HOME and LFM_HOME. Each fake records its argv, cwd, stdin and env, then answers like its agent.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
+import { mockOpenAI } from '@byokit/accounts/testing';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
@@ -251,4 +253,154 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   const none = lfm({ PATH: '/nonexistent' }, 'agents', '--test', 'claude');
   assert.equal(none.status, 1);
   assert.match(none.stderr, /^error: claude is not usable: claude is not on PATH$/m);
+});
+
+// BYOKit: BYOKit's stand-in OpenAI plays the ChatGPT plan (LFM_TEST_BYOKIT_BASE). The sign-in sits in the throwaway HOME's
+// BYOKit machine store, sealed by a host key file there; DBus points nowhere, so no session keyring is touched.
+const ROOT = new URL('..', import.meta.url).pathname;
+const BYOKIT = new URL('../src/runners/byokit.mjs', import.meta.url).pathname;
+const node = (env, ...args) => new Promise((ok) => execFile(process.execPath, args, { encoding: 'utf8', cwd: ROOT, env },
+  (e, stdout, stderr) => ok({ status: e ? e.code : 0, stdout, stderr })));
+const HOOK = 'const { doctor } = await import(process.argv[1]); console.log(JSON.stringify(await doctor(process.argv[2])));';
+const SEED = `import { Accounts, machineStore, portable } from '@byokit/accounts'; import { osKeyringSeal } from '@byokit/secrets';
+const seal = osKeyringSeal({ service: 'byokit' }), a = new Accounts({ authBase: process.argv[1], store: (m) => machineStore(m, seal) }, portable);
+await a.login('lfm', 'chatgpt'); await a.finished('lfm', 'chatgpt'); a.stop();`;
+
+async function byokitSetup() {
+  const s = setup();
+  const home = join(s.tmp, 'home');
+  const mock = await mockOpenAI({ answers: [{ match: 'lfm-run:test:byokit-chatgpt', text: '{"reply":"hello from the fake route"}' }] });
+  after(() => mock.close());
+  const env = { ...s.env, XDG_STATE_HOME: join(home, '.local', 'state'), DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(s.tmp, 'no-bus')}`, LFM_TEST_BYOKIT_BASE: mock.base };
+  const lfm = (...args) => node(env, CLI, ...args, '--dir', s.p);
+  const hook = async (route, file = BYOKIT) => { const r = await node(env, '--input-type=module', '-e', HOOK, file, route); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout); };
+  const signIn = async () => {
+    const seed = node(env, '--input-type=module', '-e', SEED, mock.base);
+    while (!mock.lastCode()) await new Promise((ok) => setTimeout(ok, 50));
+    mock.approve(mock.lastCode());
+    assert.equal((await seed).status, 0);
+  };
+  return { ...s, env, mock, lfm, hook, signIn };
+}
+
+test('byokit: agents --test makes one plan call through BYOKit with the signed-in plan, after the doctor hook finds the sign-in', async () => {
+  const { p, mock, lfm, hook, signIn } = await byokitSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml'), base = readFileSync(yaml, 'utf8');
+  const config = (extra) => writeFileSync(yaml, base + extra);
+  const [node22, out] = await hook('chatgpt');
+  assert.equal(node22.status, 'ok');
+  assert.deepEqual(out, { status: 'fail', label: 'byokit:chatgpt', detail: "ChatGPT isn't signed in yet.", fix: out.fix });
+  assert.match(out.fix, /^sign in to chatgpt through BYOKit for member "lfm"/);
+  const out1 = await lfm('agents', '--test', 'byokit:chatgpt');
+  assert.equal(out1.status, 1);
+  assert.match(out1.stderr, /^error: byokit:chatgpt: ChatGPT isn't signed in yet\.$/m);
+  assert.match(out1.stderr, /^next: sign in to chatgpt through BYOKit/m);
+
+  await signIn();
+  assert.deepEqual((await hook('chatgpt'))[1], { status: 'ok', label: 'byokit:chatgpt', detail: 'ChatGPT is connected.' });
+  const r = await lfm('agents', '--test', 'byokit:chatgpt', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const dir = join(p, '.lfm', 'runs', 'test-byokit-chatgpt');
+  assert.deepEqual(JSON.parse(r.stdout).test, { runner: 'byokit:chatgpt', tools: 'none', model: 'gpt-6-luna', dir, reply: 'hello from the fake route', offered: true });
+  const asked = JSON.parse(mock.state.requests.at(-1).body);
+  assert.equal(asked.model, 'gpt-6-luna'); // the catalogue's cheap model, never its strong one
+  assert.match(JSON.stringify(asked.input), /lfm-run:test:byokit-chatgpt\\nThis tests that your tools are off/);
+  assert.deepEqual(readdirSync(dir), ['prompt-byokit-chatgpt.md']);
+
+  const asks = mock.state.requests.length;
+  mock.state.fail = { status: 529, body: '{"error":{"message":"overloaded"}}' }; // busy once, then it answers
+  assert.equal((await lfm('agents', '--test', 'byokit:chatgpt')).status, 0);
+  assert.equal(mock.state.requests.length - asks, 2);
+
+  config('worker: { runner: claude }\njudge: { runner: "byokit:chatgpt" }\n'); // a judge with no second agent CLI
+  const roles = await lfm('agents', '--json');
+  assert.equal(roles.status, 0, roles.stderr);
+  assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: '', bin: 'byokit:chatgpt', problem: '' });
+  config('worker: { runner: "byokit:chatgpt" }\njudge: { runner: "byokit:chatgpt", model: gpt-6-luna }\n'); // the same route judging itself
+  const clash = await lfm('agents', '--json');
+  assert.equal(clash.status, 1);
+  assert.match(JSON.parse(clash.stdout).judge.problem, /would judge its own work/);
+});
+
+// A stand-in for a plan key provider's Responses API: it records each request and streams one fixed answer.
+async function keyStandIn(text) {
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      seen.push({ path: req.url, headers: req.headers, body: JSON.parse(body) });
+      const ev = (type, x) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...x })}\n\n`);
+      const item = { type: 'message', id: 'm1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] };
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      ev('response.output_item.added', { output_index: 0, item: { ...item, status: 'in_progress', content: [] } });
+      ev('response.output_text.delta', { output_index: 0, item_id: 'm1', content_index: 0, delta: text });
+      ev('response.output_item.done', { output_index: 0, item });
+      ev('response.completed', { response: { id: 'r1', status: 'completed', output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } });
+      res.end();
+    });
+  });
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
+  after(() => server.close());
+  return { base: `http://127.0.0.1:${server.address().port}`, seen };
+}
+
+test('byokit: a plan key route answers with the key from its variable, held in memory and never saved', async () => {
+  const { p, tmp, env } = await byokitSetup();
+  const standIn = await keyStandIn('{"reply":"hello from the fake key route"}');
+  const run = (vars, ...args) => node({ ...env, LFM_TEST_BYOKIT_BASE: standIn.base, ...vars }, CLI, ...args, '--dir', p);
+  const hook = async (vars) => JSON.parse((await node({ ...env, ...vars }, '--input-type=module', '-e', HOOK, BYOKIT, 'opencode-go')).stdout);
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}worker: { runner: "byokit:opencode-go" }\n`);
+  const noModel = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go'); // no catalogue model: never a guessed default
+  assert.equal(noModel.status, 1);
+  assert.match(noModel.stderr, /^error: byokit:opencode-go: BYOKit's catalogue has no cheap model for opencode-go$/m);
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('"byokit:opencode-go" }', '"byokit:opencode-go", model: muse-spark-1.3-contributor }'));
+
+  assert.deepEqual((await hook({}))[1], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
+    fix: 'set OPENCODE_API_KEY to your OpenCode Go key, then: learn-from-mistakes-axi agents --test byokit:opencode-go' });
+  const noKey = await run({}, 'agents', '--test', 'byokit:opencode-go');
+  assert.equal(noKey.status, 1);
+  assert.match(noKey.stderr, /^error: byokit:opencode-go: OPENCODE_API_KEY is not set$/m);
+  assert.match(noKey.stderr, /^next: set OPENCODE_API_KEY to your OpenCode Go key/m);
+  assert.equal(standIn.seen.length, 0);
+
+  assert.deepEqual((await hook({ OPENCODE_API_KEY: 'fake-key' }))[1], { status: 'ok', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is set' });
+  const r = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const dir = join(p, '.lfm', 'runs', 'test-byokit-opencode-go');
+  assert.deepEqual(JSON.parse(r.stdout).test, { runner: 'byokit:opencode-go', tools: 'none', model: 'muse-spark-1.3-contributor', dir, reply: 'hello from the fake key route', offered: true });
+  const [asked] = standIn.seen;
+  assert.equal(asked.path, '/responses');
+  assert.equal(asked.headers.authorization, 'Bearer fake-key');
+  assert.match(asked.headers['x-opencode-session'], /^[0-9a-f-]{36}$/);
+  assert.equal(asked.body.model, 'muse-spark-1.3-contributor');
+  assert.match(JSON.stringify(asked.body.input), /lfm-run:test:byokit-opencode-go\\nThis tests that your tools are off/);
+  assert.deepEqual(readdirSync(dir), ['prompt-byokit-opencode-go.md']);
+  assert.equal(existsSync(join(tmp, 'home', '.local', 'share', 'byokit')), false); // no BYOKit store was made
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('muse-spark-1.3-contributor', 'no-such-model'));
+  const bad = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go');
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /^error: byokit:opencode-go: pi-ai lists no model no-such-model for opencode-go$/m);
+});
+
+test('byokit: a name that is not a plan route, a claude route with no cheap model and a missing package each name the fix', async () => {
+  const { tmp, lfm, hook } = await byokitSetup();
+  const unknown = await lfm('agents', '--test', 'byokit:grok');
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /^error: byokit:grok: byokit:grok is not a BYOKit plan route$/m);
+  assert.match(unknown.stderr, /^next: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go/m);
+  assert.equal((await hook('grok'))[0].status, 'fail');
+  const claude = await lfm('agents', '--test', 'byokit:claude'); // only opus in the catalogue: never a premium default
+  assert.equal(claude.status, 1);
+  assert.match(claude.stderr, /^error: byokit:claude: BYOKit's catalogue has no cheap model for claude$/m);
+  assert.match(claude.stderr, /^next: set the role's model, such as worker: \{ runner: "byokit:claude", model: <model> \}$/m);
+  const bad = await lfm('agents', '--test', 'byokit:../x');
+  assert.equal(bad.status, 2);
+
+  const lone = join(tmp, 'lone'); // the runner file with no node_modules above it: BYOKit is not installed
+  mkdirSync(lone);
+  cpSync(BYOKIT, join(lone, 'byokit.mjs'));
+  assert.deepEqual(await hook('chatgpt', join(lone, 'byokit.mjs')), [{ status: 'fail', label: 'byokit:chatgpt', detail: 'BYOKit is not installed',
+    fix: 'npm install -g @byokit/accounts @byokit/secrets @earendil-works/pi-ai   # or reinstall learn-from-mistakes-axi without --omit=optional' }]);
 });

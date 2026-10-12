@@ -14,7 +14,8 @@ From the candidate checkout, install the locked dependency with `npm ci` if need
 use an owned temporary HOME, XDG directories, TMPDIR and npm cache outside the repo.
 Keep the install command, output and exit in the caller's private evidence folder.
 Do not use the globally linked `learn-from-mistakes-axi`: the helper runs this checkout's `bin/learn-from-mistakes-axi.mjs`.
-Doctor: `git status --short`, `git rev-parse HEAD`, `node --version`, `npm ls @toon-format/toon yaml`.
+Doctor: `git status --short`, `git rev-parse HEAD`, `node --version`, `npm ls @toon-format/toon yaml @byokit/accounts @byokit/secrets @earendil-works/pi-ai`
+(the BYOKit packages and pi-ai are optional dependencies; the `byokit:` journeys need them and Node >= 22.18).
 A missing dependency or runtime is a failed prerequisite, not a passing proof.
 
 ## Drive (synthetic default)
