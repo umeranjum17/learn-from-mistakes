@@ -29,6 +29,8 @@ const PLANTED = [
   [`"password": "${'L'.repeat(12)}"`, 'L'.repeat(12)], ['umer@example.com', 'umer@example.com'],
   [`password="correct horse ${'M'.repeat(8)}"`, 'M'.repeat(8)], [`Authorization: Basic ${'N'.repeat(20)}`, 'N'.repeat(20)],
   [`secret=abc,${'O'.repeat(10)}`, 'O'.repeat(10)],
+  [`postgres://u:${'E'.repeat(8)}/${'F'.repeat(8)}@h/db`, 'F'.repeat(8)], // a password with a slash
+  [`postgres://u:${'G'.repeat(8)}@${'H'.repeat(8)}@h/db`, 'H'.repeat(8)], // a password with an @
 ];
 
 const planted = (from, to) => JSON.stringify(PLANTED.slice(from, to).map(([t]) => t).join(' ')).slice(1, -1); // as JSON string text
@@ -45,7 +47,7 @@ function setup() {
   git('worktree', 'add', '-q', '--detach', tree);
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
     .replace(/2026-10-0([1-3])T/g, (_, d) => `${day(3 - Number(d))}T`) // the last three days, so inside the window
-    .replaceAll('$SECRETS_A', planted(0, -8)).replaceAll('$SECRETS_B', planted(-8));
+    .replaceAll('$SECRETS_A', planted(0, -10)).replaceAll('$SECRETS_B', planted(-10));
   const src = new URL('fixtures/sessions/claude/projects', import.meta.url).pathname;
   for (const f of readdirSync(src, { recursive: true })) {
     if (!f.endsWith('.jsonl')) continue;
