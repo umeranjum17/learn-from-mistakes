@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Public CLI proof; the existing three e2e journeys own behavioral assertions.
+// Public CLI proof; the existing e2e journeys own behavioral assertions.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -10,10 +10,12 @@ import { homedir } from 'node:os';
 import { parse, stringify } from 'yaml';
 
 const repo = realpathSync(fileURLToPath(new URL('../../..', import.meta.url)));
-const [destination, mode, sourceDir, labelsArg, proposalsArg, ...extra] = process.argv.slice(2);
+const raw = process.argv.slice(2);
+const packageProof = raw.includes('--package');
+const [destination, mode, sourceDir, labelsArg, proposalsArg, ...extra] = raw.filter((a) => a !== '--package');
 assert(destination && isAbsolute(destination), 'Provide an absolute private evidence directory');
 assert(!extra.length && (!mode || (mode === '--private' && sourceDir && labelsArg && proposalsArg)),
-  'usage: node verify.mjs /absolute/evidence [--private /project /labels.jsonl /proposals.jsonl]');
+  'usage: node verify.mjs /absolute/evidence [--private /project /labels.jsonl /proposals.jsonl] [--package]');
 const inside = (parent, child) => { const r = relative(parent, child); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 // Resolve existing ancestors too: a symlinked output parent must not redirect into the repo.
 function canonical(path) {
@@ -66,7 +68,7 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/lfm.mjs', 'package-lock.json', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+  candidate: ['bin/lfm.mjs', 'package.json', 'package-lock.json', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -81,13 +83,39 @@ try {
   copyFileSync(labels, join(staged, 'labels.jsonl'));
   copyFileSync(proposals, join(staged, 'proposals.jsonl'));
   // Reuse, don't duplicate, negative/duplicate/occurrence/unread journey coverage.
-  run('npm-test', 'npm', ['test']);
+  run('npm-test', 'npm', ['test', '--ignore-scripts']);
   const cli = join(repo, 'bin/lfm.mjs');
+  const stagedLabels = join(staged, 'labels.jsonl');
+  const stagedProposals = join(staged, 'proposals.jsonl');
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged]);
   drive('ingest', 'ingest');
+  drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
   drive('count-unread', 'count');
-  drive('count-labelled', 'count', '--labels', join(staged, 'labels.jsonl'));
-  drive('report', 'report', '--labels', join(staged, 'labels.jsonl'), '--proposals', join(staged, 'proposals.jsonl'));
+  drive('count-labelled', 'count', '--labels', stagedLabels);
+  drive('report', 'report', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
+  if (packageProof) {
+    const pack = join(evidence, 'pack');
+    mkdirSync(pack, { mode: 0o700 });
+    run('npm-pack', 'npm', ['pack', '--pack-destination', pack]);
+    const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
+    const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
+    save('pack.manifest.txt', manifest.join('\n'));
+    assert.ok(manifest.includes('package/bin/lfm.mjs') && manifest.includes('package/package.json'), 'tarball omits the bin or package.json');
+    assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
+    assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
+    const prefix = join(scratch, 'prefix');
+    run('npm-install-pack', 'npm', ['install', '-g', '--prefix', prefix, tarball]);
+    const installed = join(prefix, 'bin', 'lfm');
+    run('packed-version', installed, ['--version']);
+    run('packed-help', installed, ['--help']);
+    run('packed-report', installed, ['report', '--json', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals]);
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v1', 'packed bin does not drive the report');
+    assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');
+    save('pack.json', { tarball: tarball.slice(evidence.length + 1), sha256: createHash('sha256').update(readFileSync(tarball)).digest('hex'), files: manifest.length });
+  }
   passed = true;
 } finally {
   const after = hashes();

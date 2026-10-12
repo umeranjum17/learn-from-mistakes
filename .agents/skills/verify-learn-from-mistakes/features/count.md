@@ -7,7 +7,7 @@ Separate sources, collapse duplicates, honor occurrences, disclose unread record
 After ingest, run `lfm count`; provide `--labels` for judged records.
 
 ## Driving it with the public CLI
-Inspect helper count logs and the first existing e2e journey: unlabelled count is
+Inspect helper count logs and the existing e2e journeys: unlabelled count is
 13 before labels; labelled count is 13/13 after. Memory kill has 4 incidents in
 3 records; cache lock has 3 incidents in 4 records (one duplicate collapsed).
 Agent exit has 4 store rows across 3 days; log and store totals are never added.

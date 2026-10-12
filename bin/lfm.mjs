@@ -7,17 +7,22 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { encode as toonEncode } from '@toon-format/toon';
 import { parse } from 'yaml';
 
 class UsageError extends Error {}
 const LFM_HOME = process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
 const PROJECT_FILE = '.learn-from-mistakes.yaml';
 const TYPES = ['markdown-log', 'no-mistakes'];
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 function readYaml(file) {
   let text;
   try { text = readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return undefined; throw new UsageError(`${file}: ${e.message}`); }
   try { return parse(text) ?? {}; } catch (e) { throw new UsageError(`${file}: ${e.message.split('\n')[0]}`); }
+}
+function readText(file) {
+  try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${file}: cannot read (${e.code})`); }
 }
 function mapping(value, keys, where) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new UsageError(`${where} must be a mapping`);
@@ -57,7 +62,7 @@ function loadConfig(dir) {
 
 // Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.
 function readLog(source, path) {
-  const text = readFileSync(path, 'utf8');
+  const text = readText(path);
   const seen = new Map();
   let date = '';
   const records = [];
@@ -92,13 +97,18 @@ function readStore(source, path) {
 
 function readJsonl(file, required) {
   if (!existsSync(file)) { if (required) throw new UsageError(`${file} missing: run lfm ingest first`); return []; }
-  return readFileSync(file, 'utf8').split('\n').flatMap((l, i) => {
+  return readText(file).split('\n').flatMap((l, i) => {
     if (!l.trim()) return [];
     try { return [{ ...JSON.parse(l), _line: i + 1 }]; } catch { throw new UsageError(`${file}:${i + 1}: not valid JSON`); }
   });
 }
 
-function ingest(cfg) {
+function readInput(file, explicit) {
+  if (explicit && !existsSync(file)) throw new UsageError(`${file}: no such file`);
+  return readJsonl(file, false);
+}
+
+function ingest(cfg, opts) {
   mkdirSync(cfg.state, { recursive: true });
   const records = [], rows = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
@@ -112,22 +122,26 @@ function ingest(cfg) {
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   for (const s of sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  ${s.hash.startsWith('mtime') ? s.hash : `sha256 ${s.hash.slice(0, 12)}`}`);
-  console.log(`state: ${cfg.state}\nnext: label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then lfm count`);
+  console.log(`state: ${cfg.state}\nnext: label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`);
 }
 
 function analyse(cfg, files) {
   const records = new Map(readJsonl(join(cfg.state, 'records.jsonl'), true).map((r) => [r.id, r]));
   const rows = readJsonl(join(cfg.state, 'rows.jsonl'), true);
-  const meta = JSON.parse(readFileSync(join(cfg.state, 'sources.json'), 'utf8'));
+  const metaFile = join(cfg.state, 'sources.json');
+  if (!existsSync(metaFile)) throw new UsageError(`${metaFile} missing: run lfm ingest first`);
+  let meta;
+  try { meta = JSON.parse(readText(metaFile)); } catch (e) { if (e instanceof UsageError) throw e; throw new UsageError(`${metaFile}: not valid JSON`); }
+  if (!meta || typeof meta !== 'object' || !Array.isArray(meta.sources)) throw new UsageError(`${metaFile}: not valid sources state (run lfm ingest again)`);
   const problems = [];
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
-  for (const l of readJsonl(lf, false)) {
+  for (const l of readInput(lf, files.labels)) {
     const at = `${basename(lf)}:${l._line}`;
     if (!records.has(l.id)) problems.push(`${at}: unknown record id ${l.id}`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for ${l.id}`);
     else if (typeof l.event !== 'boolean' || typeof l.why !== 'string' || !l.why.trim()) problems.push(`${at}: needs event (true/false) and why`);
-    else if (l.event && !(l.cause in cfg.causes) && l.cause !== 'other') problems.push(`${at}: cause ${l.cause} is not in the config`);
+    else if (l.event && (typeof l.cause !== 'string' || (!Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other'))) problems.push(`${at}: cause ${l.cause} is not in the config`);
     else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names unknown record ${l.duplicate_of}`);
     else if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) problems.push(`${at}: occurrences must be a positive integer`);
     else labels.set(l.id, l);
@@ -137,13 +151,13 @@ function analyse(cfg, files) {
     const d = labels.get(id)?.duplicate_of;
     return !d || seen.has(id) || labels.get(d)?.cause !== labels.get(id).cause || !labels.get(d).event ? id : root(d, seen.add(id));
   };
-  const groups = {};
+  const groups = Object.create(null);
   const group = (cause) => (groups[cause] ??= { cause, description: cfg.causes[cause]?.description ?? 'Events no listed cause names.',
     log: { roots: new Map(), records: [], days: new Set() }, store: { rows: [], days: new Set() } });
   for (const l of labels.values()) {
     if (!l.event) continue;
     const g = group(l.cause).log, r = records.get(l.id), k = root(l.id);
-    g.roots.set(k, Math.max(g.roots.get(k) ?? 0, labels.get(k).occurrences ?? 1));
+    g.roots.set(k, labels.get(k).occurrences ?? 1);
     g.records.push({ ...r, label: l });
     if (r.date) g.days.add(r.date);
   }
@@ -160,74 +174,119 @@ function analyse(cfg, files) {
     const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
-  const proposals = readJsonl(pf, false).map((p) => {
+  const proposals = readInput(pf, files.proposals).map((p) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
-    const missing = refs.filter((ref) => !records.has(ref) && !rows.some((r) => `${r.source}:${r.id}` === ref));
-    const bad = !groups[p.cause] ? `cause ${p.cause} has no counted events` : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.join(', ')}` : !p.change ? 'no change text' : '';
+    const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
+    const missing = refs.filter((ref) => !resolves(ref));
+    const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${p.cause} has no counted events` : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.join(', ')}` : !p.change ? 'no change text' : '';
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
-    return { ...p, refs, ok: !bad };
+    return { ...p, refs: refs.filter(resolves), ok: !bad };
   });
   return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length };
 }
 
-function count(a) {
-  const pad = (s, n) => String(s).padEnd(n), w = Math.max(5, ...a.groups.map((g) => g.cause.length)) + 2;
-  console.log(`${pad('cause', w)}${pad('log incidents', 22)}${pad('store rows', 16)}repeated`);
-  for (const g of a.groups) console.log(pad(g.cause, w) + pad(g.incidents ? `${g.incidents} (${g.log.records.length} rec, ${g.log.days.size} d)` : '-', 22) +
-    pad(g.store.rows.length ? `${g.store.rows.length} (${g.store.days.size} d)` : '-', 16) + (g.repeated ? `yes (${g.by.join(', ')})` : 'no'));
-  console.log(`\nlabelled ${a.labels.size} of ${a.records.size} log records; ${a.unlabelled} unlabelled and not counted`);
-  console.log(`log and store counts are never added: they share no incident id`);
-  for (const p of a.problems) console.log(`problem: ${p}`);
-}
-
-function report(a) {
-  const src = new Map(a.meta.sources.map((s) => [s.id, s]));
-  const ref = (id) => { const r = a.records.get(id); return r ? `${basename(src.get(r.source)?.path ?? r.source)}:${r.line}` : id; };
-  const o = [`# Repeated causes: ${a.cfg.name}`, '', `Sources read ${a.meta.read_at} (read-only):`, ''];
-  for (const s of a.meta.sources) o.push(`- \`${s.id}\` ${s.type}, ${s.items} items, ${s.hash.startsWith('mtime') ? s.hash : `sha256 ${s.hash}`}`);
-  o.push('', `Repeated means at least ${a.cfg.repeat.min_incidents} incidents on at least ${a.cfg.repeat.min_days} days within one source. Log and store counts are shown side by side and never added.`,
-    `Coverage: ${a.labels.size} of ${a.records.size} log records labelled by an agent; **${a.unlabelled} unlabelled records were not analysed.**`);
-  for (const g of a.groups) {
-    o.push('', `## ${g.cause}: ${g.repeated ? `repeated (${g.by.join(', ')})` : 'not repeated'}`, '', g.description, '',
-      `- Log (agent-judged): ${g.incidents} incidents in ${g.log.records.length} records over ${g.log.days.size} day${g.log.days.size === 1 ? '' : 's'}`);
-    const m = a.cfg.causes[g.cause]?.match;
-    if (m) o.push(`- Store (typed rows where \`${m.source}\` error contains "${m.error_contains}"): ${g.store.rows.length} failed steps over ${g.store.days.size} day${g.store.days.size === 1 ? '' : 's'}`);
-    for (const r of g.log.records) {
-      const l = r.label, notes = [l.duplicate_of && `same incident as ${ref(l.duplicate_of)}`, l.occurrences > 1 && `${l.occurrences} occurrences`, l.confidence && `${l.confidence} confidence`].filter(Boolean);
-      o.push(`  - ${ref(r.id)} (${r.date || 'no date'}): ${l.why}${notes.length ? ` [${notes.join('; ')}]` : ''}`);
-    }
-    for (const r of g.store.rows) o.push(`  - ${r.source}:${r.id} ${r.at} ${r.step} on ${r.branch}`);
+// The one shape every machine and default output may carry: identifiers and counts only.
+// Record text, label `why`, proposal `change`, cause descriptions, source paths and branches never enter it.
+// `full` adds allow-listed non-content evidence ids; it is not permission to print private evidence.
+function project(a, full) {
+  const causes = a.groups.map((g) => {
     const ps = a.proposals.filter((p) => p.cause === g.cause);
-    if (ps.length) o.push('', 'Recommended changes (not applied):');
-    for (const p of ps) o.push(`- ${p.ok ? '' : '**evidence not checked:** '}${p.target ?? 'target?'} (${p.owner ?? 'owner?'}): ${p.change}`, `  evidence: ${p.refs.map(ref).join(', ') || 'none'}`);
-  }
-  if (a.problems.length) o.push('', '## Problems', '', ...a.problems.map((p) => `- ${p}`));
-  console.log(o.join('\n'));
+    const m = {
+      cause: g.cause,
+      repeated: g.repeated,
+      by: g.by,
+      log: { incidents: g.incidents, records: g.log.records.length, days: g.log.days.size },
+      store: { matched: Boolean(a.cfg.causes[g.cause]?.match), rows: g.store.rows.length, days: g.store.days.size },
+      proposals: { count: ps.length, unchecked: ps.filter((p) => !p.ok).length },
+    };
+    if (full) {
+      // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
+      m.store_row_ids = g.store.rows.map((r) => `${r.source}:${r.id}`);
+      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.rows.some((r) => `${r.source}:${r.id}` === ref)))];
+    }
+    return m;
+  });
+  return {
+    schema: 'lfm-report.v1',
+    generated_at: a.meta.read_at ?? '',
+    coverage: { labelled: a.labels.size, total_records: a.records.size, unlabelled: a.unlabelled },
+    problems: a.problems.length,
+    sources: a.meta.sources.map((s) => ({ id: s.id, type: s.type, items: s.items })),
+    causes,
+  };
 }
 
-const USAGE = `usage: lfm <ingest|count|report> [--dir <project dir>] [--labels <file>] [--proposals <file>]
-  ingest  read the configured sources (read-only) into the state dir
-  count   count repeated causes from labels.jsonl and typed store rows
-  report  print a Markdown report with evidence and recommended changes
-labels.jsonl and proposals.jsonl default to the state dir, where the agent writes them`;
-try {
-  const [cmd, ...rest] = process.argv.slice(2);
+const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEncode(model));
+
+const USAGE = `usage: lfm [<ingest|count|report>] [options]
+  lfm                 print the project's repeated-cause report (same as \`lfm report\`)
+  ingest              read the configured sources (read-only) into the state dir
+  count               print the counts (same projection as \`lfm report\`)
+  report              print the report; --full adds evidence ids, --json prints JSON
+  --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
+  --labels <file>     labels.jsonl to read (default: the state dir)
+  --proposals <file>  proposals.jsonl to read (default: the state dir)
+  --json (report, count)  print lfm-report.v1 as JSON instead of the default TOON
+  --full (report, count)  add allow-listed evidence ids (never record text)
+  -h, --help          show this help and the supported commands
+  -v, --version       show the version
+every output is privacy-bounded: identifiers and counts only, never record text or label/proposal prose`;
+const HELP = `${USAGE}
+
+next: lfm                        # the report for the project you are in
+next: lfm --dir <project>        # point at a project with .learn-from-mistakes.yaml
+next: lfm report --full          # add the evidence ids
+next: lfm report --json          # the same report as JSON`;
+
+function hint(text) { if (text) console.error(`next: ${text}`); }
+const INPUT_FLAGS = ['dir', 'labels', 'proposals'];
+const withContext = (base, note, opts) => {
+  const flags = INPUT_FLAGS.filter((k) => opts[k]).map((k) => `--${k}`);
+  return flags.length ? `${base}   # ${note} (keep your ${flags.join(' ')})` : `${base}   # ${note}`;
+};
+const NEXT = (json, full, opts) => {
+  if (full && json) return '';
+  const detail = full || json ? '--full --json' : '--full';
+  return withContext(`lfm report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
+};
+const COMMANDS = ['ingest', 'count', 'report'];
+
+function main() {
+  const argv = process.argv.slice(2);
+  if (argv.includes('-h') || argv.includes('--help')) { console.log(HELP); return; }
+  if (argv.includes('-v') || argv.includes('--version')) { console.log(VERSION); return; }
+  let cmd = 'report'; // no command, or a leading flag, runs the main report job
+  if (argv[0] !== undefined && !argv[0].startsWith('-')) cmd = argv.shift();
+  if (!COMMANDS.includes(cmd)) throw new UsageError(USAGE);
   const opts = {};
-  for (let i = 0; i < rest.length; i += 2) {
-    if (!['--dir', '--labels', '--proposals'].includes(rest[i]) || !rest[i + 1]) throw new UsageError(USAGE);
-    opts[rest[i].slice(2)] = resolve(rest[i + 1]);
+  let json = false, full = false;
+  for (let i = 0; i < argv.length;) {
+    const flag = argv[i];
+    if (flag === '--json' || flag === '--full') { if (flag === '--json') json = true; else full = true; i += 1; }
+    else if (['--dir', '--labels', '--proposals'].includes(flag) && argv[i + 1] !== undefined) { opts[flag.slice(2)] = resolve(argv[i + 1]); i += 2; }
+    else throw new UsageError(USAGE);
   }
-  if (!['ingest', 'count', 'report'].includes(cmd)) throw new UsageError(USAGE);
   const cfg = loadConfig(opts.dir ?? resolve('.'));
-  if (cmd === 'ingest') ingest(cfg);
-  else {
-    const a = analyse(cfg, opts);
-    if (!a.records.size && !a.rows.length) { console.log('no records or rows in the sources: nothing to count'); process.exit(3); }
-    (cmd === 'count' ? count : report)(a);
-    if (a.problems.length) process.exit(1);
+  if (cmd === 'ingest' && (json || full)) throw new UsageError(USAGE);
+  if (cmd === 'ingest') { ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
+  const a = analyse(cfg, opts);
+  if (!a.records.size && !a.rows.length) {
+    console.error('no records or rows in the sources: nothing to count');
+    hint(withContext('lfm ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', opts));
+    process.exit(3);
   }
-} catch (e) {
+  console.log(render(project(a, full), json));
+  if (a.problems.length) {
+    console.error(`problems: ${a.problems.length}   # fix labels.jsonl or proposals.jsonl`);
+    hint(withContext(`lfm report${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts));
+    process.exit(1);
+  }
+  hint(NEXT(json, full, opts));
+}
+
+try { main(); } catch (e) {
   if (!(e instanceof UsageError)) throw e;
   console.error(e.message);
+  hint('lfm --help   # supported commands and options');
   process.exit(2);
 }

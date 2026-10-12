@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real lfm ingest/count/report CLI, reuse its three e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real lfm ingest/count/report CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 ---
 
 # Verify learn-from-mistakes
@@ -12,7 +12,7 @@ From the candidate checkout, install the locked dependency with `npm ci` if need
 use an owned temporary HOME, XDG directories, TMPDIR and npm cache outside the repo.
 Keep the install command, output and exit in the caller's private evidence folder.
 Do not use the globally linked `lfm`: the helper runs this checkout's `bin/lfm.mjs`.
-Doctor: `git status --short`, `git rev-parse HEAD`, `node --version`, `npm ls yaml`.
+Doctor: `git status --short`, `git rev-parse HEAD`, `node --version`, `npm ls @toon-format/toon yaml`.
 A missing dependency or runtime is a failed prerequisite, not a passing proof.
 
 ## Drive (synthetic default)
@@ -21,16 +21,33 @@ Caller supplies a stable, absolute, new or empty **private** evidence directory.
 Never place it in the checkout, a source directory, or a public attachment/upload.
 The helper rejects overlaps (including symlinked parents) and existing nonempty
 folders before writing. It creates mode-0700 evidence and an isolated temporary
-HOME/XDG/TMPDIR, runs the existing three journeys, then the public CLI on copies
+HOME/XDG/TMPDIR, runs the existing `npm test` journeys, then the public CLI on copies
 of `examples`. Originals are hashed before and after; scratch is removed even
-when a CLI check fails. No model, network, pipeline, or release is started.
+when a CLI check fails. No model, network, pipeline, or release is started by the
+default journey. It also drives the bare command and `report`/`--json`/`--full`
+to capture their real stdout/stderr as evidence. Behavior assertions -- help and
+version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
+`--full` carrying only non-content ids, the `next:` hint chains, and the private
+canary -- are owned by `test/cli.test.mjs`; the helper does not duplicate them.
 
 ```sh
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli
 ```
 
-Read `commands.json`, both input manifests, `result.json` and each stdout/stderr.
-All command exits must be 0, all three `npm test` journeys must pass, input SHA256
+Pass `--package` to add the packaged-install journey: `npm pack` into the
+evidence dir, assert the tarball manifest carries the bin, package metadata and
+the standalone skill (and not `test`/`examples`), install that exact tarball into
+a fresh prefix, and drive the installed `lfm` bin. This one step resolves the
+declared npm dependencies, so it uses the isolated npm cache and may touch
+the registry; the default journey does not.
+
+```sh
+node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli --package
+```
+
+Read `commands.json`, both input manifests, `result.json`,
+`pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
+All command exits must be 0, all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 

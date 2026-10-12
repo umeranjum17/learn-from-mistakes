@@ -2,10 +2,15 @@
   "name": "learn-from-mistakes",
   "version": "0.1.0",
   "description": "Find repeated causes in the record of past agent work and turn them into evidence-backed change recommendations.",
+  "license": "MIT",
+  "keywords": ["agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
+  "homepage": "https://github.com/umeranjum17/learn-from-mistakes#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/umeranjum17/learn-from-mistakes.git" },
+  "bugs": { "url": "https://github.com/umeranjum17/learn-from-mistakes/issues" },
   "type": "module",
   "bin": { "lfm": "bin/lfm.mjs" },
   "files": ["bin", "skills"],
   "engines": { "node": ">=22.13" },
-  "scripts": { "test": "node --test" },
-  "dependencies": { "yaml": "^2.9.1" }
+  "scripts": { "pretest": "npm ci", "test": "node --test" },
+  "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" }
 }
