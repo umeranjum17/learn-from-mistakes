@@ -14,7 +14,7 @@ or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are onl
 loaded and checked: only the sessions source reads `window` and `excerpts`; nothing reads the runners or the caps yet.
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
-exporting `validate` (its own keys) and `read`; `collect`/`ingest` call the
+exporting `validate` (its own keys), `read` and `detect` (init); `collect`/`ingest` call the
 registry. Today: `markdown-log` and `no-mistakes`, unchanged, and `sessions`
 ([sessions.md](sessions.md)). A type with no reader yet (`github`) exits 2
 `sources.<id>.type must be one of ...`. `window` sets the sessions read range.
@@ -57,4 +57,5 @@ copy of `$SELF/examples`.
 ## Gotchas
 `>= 70` must be quoted in YAML (a bare `>` starts a block scalar). `on`/`off`
 are strings in YAML 1.2. A source may export `metrics`, `detect` and `doctor`
-(the sessions source does); init and doctor call the last two in later slices.
+(the sessions source does); `init` calls `detect` ([init.md](init.md)), doctor calls
+`doctor` in a later slice.

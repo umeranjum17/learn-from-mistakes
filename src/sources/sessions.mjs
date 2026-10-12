@@ -9,6 +9,7 @@ import { sep } from 'node:path';
 import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { mapping } from '../config.mjs';
 import { redact } from '../redact.mjs';
+import { which } from '../runners/index.mjs';
 import * as claude from '../sessions/claude.mjs';
 
 const READERS = { claude };
@@ -26,8 +27,9 @@ const real = (p) => { try { return realpathSync(p); } catch { return p; } };
 // The project dir and every worktree of its repo; a dir outside git is its own only root.
 function roots(dir) {
   let trees = [];
-  try {
-    trees = execFileSync('git', ['-C', dir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  const git = which('git');
+  if (git) try {
+    trees = execFileSync(git, ['-C', dir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       .split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9));
   } catch { /* not a git repo */ }
   return [...new Set([dir, ...trees].map(real))];
