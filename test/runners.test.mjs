@@ -122,7 +122,7 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
     assert.equal(r.status, 0, r.stderr);
     const dir = join(p, '.lfm', 'runs', `test-${runner}`);
     assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner][0], tools: runner === 'codex' ? 'read-only' : 'off', dir,
-      reply: `hello from ${runner}`, wrote_file: false, files_written: 0 });
+      reply: `hello from ${runner}`, wrote_file: false });
     const [c] = calls(runner);
     assert.equal(c.cwd, dir);
     assert.ok(!existsSync(join(dir, 'x.txt')));

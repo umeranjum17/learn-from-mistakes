@@ -151,7 +151,7 @@ export async function agents(cfg, opts) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const got = await call(cfg, { runner: a.runner, model: a.model, dir, runId: 'test', step: a.runner, prompt: TEST });
-    return { test: { runner: a.runner, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), wrote_file: got.wrote_file ?? '', files_written: 0 } };
+    return { test: { runner: a.runner, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), wrote_file: got.wrote_file ?? '' } };
   }
   const out = { agents: list };
   if (cfg.worker) {
