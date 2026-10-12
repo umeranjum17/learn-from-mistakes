@@ -244,7 +244,7 @@ function analyse(cfg, files) {
     if (!c.match) continue;
     for (const row of rows) if (row.source === c.match.source && row.error.includes(c.match.error_contains)) {
       group(cause).store.rows.push(row);
-      group(cause).store.days.add(row.at.slice(0, 10));
+      if (row.at) group(cause).store.days.add(row.at.slice(0, 10));
     }
   }
   const { min_incidents: mi, min_days: md } = cfg.repeat;
