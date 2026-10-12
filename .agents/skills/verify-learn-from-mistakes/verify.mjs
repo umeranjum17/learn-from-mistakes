@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Public CLI proof; the existing three e2e journeys own behavioral assertions.
+// Public CLI proof; the existing e2e journeys own behavioral assertions.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';

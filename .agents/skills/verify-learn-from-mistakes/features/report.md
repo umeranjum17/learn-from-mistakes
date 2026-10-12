@@ -12,11 +12,11 @@ Run `lfm` or `lfm report --labels <file> --proposals <file>` after ingest; add
 Inspect helper `report`/`report-detail`/`report-json`/`report-full` and the existing
 `npm test` journeys. Examples show 0 unlabelled; the one duplicate collapses into
 the `shared-cache-lock` counts (3 incidents, 4 records); `--full` ids carry
-`gate:step-1` but not `step-5`; and accepted proposal refs appear as ids. The second
-journey retains two unread long records (coverage falls), counts the missing ref
-`nope` as one problem and exits 1 without printing its text; malformed JSON exits 2
+`gate:step-1` but not `step-5`; and accepted proposal refs appear as ids. The
+bad-input journey retains two unread long records (coverage falls), counts the missing
+ref `nope` as one problem and exits 1 without printing its text; malformed JSON exits 2
 and names its line; unknown IDs count as a problem; unknown config key `colour` is
-rejected. The third journey's empty input exits 3, says nothing to count and prints a
+rejected. The empty-input journey exits 3, says nothing to count and prints a
 `next: lfm ingest` hint. These are driven by the real CLI, not new unit tests.
 
 ## Gotchas

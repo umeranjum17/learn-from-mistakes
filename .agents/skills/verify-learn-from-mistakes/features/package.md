@@ -18,7 +18,7 @@ and must exclude `test`/`examples`. The installed bin's `report --json` must be
 `lfm-report.v1`, and the packaged skill file must exist in the installed prefix.
 
 ## Gotchas
-This is the only journey that resolves the declared dependency, so it uses the
+This is the only journey that resolves the declared dependencies, so it uses the
 isolated npm cache and may touch the registry. `npm pack`/install never publishes:
 first publish is the captain's own test. The tarball and its sha256 are retained
 as evidence; no release or account is created.

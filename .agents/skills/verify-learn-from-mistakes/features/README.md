@@ -10,5 +10,5 @@
 
 Run the helper from `../SKILL.md`; reuse `test/cli.test.mjs`, never duplicate its
 journeys in a new test file. Synthetic expectations apply only to `examples`.
-The package install journey resolves the one declared npm dependency and may
+The package install journey resolves the declared npm dependencies and may
 touch the registry; the default journey starts no network.
