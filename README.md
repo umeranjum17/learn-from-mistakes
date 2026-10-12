@@ -79,7 +79,7 @@ git clone https://github.com/umeranjum17/learn-from-mistakes
 cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-axi on your PATH
 ```
 
-1. Put `.learn-from-mistakes.yaml` in your project:
+1. Run `learn-from-mistakes-axi init` in your project. It writes `.learn-from-mistakes.yaml` if the project has none (otherwise it prints `already set up` and any gaps), with a worker and a different judge from the agent CLIs found, the sources it detects, and excerpts on (`--no-excerpts` writes them off). Or write the file yourself:
 
    ```yaml
    name: my-project
@@ -108,6 +108,7 @@ Agent fleets write down what went wrong: a defect log, a pipeline's failed steps
 
 ```
 learn-from-mistakes-axi           print the project's repeated-cause report (same as `report`)
+learn-from-mistakes-axi init      write .learn-from-mistakes.yaml once: a worker and a different judge from the agent CLIs found, and the sources found
 learn-from-mistakes-axi guide     print the agent procedure: config, ingest, label, propose, report
 learn-from-mistakes-axi ingest    read the configured sources (read-only) into the state dir
 learn-from-mistakes-axi count     print the counts (same projection as `report`)
