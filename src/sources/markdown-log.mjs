@@ -15,7 +15,7 @@ export function detect(dir) {
 
 // Each record's id comes from its text, so it survives line moves.
 export function read(source, { path }) {
-  const text = readText(path, `source ${source}`, `touch ${path}   # or set sources.${source}.path in ${PROJECT_FILE} to your defect log`);
+  const text = readText(path, `source ${source}`, `check sources.${source}.path in ${PROJECT_FILE}, or create it: touch ${path}`);
   const seen = new Map();
   let date = '';
   const records = [];
@@ -30,6 +30,14 @@ export function read(source, { path }) {
     records.push({ id, source, line: i + 1, date: body.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? date, text: body });
   });
   return { records, hash: createHash('sha256').update(text).digest('hex') };
+}
+
+// doctor: readable, the records dated in the window, and the bullets with no date, which the window cannot place.
+export function doctor(source, entry, { readFrom }) {
+  const { records } = read(source, entry);
+  const undated = records.filter((r) => !r.date).length;
+  const inWin = records.filter((r) => Date.parse(r.date) >= readFrom).length;
+  return { level: 'ok', detail: `${records.length} records, ${inWin} in the window, ${undated} skipped (no date)` };
 }
 
 // defects: the records dated in the window, over every markdown-log source; n/a when no record has a date.
