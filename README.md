@@ -117,6 +117,8 @@ learn-from-mistakes-axi retro [--wait [<time>] | --foreground]   ingest and repo
 learn-from-mistakes-axi status    print the last saved run and its steps (--run <id> for another)
 learn-from-mistakes-axi runs      list the saved runs, newest first (the last 10)
 learn-from-mistakes-axi rerun --resume [--run <id>] [--wait <time>]   finish a run that did not complete
+learn-from-mistakes-axi agents    list the agent CLIs the tool can start: usable, version, login presence, default model
+learn-from-mistakes-axi agents --test <runner>   one live call to that agent CLI (costs tokens): it must answer and write no file
 learn-from-mistakes-axi --help    show the commands and options
 learn-from-mistakes-axi --version show the version
 ```
@@ -129,6 +131,7 @@ Every command stays useful:
 - `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
 - `retro` saves a run in `<state dir>/lfm.sqlite`: a `runs` row with its status and the pid of the process that runs it, and one `steps` row each for `collect` (ingest) and `report` (the counts with the labels already in the state dir). A detached worker runs the steps, so the run goes on when the terminal or the calling agent ends; `retro` returns at once, `--wait 8m` waits up to that time and prints the outcome (a bare `--wait` waits 8 minutes), and `--foreground` runs the steps in the same process. One run runs at a time: a second `retro` exits 2 and names the running run. A failed step fails the run and exits 1; `status` and `runs` show the saved runs, and `status` exits 3 before the first one.
 - A run whose worker stopped without ending it (a crash or a kill) shows as `interrupted` in `status` and `runs`, and no longer blocks a new `retro`. `rerun --resume [--run <id>]` runs an interrupted, cancelled or failed run again from its first step that is not completed; completed steps keep their output and do not run again. A SIGTERM or SIGINT to the worker ends the run as `cancelled`.
+- `agents` lists the agent CLIs the tool can start as its own workers (claude, codex and opencode for now): usable (on PATH and `--version` exits 0), version, whether tools are off or read-only, login presence (file and variable names only, never their contents) and the default model, the first cheap model in `src/models.json` for that runner (a configured model such as `LFM_MODEL` applies only where that runner lists it, or where its role pins that runner). With a project config it adds the resolved `worker` and `judge`; a judge that resolves to the worker's binary and model exits 1 with the fix. `agents --test <runner>` makes one live call in `<state dir>/runs/test-<runner>/` with tools off and no saved session (Codex: a read-only sandbox; OpenCode saves its session): it asks the agent to write `x.txt` and exits 1 if any file appears, if an attempt gets no answer within `caps.timeout` (each attempt has its own; a call makes at most 3 attempts), or with the agent's own error; a plain-text answer passes and prints as the reply.
 - Each working command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout; `--help` and `guide` print theirs on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
@@ -194,7 +197,7 @@ The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every 
 | Code | Meaning | stderr |
 | --- | --- | --- |
 | `0` | ok | a `next:` hint |
-| `1` | an input problem: a label, a proposal or the existing change ledger has a problem, including a line that is not valid JSON | `error: <file>:<line>: not valid JSON`, or for the report one `problem: <file>:<line>: ...` line each (the line and the rule broken, never record text, a record id or a ref) and `problems: N`; then `next:` |
+| `1` | an input problem: a label, a proposal or the existing change ledger has a problem, including a line that is not valid JSON; for `agents`, a worker or judge problem or a failed `--test` call | `error: <file>:<line>: not valid JSON`, or for the report one `problem: <file>:<line>: ...` line each (the line and the rule broken, never record text, a record id or a ref) and `problems: N`; then `next:` |
 | `2` | bad usage or config: an unknown command or option, a flag the command does not take, a missing or invalid value, a bad `.learn-from-mistakes.yaml`, missing state | `error:` naming the flag or value (a value longer than 80 characters or with control characters shows as `(invalid value)`; file paths print whole, and a `--dir`/`--labels`/`--proposals` path with a control character is rejected), then `next:` with the allowed form or a runnable command, never the whole usage |
 | `3` | the sources hold nothing | `next: learn-from-mistakes-axi ingest` |
 
@@ -202,10 +205,10 @@ A rejected `change applied` never touches the ledger. A missing prerequisite or 
 
 ## Model
 
-The label/propose reading is agent work: do it on Go Muse (opencode-go/muse-spark-1.3-contributor) by default.
-Cheap alternates are claude-haiku-5-5 and gpt-6-luna. Never take Opus, Sonnet or Sol as the default.
-To use your own model instead, set LFM_MODEL to its id (`learn-from-mistakes-axi guide` then names it in the procedure).
+The label/propose reading is agent work: do it on the cheap default model of the agent CLI that runs it; `learn-from-mistakes-axi agents` lists each one.
+Never take Opus, Sonnet or Sol as the default.
+To use your own model instead, set `LFM_MODEL` (or `worker.model`) to its id. With `worker.runner: auto` it must be a model an agent CLI lists as its default, else set `worker.runner` to the CLI that runs it (`learn-from-mistakes-axi guide` then names it in the procedure).
 
 ## What it does not do
 
-`learn-from-mistakes-axi` never edits your sources, instructions or config, and it makes no network or model calls. It does not apply the recommended changes or measure whether they worked; `change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.
+`learn-from-mistakes-axi` never edits your sources, instructions or config, and it makes no network or model calls itself; only `agents --test` starts your own agent CLI, which calls its model. It does not apply the recommended changes or measure whether they worked; `change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.

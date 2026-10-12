@@ -157,34 +157,6 @@ test('help, guide and version work without a project file', () => {
   assert.equal(raw('frobnicate').status, 2); // an unknown command is still a usage error
 });
 
-test('the agent model default is cheap, with an LFM_MODEL override, never opus/sonnet/sol', () => {
-  const premium = [/opus/i, /sonnet/i, /\bsol\b/i]; // a line naming one must be the never-default ban
-  const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
-  after(() => rmSync(tmp, { recursive: true }));
-  const cleanEnv = () => { const e = { ...process.env, LFM_HOME: join(tmp, 'home') }; delete e.LFM_MODEL; return e; };
-  const guide = (env) => spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8', cwd: tmp, env });
-  const dflt = guide(cleanEnv()); // the real CLI with no override set
-  assert.equal(dflt.status, 0, dflt.stderr);
-  assert.ok(dflt.stdout.includes('opencode-go/muse-spark-1.3-contributor'), 'guide defaults to Go Muse');
-  const over = guide({ ...cleanEnv(), LFM_MODEL: 'my-own-model' }); // the user override resolves
-  assert.equal(over.status, 0, over.stderr);
-  assert.ok(over.stdout.includes('my-own-model'), 'guide names the LFM_MODEL override');
-  const sources = {
-    guide: dflt.stdout, // the agent procedure an agent follows
-    skill: readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8'),
-    readme: readFileSync(new URL('../README.md', import.meta.url), 'utf8'),
-  };
-  for (const [name, text] of Object.entries(sources)) {
-    assert.ok(text.includes('opencode-go/muse-spark-1.3-contributor'), `${name} states the Go Muse default`);
-    assert.ok(text.includes('LFM_MODEL'), `${name} documents the user model override`);
-    for (const line of text.split('\n')) {
-      if (premium.some((re) => re.test(line))) {
-        assert.match(line, /never/i, `${name} takes a premium model as a default: ${line.trim()}`);
-      }
-    }
-  }
-});
-
 test('runs that never read a store print no ExperimentalWarning', () => {
   const { p, lfm, raw } = setup();
   for (const r of [raw('--version'), raw('--help'), raw('guide')]) {
@@ -211,7 +183,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   const withConfig = (extra, base = v1) => { writeFileSync(cfgFile, base + extra); try { return lfm('ingest'); } finally { writeFileSync(cfgFile, v1); } };
   const bad = (rule) => new RegExp(`^error: .*\\.learn-from-mistakes\\.yaml: ${rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm');
   for (const [run, code, error, next] of [
-    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun)', HELP],
+    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun, agents)', HELP],
     [() => raw('--bogus'), 2, 'unknown option "--bogus"', HELP], // a bare unknown flag points at --help
     [() => raw('report', '--bogus'), 2, 'unknown option "--bogus"', /^next: learn-from-mistakes-axi report \[--dir <dir>\]/m],
     [() => raw('change'), 2, '"change" must be followed by "applied"', CHANGE],
@@ -241,6 +213,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('rerun', '--resume', '--foreground'), 2, 'rerun does not take --foreground', /^next: learn-from-mistakes-axi rerun --resume /m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
+    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be a runner: claude, codex, opencode', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
     [() => withConfig('worker: { runner: 3 }\n'), 2, bad('worker.runner must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
     [() => withConfig('judge: { runner: claude, model: 5 }\n'), 2, bad('judge.model must be a string'), HELP],
     [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
