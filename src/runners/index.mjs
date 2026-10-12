@@ -69,8 +69,9 @@ export function resolveRole(cfg, name, agents, worker) {
   const model = configuredModel(cfg, name);
   const pool = agents.filter((a) => !a.problem && (want.runner === 'auto' ? !model || lists(a.runner, model) : a.runner === key));
   if (!pool.length) {
-    const a = agents.find((x) => x.runner === key) ?? agents.find((x) => lists(x.runner, model));
-    const reason = `${a?.runner === key ? a.runner : `${a?.runner} lists model ${model} but`} ${a?.usable ? 'is' : 'is not usable:'} ${a?.problem}`;
+    const a = agents.find((x) => x.runner === key) ?? (model ? agents.find((x) => lists(x.runner, model)) : agents.find((x) => x.usable));
+    const named = a?.runner === key || !model ? a?.runner : `${a?.runner} lists model ${model} but`;
+    const reason = `${named} ${a?.usable ? 'is' : 'is not usable:'} ${a?.problem}`;
     return { runner: want.runner, model, bin: '', problem: a ? reason : model ? `no usable agent CLI lists model ${model}` : `no usable agent CLI (install ${INSTALL})` };
   }
   let last;
