@@ -449,6 +449,7 @@ const FORMS = {
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
 const JUDGE_FIX = `set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`;
+const AGENTS_FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--test', '--worker', '--judge'];
 const SWITCHES = ['--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
@@ -573,7 +574,7 @@ async function agentsCommand(opts) {
   if (roles.length) process.exitCode = 1;
   if (!out.agents.some((a) => a.usable)) hint('install claude, codex or opencode, or set runner_path in $LFM_HOME/config.yaml   # then run agents again');
   else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
-  else if (roles.includes('judge')) hint(JUDGE_FIX);
+  else if (roles.includes('judge')) hint(out.judge.bin ? JUDGE_FIX : AGENTS_FIX);
   else hint(withContext(`learn-from-mistakes-axi agents --test ${out.agents.find((a) => a.usable).runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 
@@ -583,10 +584,11 @@ async function initCommand(opts) {
   quietSqlite();
   const out = await init(opts.dir ?? resolve('.'), opts);
   console.log(render(out, opts.json));
+  if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
   if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: the worker (${out.worker.runner}) and the judge (${out.judge.runner}) see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
   if (out.gaps.some((g) => g.startsWith('worker:'))) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
-  else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(JUDGE_FIX);
+  else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(out.gaps.some((g) => g.startsWith('judge:') && g.includes('own work')) ? JUDGE_FIX : AGENTS_FIX);
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }
 

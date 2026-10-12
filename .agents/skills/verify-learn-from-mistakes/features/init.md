@@ -10,11 +10,14 @@ judge the first usable one whose (real binary, model) differs. The config gets
 the runner and `model: ""` (the runner's default model). With one usable runner
 and one table model, the judge is written on the worker's runner and reported as
 a gap with the fix hint; `agents` then exits 1 (no fallback to the worker).
-`--worker`/`--judge <runner>` pin a role: a pinned judge on the worker's identity
-exits 2, an unknown runner exits 2, a pinned or auto role with no usable runner
-exits 1; none of these writes a file. On an existing config, `--worker`, `--judge`
-or `--no-excerpts` exit 2 (init never rewrites it), and a `--dir` that is not a
-directory exits 2 with `error:`/`next:`.
+`--worker`/`--judge <runner>` pin a role. A pinned judge steers the auto worker: the
+worker is the first usable runner that differs from it (`--judge claude` with claude
+and codex usable writes worker codex). Exit 2 when both are pinned and clash, or when a
+pinned judge leaves no worker that differs from it; an unknown runner exits 2, a pinned
+or auto role with no usable runner exits 1; none of these writes a file. On an existing
+config, `--worker`, `--judge` or `--no-excerpts` change nothing: init exits 0 with
+`already set up`, the gaps, the same bytes, and a line `--worker ... not applied`.
+A `--dir` that is not a directory exits 2 with `error:`/`next:`.
 
 Sources come from each registry module's `detect(dir)` hook (`src/sources/<type>.mjs`),
 so only types with a reader are written: `markdown-log` takes the first of
@@ -41,9 +44,9 @@ under `NM_HOME` with a `repos` row for the project: the written config (worker,
 different judge, `docs/defects.md`, the store and an empty session store detected), `.lfm/.gitignore`,
 `git status`, a second init byte-identical, `retro --foreground` completing on
 the written config, gaps on an existing config, `--no-excerpts`, the
-one-agent judge gap (and `agents` exit 1), and the refusals (pinned clash,
-unknown runner, unusable runner, a flag on an existing config, a missing dir, no
-agent CLI). The helper drives `init`,
+one-agent judge gap (and `agents` exit 1), a pinned judge steering the worker,
+and the refusals (pinned clash, unknown runner, unusable runner, a missing dir, no
+agent CLI); flags on an existing config exit 0 with the same bytes. The helper drives `init`,
 `init-again` (bytes unchanged) and `init-pinned-clash` (exit 2) in a fresh
 scratch project with two fake agents, and keeps `init.yaml`.
 

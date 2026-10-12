@@ -70,7 +70,18 @@ export function resolveRole(cfg, name, agents, worker) {
     last = { runner: a.runner, model: roleModel(cfg, name, a.runner), bin: a.bin, problem: '' };
     if (!worker || !same(last, worker)) return last;
   }
-  return { ...last, problem: 'the judge resolves to the worker\'s agent and model, so it would judge its own work' };
+  const clash = name === 'judge' ? 'the judge resolves to the worker\'s agent and model, so it would judge its own work' : 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
+  return { ...last, problem: clash };
+}
+
+// The pinned role is resolved first, so the auto role takes a runner that differs from it; both auto: the worker first.
+export function resolveRoles(cfg, agents) {
+  if (cfg.worker.runner === 'auto' && cfg.judge.runner !== 'auto') {
+    const judge = resolveRole(cfg, 'judge', agents);
+    return { worker: resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge), judge };
+  }
+  const worker = resolveRole(cfg, 'worker', agents);
+  return { worker, judge: resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker) };
 }
 
 // One process: detached, so a timeout stops its whole group; after exit, a grandchild holding stdout gets 5 s, then
@@ -163,8 +174,7 @@ export async function agents(cfg, opts) {
   }
   const out = { agents: list };
   if (cfg.worker) {
-    out.worker = resolveRole(cfg, 'worker', list);
-    out.judge = resolveRole(cfg, 'judge', list, out.worker.problem ? undefined : out.worker);
+    Object.assign(out, resolveRoles(cfg, list));
   }
   return out;
 }

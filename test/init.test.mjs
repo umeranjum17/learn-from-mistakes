@@ -84,6 +84,16 @@ test('one agent CLI with one table model: the judge is written on the worker\'s 
   assert.match(agents.stderr, /^problem: judge: the judge resolves to the worker's agent/m);
 });
 
+test('a pinned judge steers the auto worker onto a different agent CLI, and the pair is written', () => {
+  const { lfm, config } = setup(['claude', 'codex']);
+  const r = lfm('init', '--judge', 'claude', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual([out.worker, out.judge], [{ runner: 'codex', model: MODELS.codex[0] }, { runner: 'claude', model: MODELS.claude[0] }]);
+  assert.deepEqual(out.gaps, []);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'codex', model: '' });
+});
+
 test('init refuses a pinned judge on the worker\'s identity, an unknown runner and no agent CLI, and writes nothing', () => {
   const { lfm, config } = setup(['claude', 'opencode']);
   for (const [args, code, error] of [
@@ -97,10 +107,12 @@ test('init refuses a pinned judge on the worker\'s identity, an unknown runner a
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
   }
-  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten, so a flag that would change it is refused
-  const pinned = lfm('init', '--worker', 'opencode');
-  assert.equal(pinned.status, 2);
-  assert.match(pinned.stderr, /^error: .*\.learn-from-mistakes\.yaml exists, so --worker would change nothing/);
+  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten: the flags that would change it are reported
+  const pinned = lfm('init', '--worker', 'opencode', '--judge', 'claude', '--json');
+  assert.equal(pinned.status, 0, pinned.stderr);
+  const { status, ignored } = JSON.parse(pinned.stdout);
+  assert.deepEqual([status, ignored], ['already set up', ['--worker', '--judge']]);
+  assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m);
   assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
   const missing = spawnSync(process.execPath, [CLI, 'init', '--dir', join(config, 'nope')], { encoding: 'utf8', env: { PATH: '' } });
   assert.equal(missing.status, 2);
