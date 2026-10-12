@@ -106,10 +106,11 @@ function readJsonl(file, required) {
 // The append-only change ledger: one JSON object per line, ids/cause keys/times plus the
 // optional owner-written one-line `what`/`why` that only `lfm changes` prints.
 // A missing file means zero entries, never an error. Problems name file:line only,
-// never line contents, so a corrupt ledger stays privacy-bounded too.
+// never line contents, so a corrupt ledger stays privacy-bounded too. A repeated id is a
+// problem: `project` + `id` is the join key other tools rely on.
 function readLedger(file) {
   if (!existsSync(file)) return { entries: [], problems: [] };
-  const entries = [], problems = [];
+  const entries = [], problems = [], ids = new Set();
   readText(file).split('\n').forEach((line, i) => {
     if (!line.trim()) return;
     let e;
@@ -119,7 +120,8 @@ function readLedger(file) {
       && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
       && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
-    else entries.push(e);
+    else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${e.id}`);
+    else { ids.add(e.id); entries.push(e); }
   });
   return { entries, problems };
 }
@@ -131,9 +133,10 @@ function oneLine(text) {
   return [...t].length >= 1 && [...t].length <= 200 && !/[\p{Cc}\u2028\u2029]/u.test(t) ? t : undefined;
 }
 
-// ponytail: single-writer ledger. The id is entries + 1 and the write is one
-// O_APPEND call, so a lone writer can never interleave or repeat an id.
-// Concurrent writers could read the same length and repeat one; a lock file is the upgrade.
+// ponytail: single-writer ledger. The id is the highest chg-<n> + 1 and the write is one
+// O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
+// line is the one way to reuse one). Concurrent writers could read the same ledger and
+// repeat an id; a lock file is the upgrade.
 function recordChange(cfg, opts, json) {
   if (opts.cause === undefined || opts.ref === undefined) throw new UsageError(USAGE);
   if (!Object.hasOwn(cfg.causes, opts.cause) || opts.cause === 'other') throw new UsageError(USAGE);
@@ -146,17 +149,20 @@ function recordChange(cfg, opts, json) {
     at = new Date(ms).toISOString();
   }
   const text = {};
-  for (const k of ['what', 'why']) if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(USAGE);
+  for (const k of ['what', 'why']) {
+    if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} must be one line of 1-200 characters, with no line breaks or control characters`);
+  }
   const file = join(cfg.state, 'changes.jsonl');
   const { entries, problems } = readLedger(file);
   if (problems.length) {
     for (const p of problems) console.error(p);
     process.exit(1);
   }
-  const entry = { v: 1, id: `chg-${entries.length + 1}`, cause: opts.cause, ref: opts.ref, at, ...text };
+  const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
+  const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
   mkdirSync(cfg.state, { recursive: true });
-  appendFileSync(file, JSON.stringify(entry) + '\n');
-  console.log(render(entry, json));
+  appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
+  console.log(render(entry, json)); // what/why leave only through `lfm changes`
   hint(withContext('lfm report', 'the report with the ledger', opts));
 }
 

@@ -25,8 +25,10 @@ decodes equal to JSON; planted record/label/proposal prose never reaches any
 output. The same journey owns the export: `changes --json` before ingest is an
 empty `lfm-changes.v1`; changes with and without what/why in separate
 processes; rejected what/why (empty, blank, 201 characters, newline, control
-character, missing value) append nothing; a corrupt ledger exits 1 with
-`file:line` and empty stdout; report/change flags are rejected; ids and entries
+character, missing value) append nothing and name the rule, never the text;
+the `change applied` echo never carries what/why; a corrupt ledger, a
+hand-edited entry with bad what/why, or a repeated id exits 1 with `file:line`
+and empty stdout; report/change flags are rejected; ids and entries
 are unchanged after a later append (a 200-character what is accepted); TOON
 decodes equal to JSON; owner what/why markers appear in `changes` but never in
 any report output. The helper drives `changes-empty`, `change-applied`,
@@ -36,7 +38,8 @@ drives `packed-changes` and reruns the suite through the installed bin
 
 ## Gotchas
 Single writer is assumed; concurrent writers could repeat an id (a lock file is
-the upgrade). A missing ledger means zero entries; an invalid one exits 1 with
+the upgrade). New ids are the highest `chg-<n>` + 1; a repeated id is a ledger
+problem, so `changes` never exports a duplicate join key. A missing ledger means zero entries; an invalid one exits 1 with
 file:line only. What/why are owner-written text meant to leave the privacy
 bound only through `changes`; the report never prints them. `generated_at` is
 the export time, so compare TOON to JSON without it. No measurement, Helped?

@@ -55,6 +55,7 @@ for (const dir of ['home', 'tmp', 'xdg', 'runtime', 'project']) mkdirSync(join(s
 const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch, 'tmp'),
   XDG_CONFIG_HOME: join(scratch, 'xdg'), XDG_CACHE_HOME: join(scratch, 'xdg'), XDG_DATA_HOME: join(scratch, 'xdg'), XDG_RUNTIME_DIR: join(scratch, 'runtime'),
   LFM_HOME: join(evidence, 'state'), npm_config_cache: join(scratch, 'npm-cache') };
+delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
 const commands = [];
 function run(name, command, args, expected = 0, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });

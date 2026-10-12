@@ -251,7 +251,7 @@ test('change applied appends an append-only ledger the report counts and changes
   const WHY = 'OWNER-WHY-7d0e: the killer, not the build, stopped the server';
   const second = change('--cause', 'server-memory-kill', '--ref', REF2, '--at', AT, '--what', `  ${WHAT} `, '--why', WHY, '--json');
   assert.equal(second.status, 0, second.stderr);
-  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', what: WHAT, why: WHY }); // trimmed
+  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z' }); // the echo never carries what/why
   const afterSecond = readFileSync(ledger);
   assert.ok(afterSecond.subarray(0, afterFirst.length).equals(afterFirst)); // the second entry keeps every prior byte
 
@@ -273,6 +273,9 @@ test('change applied appends an append-only ledger the report counts and changes
     assert.equal(change(...args).status, 2, args.join(' '));
     assert.ok(readFileSync(ledger).equals(afterSecond), `rejected input changed the ledger: ${args.join(' ')}`);
   }
+  const badWhy = change('--cause', 'server-memory-kill', '--ref', 'abc1234', '--why', `${WHY}\nsecond line`);
+  assert.match(badWhy.stderr, /--why must be one line of 1-200 characters/); // the real cause, never the text
+  assert.doesNotMatch(badWhy.stderr, /OWNER-WHY/);
   appendFileSync(ledger, 'not json\n');
   const beforeRetry = readFileSync(ledger);
   const corrupt = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
@@ -284,6 +287,13 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.equal(corruptExport.status, 1);
   assert.equal(corruptExport.stdout, ''); // no partial export to join on
   assert.match(corruptExport.stderr, /changes\.jsonl:3: not valid JSON/);
+  for (const bad of [{ id: 'chg-3', what: 'line one\nline two' }, { id: 'chg-3', why: 'x'.repeat(201) }, { id: 'chg-2' }]) {
+    writeFileSync(ledger, Buffer.concat([afterSecond, Buffer.from(JSON.stringify({ v: 1, cause: 'server-memory-kill', ref: 'abc1234', at: AT, ...bad }) + '\n')]));
+    const r = lfm('changes', '--json'); // a hand-edited ledger never exports bad text or a repeated join key
+    assert.equal(r.status, 1, JSON.stringify(bad));
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, bad.id === 'chg-2' ? /changes\.jsonl:3: repeats change id chg-2/ : /changes\.jsonl:3: not a valid change entry/);
+  }
   writeFileSync(ledger, afterSecond); // repair the scratch corruption for the report below
 
   for (const args of [['--full'], ['--labels', labels], ['--cause', 'server-memory-kill'], ['--what', 'x']]) {
@@ -323,7 +333,7 @@ test('change applied appends an append-only ledger the report counts and changes
     changesJson.stdout, changesJson.stderr, changesToon.stdout, changesToon.stderr]) {
     assert.doesNotMatch(out, new RegExp(CANARY));
   }
-  for (const out of [json.stdout, json.stderr, bare.stdout, bare.stderr, fullRun.stdout, fullRun.stderr]) {
+  for (const out of [second.stdout, json.stdout, json.stderr, bare.stdout, bare.stderr, fullRun.stdout, fullRun.stderr]) {
     assert.doesNotMatch(out, /OWNER-WHAT|OWNER-WHY/); // what/why reach only `changes`, never the report
   }
 
