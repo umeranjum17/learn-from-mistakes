@@ -20,7 +20,7 @@ config, default TOON decoding to the same `lfm-report.v1` model as `--json`,
 evidence; it does not duplicate those assertions. Exit codes stay `0`/`1`/`2`/`3`.
 
 ## Gotchas
-The default, `--json` and `--full` outputs are one privacy-bounded projection:
-identifiers and counts only. `--full` is not permission to print private evidence.
+The report's default, `--json` and `--full` outputs are one privacy-bounded projection:
+identifiers and counts only (the separate `changes` export carries owner-written `what`/`why`, see [change.md](change.md)). `--full` is not permission to print private evidence.
 Next hints go to stderr, never inside the JSON/TOON payload, and never carry
 record text. A problem is counted, not echoed: exit 1 with `problems: N`.

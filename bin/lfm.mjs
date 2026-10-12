@@ -103,30 +103,40 @@ function readJsonl(file, required) {
   });
 }
 
-// The append-only change ledger: one JSON object per line, ids/cause keys/times only.
+// The append-only change ledger: one JSON object per line, ids/cause keys/times plus the
+// optional owner-written one-line `what`/`why` that only `lfm changes` prints.
 // A missing file means zero entries, never an error. Problems name file:line only,
-// never line contents, so a corrupt ledger stays privacy-bounded too.
+// never line contents, so a corrupt ledger stays privacy-bounded too. A repeated id is a
+// problem: `project` + `id` is the join key other tools rely on.
 function readLedger(file) {
   if (!existsSync(file)) return { entries: [], problems: [] };
-  const entries = [], problems = [];
+  const entries = [], problems = [], ids = new Set();
   readText(file).split('\n').forEach((line, i) => {
     if (!line.trim()) return;
     let e;
     try { e = JSON.parse(line); } catch { problems.push(`${file}:${i + 1}: not valid JSON`); return; }
     const ok = e && typeof e === 'object' && !Array.isArray(e) && e.v === 1
       && typeof e.id === 'string' && e.id && typeof e.cause === 'string' && e.cause
-      && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at;
+      && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
+      && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
-    else entries.push(e);
+    else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${e.id}`);
+    else { ids.add(e.id); entries.push(e); }
   });
   return { entries, problems };
 }
 
 const REF_RE = /^(?:[0-9a-f]{7,40}|sha256:[0-9a-f]{64})$/;
+// Owner text for --what/--why: trimmed, 1-200 characters, no line breaks or control characters.
+function oneLine(text) {
+  const t = text.trim();
+  return [...t].length >= 1 && [...t].length <= 200 && !/[\p{Cc}\u2028\u2029]/u.test(t) ? t : undefined;
+}
 
-// ponytail: single-writer ledger. The id is entries + 1 and the write is one
-// O_APPEND call, so a lone writer can never interleave or repeat an id.
-// Concurrent writers could read the same length and repeat one; a lock file is the upgrade.
+// ponytail: single-writer ledger. The id is the highest chg-<n> + 1 and the write is one
+// O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
+// line is the one way to reuse one). Concurrent writers could read the same ledger and
+// repeat an id; a lock file is the upgrade.
 function recordChange(cfg, opts, json) {
   if (opts.cause === undefined || opts.ref === undefined) throw new UsageError(USAGE);
   if (!Object.hasOwn(cfg.causes, opts.cause) || opts.cause === 'other') throw new UsageError(USAGE);
@@ -138,17 +148,35 @@ function recordChange(cfg, opts, json) {
     if (Number.isNaN(ms)) throw new UsageError(USAGE);
     at = new Date(ms).toISOString();
   }
+  const text = {};
+  for (const k of ['what', 'why']) {
+    if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} must be one line of 1-200 characters, with no line breaks or control characters`);
+  }
   const file = join(cfg.state, 'changes.jsonl');
   const { entries, problems } = readLedger(file);
   if (problems.length) {
     for (const p of problems) console.error(p);
     process.exit(1);
   }
-  const entry = { v: 1, id: `chg-${entries.length + 1}`, cause: opts.cause, ref: opts.ref, at };
+  const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
+  const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
   mkdirSync(cfg.state, { recursive: true });
-  appendFileSync(file, JSON.stringify(entry) + '\n');
-  console.log(render(entry, json));
+  appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
+  console.log(render(entry, json)); // what/why leave only through `lfm changes`
   hint(withContext('lfm report', 'the report with the ledger', opts));
+}
+
+// lfm-changes.v1: every applied change in ledger order. The join key is `project` + `id`.
+function exportChanges(cfg, opts, json) {
+  const { entries, problems } = readLedger(join(cfg.state, 'changes.jsonl'));
+  if (problems.length) {
+    for (const p of problems) console.error(p);
+    process.exit(1);
+  }
+  const changes = entries.map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, what: e.what ?? '', why: e.why ?? '' }));
+  console.log(render({ schema: 'lfm-changes.v1', generated_at: new Date().toISOString(), project: cfg.name, changes }, json));
+  if (!changes.length) hint(withContext('lfm change applied --cause <cause> --ref <ref> --what <text> --why <text>', 'record a change you already made', opts));
+  else hint(json ? withContext('lfm report', 'the per-cause counts', opts) : withContext('lfm changes --json', 'the same export as JSON', opts));
 }
 
 function readInput(file, explicit) {
@@ -283,30 +311,35 @@ function project(a, full) {
 
 const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEncode(model));
 
-const USAGE = `usage: lfm [<ingest|count|report|change applied>] [options]
+const USAGE = `usage: lfm [<ingest|count|report|change applied|changes>] [options]
   lfm                 print the project's repeated-cause report (same as \`lfm report\`)
   ingest              read the configured sources (read-only) into the state dir
   count               print the counts (same projection as \`lfm report\`)
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
+  changes             print every applied change (lfm-changes.v1) with its owner-written what/why
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)
   --cause <cause>     (change applied) cause key from the config, never \`other\`
   --ref <ref>         (change applied) version id: git sha (7-40 hex) or sha256:<64 hex>
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
-  --json (report, count, change applied)  print JSON instead of the default TOON (report, count: lfm-report.v1)
+  --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
+  --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
+  --json (report, count, change applied, changes)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
-every output is privacy-bounded: identifiers and counts only, never record text or label/proposal prose`;
+the report is privacy-bounded: identifiers and counts only, never record text, label/proposal prose or change what/why;
+\`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
 next: lfm                        # the report for the project you are in
 next: lfm --dir <project>        # point at a project with .learn-from-mistakes.yaml
 next: lfm report --full          # add the evidence ids
 next: lfm report --json          # the same report as JSON
-next: lfm change applied --cause <cause> --ref <ref>   # record a change you already made`;
+next: lfm change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
+next: lfm changes --json         # every applied change with its id, version, date, what and why`;
 
 function hint(text) { if (text) console.error(`next: ${text}`); }
 const INPUT_FLAGS = ['dir', 'labels', 'proposals'];
@@ -319,7 +352,7 @@ const NEXT = (json, full, opts) => {
   const detail = full || json ? '--full --json' : '--full';
   return withContext(`lfm report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
 };
-const COMMANDS = ['ingest', 'count', 'report', 'change-applied'];
+const COMMANDS = ['ingest', 'count', 'report', 'change-applied', 'changes'];
 
 function main() {
   const argv = process.argv.slice(2);
@@ -338,7 +371,7 @@ function main() {
     const flag = argv[i];
     if (flag === '--json' || flag === '--full') { if (flag === '--json') json = true; else full = true; i += 1; }
     else if (['--dir', '--labels', '--proposals'].includes(flag) && argv[i + 1] !== undefined) { opts[flag.slice(2)] = resolve(argv[i + 1]); i += 2; }
-    else if (['--cause', '--ref', '--at'].includes(flag) && argv[i + 1] !== undefined) { opts[flag.slice(2)] = argv[i + 1]; i += 2; }
+    else if (['--cause', '--ref', '--at', '--what', '--why'].includes(flag) && argv[i + 1] !== undefined) { opts[flag.slice(2)] = argv[i + 1]; i += 2; }
     else throw new UsageError(USAGE);
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
@@ -349,7 +382,12 @@ function main() {
     recordChange(cfg, opts, json);
     return;
   }
-  if (opts.cause !== undefined || opts.ref !== undefined || opts.at !== undefined) throw new UsageError(USAGE);
+  if (['cause', 'ref', 'at', 'what', 'why'].some((k) => opts[k] !== undefined)) throw new UsageError(USAGE);
+  if (cmd === 'changes') {
+    if (full || opts.labels !== undefined || opts.proposals !== undefined) throw new UsageError(USAGE);
+    exportChanges(cfg, opts, json);
+    return;
+  }
   const a = analyse(cfg, opts);
   if (!a.records.size && !a.rows.length) {
     console.error('no records or rows in the sources: nothing to count');

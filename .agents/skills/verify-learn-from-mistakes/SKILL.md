@@ -24,7 +24,8 @@ folders before writing. It creates mode-0700 evidence and an isolated temporary
 HOME/XDG/TMPDIR, runs the existing `npm test` journeys, then the public CLI on copies
 of `examples`. Originals are hashed before and after; scratch is removed even
 when a CLI check fails. No model, network, pipeline, or release is started by the
-default journey. It also drives the bare command and `report`/`--json`/`--full`
+default journey. It also drives the bare command and `report`/`--json`/`--full`,
+and (synthetic only) `change applied --what --why` plus the `changes` export,
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
@@ -37,7 +38,9 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 Pass `--package` to add the packaged-install journey: `npm pack` into the
 evidence dir, assert the tarball manifest carries the bin, package metadata and
 the standalone skill (and not `test`/`examples`), install that exact tarball into
-a fresh prefix, and drive the installed `lfm` bin. This one step resolves the
+a fresh prefix, drive the installed `lfm` bin (`report --json`, `changes --json`),
+and rerun the whole `npm test` suite with `LFM_CLI` pointing at the installed bin
+so the same journeys prove the packaged CLI. This one step resolves the
 declared npm dependencies, so it uses the isolated npm cache and may touch
 the registry; the default journey does not.
 

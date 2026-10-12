@@ -1,5 +1,7 @@
 // End-to-end: runs the real CLI on copies of the synthetic examples in a throwaway LFM_HOME.
-// The only machine shape is the privacy-bounded lfm-report.v1 (identifiers and counts, never prose).
+// The report is the privacy-bounded lfm-report.v1 (identifiers and counts, never prose); lfm-changes.v1
+// carries only the owner-written what/why of each applied change.
+// LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,7 +10,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
 
-const CLI = new URL('../bin/lfm.mjs', import.meta.url).pathname;
+const CLI = process.env.LFM_CLI || new URL('../bin/lfm.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
 function setup() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
@@ -204,10 +206,18 @@ test('an explicit labels or proposals path that does not exist is a usage error'
   assert.match(proposals.stderr, /typo-proposals\.jsonl: no such file/);
 });
 
-test('change applied appends an append-only ledger the report then shows', () => {
+test('change applied appends an append-only ledger the report counts and changes exports', () => {
   const { p, home, lfm } = setup();
   const ledger = join(home, 'state', 'example', 'changes.jsonl');
   const change = (...args) => lfm('change', 'applied', ...args);
+  const exported = (...args) => {
+    const r = lfm('changes', ...args);
+    assert.equal(r.status, 0, r.stderr);
+    return r;
+  };
+  const empty = JSON.parse(exported('--json').stdout); // needs the config only: no ingest, no ledger yet
+  assert.equal(empty.schema, 'lfm-changes.v1');
+  assert.deepEqual(empty.changes, []);
   assert.equal(change('--cause', 'nope', '--ref', 'abc1234').status, 2); // rejected input creates nothing
   assert.ok(!existsSync(ledger));
   // Private prose sits in every input; it must never reach any change or report output.
@@ -236,9 +246,12 @@ test('change applied appends an append-only ledger the report then shows', () =>
 
   const AT = '2026-01-02T03:04:05Z';
   const REF2 = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-  const second = change('--cause', 'server-memory-kill', '--ref', REF2, '--at', AT, '--json');
+  // Owner text a report must never carry; commas, quotes and colons stress the TOON table.
+  const WHAT = 'OWNER-WHAT-41c2: builds run in their own "memory group", 🙂';
+  const WHY = 'OWNER-WHY-7d0e: the killer, not the build, stopped the server';
+  const second = change('--cause', 'server-memory-kill', '--ref', REF2, '--at', AT, '--what', `  ${WHAT} `, '--why', WHY, '--json');
   assert.equal(second.status, 0, second.stderr);
-  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z' });
+  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z' }); // the echo never carries what/why
   const afterSecond = readFileSync(ledger);
   assert.ok(afterSecond.subarray(0, afterFirst.length).equals(afterFirst)); // the second entry keeps every prior byte
 
@@ -250,10 +263,19 @@ test('change applied appends an append-only ledger the report then shows', () =>
     ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--bogus'], // unknown flag
     ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--full'], // --full is report-only
     ['--cause', 'server-memory-kill'], // missing --ref
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--what', ''], // empty what
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--why', '   '], // blank why
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--what', 'x'.repeat(201)], // 201 characters
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--why', 'line one\nline two'], // newline
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--what', 'bell\u0007'], // control character
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--what'], // missing value
   ]) {
     assert.equal(change(...args).status, 2, args.join(' '));
     assert.ok(readFileSync(ledger).equals(afterSecond), `rejected input changed the ledger: ${args.join(' ')}`);
   }
+  const badWhy = change('--cause', 'server-memory-kill', '--ref', 'abc1234', '--why', `${WHY}\nsecond line`);
+  assert.match(badWhy.stderr, /--why must be one line of 1-200 characters/); // the real cause, never the text
+  assert.doesNotMatch(badWhy.stderr, /OWNER-WHY/);
   appendFileSync(ledger, 'not json\n');
   const beforeRetry = readFileSync(ledger);
   const corrupt = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
@@ -261,7 +283,36 @@ test('change applied appends an append-only ledger the report then shows', () =>
   assert.match(corrupt.stderr, /changes\.jsonl:3: not valid JSON/);
   assert.doesNotMatch(corrupt.stderr, /not json\n/); // file:line only, never line contents
   assert.ok(readFileSync(ledger).equals(beforeRetry));
+  const corruptExport = lfm('changes', '--json');
+  assert.equal(corruptExport.status, 1);
+  assert.equal(corruptExport.stdout, ''); // no partial export to join on
+  assert.match(corruptExport.stderr, /changes\.jsonl:3: not valid JSON/);
+  for (const bad of [{ id: 'chg-3', what: 'line one\nline two' }, { id: 'chg-3', why: 'x'.repeat(201) }, { id: 'chg-2' }]) {
+    writeFileSync(ledger, Buffer.concat([afterSecond, Buffer.from(JSON.stringify({ v: 1, cause: 'server-memory-kill', ref: 'abc1234', at: AT, ...bad }) + '\n')]));
+    const r = lfm('changes', '--json'); // a hand-edited ledger never exports bad text or a repeated join key
+    assert.equal(r.status, 1, JSON.stringify(bad));
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, bad.id === 'chg-2' ? /changes\.jsonl:3: repeats change id chg-2/ : /changes\.jsonl:3: not a valid change entry/);
+  }
   writeFileSync(ledger, afterSecond); // repair the scratch corruption for the report below
+
+  for (const args of [['--full'], ['--labels', labels], ['--cause', 'server-memory-kill'], ['--what', 'x']]) {
+    assert.equal(lfm('changes', ...args).status, 2, args.join(' ')); // report and change-applied flags are not export flags
+  }
+  const changesJson = exported('--json'); // a fresh process reads the persisted ledger
+  const exportModel = JSON.parse(changesJson.stdout);
+  assert.deepEqual(Object.keys(exportModel), ['schema', 'generated_at', 'project', 'changes']);
+  assert.equal(exportModel.schema, 'lfm-changes.v1');
+  assert.equal(exportModel.project, 'example');
+  assert.ok(!Number.isNaN(Date.parse(exportModel.generated_at)));
+  assert.deepEqual(exportModel.changes, [
+    { id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', at: firstEntry.at, what: '', why: '' },
+    { id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', what: WHAT, why: WHY },
+  ]);
+  assert.match(changesJson.stderr, /next: lfm report /);
+  const changesToon = exported();
+  assert.deepEqual({ ...decode(changesToon.stdout), generated_at: exportModel.generated_at }, exportModel); // TOON decodes equal to JSON
+  assert.match(changesToon.stderr, /next: lfm changes --json/);
 
   const json = lfm('report', ...inputs, '--json'); // a fresh process reads the persisted ledger
   assert.equal(json.status, 0, json.stderr);
@@ -278,9 +329,19 @@ test('change applied appends an append-only ledger the report then shows', () =>
   const fullMem = JSON.parse(fullRun.stdout).causes.find((c) => c.cause === 'server-memory-kill');
   assert.deepEqual(fullMem.change_ids, ['chg-1', 'chg-2']);
   assert.deepEqual(fullMem.change_refs, ['abc1234', REF2]);
-  for (const out of [first.stdout, first.stderr, second.stdout, second.stderr, json.stdout, json.stderr, bare.stdout, fullRun.stdout]) {
+  for (const out of [first.stdout, first.stderr, second.stdout, second.stderr, json.stdout, json.stderr, bare.stdout, fullRun.stdout,
+    changesJson.stdout, changesJson.stderr, changesToon.stdout, changesToon.stderr]) {
     assert.doesNotMatch(out, new RegExp(CANARY));
   }
+  for (const out of [second.stdout, json.stdout, json.stderr, bare.stdout, bare.stderr, fullRun.stdout, fullRun.stderr]) {
+    assert.doesNotMatch(out, /OWNER-WHAT|OWNER-WHY/); // what/why reach only `changes`, never the report
+  }
+
+  const third = change('--cause', 'shared-cache-lock', '--ref', 'def5678', '--what', 'x'.repeat(200), '--why', 'y'); // 200 is the limit
+  assert.equal(third.status, 0, third.stderr);
+  const later = JSON.parse(exported('--json').stdout);
+  assert.deepEqual(later.changes.slice(0, 2), exportModel.changes); // ids are stable after a later append
+  assert.deepEqual(later.changes[2], { id: 'chg-3', cause: 'shared-cache-lock', ref: 'def5678', at: later.changes[2].at, what: 'x'.repeat(200), why: 'y' });
 });
 
 test('empty input exits 3 with a next command', () => {

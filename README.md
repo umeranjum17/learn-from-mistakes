@@ -61,16 +61,18 @@ lfm                 print the project's repeated-cause report (same as `lfm repo
 lfm ingest          read the configured sources (read-only) into the state dir
 lfm count           print the counts (same projection as `lfm report`)
 lfm report          print the report; --full adds evidence ids, --json prints JSON
-lfm change applied --cause <cause> --ref <ref> [--at <time>]   record an applied change in the ledger
+lfm change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>]   record an applied change in the ledger
+lfm changes         print every applied change (lfm-changes.v1) with its what and why
 lfm --help          show the commands and options
 lfm --version       show the version
 ```
 
 Every command stays useful:
 
-- Default output is **TOON** (compact, token-lean). `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema.
+- Default output is **TOON** (compact, token-lean). For `report`/`count`, `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema (`changes --json` is `lfm-changes.v1`, below).
 - `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
-- `lfm change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now.
+- `lfm change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
+- `lfm changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
 - Each command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
@@ -102,9 +104,30 @@ causes[1]:
       unchecked: 0
 ```
 
+## For sign-off and other tools
+
+`lfm changes --json` is the machine contract for applied changes, so a retro can join its own verdict (for example "Helped? yes/no/unclear") on a change:
+
+```json
+{
+  "schema": "lfm-changes.v1",
+  "generated_at": "2026-10-12T09:00:00.000Z",
+  "project": "my-project",
+  "changes": [
+    { "id": "chg-1", "cause": "server-memory-kill", "ref": "abc1234", "at": "2026-10-11T08:00:00.000Z",
+      "what": "Run builds in their own memory group", "why": "The memory killer stopped the server three times" }
+  ]
+}
+```
+
+- Join on `project` + `id`. `id` is `chg-<n>` from the append-only ledger: never reused or rewritten.
+- `ref` is the accepted version (a git sha or `sha256:` of the changed file); `at` is when it was applied (ISO-8601).
+- `what` and `why` are exactly the text the owner passed to `change applied`, or `""` when none was given.
+- Pin `schema: lfm-changes.v1`. An invalid ledger exits 1 and names `file:line` only, with nothing on stdout.
+
 ## Privacy
 
-The report and every machine output are **privacy-bounded**: identifiers and counts only. They never print record text, a label's `why`, a proposal's `change`, cause descriptions, source paths, branches or error text, and never turn a record's text into an id. The change ledger holds ids, cause keys and times only — there is no free-text field — so it can never leak private prose either. That is why the default and `--full` output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
+The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `lfm changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
 
 ## Use it on your own records
 
@@ -112,7 +135,7 @@ The `.learn-from-mistakes.yaml` above is all the configuration. Then `lfm ingest
 
 ## Exit codes
 
-`0` ok, `1` a label, a proposal or the existing change ledger has a problem (a count of problems is included in the output), `2` bad usage or config (a rejected `change applied` never touches the ledger), `3` the sources hold nothing. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
+`0` ok, `1` a label, a proposal or the existing change ledger has a problem (the report includes a count of problems; `changes` prints only `file:line`), `2` bad usage or config (a rejected `change applied` never touches the ledger), `3` the sources hold nothing. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
 
 ## What it does not do
 
