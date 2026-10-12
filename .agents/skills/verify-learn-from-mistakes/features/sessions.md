@@ -45,7 +45,7 @@ result is cut to 300 (empty with `excerpts: off`).
 `test_fail` is a failed command that runs tests (`npm test`, `node --test`,
 `pytest` and the like), not any command naming a test file. `retry` is a
 call repeated with the same input after it failed and before it succeeded. The run output adds each
-source's counts: for sessions `sessions` and `skipped` (unknown record shapes and unreadable files).
+source's counts: for sessions `sessions` and `skipped` (unknown record shapes and unreadable files). A store that cannot be opened or read (a Codex `state_5.sqlite` or an OpenCode `.db` that is not a database) is not counted: the retro fails with a usage error naming that agent.
 Its numbers (`tool_error_rate`, `corrections_per_session`, `interrupts`,
 `retries`; `n/a` with no sessions, never 0) come from the `metrics` step for this
 window and the last ([metrics.md](metrics.md)). Every event in the read range is

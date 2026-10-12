@@ -4,12 +4,11 @@
 import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { inputText, TEST } from './claude.mjs';
+import { inputText, json, TEST } from './claude.mjs';
 
 export const root = () => join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode');
 
-const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
-// A store that cannot be stat'd is opened anyway, so the failure is counted in skipped.
+// A store that cannot be stat'd is opened anyway, so a failure to open or read it is an error.
 const mtime = (f) => { try { return statSync(f).mtimeMs; } catch (e) { return e.code === 'ENOENT' ? 0 : Infinity; } };
 const iso = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
 
@@ -51,6 +50,7 @@ function parse(q, file, { id, session, sub, excerpt }) {
     const exit = typeof s.metadata?.exit === 'number' ? s.metadata.exit : null;
     const error = s.status === 'error' || Boolean(exit);
     // A call the user turned down or interrupted is not a tool failure; the interrupt or correction after it is counted.
+    // "Tool execution aborted" and "The user rejected permission" are fixed error strings OpenCode itself writes, not model output.
     const declined = s.status === 'error' && /^(?:Tool execution aborted|The user rejected permission)/.test(String(s.error));
     const signal = !error || declined ? null : TEST.test(String(s.input?.command ?? '')) ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
     events.push({ ...at, kind: 'tool_result', tool: p.tool, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(s.error ?? s.output ?? '') : '' });
@@ -66,7 +66,7 @@ function parse(q, file, { id, session, sub, excerpt }) {
 export async function read({ readFrom, keep, excerpt, skip }) {
   const events = [];
   let sessions = 0, skipped = 0, names;
-  try { names = readdirSync(root()).filter((f) => f.endsWith('.db')); } catch (e) { return { events, sessions, skipped: e.code === 'ENOENT' ? 0 : 1 }; }
+  try { names = readdirSync(root()).filter((f) => f.endsWith('.db')); } catch (e) { if (e.code !== 'ENOENT') throw e; return { events, sessions, skipped }; }
   const { DatabaseSync } = await import('node:sqlite');
   for (const name of names) {
     const file = join(root(), name);
@@ -103,9 +103,6 @@ export async function read({ readFrom, keep, excerpt, skip }) {
           skipped += sub?.skipped ?? 0;
         }
       }
-    } catch (e) { // a store that cannot be opened or read is counted; the others still read
-      if (e.code !== 'ERR_SQLITE_ERROR') throw e;
-      skipped += 1;
     } finally { db?.close(); }
   }
   return { events, sessions, skipped };

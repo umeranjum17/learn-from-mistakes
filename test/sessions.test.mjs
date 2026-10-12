@@ -353,3 +353,23 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
   assert.equal(JSON.parse(again.stdout).sources.find((s) => s.type === 'sessions').sessions, 2);
   assert.deepEqual(stores.map(sha), before, 'a session store changed');
 });
+
+test('a Codex state store that is not a database fails the retro with an error naming codex', () => {
+  const { p, env, lfm } = setup();
+  mkdirSync(env.CODEX_HOME, { recursive: true });
+  writeFileSync(join(env.CODEX_HOME, 'state_5.sqlite'), 'not a sqlite database\n'.repeat(64));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [codex] }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /cannot read a codex session/);
+});
+
+test('an OpenCode store that is not a database fails the retro with an error naming opencode', () => {
+  const { p, env, lfm } = setup();
+  mkdirSync(join(env.XDG_DATA_HOME, 'opencode'), { recursive: true });
+  writeFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'), 'not a sqlite database\n'.repeat(64));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [opencode] }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /opencode session/);
+});

@@ -4,7 +4,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { inputText, TEST } from './claude.mjs';
+import { inputText, json, TEST, textOf } from './claude.mjs';
 
 export const root = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'state_5.sqlite');
 
@@ -15,7 +15,6 @@ const WRAPPER = /^\s*(?:<(?!image\b)[\w-]+[\s>]|# AGENTS\.md instructions)/;
 // metadata a legacy shell returns; a code-mode script's first nonzero nested "exit_code". ponytail: a script that prints
 // "exit_code" as data reads as one (about 1 in 2000 here).
 const HEADER_EXIT = /^(?:Chunk ID: .*\n)?(?:Wall time: .*\n)?(?:Process exited with code |Exit code: )(\d+)/;
-const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
 const exitOf = (text, tool) => {
   if (tool === 'exec') {
     const codes = [...text.matchAll(/"exit_code":\s*(\d+)/g)].map((x) => Number(x[1]));
@@ -28,7 +27,6 @@ const exitOf = (text, tool) => {
   const code = json(text)?.metadata?.exit_code;
   return Number.isInteger(code) ? code : null;
 };
-const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
 
 // One rollout's events, streamed line by line. Returns null when the first user message carries the lfm-run: marker.
 async function parse(file, { session, sub, excerpt }) {
@@ -95,14 +93,9 @@ export async function read({ readFrom, keep, excerpt, skip }) {
   const events = [];
   let sessions = 0, skipped = 0, threads;
   if (!existsSync(root())) return { events, sessions, skipped }; // no Codex here
-  try {
-    const { DatabaseSync } = await import('node:sqlite');
-    const db = new DatabaseSync(root(), { readOnly: true });
-    try { threads = db.prepare('SELECT id, rollout_path AS file, cwd, source FROM threads ORDER BY created_at, id').all(); } finally { db.close(); }
-  } catch (e) {
-    if (e.code !== 'ERR_SQLITE_ERROR') throw e;
-    return { events, sessions, skipped: 1 }; // a thread list that cannot be opened or read is counted; other agents still read
-  }
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(root(), { readOnly: true });
+  try { threads = db.prepare('SELECT id, rollout_path AS file, cwd, source FROM threads ORDER BY created_at, id').all(); } finally { db.close(); }
   const byId = new Map(threads.map((t) => [t.id, t]));
   const top = (t) => { // the session a thread belongs to: the top of its spawn chain
     for (let i = 0; i < 64; i++) {
