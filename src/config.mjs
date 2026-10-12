@@ -104,6 +104,7 @@ sources:
   const caps = block('caps', { invocations: 12, bundle_chars: 60000, timeout: '20m' });
   check(typeof caps.timeout === 'string' && /^[1-9]\d*[smh]$/.test(caps.timeout), `${file}: caps.timeout`, 'a duration such as 90s, 20m or 1h');
   const cfg = {
+    dir,
     name: p.name ?? basename(dir), sources, causes, repeat: block('repeat', { min_incidents: 3, min_days: 2 }),
     worker: role(p.worker, `${file}: worker`), judge: role(p.judge, `${file}: judge`), window: p.window ?? '7d',
     targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets },

@@ -9,6 +9,11 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT)`,
   `CREATE TABLE IF NOT EXISTS steps (run_id INTEGER NOT NULL REFERENCES runs(id), name TEXT NOT NULL, ord INTEGER NOT NULL,
     status TEXT NOT NULL, started_at TEXT, completed_at TEXT, error TEXT, output_json TEXT, PRIMARY KEY (run_id, name))`,
+  // The process that owns a running run, and at most one running run per project. A run left running by
+  // a foreground run before this entry has no owner, so it ends as interrupted.
+  `ALTER TABLE runs ADD COLUMN pid INTEGER; ALTER TABLE runs ADD COLUMN pid_started_at TEXT;
+    UPDATE runs SET status = 'interrupted', error = 'run: the worker stopped before the run ended' WHERE status = 'running';
+    CREATE UNIQUE INDEX IF NOT EXISTS runs_one_running ON runs(status) WHERE status = 'running'`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

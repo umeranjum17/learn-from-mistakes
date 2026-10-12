@@ -107,6 +107,7 @@ try {
   drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('retro', 'retro', '--foreground'); // a saved run in the staged .lfm/lfm.sqlite
+  drive('retro-wait', 'retro', '--wait', '1m'); // the same run in a detached worker, waited for
   drive('status', 'status');
   drive('runs', 'runs');
   // Config v2: every new key loads and the run completes the same steps; a bad runner exits 2 naming the key.
@@ -141,9 +142,9 @@ try {
       run('packed-changes', installed, ['changes', '--json', '--dir', staged]);
       assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-changes.stdout'), 'utf8')).schema, 'lfm-changes.v1', 'packed bin does not drive the export');
     }
-    run('packed-retro', installed, ['retro', '--foreground', '--json', '--dir', staged]);
+    run('packed-retro', installed, ['retro', '--wait', '1m', '--json', '--dir', staged]); // the installed bin spawns its own worker
     const packedRun = JSON.parse(readFileSync(join(evidence, 'packed-retro.stdout'), 'utf8'));
-    assert.ok(packedRun.run.status === 'completed' && packedRun.steps.length === 2, 'packed bin does not complete a saved run');
+    assert.ok(packedRun.run.status === 'completed' && packedRun.steps.length === 2, 'packed bin does not complete a detached run');
     // The same e2e journeys (the ledger and lfm-changes.v1 export included), driven through the installed bin.
     run('packed-npm-test', 'npm', ['test', '--ignore-scripts'], 0, { LFM_CLI: installed });
     assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes-axi', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');

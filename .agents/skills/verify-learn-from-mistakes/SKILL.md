@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real learn-from-mistakes-axi ingest/count/report and retro/status/runs CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi ingest/count/report and retro/status/runs/rerun CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 metadata:
   internal: true
 ---
@@ -30,6 +30,7 @@ default journey. It also drives the bare command and `report`/`--json`/`--full`,
 and (synthetic only) `change applied --what --why` plus the `changes` export,
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
+then a detached `retro --wait 1m` run as well,
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
@@ -42,7 +43,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 Pass `--package` to add the packaged-install journey: `npm pack` into the
 evidence dir, assert the tarball manifest carries the bin, package metadata and
 the standalone skill (and not `test`/`examples`), install that exact tarball into
-a fresh prefix, drive the installed `learn-from-mistakes-axi` bin (`report --json`, `changes --json`, `retro --foreground --json`),
+a fresh prefix, drive the installed `learn-from-mistakes-axi` bin (`report --json`, `changes --json`, `retro --wait 1m --json`),
 and rerun the whole `npm test` suite with `LFM_CLI` pointing at the installed bin
 so the same journeys prove the packaged CLI. This one step resolves the
 declared npm dependencies, so it uses the isolated npm cache and may touch
