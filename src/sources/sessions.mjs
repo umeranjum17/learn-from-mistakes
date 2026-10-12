@@ -17,6 +17,7 @@ import * as codex from '../sessions/codex.mjs';
 import * as opencode from '../sessions/opencode.mjs';
 
 const READERS = { claude, codex, opencode };
+const STORE_VAR = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME', opencode: 'XDG_DATA_HOME' }; // what moves each store
 export const SIGNALS = ['tool_error', 'nonzero_exit', 'test_fail', 'correction', 'interrupt', 'retry'];
 
 export function validate(s, where, dir) {
@@ -92,7 +93,10 @@ export const detect = () => (Object.values(READERS).some((r) => existsSync(r.roo
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {
   const missing = entry.agents.filter((a) => !existsSync(READERS[a].root()));
-  if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<your Claude Code config dir>   # if it is not ~/.claude' };
+  if (missing.length === entry.agents.length) {
+    return { level: 'warn', detail: `no session store at ${missing.map((a) => READERS[a].root()).join(', ')}`,
+      fix: `${missing.map((a) => `export ${STORE_VAR[a]}=<dir>`).join('; ')}   # if a store is somewhere else` };
+  }
   try {
     const got = await read(source, entry, { ...ctx, excerpts: false });
     return { level: 'ok', detail: `${got.sessions} sessions, ${got.skipped} skipped records since ${new Date(ctx.readFrom).toISOString().slice(0, 10)}` };

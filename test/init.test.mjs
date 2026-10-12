@@ -233,6 +233,17 @@ test('doctor fails a worker pinned to a runner that is not offered, and names th
   assert.equal(fails[0].fix, 'set worker.runner in .learn-from-mistakes.yaml to claude');
 });
 
+test('doctor warns on a sessions source whose agent has no store, and names that agent\'s store variable', () => {
+  const { lfm, config, env } = setup(['claude', 'opencode']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  const yaml = readFileSync(config, 'utf8');
+  writeFileSync(config, yaml.replace(/(sessions:[\s\S]*?agents:)\s*(\[[^\]]*\]|(\n\s+- .*)+)/, '$1 [codex]'));
+  const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source sessions');
+  assert.equal(line.level, 'warn');
+  assert.equal(line.detail, `sessions: no session store at ${join(env.HOME, '.codex', 'state_5.sqlite')}`);
+  assert.equal(line.fix, 'export CODEX_HOME=<dir>   # if a store is somewhere else');
+});
+
 // A worker on a BYOKit route is checked by BYOKit's own sign-in, not as an agent CLI: a route with no sign-in is a fail
 // with the sign-in fix, and doctor runs to the end instead of failing on the missing agent CLI row.
 test('doctor checks a BYOKit worker route by its sign-in and names the sign-in fix', () => {
