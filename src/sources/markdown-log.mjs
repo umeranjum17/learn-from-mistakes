@@ -14,8 +14,8 @@ export function detect(dir) {
 }
 
 // Each record's id comes from its text, so it survives line moves.
-export function read(source, { path }) {
-  const text = readText(path, `source ${source}`, `check sources.${source}.path in ${PROJECT_FILE}, or create it: touch ${shq(path)}`);
+export function read(source, { path }, { project = PROJECT_FILE } = {}) {
+  const text = readText(path, `source ${source}`, `check sources.${source}.path in ${shq(project)}, or create it: touch ${shq(path)}`);
   const seen = new Map();
   let date = '';
   const records = [];
@@ -33,8 +33,8 @@ export function read(source, { path }) {
 }
 
 // doctor: readable, the records dated in the window, and the bullets with no date, which the window cannot place.
-export function doctor(source, entry, { readFrom }) {
-  const { records } = read(source, entry);
+export function doctor(source, entry, { readFrom, project }) {
+  const { records } = read(source, entry, { project });
   const undated = records.filter((r) => !r.date).length;
   const inWin = records.filter((r) => Date.parse(r.date) >= readFrom).length;
   return { level: 'ok', detail: `${records.length} records, ${inWin} in the window, ${undated} skipped (no date)` };
