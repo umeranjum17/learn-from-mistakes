@@ -94,15 +94,17 @@ test('a pinned judge steers the auto worker onto a different agent CLI, and the 
   assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'codex', model: '' });
 });
 
-test('an empty PATH entry never runs an agent CLI from the project dir', () => {
+test('an empty or relative PATH entry never runs an agent CLI from the project dir', () => {
   const { p, env, config } = setup([]);
   writeFileSync(join(p, 'claude'), '#!/bin/sh\necho ran > ran.txt\necho "1.0.0"\n');
   chmodSync(join(p, 'claude'), 0o755);
-  const r = spawnSync(process.execPath, [CLI, 'init', '--dir', p, '--json'], { encoding: 'utf8', cwd: p, env: { ...env, PATH: `${env.PATH}:` } });
-  assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.stderr, /^error: worker: no usable agent CLI/m);
-  assert.ok(!existsSync(join(p, 'ran.txt')), 'the project-dir claude ran');
-  assert.ok(!existsSync(config));
+  for (const PATH of [`${env.PATH}:`, `.:${env.PATH}`]) {
+    const r = spawnSync(process.execPath, [CLI, 'init', '--dir', p, '--json'], { encoding: 'utf8', cwd: p, env: { ...env, PATH } });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /^error: worker: no usable agent CLI/m);
+    assert.ok(!existsSync(join(p, 'ran.txt')), `the project-dir claude ran with PATH ${PATH}`);
+    assert.ok(!existsSync(config));
+  }
 });
 
 test('an existing config with no agent CLI at all says how to install one', () => {

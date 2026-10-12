@@ -2,7 +2,7 @@
 // run dir, gets the prompt with a marker first line, and is stopped by its process group at the timeout.
 import { spawn, spawnSync } from 'node:child_process';
 import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, delimiter, join } from 'node:path';
+import { basename, delimiter, isAbsolute, join } from 'node:path';
 import { InputError, stateDir } from '../../bin/learn-from-mistakes-axi.mjs';
 import * as claude from './claude.mjs';
 import * as codex from './codex.mjs';
@@ -18,7 +18,7 @@ const tail = (text) => text.trim().split('\n').slice(-3).join(' ').slice(-300);
 function which(name) {
   if (name.includes('/')) return existsSync(name) ? name : undefined;
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    if (!dir) continue;
+    if (!isAbsolute(dir)) continue;
     const file = join(dir, name);
     try { accessSync(file, constants.X_OK); if (statSync(file).isFile()) return file; } catch { /* not in this PATH dir */ }
   }
