@@ -280,6 +280,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(on.text.match(/^- \[r\d+\] .+\n  > .+$/gm).length, records.length, 'a record without its excerpt');
   assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
   assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
+  assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
 
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
   writeFileSync(cfg, `${examples}excerpts: off\n`);
