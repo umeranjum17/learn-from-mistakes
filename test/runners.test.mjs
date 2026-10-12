@@ -75,7 +75,7 @@ test('agents lists each agent CLI with version, login presence and default model
   assert.equal(by.codex.usable, false);
   assert.match(by.codex.problem, /--version failed: No version is set for shim: codex/);
   for (const a of out.agents) assert.equal(a.model, MODELS[a.runner]?.[0] ?? ''); // defaults come from src/models.json; acp: the target's own
-  assert.deepEqual(out.agents.map((a) => a.tools), ['off', 'read-only', 'off', 'off', 'read-only', 'off']);
+  assert.deepEqual(out.agents.map((a) => a.tools), ['off', 'read-only', 'off', 'off', 'read-only', 'unconfirmed']);
   assert.equal(by.acp.bin, join(tmp, 'bin', 'acpx'));
   assert.equal(by.pi.problem, ''); // offered: its tool-off mode is confirmed live
   for (const r of ['gemini', 'acp']) { // usable, so --test can check them, but never picked as worker or judge
@@ -145,7 +145,7 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
     assert.equal(r.status, 0, r.stderr);
     const bin = runner === 'acp:fake-agent' ? 'acpx' : runner, step = runner.replace(':', '-');
     const dir = join(p, '.lfm', 'runs', `test-${step}`);
-    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner]?.[0] ?? '', tools: ['codex', 'gemini'].includes(runner) ? 'read-only' : 'off', dir,
+    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner]?.[0] ?? '', tools: { codex: 'read-only', gemini: 'read-only', 'acp:fake-agent': 'unconfirmed' }[runner] ?? 'off', dir,
       reply: `hello from ${bin}`, offered: !['gemini', 'acp:fake-agent'].includes(runner) });
     if (bin !== runner) assert.match(r.stderr, /^next: learn-from-mistakes-axi agents .*# why acp:fake-agent is not offered as worker or judge/m);
     const [c] = calls(bin);

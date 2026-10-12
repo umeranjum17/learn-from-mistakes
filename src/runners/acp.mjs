@@ -2,7 +2,7 @@
 // no tools, but an agent that runs its tools without asking still writes (pi and opencode both did), so it is not
 // offered. If a later version offers it, the identity rule must resolve acp:<target> to the target's own command.
 export const bin = 'acpx';
-export const tools = 'off';
+export const tools = 'unconfirmed';
 export const unconfirmed = 'not offered: acpx --deny-all only denies the permission requests an agent sends, and agents that run tools without asking still write (agents --test acp:<target> runs the write test on one)';
 export const login = () => ({ files: [], vars: [] });
 export const command = ({ model, dir, target, extra }) => ({
