@@ -127,7 +127,11 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
 
   const json = report(lfm, p, '--json');
   assert.equal(json.status, 0, json.stderr);
-  assert.deepEqual(toon, JSON.parse(json.stdout)); // one allow-listed projection
+  const jsonModel = JSON.parse(json.stdout);
+  // generated_at is each run's own time, so two runs never match on it; the rest is one projection.
+  assert.deepEqual({ ...toon, generated_at: jsonModel.generated_at }, jsonModel);
+  assert.ok(!Number.isNaN(Date.parse(toon.generated_at)), 'TOON generated_at is when that report ran');
+  assert.equal(toon.ingested_at, jsonModel.ingested_at); // both runs share the same ingest
 
   const fullJson = report(lfm, p, '--full', '--json');
   assert.equal(fullJson.status, 0, fullJson.stderr);
@@ -142,6 +146,33 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   assert.equal(causes['agent-exit-wait'].store.rows, 4); // typed store rows matched, never added to log
   assert.equal(causes['other'].repeated, false);
   assert.deepEqual(toon.coverage, { labelled: 13, total_records: 13, unlabelled: 0 });
+});
+
+test('generated_at is the report run time and ingested_at is the ingest time', () => {
+  const { p, home, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  const metaFile = join(home, 'state', 'example', 'sources.json');
+  const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+  const ingestTime = meta.read_at;
+  assert.ok(!Number.isNaN(Date.parse(ingestTime)), 'ingest records its own time');
+  // Backdate the ingest time so the report run is observably later without sleeping.
+  const earlier = '2026-01-01T00:00:00.000Z';
+  writeFileSync(metaFile, JSON.stringify({ ...meta, read_at: earlier }, null, 1));
+  for (const cmd of ['report', 'count']) {
+    const run = cmd === 'report'
+      ? report(lfm, p, '--json')
+      : lfm('count', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], '--json');
+    assert.equal(run.status, 0, run.stderr);
+    const model = JSON.parse(run.stdout);
+    assert.equal(model.schema, 'lfm-report.v1'); // an added field, not a new schema
+    assert.equal(model.ingested_at, earlier);
+    assert.ok(Date.parse(model.generated_at) > Date.parse(model.ingested_at), `${cmd}: report time is later than ingest time`);
+    assert.ok(Math.abs(Date.now() - Date.parse(model.generated_at)) < 60_000, `${cmd}: generated_at is when the report ran`);
+  }
+  // The default TOON report carries the same two fields.
+  const toon = decode(toonBodyOf(report(lfm, p).stdout));
+  assert.equal(toon.ingested_at, earlier);
+  assert.ok(Date.parse(toon.generated_at) > Date.parse(toon.ingested_at));
 });
 
 test('the TOON report ends with one repeated summary line; --json is unchanged', () => {
@@ -494,7 +525,7 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.deepEqual(model.causes.find((c) => c.cause === 'shared-cache-lock').changes, { count: 0, last_at: '' });
   const bare = lfm('report', ...inputs);
   assert.equal(bare.status, 0, bare.stderr);
-  assert.deepEqual(decode(toonBodyOf(bare.stdout)), model); // TOON decodes equal to JSON
+  assert.deepEqual({ ...decode(toonBodyOf(bare.stdout)), generated_at: model.generated_at }, model); // TOON decodes equal to JSON
   assert.equal(summaryOf(bare.stdout), 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)');
   const fullRun = lfm('report', ...inputs, '--full', '--json');
   assert.equal(fullRun.status, 0, fullRun.stderr);

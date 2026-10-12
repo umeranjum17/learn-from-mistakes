@@ -325,7 +325,8 @@ function project(a, full) {
   });
   return {
     schema: 'lfm-report.v1',
-    generated_at: a.meta.read_at ?? '',
+    generated_at: new Date().toISOString(),
+    ingested_at: a.meta.read_at ?? '',
     coverage: { labelled: a.labels.size, total_records: a.records.size, unlabelled: a.unlabelled },
     problems: a.problems.length,
     ledger: { entries: a.changes?.length ?? 0 },
