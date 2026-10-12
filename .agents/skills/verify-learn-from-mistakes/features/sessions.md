@@ -16,8 +16,7 @@ streamed when its mtime is in range, and a subagent thread (`source` names a
 `thread_spawn.parent_thread_id`) belongs to the top of its spawn chain. Its signals:
 `Process exited with code N` or `Exit code: N` (N not 0) in the header of a shell call's output
 (`exec_command`, `shell`, `local_shell_call`: the lines before `Output:`, starting the output), else a
-legacy shell's JSON `metadata.exit_code`; a code-mode script's first nonzero nested `"exit_code": N`
-(its `cmd: "..."` literals decide `test_fail`); `patch_apply_end` with `success: false`; and
+legacy shell's JSON `metadata.exit_code`; a code-mode script's first nonzero nested `"exit_code": N`; `patch_apply_end` with `success: false`; and
 `turn_aborted` with reason `interrupted`. Other tools never give an exit code from their text. Its own
 user-role inputs (`# AGENTS.md instructions`, `<environment_context>`, tags with attributes such
 as `<codex_internal_context source="goal">`, but not an `<image name=...>` label) are not person
@@ -78,8 +77,8 @@ and a `notes.db` of another program): 4 sessions with 60 events, a subagent of e
 in its parent session, the other dir, `.lfm/`, marker (after an attached file), old,
 missing-rollout and foreign-db sessions skipped, a bad line, a bad part and a text part with
 no text in `skipped`, exactly 2 corrections (not the goal wrapper, not the message after an
-interrupt), 2 interrupts, 2 retries, 3 test failures (one inside a code-mode script), 3
-nonzero exits and 5 tool errors (failed patches by their `patch_apply_end`, one naming `npm test` in a `cmd:` literal; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a non-shell tool whose output reads `Exit code: 1` after `Output:`, is not one), planted keys redacted, the
+interrupt), 2 interrupts, 2 retries, 4 test failures (two of them `bash -lc` wrapped), 4
+nonzero exits (one a code-mode script) and 5 tool errors (failed patches by their `patch_apply_end`; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a non-shell tool whose output reads `Exit code: 1` after `Output:`, is not one), planted keys redacted, the
 `invocations` ids of both agents skipped on a second run, and every OpenCode database
 byte-identical after both runs. The helper drives
 `retro-sessions` (one synthetic Claude Code, Codex and OpenCode session each in its
