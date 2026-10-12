@@ -25,13 +25,13 @@ export async function doctor(dir, opts) {
   let cfg;
   try { cfg = loadConfig(dir); } catch (e) {
     if (!(e instanceof UsageError)) throw e;
-    const file = join(dir, PROJECT_FILE);
-    add('fail', 'config', e.message.split('\n')[0], existsSync(file) ? `edit ${file}   # then run doctor again` : 'learn-from-mistakes-axi init   # writes a working config');
+    // Every config error starts with the file it is in: the project config or the global $LFM_HOME/config.yaml.
+    add('fail', 'config', e.message.split('\n')[0], e.message.startsWith('no ') ? 'learn-from-mistakes-axi init   # writes a working config' : `edit ${e.message.split(':')[0]}   # then run doctor again`);
     return checks;
   }
   add('ok', 'config', join(dir, PROJECT_FILE));
   if (!cfg.ignore) add('ok', 'state', `${cfg.state} (state_root, outside the project)`);
-  else if (!existsSync(join(cfg.state, '.gitignore'))) add('ok', 'state', `${cfg.state}: the first run writes its * .gitignore`);
+  else if (!existsSync(cfg.state)) add('ok', 'state', `${cfg.state}: the first run makes it with a * .gitignore`);
   else if (repo) {
     const ignored = spawnSync(git, ['-C', dir, 'check-ignore', '-q', join(cfg.state, 'lfm.sqlite')]).status === 0;
     add(ignored ? 'ok' : 'fail', 'state', ignored ? `${cfg.state} is git-ignored` : `${cfg.state} is not git-ignored, so run records could be committed`,
@@ -45,7 +45,7 @@ export async function doctor(dir, opts) {
     const mod = SOURCES[s.type];
     let r;
     try {
-      if (mod.doctor) r = await mod.doctor(id, s, { readFrom: since - w, causes: cfg.causes });
+      if (mod.doctor) r = await mod.doctor(id, s, { readFrom: since, causes: cfg.causes });
       else {
         const got = await mod.read(id, s, { causes: cfg.causes });
         const items = got.records ?? got.rows;
