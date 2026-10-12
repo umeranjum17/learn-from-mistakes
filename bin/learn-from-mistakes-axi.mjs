@@ -595,10 +595,13 @@ async function agentsCommand(opts) {
   if (roles.length) process.exitCode = 1;
   const pick = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner;
   const next = pick?.replace(/^acp$/, 'acp:<target>');
-  if (!next && !byokit.problem()) hint(`set worker.runner and judge.runner in ${PROJECT_FILE} to byokit:<route>; ready: ${(await byokit.readyRoutes()).map((r) => `byokit:${r}`).join(', ')}`);
-  else if (!next) hint(`install ${INSTALL}, set runner_path in $LFM_HOME/config.yaml, or ${byokit.problem().fix}   # then run agents again`);
+  const bk = byokit.problem();
+  const readyRoutes = async () => (await byokit.readyRoutes()).map((r) => `byokit:${r}`).join(', ');
+  if (!next && !bk) hint(`set worker.runner and judge.runner in ${PROJECT_FILE} to byokit:<route>; ready: ${await readyRoutes()}`);
+  else if (!next) hint(`install an agent CLI, set runner_path in $LFM_HOME/config.yaml, or for byokit:<route>: ${bk.fix}   # then run agents again`);
   else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI or byokit:<route>, or use a model one agent CLI lists`);
-  else if (roles.includes('judge')) hint(out.judge.problem === CLASH ? JUDGE_FIX : AGENTS_FIX);
+  else if (roles.includes('judge') && out.judge.problem === CLASH) hint(JUDGE_FIX);
+  else if (roles.includes('judge')) hint(`install an agent CLI, or set judge.runner in ${PROJECT_FILE} to byokit:<route>; ${bk ? bk.fix : `ready: ${await readyRoutes()}`}`);
   else hint(withContext(`learn-from-mistakes-axi agents --test ${next}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 

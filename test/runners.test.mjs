@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -415,4 +415,28 @@ test('byokit: with no agent CLI the agents hint lists the ready routes; a worker
   const r = await lfm('agents');
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^problem: worker: byokit:grok is not a BYOKit plan route: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
+});
+
+test('byokit: with no agent CLI and BYOKit not installed, the hint gives BYOKit\'s own fix next to the agent CLI options', () => {
+  const { tmp, p, env } = setup();
+  const app = join(tmp, 'app'); // the CLI tree with every dependency but BYOKit's packages
+  mkdirSync(join(app, 'node_modules'), { recursive: true });
+  for (const d of ['bin', 'src']) cpSync(new URL(`../${d}`, import.meta.url).pathname, join(app, d), { recursive: true });
+  cpSync(new URL('../package.json', import.meta.url).pathname, join(app, 'package.json'));
+  for (const e of readdirSync(join(ROOT, 'node_modules'))) if (!e.startsWith('@byokit') && e !== '@earendil-works') symlinkSync(join(ROOT, 'node_modules', e), join(app, 'node_modules', e));
+  mkdirSync(join(tmp, 'empty'));
+  const r = spawnSync(process.execPath, [join(app, 'bin', 'learn-from-mistakes-axi.mjs'), 'agents', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: join(tmp, 'empty') } });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^next: install an agent CLI, set runner_path in \$LFM_HOME\/config\.yaml, or for byokit:<route>: npm install -g learn-from-mistakes-axi /m);
+});
+
+test('byokit: a judge with no agent CLI is told to set judge.runner to a ready route, not a different model', async () => {
+  const { p, env, tmp, config } = setup();
+  config('worker: { runner: "byokit:opencode-go", model: muse-spark-1.3-contributor }\n'); // a worker on a plan key route; the judge has no agent CLI
+  const r = await node({ ...env, PATH: join(tmp, 'empty'), OPENCODE_API_KEY: 'fake-key' }, CLI, 'agents', '--dir', p);
+  assert.equal(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /problem: worker/);
+  assert.match(r.stderr, /^problem: judge: no usable agent CLI/m);
+  assert.match(r.stderr, /^next: install an agent CLI, or set judge\.runner in \.learn-from-mistakes\.yaml to byokit:<route>; ready: byokit:chatgpt, byokit:claude, .*byokit:opencode-go/m);
+  assert.doesNotMatch(r.stderr, /judge\.model/);
 });
