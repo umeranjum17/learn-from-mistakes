@@ -402,7 +402,7 @@ test('byokit: a name that is not a plan route, a claude route with no cheap mode
   mkdirSync(lone);
   cpSync(BYOKIT, join(lone, 'byokit.mjs'));
   assert.deepEqual(await hook('chatgpt', join(lone, 'byokit.mjs')), [{ status: 'fail', label: 'byokit:chatgpt', detail: 'BYOKit is not installed',
-    fix: 'npm install -g @byokit/accounts @byokit/secrets @earendil-works/pi-ai   # or reinstall learn-from-mistakes-axi without --omit=optional' }]);
+    fix: 'npm install -g learn-from-mistakes-axi   # with its optional dependencies (not --omit=optional): the BYOKit packages install beside it' }]);
 });
 
 test('byokit: with no agent CLI the agents hint lists the ready routes; a worker that names no plan route exits 1 with the problem', async () => {

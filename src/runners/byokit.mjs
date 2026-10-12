@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 
 export const tools = 'none';
-export const INSTALL = 'npm install -g @byokit/accounts @byokit/secrets @earendil-works/pi-ai   # or reinstall learn-from-mistakes-axi without --omit=optional';
+export const INSTALL = 'npm install -g learn-from-mistakes-axi   # with its optional dependencies (not --omit=optional): the BYOKit packages install beside it';
 // The two sign-in plans BYOKit's respond() answers in one plain call (BYOKit's API); every other route comes from routes().
 export const ROUTES = ['chatgpt', 'claude'];
 const MEMBER = 'lfm';

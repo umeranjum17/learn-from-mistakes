@@ -593,7 +593,8 @@ async function agentsCommand(opts) {
   const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
-  const next = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner.replace(/^acp$/, 'acp:<target>');
+  const pick = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner;
+  const next = pick?.replace(/^acp$/, 'acp:<target>');
   if (!next && !byokit.problem()) hint(`set worker.runner and judge.runner in ${PROJECT_FILE} to byokit:<route>; ready: ${(await byokit.readyRoutes()).map((r) => `byokit:${r}`).join(', ')}`);
   else if (!next) hint(`install ${INSTALL}, set runner_path in $LFM_HOME/config.yaml, or ${byokit.problem().fix}   # then run agents again`);
   else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI or byokit:<route>, or use a model one agent CLI lists`);
