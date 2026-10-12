@@ -73,7 +73,7 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
+  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
     'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/init.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
@@ -175,12 +175,18 @@ try {
   const fresh = join(scratch, 'fresh'), fakes = join(scratch, 'agents');
   for (const d of [join(fresh, 'docs'), fakes]) mkdirSync(d, { recursive: true });
   copyFileSync(join(repo, 'examples', 'defects.md'), join(fresh, 'docs', 'defects.md'));
-  for (const name of ['claude', 'opencode']) writeFileSync(join(fakes, name), '#!/bin/sh\necho "1.0.0"\n', { mode: 0o755 });
+  writeFileSync(join(fakes, 'claude'), '#!/bin/sh\necho "1.0.0"\n', { mode: 0o755 });
+  writeFileSync(join(fakes, 'opencode'), '#!/bin/sh\n[ "$1 $2" = "auth list" ] && { echo "1 credentials"; exit 0; }\necho "1.0.0"\n', { mode: 0o755 }); // logged in, for doctor
   run('init', process.execPath, [cli, 'init', '-y', '--no-skill', '--dir', fresh], 0, { PATH: fakes });
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
   run('init-again', process.execPath, [cli, 'init', '--json', '--dir', fresh], 0, { PATH: fakes });
   assert.equal(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'), written, 'a second init changed the config');
+  // doctor on the written config (ok and warn lines, exit 0), then with its defect log gone (a fail with its fix, exit 1).
+  run('doctor', process.execPath, [cli, 'doctor', '--dir', fresh], 0, { PATH: fakes });
+  rmSync(join(fresh, 'docs', 'defects.md'));
+  run('doctor-missing-log', process.execPath, [cli, 'doctor', '--dir', fresh], 1, { PATH: fakes });
+  assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: touch /m, 'doctor names no fix for the missing log');
   run('init-pinned-clash', process.execPath, [cli, 'init', '--worker', 'claude', '--judge', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
   if (packageProof) {
     const pack = join(evidence, 'pack');
@@ -189,7 +195,7 @@ try {
     const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
-    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
+    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
       'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
       'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
