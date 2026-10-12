@@ -113,6 +113,12 @@ try {
   drive('retro-wait', 'retro', '--wait', '1m'); // the same run in a detached worker, waited for
   drive('status', 'status');
   drive('runs', 'runs');
+  drive('attach', 'attach'); // the last run has ended: its step lines and states, then the run
+  drive('logs', 'logs', '--step', 'collect');
+  run('retro-slow', process.execPath, [cli, 'retro', '--dir', staged], 0, { LFM_TEST_SLOW_STEP: 'report' }); // test-only flag: report sleeps 60 s
+  drive('abort', 'abort', '--json'); // the worker ends and the run is cancelled
+  assert.equal(JSON.parse(readFileSync(join(evidence, 'abort.stdout'), 'utf8')).run.status, 'cancelled', 'abort does not cancel the run');
+  drive('rerun', 'rerun', '--wait', '1m'); // a new run with the same settings
   // Config v2: every new key loads and the run completes the same steps; a bad runner exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { worker: { runner: 'auto', model: '' }, judge: { runner: 'acp:gemini', model: 'cheap-model' }, window: '7d',
