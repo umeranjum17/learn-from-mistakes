@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
-import { agents, RUNNERS } from '../src/runners/index.mjs';
+import { agents, INSTALL, RUNNERS } from '../src/runners/index.mjs';
 import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -351,7 +351,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
   --step <name>       (logs) the step: collect or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
-  --test <runner>     (agents) one live call to that agent CLI (costs tokens): it must answer and write no file
+  --test <runner>     (agents) one live call to that agent CLI, or acp:<target> through acpx (costs tokens): it must answer and write no file
   --json (report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -495,7 +495,10 @@ async function main() {
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
-  if (opts.test !== undefined && !Object.hasOwn(RUNNERS, opts.test)) throw new UsageError(`--test ${shown(opts.test)} must be a runner: ${Object.keys(RUNNERS).join(', ')}`, form);
+  // An acp target names the run dir, so it is a plain name: no path, no leading dot.
+  if (opts.test !== undefined && (opts.test === 'acp' || !Object.hasOwn(RUNNERS, opts.test.replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
+    throw new UsageError(`--test ${shown(opts.test)} must be a runner: ${Object.keys(RUNNERS).filter((r) => r !== 'acp').join(', ')} or acp:<target>`, form);
+  }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
@@ -565,14 +568,14 @@ async function agentsCommand(opts) {
   const dir = opts.dir ?? resolve('.');
   const out = await agents(opts.test || existsSync(join(dir, PROJECT_FILE)) ? loadConfig(dir) : loadGlobal(), opts);
   console.log(render(out, opts.json));
-  if (out.test) { hint(withContext('learn-from-mistakes-axi agents', 'every agent CLI and the resolved worker and judge', opts)); return; }
+  if (out.test) { hint(withContext('learn-from-mistakes-axi agents', out.test.offered ? 'every agent CLI and the resolved worker and judge' : `why ${out.test.runner} is not offered as worker or judge`, opts)); return; }
   const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
-  if (!out.agents.some((a) => a.usable)) hint('install claude, codex or opencode, or set runner_path in $LFM_HOME/config.yaml   # then run agents again');
+  if (!out.agents.some((a) => a.usable)) hint(`install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml   # then run agents again`);
   else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
   else if (roles.includes('judge')) hint(`set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`);
-  else hint(withContext(`learn-from-mistakes-axi agents --test ${out.agents.find((a) => a.usable).runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
+  else hint(withContext(`learn-from-mistakes-axi agents --test ${(out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable)).runner.replace(/^acp$/, 'acp:<target>')}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.

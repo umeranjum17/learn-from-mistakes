@@ -1,5 +1,8 @@
 {
   "claude": ["claude-haiku-5-5"],
   "codex": ["gpt-6-luna"],
-  "opencode": ["opencode-go/muse-spark-1.3-contributor"]
+  "opencode": ["opencode-go/muse-spark-1.3-contributor"],
+  "pi": [],
+  "gemini": [],
+  "acp": []
 }
