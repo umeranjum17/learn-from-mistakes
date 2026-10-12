@@ -7,8 +7,8 @@ code). A runner is usable when its binary (global `runner_path`, else PATH) runs
 `--version` with exit 0; a broken shim is not usable and shows the cause.
 `agents` prints each runner: usable, version, tools (`off`, or `read-only` for
 Codex), login presence (file and variable names only, never contents), the
-default model (`LFM_MODEL` wins, else the configured worker model, else the first
-table model) and the real binary path. With a project config it adds the
+default model (the first table model for that runner, or the configured model
+where the runner's table lists it or the role pins that runner) and the real binary path. With a project config it adds the
 resolved `worker` and `judge` by the identity rule (real binary path + model; an
 empty model on the same binary is equal); a judge clash exits 1 with `problem:`
 and the fix. `agents --test <runner>` makes one live call in

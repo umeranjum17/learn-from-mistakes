@@ -353,8 +353,9 @@ const lfmModel = () => (process.env.LFM_MODEL ?? '').trim();
 const guideText = () => `learn-from-mistakes-axi guide: you judge each record, the CLI counts. Never edit the sources,
 AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
 
-Model: do this work on ${lfmModel() ? `${lfmModel()} (LFM_MODEL)` : 'a cheap model'}. learn-from-mistakes-axi agents lists the cheap
-default for each agent CLI; set LFM_MODEL to use your own.
+Model: do this work on ${lfmModel() ? `${lfmModel()} (LFM_MODEL)` : 'the cheap default of the agent CLI that runs it'}. learn-from-mistakes-axi agents
+lists each agent CLI's default. Never take Opus, Sonnet or Sol as the default. LFM_MODEL or worker.model overrides it; with
+worker.runner auto, the model must be one an agent CLI lists as its default, else set worker.runner to the CLI that runs it.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>
@@ -542,7 +543,7 @@ async function agentsCommand(opts) {
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
   if (!out.agents.some((a) => a.usable)) hint('install claude, codex or opencode, or set runner_path in $LFM_HOME/config.yaml   # then run agents again');
-  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable runner, or auto`);
+  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
   else if (roles.includes('judge')) hint(`set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`);
   else hint(withContext(`learn-from-mistakes-axi agents --test ${out.agents.find((a) => a.usable).runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }

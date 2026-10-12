@@ -74,11 +74,30 @@ test('agents lists each agent CLI with version, login presence and default model
   assert.ok(!(r.stdout + r.stderr).includes('CANARY'), 'login contents never print');
   assert.match(r.stderr, /^next: learn-from-mistakes-axi agents --test claude/m);
 
-  const own = lfm({ LFM_MODEL: 'my-own-model' }, 'agents'); // LFM_MODEL wins for the worker; TOON by default
+  const own = lfm({ LFM_MODEL: 'gpt-6-luna' }, 'agents'); // a listed model moves the auto worker to the CLI that lists it
   assert.equal(own.status, 0, own.stderr);
   const toon = decode(own.stdout);
-  assert.ok(toon.agents.every((a) => a.model === 'my-own-model'));
-  assert.equal(toon.worker.model, 'my-own-model');
+  assert.deepEqual(toon.agents.map((a) => [a.runner, a.model]), [['claude', MODELS.claude[0]], ['codex', 'gpt-6-luna'], ['opencode', MODELS.opencode[0]]]);
+  assert.equal(toon.worker.runner, 'codex');
+  assert.equal(toon.worker.model, 'gpt-6-luna');
+
+  const unlisted = lfm({ LFM_MODEL: 'my-own-model' }, 'agents'); // no default list has it, so auto cannot pair it with a runner
+  assert.equal(unlisted.status, 1);
+  assert.match(unlisted.stderr, /^problem: worker: no usable agent CLI lists model my-own-model$/m);
+  assert.match(unlisted.stderr, /^next: set worker\.runner in \.learn-from-mistakes\.yaml to a usable agent CLI/m);
+});
+
+test('an auto judge model binds to the runner that lists it, so it cannot clash with the worker unseen', () => {
+  const { lfm, config, tmp } = setup();
+  mkdirSync(join(tmp, 'lfm-home'));
+  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), `runner_path: { opencode: ${join(tmp, 'no-such-opencode')} }\n`); // only claude and codex usable
+  config('judge: { model: claude-haiku-5-5 }\n');
+  const r = lfm({}, 'agents', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.worker.runner, 'claude');
+  assert.equal(out.judge.runner, 'claude');
+  assert.match(out.judge.problem, /would judge its own work/);
 });
 
 test('the judge never resolves to the worker: a clash exits 1 with the fix', () => {
@@ -89,20 +108,20 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
   assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
   assert.match(r.stderr, /^next: set judge\.model in \.learn-from-mistakes\.yaml to a different model, or install a second agent CLI$/m);
-  const two = lfm({ LFM_MODEL: 'cheap-a' }, 'agents', '--json'); // LFM_MODEL moves the worker off the judge's model
+  const two = lfm({ LFM_MODEL: 'cheap-a' }, 'agents', '--json'); // a pinned worker keeps its model, so it differs from the judge's
   assert.equal(two.status, 0, two.stderr);
 });
 
-test('agents --test starts each runner tool-off in its run dir, with the marker first and LFM_MODEL winning', () => {
+test('agents --test starts each runner tool-off in its run dir, with the marker first and the runner default model', () => {
   const { p, lfm, calls, config, tmp } = setup();
   mkdirSync(join(tmp, 'lfm-home'));
   writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), 'runner_args: { codex: [--ignore-rules] }\n');
   config('caps: { timeout: 30s }\n');
   for (const runner of ['claude', 'codex', 'opencode']) {
-    const r = lfm({ LFM_MODEL: 'my-own-model' }, 'agents', '--test', runner, '--json');
+    const r = lfm({}, 'agents', '--test', runner, '--json');
     assert.equal(r.status, 0, r.stderr);
     const dir = join(p, '.lfm', 'runs', `test-${runner}`);
-    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: 'my-own-model', tools: runner === 'codex' ? 'read-only' : 'off', dir,
+    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner][0], tools: runner === 'codex' ? 'read-only' : 'off', dir,
       reply: `hello from ${runner}`, wrote_file: false, files_written: 0 });
     const [c] = calls(runner);
     assert.equal(c.cwd, dir);
@@ -110,15 +129,31 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
   }
   const [cl] = calls('claude'), [cx] = calls('codex'), [oc] = calls('opencode');
   const run = (r) => join(p, '.lfm', 'runs', `test-${r}`);
-  assert.deepEqual(cl.args, ['-p', '--output-format', 'json', '--model', 'my-own-model', '--tools', '', '--no-session-persistence', '--strict-mcp-config']);
+  assert.deepEqual(cl.args, ['-p', '--output-format', 'json', '--model', MODELS.claude[0], '--tools', '', '--no-session-persistence', '--strict-mcp-config']);
   assert.match(cl.stdin, /^lfm-run:test:claude\nThis tests that your tools are off/);
-  assert.deepEqual(cx.args, ['exec', '-m', 'my-own-model', '-s', 'read-only', '--ephemeral', '--skip-git-repo-check', '--ignore-rules', '-o', join(run('codex'), 'out-codex.txt'), '-']);
+  assert.deepEqual(cx.args, ['exec', '-m', MODELS.codex[0], '-s', 'read-only', '--ephemeral', '--skip-git-repo-check', '--ignore-rules', '-o', join(run('codex'), 'out-codex.txt'), '-']);
   assert.match(cx.stdin, /^lfm-run:test:codex\n/);
-  assert.deepEqual(oc.args, ['run', '-m', 'my-own-model', '--format', 'json', '--dir', run('opencode'), '-f', join(run('opencode'), 'prompt-opencode.md'),
+  assert.deepEqual(oc.args, ['run', '-m', MODELS.opencode[0], '--format', 'json', '--dir', run('opencode'), '-f', join(run('opencode'), 'prompt-opencode.md'),
     '--', 'lfm-run:test:opencode Follow the instructions in the attached file.']);
   assert.equal(oc.permission, '{"*":"deny"}');
   assert.match(readFileSync(join(run('opencode'), 'prompt-opencode.md'), 'utf8'), /^lfm-run:test:opencode\nThis tests that your tools are off/);
   assert.deepEqual(readdirSync(join(p, '.lfm')).sort(), ['.gitignore', 'runs']);
+});
+
+test('no default model is premium: the models table, the agents listing and the guide stay cheap', () => {
+  const { lfm, env, p } = setup();
+  const premium = /opus|sonnet|\bsol\b/i;
+  for (const model of Object.values(MODELS).flat()) assert.doesNotMatch(model, premium);
+  const listed = lfm({}, 'agents', '--json');
+  assert.equal(listed.status, 0, listed.stderr);
+  for (const a of JSON.parse(listed.stdout).agents) assert.doesNotMatch(a.model, premium);
+  const guide = (extra) => spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8', cwd: p, env: { ...env, ...extra } });
+  const dflt = guide({});
+  assert.equal(dflt.status, 0, dflt.stderr);
+  for (const line of dflt.stdout.split('\n')) if (premium.test(line)) assert.match(line, /never/i, `the guide takes a premium model as a default: ${line}`);
+  const own = guide({ LFM_MODEL: 'my-own-model' });
+  assert.equal(own.status, 0, own.stderr);
+  assert.match(own.stdout, /my-own-model \(LFM_MODEL\)/);
 });
 
 test('a hung, leaking, writing or overloaded agent ends with its real cause', () => {

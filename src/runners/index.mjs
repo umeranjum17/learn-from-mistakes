@@ -29,7 +29,7 @@ export function detect(cfg) {
     const found = which(cfg.runner_path?.[runner] ?? runner);
     const { files, vars } = mod.login(process.env);
     const login = [...files.filter((f) => existsSync(f)).map((f) => basename(f)), ...vars.filter((v) => process.env[v])].join(' ') || 'none';
-    const a = { runner, usable: false, version: '', tools: mod.tools, login, model: workerModel(cfg, runner), bin: found ? realpathSync(found) : '', problem: '' };
+    const a = { runner, usable: false, version: '', tools: mod.tools, login, model: roleModel(cfg, 'worker', runner), bin: found ? realpathSync(found) : '', problem: '' };
     if (!found) return { ...a, problem: `${cfg.runner_path?.[runner] ?? runner} is not on PATH` };
     const v = spawnSync(found, ['--version'], { encoding: 'utf8', timeout: 10000 });
     if (v.status !== 0) return { ...a, problem: `--version failed: ${tail(`${v.stderr ?? ''}${v.stdout ?? ''}`) || v.error?.code || `exit ${v.status}`}` };
@@ -37,33 +37,36 @@ export function detect(cfg) {
   });
 }
 
-// LFM_MODEL is the worker override; else the configured worker model (for its runner or auto), else the first cheap
-// model in models.json, else "" (the agent's own default).
-function workerModel(cfg, runner) {
-  const w = cfg.worker;
-  return (process.env.LFM_MODEL ?? '').trim() || (w && [runner, 'auto'].includes(w.runner) && w.model) || MODELS[runner]?.[0] || '';
+// The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
+const configuredModel = (cfg, name) => (name === 'worker' ? (process.env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
+
+// A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
+// it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
+function roleModel(cfg, name, runner) {
+  const model = configuredModel(cfg, name);
+  if (model && (cfg[name]?.runner === runner || MODELS[runner]?.includes(model))) return model;
+  return MODELS[runner]?.[0] ?? '';
 }
 
 // The identity rule: a role is the real path of its binary plus its model. An empty model on the same binary is equal.
 const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
 
-// Resolve worker or judge after auto, the table default and LFM_MODEL. The judge takes the first candidate that differs
-// from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging its own work.
+// Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
+// that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
+// its own work.
 export function resolveRole(cfg, name, agents, worker) {
   const want = cfg[name];
   if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: want.model, bin: '', problem: `runner ${want.runner} has no adapter in this version` };
-  const pool = agents.filter((a) => a.usable && (want.runner === 'auto' || a.runner === want.runner));
+  const model = configuredModel(cfg, name);
+  const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || MODELS[a.runner]?.includes(model) : a.runner === want.runner));
   if (!pool.length) {
     const a = agents.find((x) => x.runner === want.runner);
-    return { runner: want.runner, model: want.model, bin: '', problem: a ? `${a.runner} is not usable: ${a.problem}` : 'no usable agent CLI (install claude, codex or opencode)' };
+    return { runner: want.runner, model: want.model, bin: '', problem: a ? `${a.runner} is not usable: ${a.problem}` : model ? `no usable agent CLI lists model ${model}` : 'no usable agent CLI (install claude, codex or opencode)' };
   }
   let last;
   for (const a of pool) {
-    const models = name === 'worker' ? [workerModel(cfg, a.runner)] : want.model ? [want.model] : MODELS[a.runner]?.length ? MODELS[a.runner] : [''];
-    for (const model of models) {
-      last = { runner: a.runner, model, bin: a.bin, problem: '' };
-      if (!worker || !same(last, worker)) return last;
-    }
+    last = { runner: a.runner, model: roleModel(cfg, name, a.runner), bin: a.bin, problem: '' };
+    if (!worker || !same(last, worker)) return last;
   }
   return { ...last, problem: 'the judge resolves to the worker\'s agent and model, so it would judge its own work' };
 }
