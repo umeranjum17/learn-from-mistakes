@@ -22,7 +22,9 @@ after `src/redact.mjs` ran on the whole text (empty with `excerpts: off`).
 call repeated with the same input after it failed and before it succeeded. The run output adds each
 source's counts: for sessions `sessions`, `skipped` (unknown record shapes) and
 `metrics` (`tool_error_rate`, `corrections_per_session`, `interrupts`,
-`retries`; `n/a` with no sessions, never 0). A sessions-only config completes
+`retries`; `n/a` with no sessions, never 0). Every event in the read range is
+stored, but the metrics count only events inside this window, and a session
+counts when it has one of them. A sessions-only config completes
 the report step.
 
 ## How to get to it (user POV)

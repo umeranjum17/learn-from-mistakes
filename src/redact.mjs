@@ -1,9 +1,11 @@
 // One redaction for every string a source keeps: known key shapes, any value whose key name says it is a
 // secret, and email addresses. Each match becomes [redacted].
 const R = '[redacted]';
+const VALUE = String.raw`(?:\\"(?:(?!\\")[\s\S])*(?:\\"|$)|"(?:[^"\\]|\\.)*(?:"|$)|'(?:[^'\\]|\\.)*(?:'|$)|[^\s"'\\}\]&]+)`;
 const RULES = [
   [/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?(?:-----END [A-Z0-9 ]+-----|$)/g, R], // PEM blocks, cut-off ones too
   [/\bsk-[A-Za-z0-9_-]{16,}/g, R], // sk-… and sk-ant-…
+  [/\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{16,}/g, R], // Stripe secret, restricted and test keys
   [/\b(?:gh[opsu]_|github_pat_)[A-Za-z0-9_]{20,}/g, R],
   [/\bxox[abp]-[A-Za-z0-9-]{10,}/g, R],
   [/\bAKIA[0-9A-Z]{16}\b/g, R],
@@ -12,8 +14,9 @@ const RULES = [
   [/\b((?:Bearer|Basic|Token)\s+)[\w.~+/=-]+/gi, `$1${R}`],
   // KEY=value, key: value and "key": "value" (JSON-escaped too) where the key name has token, secret, password,
   // key or auth. A quoted value is replaced whole, to its closing quote or the end; a bare one to a space or quote.
-  [new RegExp(String.raw`((?:\\?["'])?[\w.-]*(?:token|secret|passw(?:or)?d|key|auth)[\w.-]*(?:\\?["'])?\s*[:=]\s*)` +
-    String.raw`(?:\\"(?:(?!\\")[\s\S])*(?:\\"|$)|"(?:[^"\\]|\\.)*(?:"|$)|'(?:[^'\\]|\\.)*(?:'|$)|[^\s"'\\}\]&]+)`, 'gi'), `$1${R}`],
+  // A --flag followed by a space takes its value the same way.
+  [new RegExp(String.raw`((?:\\?["'])?[\w.-]*(?:token|secret|passw(?:or)?d|key|auth)[\w.-]*(?:\\?["'])?\s*[:=]\s*)` + VALUE, 'gi'), `$1${R}`],
+  [new RegExp(String.raw`(--[\w.-]*(?:token|secret|passw(?:or)?d|key|auth)[\w.-]*\s+)` + VALUE, 'gi'), `$1${R}`],
   [/[\w.%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g, R],
 ];
 

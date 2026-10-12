@@ -45,7 +45,8 @@ async function parse(file, { session, keep, sub, excerpt }) {
       for (const b of results) {
         const call = calls.get(b.tool_use_id), text = textOf(b.content);
         const interrupted = r.toolUseResult?.interrupted === true;
-        const error = b.is_error === true || interrupted;
+        const benign = Boolean(r.toolUseResult?.returnCodeInterpretation);
+        const error = (b.is_error === true && !benign) || interrupted;
         const exit = /^(?:Error: )?Exit code (\d+)/.exec(text)?.[1];
         // A tool use the user turned down is not a tool failure; the interrupt or correction after it is counted.
         const declined = ['user-rejected', 'interrupted'].includes(r.toolDenialKind);

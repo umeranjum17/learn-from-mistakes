@@ -13,3 +13,8 @@ this line is not JSON
 {"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:10.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"README.md"}}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:11.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t3","content":"# readme"}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:30.000Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-03T09:02:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t4","name":"Bash","input":{"command":"grep -n retry src/fetch.js"}}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-03T09:02:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t4","is_error":true,"content":"Exit code 1"}]},"toolUseResult":{"returnCodeInterpretation":"No matches found","stdout":"","stderr":""}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"old.md"}}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t5","is_error":true,"content":"File does not exist."}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:05.000Z","message":{"role":"user","content":"No, that was the old file."}}
