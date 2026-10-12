@@ -506,7 +506,7 @@ async function runCommand(cmd, cfg, opts) {
     out = await { retro, status, runs, rerun }[cmd](cfg, opts);
   } catch (e) {
     if (e.code !== 'ERR_SQLITE_ERROR') throw e;
-    if (e.message.includes('UNIQUE constraint failed')) throw new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
+    if (e.message.includes('UNIQUE constraint failed: runs.status')) throw new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
     throw new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
   }
   console.log(render(out, opts.json));
