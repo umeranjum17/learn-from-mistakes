@@ -192,7 +192,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   const withConfig = (extra, base = v1) => { writeFileSync(cfgFile, base + extra); try { return lfm('ingest'); } finally { writeFileSync(cfgFile, v1); } };
   const bad = (rule) => new RegExp(`^error: .*\\.learn-from-mistakes\\.yaml: ${rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm');
   for (const [run, code, error, next] of [
-    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: init, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)', HELP],
+    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: init, doctor, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)', HELP],
     [() => raw('--bogus'), 2, 'unknown option "--bogus"', HELP], // a bare unknown flag points at --help
     [() => raw('report', '--bogus'), 2, 'unknown option "--bogus"', /^next: learn-from-mistakes-axi report \[--dir <dir>\]/m],
     [() => raw('change'), 2, '"change" must be followed by "applied"', CHANGE],

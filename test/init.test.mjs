@@ -3,7 +3,7 @@
 // for the repo.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -172,4 +172,51 @@ test('init finds the no-mistakes repo of a git worktree of the project, as the s
   const r = spawnSync(process.execPath, [CLI, 'init', '-y', '--no-skill', '--json', '--dir', wt], { encoding: 'utf8', env: { ...env, PATH: `${env.PATH}:${process.env.PATH}` } });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
+});
+
+// doctor after init: every check ok or warn, exit 0; then a missing defect log, a judge on the worker's identity and
+// a premium model are 3 fail lines, each with its fix, exit 1; after the fixes, exit 0 again. Login checks run the
+// agent's own status command (pi's never refreshes a token) and print no credential text.
+test('doctor names each fail with its fix and exits 1 until the fixes are made', () => {
+  const { p, lfm, config, env } = setup(['claude', 'opencode', 'pi', 'gemini']);
+  const fake = (name, body) => { writeFileSync(join(env.PATH, name), `#!/bin/sh\n${body}\necho "1.0.0"\n`); chmodSync(join(env.PATH, name), 0o755); };
+  fake('opencode', 'if [ "$1 $2" = "auth list" ]; then echo "Anthropic api sk-ant-UMERCANARY"; echo "1 credentials"; exit 0; fi');
+  fake('pi', `if [ "$1" = auth ]; then echo "$*" > "${join(p, '..', 'pi-argv')}"; echo sk-UMERCANARY; exit 0; fi`);
+  symlinkSync(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim(), join(env.PATH, 'git'));
+  writeFileSync(join(env.HOME, '.claude', '.credentials.json'), '{"token":"sk-ant-UMERCANARY"}');
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  const doctor = () => {
+    const r = lfm('doctor', '--json');
+    assert.doesNotMatch(r.stdout + r.stderr, /UMERCANARY/);
+    return { ...r, out: JSON.parse(r.stdout) };
+  };
+  const ok = doctor();
+  assert.equal(ok.status, 0, ok.stdout);
+  const level = (out, label) => out.checks.find((c) => c.label === label)?.level;
+  assert.deepEqual(['config', 'state', 'source log', 'source gate', 'worker', 'worker login', 'judge login', 'identity'].map((l) => level(ok.out, l)), Array(8).fill('ok'));
+  assert.equal(ok.out.checks.find((c) => c.label === 'judge login').detail, 'opencode auth list: logged in');
+  assert.deepEqual(['agent gemini', 'skill claude', 'sign-off'].map((l) => level(ok.out, l)), ['warn', 'warn', 'warn']); // listed, never a fail
+  assert.match(lfm('doctor').stderr, /^next: learn-from-mistakes-axi retro --wait 8m/m);
+
+  const yaml = readFileSync(config, 'utf8');
+  rmSync(join(p, 'docs', 'defects.md'));
+  writeFileSync(config, yaml.replace(/^worker: .*$/m, 'worker: { runner: pi, model: claude-opus-5-5 }').replace(/^judge: .*$/m, 'judge: { runner: pi, model: "" }'));
+  const bad = doctor();
+  assert.equal(bad.status, 1);
+  const fails = bad.out.checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'identity']);
+  assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
+  assert.match(fails[0].fix, /^touch .*defects\.md   # or set sources\.log\.path/);
+  assert.match(fails[1].fix, /allow_premium: true$/);
+  assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
+  const text = lfm('doctor');
+  assert.equal(text.status, 1);
+  assert.match(text.stdout, /^fail identity +the worker and the judge are both pi.*\n {5}fix: set judge\.runner/m);
+  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
+
+  writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
+  writeFileSync(config, yaml.replace(/^worker: .*$/m, 'worker: { runner: pi, model: umer-cheap-1 }'));
+  const fixed = doctor();
+  assert.equal(fixed.status, 0, fixed.stdout);
+  assert.equal(fixed.out.fails, 0);
 });

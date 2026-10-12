@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readText } from '../../bin/learn-from-mistakes-axi.mjs';
-import { pathSource } from '../config.mjs';
+import { pathSource, PROJECT_FILE } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 
 export const validate = pathSource;
@@ -15,7 +15,7 @@ export function detect(dir) {
 
 // Each record's id comes from its text, so it survives line moves.
 export function read(source, { path }) {
-  const text = readText(path, `source ${source}`);
+  const text = readText(path, `source ${source}`, `touch ${path}   # or set sources.${source}.path in ${PROJECT_FILE} to your defect log`);
   const seen = new Map();
   let date = '';
   const records = [];

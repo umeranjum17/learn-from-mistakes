@@ -5,6 +5,9 @@ import { join } from 'node:path';
 
 export const tools = 'off';
 export const login = (env) => ({ files: [join(env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'auth.json')], vars: [] });
+export const skills = (env) => join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode', 'skills');
+// Counts the stored credentials and the provider keys set in the environment; only the counts are read.
+export const loginStatus = () => ({ args: ['auth', 'list'], ok: (r) => /\b[1-9]\d* (credentials?|environment variables?)\b/.test(r.stdout), fix: 'opencode auth login' });
 // `--` ends the -f file list, which would otherwise take the message as a second file.
 export const command = ({ model, dir, prompt, marker, extra }) => ({
   args: ['run', ...(model ? ['-m', model] : []), '--format', 'json', '--dir', dir, '-f', prompt, ...extra, '--', `${marker} Follow the instructions in the attached file.`],
