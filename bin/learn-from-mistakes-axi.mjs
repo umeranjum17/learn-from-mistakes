@@ -7,8 +7,9 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
-import { loadConfig, PROJECT_FILE, SOURCES } from '../src/config.mjs';
+import { loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { agents, RUNNERS } from '../src/runners/index.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -305,7 +306,7 @@ function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes|retro|status|runs|rerun>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes|retro|status|runs|rerun|agents>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
   guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
@@ -318,6 +319,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
   rerun --resume      finish an interrupted, cancelled or failed run from its first step that is not completed
+  agents              list the agent CLIs the tool can start: usable, version, login presence, default model
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)
@@ -328,7 +330,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, rerun) the saved run (default: the last one)
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
-  --json (report, count, change applied, changes, retro, status, runs, rerun)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
+  --test <runner>     (agents) one live call to that agent CLI (costs tokens): it must answer and write no file
+  --json (report, count, change applied, changes, retro, status, runs, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
@@ -342,18 +345,16 @@ next: learn-from-mistakes-axi --dir <project>   # point at a project with .learn
 next: learn-from-mistakes-axi report --full  # add the evidence ids
 next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
 next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date, what and why
-next: learn-from-mistakes-axi retro --wait 8m   # ingest and report as a saved run, then status and runs show it`;
+next: learn-from-mistakes-axi retro --wait 8m   # ingest and report as a saved run, then status and runs show it
+next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start and their default models`;
 // The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
-// The CLI itself makes no network or model calls; the model lines below only tell the agent
-// which session model to use for the judging work. LFM_MODEL lets the user pick their own;
-// the default stays cheap.
-const MODEL_DEFAULT = 'opencode-go/muse-spark-1.3-contributor';
-const sessionModel = () => (process.env.LFM_MODEL ?? '').trim() || MODEL_DEFAULT;
+// The model line only tells the agent which session model to use; the cheap defaults live in src/models.json.
+const lfmModel = () => (process.env.LFM_MODEL ?? '').trim();
 const guideText = () => `learn-from-mistakes-axi guide: you judge each record, the CLI counts. Never edit the sources,
 AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
 
-Model: do this work on ${sessionModel()} (LFM_MODEL set: your own model; unset: ${MODEL_DEFAULT}).
-Cheap alternates are claude-haiku-5-5 and gpt-6-luna. Never take Opus, Sonnet or Sol as the default.
+Model: do this work on ${lfmModel() ? `${lfmModel()} (LFM_MODEL)` : 'a cheap model'}. learn-from-mistakes-axi agents lists the cheap
+default for each agent CLI; set LFM_MODEL to use your own.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>
@@ -422,8 +423,9 @@ const FORMS = {
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
   runs: 'learn-from-mistakes-axi runs [--dir <dir>] [--json]',
   rerun: 'learn-from-mistakes-axi rerun --resume [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
+  agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--test'];
 const SWITCHES = ['--json', '--full', '--foreground', '--resume'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -441,7 +443,7 @@ async function main() {
     cmd = 'change-applied';
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun, agents)`);
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -468,6 +470,8 @@ async function main() {
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'rerun' && !opts.resume) throw new UsageError('rerun starts a new run in a later version: pass --resume to finish a run that did not complete', form);
+  if (opts.test !== undefined && !Object.hasOwn(RUNNERS, opts.test)) throw new UsageError(`--test ${shown(opts.test)} must be a runner: ${Object.keys(RUNNERS).join(', ')}`, form);
+  if (cmd === 'agents') { await agentsCommand(opts); return; }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
     for (const s of await ingest(cfg)) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
@@ -525,6 +529,22 @@ async function runCommand(cmd, cfg, opts) {
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));
     if (cmd !== 'status') process.exitCode = 1;
   } else hint(withContext('learn-from-mistakes-axi report', 'the counts this run read', opts));
+}
+
+// `agents` lists anywhere (the global config's runner_path applies); with a project config it adds the resolved worker
+// and judge, and a clash between them exits 1. `--test` writes in the project's state dir, so it needs the config.
+async function agentsCommand(opts) {
+  const dir = opts.dir ?? resolve('.');
+  const out = await agents(opts.test || existsSync(join(dir, PROJECT_FILE)) ? loadConfig(dir) : loadGlobal(), opts);
+  console.log(render(out, opts.json));
+  if (out.test) { hint(withContext('learn-from-mistakes-axi agents', 'every agent CLI and the resolved worker and judge', opts)); return; }
+  const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
+  for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
+  if (roles.length) process.exitCode = 1;
+  if (!out.agents.some((a) => a.usable)) hint('install claude, codex or opencode, or set runner_path in $LFM_HOME/config.yaml   # then run agents again');
+  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable runner, or auto`);
+  else if (roles.includes('judge')) hint(`set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`);
+  else hint(withContext(`learn-from-mistakes-axi agents --test ${out.agents.find((a) => a.usable).runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.

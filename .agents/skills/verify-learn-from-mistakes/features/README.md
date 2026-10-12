@@ -10,10 +10,11 @@
 | [Machine surface](surface.md) | `--help`, `--version`, bare command, `--json`, `--full`, TOON default | behavior asserted by `test/cli.test.mjs`: valid TOON equal to the `lfm-report.v1` JSON, non-content ids-only `--full`, a private canary absent from every output and stderr; the helper only captures evidence |
 | [Config v2 and source registry](config.md) | `.learn-from-mistakes.yaml` with v2 keys, then `learn-from-mistakes-axi retro --foreground` | v1 configs unchanged; every v2 key loads (2 completed steps); a bad key or value such as `worker: { runner: 3 }` exits 2 naming the key; sources read through `src/sources/<type>.mjs` |
 | [Saved runs](run.md) | `learn-from-mistakes-axi retro [--wait <time> \| --foreground]`, `status`, `runs`, `rerun --resume` | a completed run with 2 step rows in `.lfm/lfm.sqlite`, shown by `status` and `runs`; `.lfm` git-ignored; a failed step exits 1 with its error saved; a detached run outlives its shell; a killed worker shows `interrupted` and `rerun --resume` completes it without running the completed step again |
+| [Agent runners](agents.md) | `learn-from-mistakes-axi agents [--json]`, `agents --test <runner>` | usable runners with version, tools, login file names (never contents), default model from `src/models.json` (`LFM_MODEL` wins), worker and judge by the identity rule (a clash exits 1); `--test`: the agent's reply and exit 0, or the real error; a file written in the run dir fails it; argv, timeout kill, pipe wait, write refusal and retry asserted by `test/runners.test.mjs` |
 | [Package install](package.md) | helper `--package`; `npm pack` + fresh-prefix install | manifest carries the bin, metadata and standalone skill; the installed bin drives the report and the export, and passes the e2e suite |
 | [Agent skill](skill.md) | `npm run build:skill -- --check`; local-registry `npx -y learn-from-mistakes-axi`; `npx skills add` + clean agent session | check passes then fails on a one-char edit; npx help/guide/journey; the agent loads the skill unprompted and reports a repeated cause |
 
-Run the helper from `../SKILL.md`; reuse `test/cli.test.mjs`, never duplicate its
+Run the helper from `../SKILL.md`; reuse `test/cli.test.mjs` and `test/runners.test.mjs`, never duplicate their
 journeys in a new test file. Synthetic expectations apply only to `examples`.
 The package install journey resolves the declared npm dependencies and may
 touch the registry; the default journey starts no network.
