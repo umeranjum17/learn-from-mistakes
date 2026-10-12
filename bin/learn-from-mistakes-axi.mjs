@@ -448,7 +448,7 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun --resume [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const JUDGE_FIX = `set judge.model in ${PROJECT_FILE} to a different model, or install a second agent CLI`;
+const JUDGE_FIX = `set judge.runner and judge.model in ${PROJECT_FILE} to an agent CLI and a different model, or install a second agent CLI`;
 const AGENTS_FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--test', '--worker', '--judge'];
 const SWITCHES = ['--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
@@ -585,7 +585,8 @@ async function initCommand(opts) {
   const out = await init(opts.dir ?? resolve('.'), opts);
   console.log(render(out, opts.json));
   if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
-  if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: the worker (${out.worker.runner}) and the judge (${out.judge.runner}) see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
+  const seen = [['worker', out.workerBin, out.worker], ['judge', out.judgeBin, out.judge]].map(([name, bin, r]) => `the ${name} (${bin ? r.runner : 'no usable runner'})`).join(' and ');
+  if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: ${seen} see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
   if (out.gaps.some((g) => g.startsWith('worker:'))) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
   else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(out.judgeBin ? JUDGE_FIX : AGENTS_FIX);

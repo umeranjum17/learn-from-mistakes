@@ -13,7 +13,7 @@ import { parse } from 'yaml';
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
 
-function setup(agents) {
+function setup(agents, extraEnv = {}) {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-init-'));
   after(() => rmSync(tmp, { recursive: true, force: true }));
   const p = join(tmp, 'umer-app'), bin = join(tmp, 'bin'), nm = join(tmp, 'nm');
@@ -29,7 +29,7 @@ function setup(agents) {
   db.exec('CREATE TABLE repos (id TEXT PRIMARY KEY, working_path TEXT NOT NULL, upstream_url TEXT NOT NULL)');
   db.prepare('INSERT INTO repos VALUES (?, ?, ?)').run('r1', realpathSync(p), 'https://example.com/umer/umer-app.git');
   db.close();
-  const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm };
+  const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm, ...extraEnv };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   const config = join(p, '.learn-from-mistakes.yaml');
   return { p, nm, lfm, config };
@@ -77,7 +77,7 @@ test('one agent CLI with one table model: the judge is written on the worker\'s 
   const r = lfm('init', '--json');
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout).gaps, ['judge: the judge resolves to the worker\'s agent and model, so it would judge its own work']);
-  assert.match(r.stderr, /^next: set judge\.model in \.learn-from-mistakes\.yaml to a different model, or install a second agent CLI$/m);
+  assert.match(r.stderr, /^next: set judge\.runner and judge\.model in \.learn-from-mistakes\.yaml to an agent CLI and a different model, or install a second agent CLI$/m);
   assert.deepEqual(parse(readFileSync(config, 'utf8')).judge, { runner: 'claude', model: '' });
   const agents = lfm('agents'); // the clash fails every later check of the config
   assert.equal(agents.status, 1);
@@ -92,6 +92,23 @@ test('a pinned judge steers the auto worker onto a different agent CLI, and the 
   assert.deepEqual([out.worker, out.judge], [{ runner: 'codex', model: MODELS.codex[0] }, { runner: 'claude', model: MODELS.claude[0] }]);
   assert.deepEqual(out.gaps, []);
   assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'codex', model: '' });
+});
+
+test('LFM_MODEL is a run-time override: init writes the same pair with it set', () => {
+  const { lfm, config } = setup(['claude', 'codex'], { LFM_MODEL: 'my-own-model' });
+  const r = lfm('init', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual([out.worker, out.judge], [{ runner: 'claude', model: MODELS.claude[0] }, { runner: 'codex', model: MODELS.codex[0] }]);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'claude', model: '' });
+});
+
+test('an unusable judge is not named as seeing excerpts', () => {
+  const { lfm, config } = setup(['claude']);
+  writeFileSync(config, 'judge: { runner: codex, model: "" }\n');
+  const r = lfm('init');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^excerpts on: the worker \(claude\) and the judge \(no usable runner\) see redacted record excerpts/m);
 });
 
 test('init refuses a pinned judge on the worker\'s identity, an unknown runner and no agent CLI, and writes nothing', () => {

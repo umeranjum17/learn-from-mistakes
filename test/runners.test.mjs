@@ -109,7 +109,7 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   assert.equal(r.status, 1, r.stderr);
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
   assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
-  assert.match(r.stderr, /^next: set judge\.model in \.learn-from-mistakes\.yaml to a different model, or install a second agent CLI$/m);
+  assert.match(r.stderr, /^next: set judge\.runner and judge\.model in \.learn-from-mistakes\.yaml to an agent CLI and a different model, or install a second agent CLI$/m);
   const two = lfm({ LFM_MODEL: 'cheap-a' }, 'agents', '--json'); // a pinned worker keeps its model, so it differs from the judge's
   assert.equal(two.status, 0, two.stderr);
 });

@@ -30,7 +30,7 @@ export async function init(dir, opts) {
   const written = !existsSync(file);
   if (written) {
     const want = { ...global, worker: { runner: opts.worker ?? 'auto', model: '' }, judge: { runner: opts.judge ?? 'auto', model: '' } };
-    const { worker, judge } = resolveRoles(want, agents);
+    const { worker, judge } = resolveRoles(want, agents, {});
     // A pinned judge with no worker that differs from it is refused, as is a judge pinned onto the worker's identity.
     if (worker.problem) {
       if (opts.judge && !opts.worker && judge.bin) throw new UsageError(`worker: ${worker.problem}`, `learn-from-mistakes-axi init --worker <runner> --judge ${opts.judge}   # a worker on another agent CLI`);
@@ -51,13 +51,13 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   }
   const cfg = loadConfig(dir);
   stateDir(cfg);
-  const { worker, judge } = resolveRoles(cfg, agents);
+  const { worker, judge } = resolveRoles(cfg, agents, {});
   const gaps = [...Object.entries({ worker, judge }).filter(([, r]) => r.problem).map(([name, r]) => `${name}: ${r.problem}`),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
   return {
     config: file, status: written ? 'written' : 'already set up', ignored: written ? [] : changes,
-    worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, judgeBin: judge.bin,
+    worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
     gaps, skipped,
   };

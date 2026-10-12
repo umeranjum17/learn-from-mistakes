@@ -38,13 +38,13 @@ export function detect(cfg) {
 }
 
 // The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
-const configuredModel = (cfg, name) => (name === 'worker' ? (process.env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
+const configuredModel = (cfg, name, env = process.env) => (name === 'worker' ? (env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
 const lists = (runner, model) => !!MODELS[runner]?.includes(model);
 
 // A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
 // it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
-function roleModel(cfg, name, runner) {
-  const model = configuredModel(cfg, name);
+function roleModel(cfg, name, runner, env = process.env) {
+  const model = configuredModel(cfg, name, env);
   if (model && (cfg[name]?.runner === runner || lists(runner, model))) return model;
   return MODELS[runner]?.[0] ?? '';
 }
@@ -55,10 +55,10 @@ const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b
 // Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
 // that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
 // its own work.
-export function resolveRole(cfg, name, agents, worker) {
+export function resolveRole(cfg, name, agents, worker, env = process.env) {
   const want = cfg[name];
-  if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: configuredModel(cfg, name), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
-  const model = configuredModel(cfg, name);
+  if (want.runner !== 'auto' && !RUNNERS[want.runner]) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
+  const model = configuredModel(cfg, name, env);
   const pool = agents.filter((a) => a.usable && (want.runner === 'auto' ? !model || lists(a.runner, model) : a.runner === want.runner));
   if (!pool.length) {
     const a = agents.find((x) => x.runner === want.runner) ?? agents.find((x) => lists(x.runner, model));
@@ -67,7 +67,7 @@ export function resolveRole(cfg, name, agents, worker) {
   }
   let last;
   for (const a of pool) {
-    last = { runner: a.runner, model: roleModel(cfg, name, a.runner), bin: a.bin, problem: '' };
+    last = { runner: a.runner, model: roleModel(cfg, name, a.runner, env), bin: a.bin, problem: '' };
     if (!worker || !same(last, worker)) return last;
   }
   const clash = name === 'judge' ? 'the judge resolves to the worker\'s agent and model, so it would judge its own work' : 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
@@ -75,13 +75,13 @@ export function resolveRole(cfg, name, agents, worker) {
 }
 
 // The pinned role is resolved first, so the auto role takes a runner that differs from it; both auto: the worker first.
-export function resolveRoles(cfg, agents) {
+export function resolveRoles(cfg, agents, env = process.env) {
   if (cfg.worker.runner === 'auto' && cfg.judge.runner !== 'auto') {
-    const judge = resolveRole(cfg, 'judge', agents);
-    return { worker: resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge), judge };
+    const judge = resolveRole(cfg, 'judge', agents, undefined, env);
+    return { worker: resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge, env), judge };
   }
-  const worker = resolveRole(cfg, 'worker', agents);
-  return { worker, judge: resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker) };
+  const worker = resolveRole(cfg, 'worker', agents, undefined, env);
+  return { worker, judge: resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
 }
 
 // One process: detached, so a timeout stops its whole group; after exit, a grandchild holding stdout gets 5 s, then
