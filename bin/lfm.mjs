@@ -263,6 +263,7 @@ function main() {
     else throw new UsageError(USAGE);
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
+  if (cmd === 'ingest' && (json || full)) throw new UsageError(USAGE);
   if (cmd === 'ingest') { ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
   const a = analyse(cfg, opts);
   if (!a.records.size && !a.rows.length) {
