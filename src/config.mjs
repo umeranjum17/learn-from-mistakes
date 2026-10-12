@@ -119,6 +119,7 @@ sources:
   // the read range is this window and the last one; only the sessions source applies it so far
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
   const caps = block('caps', { invocations: 12, bundle_chars: 60000, timeout: '20m' });
+  check(caps.bundle_chars >= 1000, `${file}: caps.bundle_chars`, 'at least 1000');
   check(typeof caps.timeout === 'string' && /^[1-9]\d*[smh]$/.test(caps.timeout), `${file}: caps.timeout`, 'a duration such as 90s, 20m or 1h');
   const cfg = {
     dir,

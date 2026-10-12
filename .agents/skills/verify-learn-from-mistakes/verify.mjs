@@ -7,6 +7,7 @@ import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, r
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { parse, stringify } from 'yaml';
 
 const repo = realpathSync(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -73,7 +74,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/init.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/init.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -83,6 +84,10 @@ try {
   for (const s of sources) {
     copyFileSync(s.path, join(staged, s.copy));
     config.sources[s.id].path = s.copy;
+    if (s.type !== 'no-mistakes') continue;
+    // The source reads only this project's rows: the staged copy takes the repo row of the example (or of the approved project).
+    const db = new DatabaseSync(join(staged, s.copy));
+    try { db.prepare('UPDATE repos SET working_path = ? WHERE working_path = ?').run(realpathSync(staged), mode ? project : '/example'); } finally { db.close(); }
   }
   writeFileSync(join(staged, '.learn-from-mistakes.yaml'), stringify(config));
   copyFileSync(labels, join(staged, 'labels.jsonl'));
@@ -126,6 +131,8 @@ try {
     caps: { invocations: 12, bundle_chars: 60000, timeout: '20m' }, signoff: 'auto', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));
   drive('retro-v2', 'retro', '--foreground', '--json');
+  const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id), 'bundle.md'), 'utf8');
+  assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
   writeFileSync(stagedConfig, stringify({ ...config, worker: { runner: 3 } }));
   run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
   // Sessions: one synthetic Claude Code session in the scratch HOME, run in the staged project, with a failed test.
@@ -137,12 +144,13 @@ try {
     { type: 'assistant', ...at, message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } }] } },
     { type: 'user', ...at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'Exit code 1' }] } },
   ].map((r) => JSON.stringify(r)).join('\n') + '\n');
-  writeFileSync(stagedConfig, stringify({ ...config, sources: { ...config.sources, sessions: { type: 'sessions' } },
+  writeFileSync(stagedConfig, stringify({ ...config, excerpts: 'on', sources: { ...config.sources, sessions: { type: 'sessions' } },
     causes: { ...config.causes, 'test-fails': { description: 'The tests fail.', match: { source: 'sessions', signal: 'test_fail' } } } }));
   drive('retro-sessions', 'retro', '--foreground', '--json');
   const out = JSON.parse(readFileSync(join(evidence, 'retro-sessions.stdout'), 'utf8')), metric = (n) => out.metrics.find((m) => m.name === n)?.current;
   assert.ok(out.sources.find((s) => s.type === 'sessions').sessions === 1 && metric('tool_error_rate') === 1, 'the sessions source does not read the synthetic session');
   assert.equal(metric('cause_count:test-fails'), 1, 'the sessions match rule does not tag the failed test run');
+  assert.match(bundle('retro-sessions'), /^### \[c1\] Bash test_fail: 1 events, 1 sessions, 1 days, causes: test-fails\n- \[e\d+\] .+\n  > Exit code 1$/m, 'the bundle does not cluster the failed test run with its excerpt');
   writeFileSync(stagedConfig, stringify(config));
   run('agents', process.execPath, [cli, 'agents', '--json']); // the host's agent CLIs, scratch HOME, no live call
   // init in a fresh project holding only a defect log, with two fake agent CLIs as the whole PATH; a second init
@@ -166,7 +174,7 @@ try {
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/init.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
       'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');

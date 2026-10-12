@@ -46,6 +46,10 @@ function setup() {
   git('init', '-q');
   git('-c', 'user.name=Umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init');
   git('worktree', 'add', '-q', '--detach', tree);
+  const gate = new DatabaseSync(join(p, 'gate.sqlite')); // the example store's one repo is this project, by its origin
+  gate.prepare('UPDATE repos SET working_path = ?').run('/elsewhere/p');
+  gate.close();
+  git('remote', 'add', 'origin', 'https://example.invalid/umer/example.git');
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
     .replace(/2026-10-0([1-3])T/g, (_, d) => `${day(3 - Number(d))}T`) // the last three days, so inside the window
     .replaceAll('2026-09-24T', `${day(10)}T`) // inside the last window
@@ -231,4 +235,62 @@ causes:
   const report = JSON.parse(lfm('report', '--json').stdout);
   assert.equal(report.causes.find((c) => c.cause === 'timeout-hit').store.rows, failed);
   assert.equal(report.causes.find((c) => c.cause === 'wait-delay')?.store.rows ?? 0, 0);
+});
+
+test('the bundle has ids, refs and redacted excerpts, pointers and counts only with excerpts off, no other repo\'s rows, and keeps to its cap', () => {
+  const { p, lfm } = setup();
+  const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
+  // One defect bullet and one failed gate step of this repo per planted shape, and a failed step of another repo in the same store.
+  const one = PLANTED.filter(([t]) => !t.includes('\n'));
+  writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(0)}\n\n${one.map(([t]) => `- [deploy] Umer pasted ${t} in the log.`).join('\n')}\n`);
+  const gate = new DatabaseSync(join(p, 'gate.sqlite')), at = Math.floor(Date.now() / 1000) - 3600;
+  const step = gate.prepare(`INSERT INTO step_results (id, run_id, step_name, status, error, started_at, completed_at) VALUES (?, ?, 'push', 'failed', ?, ?, ?)`);
+  one.forEach(([t], i) => step.run(`step-planted-${i}`, 'run-a', `push: Umer's remote said ${t}`, at, at));
+  gate.exec(`INSERT INTO repos VALUES ('repo-other', '/elsewhere/other', 'https://example.invalid/umer/other.git');
+    INSERT INTO runs VALUES ('run-x', 'repo-other', 'feat/other')`);
+  step.run('step-other', 'run-x', 'push: OTHER-REPO-CANARY', at, at);
+  gate.close();
+  const bundleOf = (r) => {
+    assert.equal(r.status, 0, r.stderr);
+    const { id } = decode(r.stdout).run;
+    return { id, text: readFileSync(join(p, '.lfm', 'runs', String(id), 'bundle.md'), 'utf8') };
+  };
+
+  const on = bundleOf(lfm('retro', '--foreground'));
+  for (const [, needle] of PLANTED) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
+  assert.ok(!on.text.includes('OTHER-REPO-CANARY') && !on.text.includes('step-other'), 'another repo\'s gate row in bundle.md');
+  assert.deepEqual(query(p, `SELECT count(*) AS n FROM records WHERE text LIKE '%OTHER-REPO-CANARY%'`), [{ n: 0 }]); // never read at all
+  assert.match(on.text, /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
+  assert.match(on.text, /^No follow-ups yet\.$/m);
+  // Clusters by tool and signal, the largest first, each with its latest events; then the records no rule tagged.
+  const clusters = [...on.text.matchAll(/^### \[c(\d+)\] .+: (\d+) events, \d+ sessions, \d+ days, causes: .+$/gm)];
+  assert.deepEqual(clusters.map((c) => Number(c[1])), clusters.map((_, i) => i + 1));
+  assert.deepEqual(clusters.map((c) => Number(c[2])), clusters.map((c) => Number(c[2])).toSorted((a, b) => b - a));
+  assert.match(on.text, /^### \[c1\] Bash test_fail: 2 events, 1 sessions, 1 days, causes: fetch-test-fails$/m); // the failed Reads are in the last window
+  const ids = (re) => [...on.text.matchAll(re)].map((m) => Number(m[1]));
+  const events = ids(/^- \[e(\d+)\] \S+ session s-\w+ at \S+\.jsonl:\d+$/gm), records = ids(/^- \[r(\d+)\] (?:log|gate) at \S+, [\d-]+$/gm);
+  assert.ok(events.length && records.length === 2 * one.length + 2, on.text); // the planted ones, and the two from yesterday
+  assert.equal(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND id IN (${events})`, on.id)[0].n, events.length); // ids are store rows
+  assert.equal(query(p, `SELECT count(*) AS n FROM records WHERE run_id = ? AND cause IS NULL AND id IN (${records})`, on.id)[0].n, records.length);
+  const quotes = on.text.match(/^  > .+$/gm);
+  assert.ok(quotes.length >= records.length && quotes.every((q) => q.length <= 304), 'an item without its excerpt, or one over 300 characters');
+  assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
+
+  // excerpts: off: the same items as pointers and counts, and no text of any record or event.
+  writeFileSync(cfg, `${examples}excerpts: off\n`);
+  const off = bundleOf(lfm('retro', '--foreground'));
+  assert.doesNotMatch(off.text, /^  > /m);
+  const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
+  for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
+  assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));
+  assert.equal([...off.text.matchAll(/^- \[r\d+\] /gm)].length, records.length);
+  assert.equal([...off.text.matchAll(/^### \[c\d+\] /gm)].length, clusters.length);
+
+  // The cap: items that would pass it are dropped, and counted.
+  writeFileSync(cfg, `${examples}caps: { bundle_chars: 1000 }\n`);
+  const capped = bundleOf(lfm('retro', '--foreground'));
+  assert.ok(capped.text.length <= 1000, `${capped.text.length} characters`);
+  assert.match(capped.text, /^Dropped \d+ items to keep the bundle under 1000 characters\.$/m);
+  writeFileSync(cfg, `${examples}caps: { bundle_chars: 999 }\n`);
+  assert.match(lfm('retro', '--foreground').stderr, /caps\.bundle_chars must be at least 1000$/m);
 });

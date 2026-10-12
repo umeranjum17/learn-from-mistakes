@@ -352,7 +352,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect or report
+  --step <name>       (logs) the step: collect, metrics, bundle or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --test <runner>     (agents) one live call to that agent CLI, or acp:<target> through acpx (costs tokens): it must answer and write no file
   --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)

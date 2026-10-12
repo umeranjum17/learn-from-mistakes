@@ -41,7 +41,7 @@ The same file's `a rule tags signal events only` journey adds a `tool: Bash` rul
 that tags the failed Bash result and not the successful one, and a retried quoted
 grep matched by `text_contains` on its plain input; `a gate row takes one cause`
 checks that an overlapping pair gives the first rule in both metrics and report.
-`test/cli.test.mjs` asserts 3 steps per run, that `rerun --resume` keeps the
+`test/cli.test.mjs` asserts 4 steps per run, that `rerun --resume` keeps the
 completed `metrics` step and its numbers, and rejects bad `match` rules and a
 second sessions source (exit 2).
 The helper's `retro-sessions` drive adds a sessions rule and checks

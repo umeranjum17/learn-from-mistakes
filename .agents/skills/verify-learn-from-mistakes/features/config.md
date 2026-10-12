@@ -53,7 +53,7 @@ YAML
 lfm retro --foreground && lfm runs && git status --short
 ```
 
-The run is `completed` with 3 steps and collect reads 13 log and 5 gate items.
+The run is `completed` with 4 steps and collect reads 13 log and 5 gate items.
 Then `worker: { runner: 3 }` exits 2 naming `worker.runner`. Repeat in a scratch
 copy of `$SELF/examples`.
 

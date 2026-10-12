@@ -22,6 +22,7 @@ file's sha256 is identical before and after every ingest. `--package` reruns it
 through the installed bin (`packed-npm-test`).
 
 ## Gotchas
+The store holds every gated repo; only this project's rows are read (its `repos` row by checkout path or `origin`), so a copy of `gate.sqlite` needs its `repos.working_path` set to the copy, as the helper and the journeys do.
 A missing or unreadable store exits 2 with `next: remove the <id> source or point its path at
 your no-mistakes state.sqlite` (journey `an unreadable source or input file is a usage error`).
 The store digest covers only the columns the fixed query selects for failed

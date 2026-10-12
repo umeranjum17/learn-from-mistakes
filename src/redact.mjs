@@ -23,3 +23,7 @@ const RULES = [
 ];
 
 export const redact = (text) => RULES.reduce((t, [re, to]) => t.replace(re, to), String(text));
+
+// An excerpt of a source's text: whitespace collapsed, the first 4000 characters redacted, then cut to 300, so no
+// secret is split at the edge of the kept part.
+export const excerpt = (text) => redact(String(text).replace(/\s+/g, ' ').trim().slice(0, 4000)).slice(0, 300);
