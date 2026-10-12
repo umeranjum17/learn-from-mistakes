@@ -18,7 +18,8 @@ const tail = (text) => text.trim().split('\n').slice(-3).join(' ').slice(-300);
 function which(name) {
   if (name.includes('/')) return existsSync(name) ? name : undefined;
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    const file = join(dir || '.', name);
+    if (!dir) continue;
+    const file = join(dir, name);
     try { accessSync(file, constants.X_OK); if (statSync(file).isFile()) return file; } catch { /* not in this PATH dir */ }
   }
 }

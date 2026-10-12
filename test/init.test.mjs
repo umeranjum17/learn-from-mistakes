@@ -32,7 +32,7 @@ function setup(agents, extraEnv = {}) {
   const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm, ...extraEnv };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   const config = join(p, '.learn-from-mistakes.yaml');
-  return { p, nm, lfm, config };
+  return { p, nm, lfm, config, env };
 }
 
 test('init writes a working config once: a worker and a different judge, the sources found, a git-ignored .lfm', () => {
@@ -92,6 +92,25 @@ test('a pinned judge steers the auto worker onto a different agent CLI, and the 
   assert.deepEqual([out.worker, out.judge], [{ runner: 'codex', model: MODELS.codex[0] }, { runner: 'claude', model: MODELS.claude[0] }]);
   assert.deepEqual(out.gaps, []);
   assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'codex', model: '' });
+});
+
+test('an empty PATH entry never runs an agent CLI from the project dir', () => {
+  const { p, env, config } = setup([]);
+  writeFileSync(join(p, 'claude'), '#!/bin/sh\necho ran > ran.txt\necho "1.0.0"\n');
+  chmodSync(join(p, 'claude'), 0o755);
+  const r = spawnSync(process.execPath, [CLI, 'init', '--dir', p, '--json'], { encoding: 'utf8', cwd: p, env: { ...env, PATH: `${env.PATH}:` } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /^error: worker: no usable agent CLI/m);
+  assert.ok(!existsSync(join(p, 'ran.txt')), 'the project-dir claude ran');
+  assert.ok(!existsSync(config));
+});
+
+test('an existing config with no agent CLI at all says how to install one', () => {
+  const { lfm, config } = setup([]);
+  writeFileSync(config, 'sources: {}\n');
+  const r = lfm('init');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /^next: install claude, codex or opencode, or set runner_path/m);
 });
 
 test('LFM_MODEL is a run-time override: init writes the same pair with it set', () => {
