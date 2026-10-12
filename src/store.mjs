@@ -15,6 +15,9 @@ const MIGRATIONS = [
     UPDATE steps SET status = 'interrupted' WHERE status = 'running';
     UPDATE runs SET status = 'interrupted', error = 'run: the worker stopped before the run ended' WHERE status = 'running';
     CREATE UNIQUE INDEX IF NOT EXISTS runs_one_running ON runs(status) WHERE status = 'running'`,
+  `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), agent TEXT NOT NULL,
+    session_id TEXT NOT NULL, ts TEXT, kind TEXT NOT NULL, tool TEXT, status TEXT, exit_code INTEGER, signal TEXT, cause TEXT,
+    ref TEXT NOT NULL, excerpt TEXT NOT NULL)`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

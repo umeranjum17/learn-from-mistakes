@@ -1,0 +1,1 @@
+{"type":"user","cwd":"$REPO","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","is_error":true,"content":"a workflow journal, not a session"}]}}

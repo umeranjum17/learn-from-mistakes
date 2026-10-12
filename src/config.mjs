@@ -7,11 +7,13 @@ import { parse } from 'yaml';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as markdownLog from './sources/markdown-log.mjs';
 import * as noMistakes from './sources/no-mistakes.mjs';
+import * as sessions from './sources/sessions.mjs';
 
 export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // The source registry: one file per source type, each exporting validate (check and normalise its config entry)
-// and read (its items). A source slice adds one line here.
-export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes };
+// and read (its items). A source may also export metrics (its numbers from what it read), detect (a config entry
+// for init) and doctor (a check line); init and doctor call these two in later slices. A source slice adds one line here.
+export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions };
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
@@ -99,7 +101,7 @@ sources:
       `a metric (${METRICS.join(', ')}, or cause_count:<cause>)`);
     check(typeof v === 'string' && /^(>=|<=|>|<|=) ?\d+(\.\d+)?$/.test(v), `${file}: targets.${k}`, 'a quoted "<op> <number>", such as ">= 70"');
   }
-  // window is checked here; reading applies it in a later release
+  // the read range is this window and the last one; only the sessions source applies it so far
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
   const caps = block('caps', { invocations: 12, bundle_chars: 60000, timeout: '20m' });
   check(typeof caps.timeout === 'string' && /^[1-9]\d*[smh]$/.test(caps.timeout), `${file}: caps.timeout`, 'a duration such as 90s, 20m or 1h');
