@@ -103,6 +103,11 @@ function readJsonl(file, required) {
   });
 }
 
+function readInput(file, explicit) {
+  if (explicit && !existsSync(file)) throw new UsageError(`${file}: no such file`);
+  return readJsonl(file, false);
+}
+
 function ingest(cfg, opts) {
   mkdirSync(cfg.state, { recursive: true });
   const records = [], rows = [], sources = [];
@@ -127,7 +132,7 @@ function analyse(cfg, files) {
   const problems = [];
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
-  for (const l of readJsonl(lf, false)) {
+  for (const l of readInput(lf, files.labels)) {
     const at = `${basename(lf)}:${l._line}`;
     if (!records.has(l.id)) problems.push(`${at}: unknown record id ${l.id}`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for ${l.id}`);
@@ -165,7 +170,7 @@ function analyse(cfg, files) {
     const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
-  const proposals = readJsonl(pf, false).map((p) => {
+  const proposals = readInput(pf, files.proposals).map((p) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
     const missing = refs.filter((ref) => !resolves(ref));

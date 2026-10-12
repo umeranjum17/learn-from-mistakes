@@ -189,6 +189,18 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.doesNotMatch(dir.stderr, /\n\s+at /);
 });
 
+test('an explicit labels or proposals path that does not exist is a usage error', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  assert.equal(lfm('report').status, 0); // the default state-dir inputs may be absent before labelling
+  const labels = lfm('report', '--labels', join(p, 'typo-labels.jsonl'));
+  assert.equal(labels.status, 2, labels.stdout);
+  assert.match(labels.stderr, /typo-labels\.jsonl: no such file/);
+  const proposals = lfm('report', '--proposals', join(p, 'typo-proposals.jsonl'));
+  assert.equal(proposals.status, 2, proposals.stdout);
+  assert.match(proposals.stderr, /typo-proposals\.jsonl: no such file/);
+});
+
 test('empty input exits 3 with a next command', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, 'defects.md'), '');
