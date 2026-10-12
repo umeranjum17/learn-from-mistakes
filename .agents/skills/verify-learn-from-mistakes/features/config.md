@@ -9,12 +9,12 @@ string), `window` (`<n>d`), `targets` (a known metric or `cause_count:<cause>` t
 quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts`
 (`on|off`), `caps` (`invocations`, `bundle_chars`, `timeout` such as `20m`),
 `signoff` (`auto|off`), `allow_premium` (boolean). The global file adds
-`runner_path: {<runner>: <bin>}` (a bare name stays a PATH lookup) and `runner_args: {<runner>: [..]}`. An unknown key
+`runner_path: {<runner>: <bin>}` (a bare name is looked up on absolute PATH entries only) and `runner_args: {<runner>: [..]}`. An unknown key
 or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only
-loaded and checked: only the sessions source reads `excerpts`; nothing reads the runners or the caps yet.
+loaded and checked: only the sessions source reads `excerpts`; `agents` and `init` resolve `worker`/`judge`; nothing reads the caps yet.
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
-exporting `validate` (its own keys) and `read`; `collect`/`ingest` call the
+exporting `validate` (its own keys), `read` and `detect` (init); `collect`/`ingest` call the
 registry. Today: `markdown-log` and `no-mistakes`, unchanged, and `sessions`
 ([sessions.md](sessions.md)). A type with no reader yet (`github`) exits 2
 `sources.<id>.type must be one of ...`. `window` sets the sessions read range and the metrics windows. A cause's `match`
@@ -60,4 +60,5 @@ copy of `$SELF/examples`.
 ## Gotchas
 `>= 70` must be quoted in YAML (a bare `>` starts a block scalar). `on`/`off`
 are strings in YAML 1.2. A source may export `metricNames`, `metricRows`, `metrics`, `detect` and `doctor`
-(the sessions and markdown-log sources export metrics; `metricRows` says which rows they read); init and doctor call the last two in later slices.
+(the sessions and markdown-log sources export metrics; `metricRows` says which rows they read); `init` calls `detect`
+([init.md](init.md)), doctor calls `doctor` in a later slice.

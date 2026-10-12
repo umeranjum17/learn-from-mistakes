@@ -3,7 +3,7 @@
 ## Sub-features
 `src/runners/index.mjs` holds the runner table (claude, codex, opencode, pi, gemini,
 acp, in auto order; acp runs as `acp:<target>` through the `acpx` binary) and `src/models.json` the default models per runner where it lists one (data, no id in
-code). A runner is usable when its binary (global `runner_path`, else PATH) runs
+code). A runner is usable when its binary (global `runner_path`, else an absolute PATH entry) runs
 `--version` with exit 0; a broken shim is not usable and shows the cause. A usable
 runner whose tool-off mode is not confirmed live (gemini, acp) has `problem:
 not offered: <why>` and is never resolved as worker or judge (a pinned one gives

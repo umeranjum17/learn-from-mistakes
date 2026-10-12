@@ -1,10 +1,17 @@
 // markdown-log: a defect log in Markdown. Each top-level "- " bullet is one record.
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
+import { join } from 'node:path';
 import { readText } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 
 export const validate = pathSource;
+// init: the first defect log at a usual place.
+export function detect(dir) {
+  const path = ['defects.md', 'docs/defects.md', 'DEFECTS.md'].find((f) => statSync(join(dir, f), { throwIfNoEntry: false })?.isFile());
+  return path && { type: 'markdown-log', path };
+}
 
 // Each record's id comes from its text, so it survives line moves.
 export function read(source, { path }) {
