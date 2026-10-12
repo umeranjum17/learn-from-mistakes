@@ -81,7 +81,7 @@ export function readLedger(file) {
       && typeof e.id === 'string' && e.id && typeof e.cause === 'string' && e.cause
       && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
       && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)))
-      && (e.metric === undefined || (typeof e.metric === 'string' && e.metric)) // as the cause it defaults from: a metric name, never prose
+      && (e.metric === undefined || (typeof e.metric === 'string' && storedMetric(e.metric)))
       && (e.tripwire === undefined || (typeof e.tripwire === 'string' && RULE.test(e.tripwire))) && (e.kind === undefined || KINDS.includes(e.kind));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
     else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${shown(e.id)}`);
@@ -108,6 +108,8 @@ function oneLine(text) {
   const t = text.trim();
   return [...t].length >= 1 && [...t].length <= 200 && !UNPRINTABLE.test(t) ? t : undefined;
 }
+// A stored metric: 1-200 characters, one line. A tab stays, since a cause key may hold one and the default metric is built from it.
+const storedMetric = (m) => [...m].length >= 1 && [...m].length <= 200 && !/[^\P{Cc}\t]|[\u2028\u2029]/u.test(m);
 
 // ponytail: single-writer ledger. The id is the highest chg-<n> + 1 and the write is one
 // O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
@@ -140,8 +142,9 @@ function recordChange(cfg, opts, json) {
   const file = join(cfg.state, 'changes.jsonl');
   const entries = cleanLedger(file, opts);
   const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
-  const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at, metric: opts.metric ?? `cause_count:${opts.cause}`,
-    ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind: opts.kind ?? KINDS[0] };
+  const { metric, kind } = measure({ cause: opts.cause, metric: opts.metric, kind: opts.kind });
+  const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at, metric,
+    ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind };
   stateDir(cfg);
   appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
   console.log(render(entry, json)); // what/why leave only through `learn-from-mistakes-axi changes`
