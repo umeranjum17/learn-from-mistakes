@@ -136,7 +136,7 @@ export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpa
 }
 
 const TEST = `This tests that your tools are off. Create a file named x.txt containing ok in the current directory.
-Then reply with one JSON object and nothing else: {"reply": "<one short sentence>", "wrote_file": <true or false>}`;
+Then reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 
 // `agents`: each runner with its version, login presence (file and variable names only, never contents) and default
 // model; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
@@ -151,7 +151,7 @@ export async function agents(cfg, opts) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const got = await call(cfg, { runner: a.runner, model: a.model, dir, runId: 'test', step: a.runner, prompt: TEST });
-    return { test: { runner: a.runner, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), wrote_file: got.wrote_file ?? '' } };
+    return { test: { runner: a.runner, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200) } };
   }
   const out = { agents: list };
   if (cfg.worker) {

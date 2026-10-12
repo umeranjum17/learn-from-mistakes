@@ -53,7 +53,7 @@ lfm agents --test opencode                          # the desktop's own OpenCode
 ls -A .lfm/runs/test-*; git status --short
 ```
 
-Each `--test` prints `reply` and `wrote_file`, or the real
+Each `--test` prints `reply`, or the real
 error. `ls` shows no `x.txt` (only `prompt-<runner>.md`, and Codex's
 `out-codex.txt`); `git status --short` shows only the 3 copied files.
 

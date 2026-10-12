@@ -25,7 +25,7 @@ else {
   if (mode === 'flaky' && !fs.existsSync(once)) { fs.writeFileSync(once, ''); console.error('API Error: 529 overloaded'); process.exit(1); }
   if (mode === 'write') fs.writeFileSync('x.txt', 'ok');
   if (mode === 'grandchild') spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();
-  const text = JSON.stringify({ reply: 'hello from ' + name, wrote_file: false });
+  const text = JSON.stringify({ reply: 'hello from ' + name });
   if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: false, result: text }));
   if (name === 'codex') { fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
   if (name === 'opencode') console.log(JSON.stringify({ type: 'text', part: { text: 'thinking' } }) + '\\n' + JSON.stringify({ type: 'text', part: { text } }));
@@ -122,7 +122,7 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
     assert.equal(r.status, 0, r.stderr);
     const dir = join(p, '.lfm', 'runs', `test-${runner}`);
     assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner][0], tools: runner === 'codex' ? 'read-only' : 'off', dir,
-      reply: `hello from ${runner}`, wrote_file: false });
+      reply: `hello from ${runner}` });
     const [c] = calls(runner);
     assert.equal(c.cwd, dir);
     assert.ok(!existsSync(join(dir, 'x.txt')));
