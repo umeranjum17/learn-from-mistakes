@@ -295,7 +295,7 @@ const USAGE = `usage: lfm [<ingest|count|report|change applied>] [options]
   --cause <cause>     (change applied) cause key from the config, never \`other\`
   --ref <ref>         (change applied) version id: git sha (7-40 hex) or sha256:<64 hex>
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
-  --json (report, count, change applied)  print lfm-report.v1 as JSON instead of the default TOON
+  --json (report, count, change applied)  print JSON instead of the default TOON (report, count: lfm-report.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
