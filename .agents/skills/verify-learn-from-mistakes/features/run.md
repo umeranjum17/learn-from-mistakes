@@ -71,5 +71,5 @@ stderr must hold no `ExperimentalWarning`.
 ## Gotchas
 Reconcile needs `/proc` (Linux) or `ps -o lstart=` (macOS) to read a process
 start time. Steps after a failed one stay `pending`. `collect` reads every
-record; only the sessions source applies the read range so far. Windows come in a later slice, with the code that applies them.
+record; only the sessions source applies the read range (`window`).
 `attach`, `logs`, `abort` and a plain `rerun` are a later slice.
