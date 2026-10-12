@@ -10,7 +10,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { encode as toonEncode } from '@toon-format/toon';
 import { parse } from 'yaml';
 
-class UsageError extends Error {}
+// Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
+class UsageError extends Error {
+  code = 2;
+  constructor(message, next = 'lfm --help   # supported commands and options') { super(message); this.next = next; }
+}
+class InputError extends UsageError { code = 1; } // a line in a file the run reads is bad, not the command
 const LFM_HOME = process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
 const PROJECT_FILE = '.learn-from-mistakes.yaml';
 const TYPES = ['markdown-log', 'no-mistakes'];
@@ -35,7 +40,10 @@ function loadConfig(dir) {
   const global = mapping(readYaml(join(LFM_HOME, 'config.yaml')) ?? {}, ['state_root'], join(LFM_HOME, 'config.yaml'));
   const file = join(dir, PROJECT_FILE);
   const p = readYaml(file);
-  if (p === undefined) throw new UsageError(`no ${PROJECT_FILE} in ${dir}`);
+  if (p === undefined) throw new UsageError(`no ${PROJECT_FILE} in ${dir} (or pass --dir <project>); a minimal one:
+name: my-project
+sources:
+  log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`);
   mapping(p, ['name', 'sources', 'causes', 'repeat'], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
@@ -96,11 +104,15 @@ function readStore(source, path) {
   } finally { db?.close(); }
 }
 
-function readJsonl(file, required) {
-  if (!existsSync(file)) { if (required) throw new UsageError(`${file} missing: run lfm ingest first`); return []; }
+// `ingest` (a state file lfm wrote: missing or corrupt is exit 2, fixed by ingest again) or
+// `rerun` (labels/proposals the caller wrote: a bad line is an input problem, exit 1).
+function readJsonl(file, { ingest, rerun }) {
+  if (!existsSync(file)) { if (ingest) throw new UsageError(`${file} missing`, ingest); return []; }
   return readText(file).split('\n').flatMap((l, i) => {
     if (!l.trim()) return [];
-    try { return [{ ...JSON.parse(l), _line: i + 1 }]; } catch { throw new UsageError(`${file}:${i + 1}: not valid JSON`); }
+    try { return [{ ...JSON.parse(l), _line: i + 1 }]; } catch {
+      throw ingest ? new UsageError(`${file}:${i + 1}: not valid JSON`, ingest) : new InputError(`${file}:${i + 1}: not valid JSON`, rerun);
+    }
   });
 }
 
@@ -126,12 +138,21 @@ function readLedger(file) {
   });
   return { entries, problems };
 }
+// `change applied` and `changes` refuse a ledger with problems; the report only counts them.
+function cleanLedger(file, opts) {
+  const { entries, problems } = readLedger(file);
+  if (problems.length) throw new InputError(problems.join('\nerror: '), withContext('lfm changes', 'check the ledger again after fixing those lines', opts));
+  return entries;
+}
 
 const REF_RE = /^(?:[0-9a-f]{7,40}|sha256:[0-9a-f]{64})$/;
+const UNPRINTABLE = /[\p{Cc}\u2028\u2029]/u;
+// A value the user typed, safe to echo: quoted, or a placeholder when long or not printable.
+const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
 // Owner text for --what/--why: trimmed, 1-200 characters, no line breaks or control characters.
 function oneLine(text) {
   const t = text.trim();
-  return [...t].length >= 1 && [...t].length <= 200 && !/[\p{Cc}\u2028\u2029]/u.test(t) ? t : undefined;
+  return [...t].length >= 1 && [...t].length <= 200 && !UNPRINTABLE.test(t) ? t : undefined;
 }
 
 // ponytail: single-writer ledger. The id is the highest chg-<n> + 1 and the write is one
@@ -139,26 +160,27 @@ function oneLine(text) {
 // line is the one way to reuse one). Concurrent writers could read the same ledger and
 // repeat an id; a lock file is the upgrade.
 function recordChange(cfg, opts, json) {
-  if (opts.cause === undefined || opts.ref === undefined) throw new UsageError(USAGE);
-  if (!Object.hasOwn(cfg.causes, opts.cause) || opts.cause === 'other') throw new UsageError(USAGE);
-  if (!REF_RE.test(opts.ref)) throw new UsageError(USAGE);
+  const form = FORMS['change-applied'];
+  for (const k of ['cause', 'ref']) if (opts[k] === undefined) throw new UsageError(`change applied needs --${k}`, form);
+  const known = Object.keys(cfg.causes).filter((c) => c !== 'other');
+  if (!known.includes(opts.cause)) {
+    const list = `known: ${known.join(', ') || `none, add causes to ${PROJECT_FILE}`}`;
+    throw new UsageError(opts.cause === 'other' ? `cause "other" is reserved and never recordable (${list})` : `unknown cause ${shown(opts.cause)} (${list}; "other" is reserved)`, form);
+  }
+  if (!REF_RE.test(opts.ref)) throw new UsageError(`--ref ${shown(opts.ref)} must be a 7-40 lowercase hex commit or sha256:<64 lowercase hex>`, 'git rev-parse HEAD   # a commit id to pass as --ref');
   let at;
   if (opts.at === undefined) at = new Date().toISOString();
   else {
     const ms = Date.parse(opts.at);
-    if (Number.isNaN(ms)) throw new UsageError(USAGE);
+    if (Number.isNaN(ms)) throw new UsageError(`--at ${shown(opts.at)} must be an ISO 8601 time`, withContext(`lfm change applied --cause ${opts.cause} --ref ${opts.ref} --at 2026-10-12T09:00:00Z`, 'or leave --at out for now', opts));
     at = new Date(ms).toISOString();
   }
   const text = {};
   for (const k of ['what', 'why']) {
-    if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} must be one line of 1-200 characters, with no line breaks or control characters`);
+    if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} must be one line of 1-200 characters, with no line breaks or control characters`, form);
   }
   const file = join(cfg.state, 'changes.jsonl');
-  const { entries, problems } = readLedger(file);
-  if (problems.length) {
-    for (const p of problems) console.error(p);
-    process.exit(1);
-  }
+  const entries = cleanLedger(file, opts);
   const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
   const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
   mkdirSync(cfg.state, { recursive: true });
@@ -169,20 +191,15 @@ function recordChange(cfg, opts, json) {
 
 // lfm-changes.v1: every applied change in ledger order. The join key is `project` + `id`.
 function exportChanges(cfg, opts, json) {
-  const { entries, problems } = readLedger(join(cfg.state, 'changes.jsonl'));
-  if (problems.length) {
-    for (const p of problems) console.error(p);
-    process.exit(1);
-  }
-  const changes = entries.map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, what: e.what ?? '', why: e.why ?? '' }));
+  const changes = cleanLedger(join(cfg.state, 'changes.jsonl'), opts).map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, what: e.what ?? '', why: e.why ?? '' }));
   console.log(render({ schema: 'lfm-changes.v1', generated_at: new Date().toISOString(), project: cfg.name, changes }, json));
   if (!changes.length) hint(withContext('lfm change applied --cause <cause> --ref <ref> --what <text> --why <text>', 'record a change you already made', opts));
   else hint(json ? withContext('lfm report', 'the per-cause counts', opts) : withContext('lfm changes --json', 'the same export as JSON', opts));
 }
 
-function readInput(file, explicit) {
+function readInput(file, explicit, rerun) {
   if (explicit && !existsSync(file)) throw new UsageError(`${file}: no such file`);
-  return readJsonl(file, false);
+  return readJsonl(file, { rerun });
 }
 
 function ingest(cfg, opts) {
@@ -199,29 +216,34 @@ function ingest(cfg, opts) {
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   for (const s of sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
-  console.log(`state: ${cfg.state}\nnext: label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`);
+  console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(opts)}`);
+  if (!Object.keys(cfg.causes).some((c) => c !== 'other')) hint('no causes configured: every label will be other; ask your agent to propose causes');
 }
 
-function analyse(cfg, files) {
-  const records = new Map(readJsonl(join(cfg.state, 'records.jsonl'), true).map((r) => [r.id, r]));
-  const rows = readJsonl(join(cfg.state, 'rows.jsonl'), true);
+function analyse(cfg, files, rerun) {
+  const reingest = withContext('lfm ingest', 'read the configured sources into the state dir', files);
+  const records = new Map(readJsonl(join(cfg.state, 'records.jsonl'), { ingest: reingest }).map((r) => [r.id, r]));
+  const rows = readJsonl(join(cfg.state, 'rows.jsonl'), { ingest: reingest });
   const metaFile = join(cfg.state, 'sources.json');
-  if (!existsSync(metaFile)) throw new UsageError(`${metaFile} missing: run lfm ingest first`);
+  if (!existsSync(metaFile)) throw new UsageError(`${metaFile} missing`, reingest);
   let meta;
-  try { meta = JSON.parse(readText(metaFile)); } catch (e) { if (e instanceof UsageError) throw e; throw new UsageError(`${metaFile}: not valid JSON`); }
-  if (!meta || typeof meta !== 'object' || !Array.isArray(meta.sources)) throw new UsageError(`${metaFile}: not valid sources state (run lfm ingest again)`);
+  try { meta = JSON.parse(readText(metaFile)); } catch (e) { if (e instanceof UsageError) throw e; throw new UsageError(`${metaFile}: not valid JSON`, reingest); }
+  if (!meta || typeof meta !== 'object' || !Array.isArray(meta.sources)) throw new UsageError(`${metaFile}: not valid sources state`, reingest);
   const problems = [];
   const { entries: changes, problems: ledgerProblems } = readLedger(join(cfg.state, 'changes.jsonl'));
   problems.push(...ledgerProblems);
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
-  for (const l of readInput(lf, files.labels)) {
+  // Problem lines name file:line and the rule broken; a value is echoed only when it is not a
+  // real record id (a hash of private text), and then only through `shown`.
+  const id = (v) => (typeof v === 'string' ? shown(v) : 'a non-string id');
+  for (const l of readInput(lf, files.labels, rerun)) {
     const at = `${basename(lf)}:${l._line}`;
-    if (!records.has(l.id)) problems.push(`${at}: unknown record id ${l.id}`);
-    else if (labels.has(l.id)) problems.push(`${at}: second label for ${l.id}`);
+    if (!records.has(l.id)) problems.push(`${at}: unknown record id ${id(l.id)} (its record text changed or it was never ingested)`);
+    else if (labels.has(l.id)) problems.push(`${at}: second label for the record labelled at line ${labels.get(l.id)._line}`);
     else if (typeof l.event !== 'boolean' || typeof l.why !== 'string' || !l.why.trim()) problems.push(`${at}: needs event (true/false) and why`);
-    else if (l.event && (typeof l.cause !== 'string' || (!Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other'))) problems.push(`${at}: cause ${l.cause} is not in the config`);
-    else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names unknown record ${l.duplicate_of}`);
+    else if (l.event && (typeof l.cause !== 'string' || (!Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other'))) problems.push(`${at}: cause ${typeof l.cause === 'string' ? shown(l.cause) : 'that is not a string'} is not in the config`);
+    else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names unknown record ${id(l.duplicate_of)}`);
     else if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) problems.push(`${at}: occurrences must be a positive integer`);
     else labels.set(l.id, l);
   }
@@ -253,11 +275,12 @@ function analyse(cfg, files) {
     const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
-  const proposals = readInput(pf, files.proposals).map((p) => {
+  const proposals = readInput(pf, files.proposals, rerun).map((p) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
     const missing = refs.filter((ref) => !resolves(ref));
-    const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${p.cause} has no counted events` : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.join(', ')}` : !p.change ? 'no change text' : '';
+    const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
+      : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.map(id).join(', ')}` : !p.change ? 'no change text' : '';
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
     return { ...p, refs: refs.filter(resolves), ok: !bad };
   });
@@ -353,43 +376,51 @@ const NEXT = (json, full, opts) => {
   const detail = full || json ? '--full --json' : '--full';
   return withContext(`lfm report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
 };
-const COMMANDS = ['ingest', 'count', 'report', 'change-applied', 'changes'];
+const LABEL_STEP = (opts) => `label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`;
+// The allowed form of each command; the flags it takes are read from it.
+const FORMS = {
+  ingest: 'lfm ingest [--dir <dir>]',
+  count: 'lfm count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
+  report: 'lfm report [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
+  'change-applied': 'lfm change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
+  changes: 'lfm changes [--dir <dir>] [--json]',
+};
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why'];
+const PROBLEM_LINES = 20;
 
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('-h') || argv.includes('--help')) { console.log(HELP); return; }
   if (argv.includes('-v') || argv.includes('--version')) { console.log(VERSION); return; }
   let cmd = 'report'; // no command, or a leading flag, runs the main report job
-  if (argv[0] !== undefined && !argv[0].startsWith('-')) cmd = argv.shift();
+  const named = argv[0] !== undefined && !argv[0].startsWith('-');
+  if (named) cmd = argv.shift();
   if (cmd === 'change') {
-    if (argv.shift() !== 'applied') throw new UsageError(USAGE);
+    if (argv[0] !== 'applied') throw new UsageError('"change" must be followed by "applied"', FORMS['change-applied']);
+    argv.shift();
     cmd = 'change-applied';
   }
-  if (!COMMANDS.includes(cmd)) throw new UsageError(USAGE);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: ingest, count, report, change applied, changes)`);
+  const name = cmd.replace('-', ' '), form = FORMS[cmd];
+  const next = named ? form : undefined; // a bare `lfm --bogus` points at --help
   const opts = {};
   let json = false, full = false;
   for (let i = 0; i < argv.length;) {
     const flag = argv[i];
-    if (flag === '--json' || flag === '--full') { if (flag === '--json') json = true; else full = true; i += 1; }
-    else if (['--dir', '--labels', '--proposals'].includes(flag) && argv[i + 1] !== undefined) { opts[flag.slice(2)] = resolve(argv[i + 1]); i += 2; }
-    else if (['--cause', '--ref', '--at', '--what', '--why'].includes(flag) && argv[i + 1] !== undefined) { opts[flag.slice(2)] = argv[i + 1]; i += 2; }
-    else throw new UsageError(USAGE);
+    if (!flag.startsWith('-')) throw new UsageError(`unexpected argument ${shown(flag)}`, next);
+    if (!VALUE_FLAGS.includes(flag) && flag !== '--json' && flag !== '--full') throw new UsageError(`unknown option ${shown(flag)}`, next);
+    if (!form.includes(`${flag} `) && !form.includes(`${flag}]`)) throw new UsageError(`${name} does not take ${flag}`, next ?? form);
+    if (flag === '--json' || flag === '--full') { if (flag === '--json') json = true; else full = true; i += 1; continue; }
+    if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`, next ?? form);
+    opts[flag.slice(2)] = ['--dir', '--labels', '--proposals'].includes(flag) ? resolve(argv[i + 1]) : argv[i + 1];
+    i += 2;
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
-  if (cmd === 'ingest' && (json || full)) throw new UsageError(USAGE);
   if (cmd === 'ingest') { ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
-  if (cmd === 'change-applied') {
-    if (full || opts.labels !== undefined || opts.proposals !== undefined) throw new UsageError(USAGE);
-    recordChange(cfg, opts, json);
-    return;
-  }
-  if (['cause', 'ref', 'at', 'what', 'why'].some((k) => opts[k] !== undefined)) throw new UsageError(USAGE);
-  if (cmd === 'changes') {
-    if (full || opts.labels !== undefined || opts.proposals !== undefined) throw new UsageError(USAGE);
-    exportChanges(cfg, opts, json);
-    return;
-  }
-  const a = analyse(cfg, opts);
+  if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }
+  if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
+  const rerun = withContext(`lfm ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
+  const a = analyse(cfg, opts, rerun);
   if (!a.records.size && !a.rows.length) {
     console.error('no records or rows in the sources: nothing to count');
     hint(withContext('lfm ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', opts));
@@ -397,16 +428,18 @@ function main() {
   }
   console.log(render(project(a, full), json));
   if (a.problems.length) {
+    for (const p of a.problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
+    if (a.problems.length > PROBLEM_LINES) console.error(`problem: ... and ${a.problems.length - PROBLEM_LINES} more`);
     console.error(`problems: ${a.problems.length}   # fix the inputs or the change ledger`);
-    hint(withContext(`lfm report${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts));
+    hint(rerun);
     process.exit(1);
   }
-  hint(NEXT(json, full, opts));
+  hint(a.records.size && !a.labels.size ? LABEL_STEP(opts) : NEXT(json, full, opts));
 }
 
 try { main(); } catch (e) {
   if (!(e instanceof UsageError)) throw e;
-  console.error(e.message);
-  hint('lfm --help   # supported commands and options');
-  process.exit(2);
+  console.error(`error: ${e.message}`);
+  hint(e.next);
+  process.exit(e.code);
 }

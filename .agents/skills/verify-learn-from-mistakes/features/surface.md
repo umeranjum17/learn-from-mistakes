@@ -19,6 +19,14 @@ config, default TOON decoding to the same `lfm-report.v1` model as `--json`,
 `report-detail` (`--full` alone) only to capture their real stdout/stderr as
 evidence; it does not duplicate those assertions. Exit codes stay `0`/`1`/`2`/`3`.
 
+Rejected input: the journey `every rejected input names what was wrong and a next step, never
+the whole usage` drives each bad command, option, flag scope, missing value, cause (`other`, unknown,
+over 80 characters, control character), `--ref`, `--at`, `--what`, a missing config (prints a minimal
+config) and a malformed labels line, asserting the exit code, the `error:` line, the `next:` line and
+that stderr never holds the usage block. For the packed proof, drive the same inputs with the
+installed bin and keep the transcript (`lfm <bad input>; echo exit=$?`). Ingest with no causes
+configured prints `next: no causes configured: ...`.
+
 ## Gotchas
 The report's default, `--json` and `--full` outputs are one privacy-bounded projection:
 identifiers and counts only (the separate `changes` export carries owner-written `what`/`why`, see [change.md](change.md)). `--full` is not permission to print private evidence.

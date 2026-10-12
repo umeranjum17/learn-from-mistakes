@@ -135,7 +135,14 @@ The `.learn-from-mistakes.yaml` above is all the configuration. Then `lfm ingest
 
 ## Exit codes
 
-`0` ok, `1` a label, a proposal or the existing change ledger has a problem (the report includes a count of problems; `changes` prints only `file:line`), `2` bad usage or config (a rejected `change applied` never touches the ledger), `3` the sources hold nothing. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
+| Code | Meaning | stderr |
+| --- | --- | --- |
+| `0` | ok | a `next:` hint |
+| `1` | an input problem: a label, a proposal or the existing change ledger has a problem, including a line that is not valid JSON | `error: <file>:<line>: not valid JSON`, or for the report one `problem: <file>:<line>: ...` line each (line numbers and ids, never record text) and `problems: N`; then `next:` |
+| `2` | bad usage or config: an unknown command or option, a flag the command does not take, a missing or invalid value, a bad `.learn-from-mistakes.yaml`, missing state | `error:` naming the flag or value (a value longer than 80 characters or with control characters shows as `(invalid value)`), then `next:` with the allowed form or a runnable command, never the whole usage |
+| `3` | the sources hold nothing | `next: lfm ingest` |
+
+A rejected `change applied` never touches the ledger. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
 
 ## What it does not do
 
