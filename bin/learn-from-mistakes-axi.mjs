@@ -81,7 +81,9 @@ function stateDir(cfg) {
   try { writeFileSync(file, '*\n', { flag: 'wx' }); } catch (e) {
     if (e.code !== 'EEXIST') throw new UsageError(`${file}: cannot write (${e.code})`, 'chmod u+rwx <project>/.lfm   # the tool writes .lfm/.gitignore there');
     // git reads only a regular .gitignore; a directory or symlink there would leave the state committable
-    if (!lstatSync(file).isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`,
+    let st;
+    try { st = lstatSync(file); } catch (e2) { throw new UsageError(`${file}: cannot read (${e2.code})`, 'chmod u+r <project>/.lfm/.gitignore   # the tool checks it ignores all of .lfm'); }
+    if (!st.isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`,
       'rm -r <project>/.lfm/.gitignore   # the tool then writes one that ignores all of .lfm');
     let text;
     try { text = readFileSync(file, 'utf8'); } catch (e2) { throw new UsageError(`${file}: cannot read (${e2.code})`, 'chmod u+r <project>/.lfm/.gitignore   # the tool checks it ignores all of .lfm'); }
