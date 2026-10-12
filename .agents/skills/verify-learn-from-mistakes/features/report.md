@@ -2,7 +2,8 @@
 
 ## Sub-features
 Evidence-backed recommendations, unresolved refs, unread coverage, bad config,
-malformed labels and empty input.
+malformed labels, empty input, and proposal rules (repeated causes only, with
+target and owner, at most five lines).
 
 ## How to get to it (user POV)
 Run `learn-from-mistakes-axi` or `learn-from-mistakes-axi report --labels <file> --proposals <file>` after ingest; add
@@ -19,7 +20,10 @@ ref `nope` as one problem and exits 1 without printing it anywhere (stderr says
 `problem: refs.jsonl:1: 1 of 1 refs not found`); malformed JSON exits 1 with `error: <file>:<line>: not valid JSON`;
 unknown IDs count as a problem and, like a second label (which names the line of the first),
 never echo a record id; with zero labels the `next:` hint is the labelling step and names the absolute `records.jsonl` path; unknown config key `colour` is
-rejected. The empty-input journey exits 3, says nothing to count and prints a
+rejected. A proposal for a counted-but-unrepeated cause, a missing or blank
+target, a missing or blank owner, and a sixth proposal line each exit 1 with
+their own `problem: <file>:<line>:` message while the report still prints with
+the problem counted; the stock examples still exit 0. The empty-input journey exits 3, says nothing to count and prints a
 `next: learn-from-mistakes-axi ingest` hint. These are driven by the real CLI, not new unit tests.
 
 ## Gotchas
