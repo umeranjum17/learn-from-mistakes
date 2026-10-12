@@ -28,8 +28,9 @@ Checks, in order:
   with the login command; a probe that does not finish in 20 s is a warn. pi is the one
   exception: a probe that fails for any reason (exit, error, signal, timeout) is checked
   against `~/.pi/agent/auth.json` by existence only: present is a warn with the exit code,
-  absent is a fail with `pi # then /login`. Claude and
-  Gemini: login file or key variable presence (warn when none: it may be in the keychain).
+  absent is a fail with `pi # then /login`. A pi role with no model has no probe and gets the
+  file-presence check below. Claude and Gemini: login file or key variable presence (warn
+  when none: it may be in the keychain). The pi case warns the same way.
 - `worker model`/`judge model`: no model and no `models.json` default is a warn; a
   premium name (`opus`, `sonnet`, `sol`) is a fail unless `allow_premium: true`
   (`LFM_MODEL` is named, and `unset LFM_MODEL` is in the fix).
