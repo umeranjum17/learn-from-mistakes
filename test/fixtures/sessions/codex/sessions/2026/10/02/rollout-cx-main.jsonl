@@ -1,0 +1,24 @@
+{"timestamp":"2026-10-02T09:00:00.000Z","type":"session_meta","payload":{"id":"cx-main","cwd":"$REPO","cli_version":"0.159.0"}}
+{"timestamp":"2026-10-02T09:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for $REPO"}]}}
+{"timestamp":"2026-10-02T09:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>$REPO</cwd>\n</environment_context>"}]}}
+{"timestamp":"2026-10-02T09:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Umer: the tests fail, fix them."}]}}
+{"timestamp":"2026-10-02T09:00:03.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"encrypted_content":"x"}}
+{"timestamp":"2026-10-02T09:00:04.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}","call_id":"c1"}}
+{"timestamp":"2026-10-02T09:00:05.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"Process exited with code 1\n$SECRETS_A END"}}
+{"timestamp":"2026-10-02T09:00:06.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Umer: not like that, $SECRETS_B END"}]}}
+{"timestamp":"2026-10-02T09:00:07.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"cat missing.txt\"}","call_id":"c2"}}
+{"timestamp":"2026-10-02T09:00:08.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c2","output":"Chunk ID: a2\nProcess exited with code 2\nOutput:\nno such file"}}
+{"timestamp":"2026-10-02T09:00:09.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"That file is missing; I will look for it."}]}}
+{"timestamp":"2026-10-02T09:00:10.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Umer: it is in docs/."}]}}
+{"timestamp":"2026-10-02T09:00:11.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch\n*** Update File: a.js\n*** End Patch","call_id":"c3"}}
+{"timestamp":"2026-10-02T09:00:12.000Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"c3","success":false,"stdout":"","stderr":"no match"}}
+{"timestamp":"2026-10-02T09:00:12.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c3","output":"apply_patch verification failed"}}
+{"timestamp":"2026-10-02T09:00:13.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"text(await tools.exec_command({cmd: 'ls'}))","call_id":"c4"}}
+{"timestamp":"2026-10-02T09:00:14.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c4","output":[{"type":"input_text","text":"Script completed\nOutput:\n"},{"type":"input_text","text":"{\"exit_code\":0,\"output\":\"a.js\"}"}]}}
+{"timestamp":"2026-10-02T09:00:15.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"cat missing.txt\"}","call_id":"c5"}}
+{"timestamp":"2026-10-02T09:00:16.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c5","output":"Chunk ID: a5\nProcess exited with code 0\nOutput:\n"}}
+{"timestamp":"2026-10-02T09:00:17.000Z","type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}
+{"timestamp":"2026-10-02T09:00:18.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"throw new Error('x')","call_id":"c6"}}
+{"timestamp":"2026-10-02T09:00:19.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c6","output":[{"type":"input_text","text":"Script failed\nScript error:\nx"}]}}
+not json
+{"timestamp":"2026-10-02T09:00:20.000Z","type":"world_state","payload":{"full":true}}

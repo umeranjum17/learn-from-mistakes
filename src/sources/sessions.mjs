@@ -13,8 +13,10 @@ import { inWindow } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
 import * as claude from '../sessions/claude.mjs';
+import * as codex from '../sessions/codex.mjs';
+import * as opencode from '../sessions/opencode.mjs';
 
-const READERS = { claude };
+const READERS = { claude, codex, opencode };
 export const SIGNALS = ['tool_error', 'nonzero_exit', 'test_fail', 'correction', 'interrupt', 'retry'];
 
 export function validate(s, where, dir) {
@@ -91,7 +93,7 @@ export const detect = () => (Object.values(READERS).some((r) => existsSync(r.roo
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {
   const missing = entry.agents.filter((a) => !existsSync(READERS[a].root()));
-  if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<your Claude Code config dir>   # if it is not ~/.claude' };
+  if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<dir> CODEX_HOME=<dir> XDG_DATA_HOME=<dir>   # where Claude Code, Codex or OpenCode keep their sessions, if not the default' };
   try {
     const got = await read(source, entry, { ...ctx, excerpts: false });
     return { level: 'ok', detail: `${got.sessions} sessions, ${got.skipped} skipped records` };
