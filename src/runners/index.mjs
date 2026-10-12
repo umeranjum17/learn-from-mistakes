@@ -132,7 +132,7 @@ export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpa
     if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (caps.timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, FIX);
     if (r.spawnError) throw new InputError(`${runner}: cannot start ${bin} (${r.spawnError.code})`, FIX);
     const got = mod.answer(r.out, { dir, step });
-    const cause = got.error ?? (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');
+    const cause = got.error || (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');
     if (cause && TRANSIENT.test(cause) && !QUOTA.test(cause) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
     if (cause) throw new InputError(`${runner}: ${cause}`, FIX);
     const obj = json(got.text ?? '');

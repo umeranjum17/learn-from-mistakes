@@ -17,7 +17,7 @@ export function answer(out) {
     let e;
     try { e = JSON.parse(line); } catch { continue; }
     if (e?.type === 'text') text = e.part?.text;
-    if (e?.type === 'error') error ??= e.error?.data?.message ?? e.error?.name ?? 'unknown error';
+    if (e?.type === 'error') error ??= e.error?.data?.message || e.error?.name || 'unknown error';
   }
   return error ? { error } : { text };
 }

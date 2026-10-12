@@ -12,5 +12,5 @@ export const command = ({ model, extra }) => ({
 export function answer(out) {
   let r;
   try { r = JSON.parse(out); } catch { return {}; }
-  return r?.is_error ? { error: String(r.result) } : { text: r?.result };
+  return r?.is_error ? { error: String(r.result || 'is_error with no message') } : { text: r?.result };
 }
