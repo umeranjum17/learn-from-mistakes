@@ -73,7 +73,7 @@ error (no gemini login: "Authentication cancelled by user"). `ls` shows no `x.tx
 A mise shim on PATH resolves to mise itself, so two shimmed runners count as the
 same binary (the identity rule then refuses, the safe side). A launcher script
 that finds its runtime under `$HOME` fails `--version` under a lab HOME and is
-"not usable" there. OpenCode keeps its session; later retros skip it by the
+"not usable" there. OpenCode and Gemini keep their sessions; later retros skip them by the
 `lfm-run:` marker and the `.lfm/` run dir. Codex can still read files (R3).
 Under a lab HOME, mise launchers (`~/.local/bin/<tool>`) install their tool into
 that HOME on `--version` (slow; it stays in the scratch HOME); pi and gemini keep

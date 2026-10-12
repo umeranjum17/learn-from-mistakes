@@ -122,7 +122,7 @@ learn-from-mistakes-axi logs --step <name>   print one step's log (--run <id> fo
 learn-from-mistakes-axi abort     stop the running run; it ends as cancelled
 learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait <time>]   start a new run with the current config (default: follows the last run); --run <id> names the run it follows; --resume finishes that run from its first step that is not completed
 learn-from-mistakes-axi agents    list the agent CLIs the tool can start: usable, version, login presence, default model
-learn-from-mistakes-axi agents --test <runner>   one live call to that agent CLI (costs tokens): it must answer and write no file
+learn-from-mistakes-axi agents --test <runner>   one live call to that agent CLI, or `acp:<target>` through acpx (costs tokens): it must answer and write no file
 learn-from-mistakes-axi --help    show the commands and options
 learn-from-mistakes-axi --version show the version
 ```
