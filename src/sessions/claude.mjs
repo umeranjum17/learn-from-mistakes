@@ -32,6 +32,7 @@ async function parse(file, { session, keep, sub, excerpt }) {
       start ??= at.ts;
       const blocks = typeof r.message?.content === 'string' ? [{ type: 'text', text: r.message.content }] : Array.isArray(r.message?.content) ? r.message.content : [];
       if (r.type === 'assistant') {
+        if (blocks.some((b) => b?.type === 'text')) afterError = false; // an assistant reply ends the adjacency
         for (const b of blocks) {
           if (b?.type !== 'tool_use') continue;
           const key = `${b.name}\0${JSON.stringify(b.input)}`;
@@ -63,7 +64,7 @@ async function parse(file, { session, keep, sub, excerpt }) {
       first = false;
       if (/^\s*</.test(text)) continue; // a command, hook or system message wrapped in a tag
       if (text.startsWith('[Request interrupted')) events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' });
-      // A person's message right after a tool error corrects the agent.
+      // A person's message right after a tool error, with no assistant reply between, corrects the agent.
       else events.push({ ...at, kind: afterError ? 'correction' : 'user_msg', signal: afterError ? 'correction' : null, excerpt: afterError ? excerpt(text) : '' });
       afterError = false;
     }

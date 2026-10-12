@@ -107,7 +107,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const id = run.run.id;
   assert.deepEqual(query(p, 'SELECT DISTINCT session_id FROM events WHERE run_id = ? ORDER BY 1', id).map((e) => e.session_id), ['s-main', 's-own', 's-sub', 's-tree']);
   const signals = Object.fromEntries(query(p, 'SELECT signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY signal', id).map((e) => [e.signal, e.n]));
-  assert.deepEqual(signals, { correction: 2, interrupt: 1, retry: 1, test_fail: 2, tool_error: 2 }); // one old error and correction are stored, not counted
+  assert.deepEqual(signals, { correction: 1, interrupt: 1, retry: 1, test_fail: 2, tool_error: 2 }); // one old error is stored, not counted; a reply after an error is not a correction
   const sub = query(p, `SELECT session_id, tool, signal FROM events WHERE run_id = ? AND ref LIKE '%/subagents/agent-a1.jsonl:%' AND kind = 'tool_result'`, id);
   assert.deepEqual(sub, [{ session_id: 's-main', tool: 'Grep', signal: 'tool_error' }]); // a subagent file is read
   assert.deepEqual(query(p, `SELECT exit_code FROM events WHERE run_id = ? AND signal = 'test_fail'`, id).map((e) => e.exit_code), [1, 1]);
