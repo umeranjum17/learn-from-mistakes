@@ -905,13 +905,13 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.doesNotMatch(log.stdout, /sha256/);
   const nope = lfm('logs', '--step', 'analyse');
   assert.equal(nope.status, 2, nope.stderr);
-  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "analyse" \\(steps: collect, report\\)$`, 'm'));
+  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "analyse" \\(steps: collect, metrics, report\\)$`, 'm'));
 
   // abort stops a running run: its worker ends and the run is cancelled; a new retro is not blocked.
   const slow = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'report' } });
   const { run } = JSON.parse(slow.stdout);
   after(() => { try { process.kill(run.pid, 'SIGKILL'); } catch {} });
-  await wait(() => JSON.parse(lfm('status', '--json').stdout).steps[1].status === 'running');
+  await wait(() => JSON.parse(lfm('status', '--json').stdout).steps[2].status === 'running');
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -920,7 +920,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const a = JSON.parse(aborted.stdout);
   assert.equal(a.run.status, 'cancelled');
   assert.equal(a.run.error, 'report: cancelled by SIGTERM'); // the worker's own trap ended it
-  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'cancelled']);
+  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', 'cancelled']);
   assert.throws(() => process.kill(run.pid, 0), { code: 'ESRCH' }, 'the worker is gone');
   assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
   const idle = lfm('abort');
@@ -936,7 +936,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.match(rerun.stderr, new RegExp(`^rerun: started run ${run.id + 1} from run ${run.id}$`, 'm'));
   const r = JSON.parse(rerun.stdout);
   assert.deepEqual([r.run.id, r.from], [run.id + 1, run.id]);
-  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed']);
+  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed', 'completed']);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs.map((x) => x.status), ['completed', 'cancelled', 'completed']);
 });
 
