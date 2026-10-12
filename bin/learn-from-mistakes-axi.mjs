@@ -8,7 +8,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { loadConfig, PROJECT_FILE, SOURCES } from '../src/config.mjs';
-import { rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -145,6 +145,8 @@ function readInput(file, flag, explicit, rerunHint) {
   if (explicit && !existsSync(file)) throw new UsageError(`--${flag} ${file}: no such file`, `--${flag} <an existing ${flag}.jsonl>   # or leave --${flag} out to read the state dir`);
   return readJsonl(file, { rerunHint });
 }
+
+export const sourceLine = (s) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`;
 
 // Reads every configured source into the state dir and returns each source's id, type, item count and hash.
 export async function ingest(cfg) {
@@ -295,7 +297,7 @@ const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEnc
 // repeated, in report order, with the same incidents/days the report shows.
 // A cause repeated only through store rows says rows, never incidents.
 // Identifiers and counts only, never record text.
-function summaryLine(model) {
+export function summaryLine(model) {
   const parts = [];
   for (const c of model.causes) {
     if (!c.repeated) continue;
@@ -305,7 +307,7 @@ function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes|retro|status|runs|rerun>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
   guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
@@ -317,7 +319,11 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
                       that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
-  rerun --resume      finish an interrupted, cancelled or failed run from its first step that is not completed
+  attach              print the run's step states and log lines as they come, until it ends
+  logs --step <name>  print one step's log lines
+  abort               stop the running run: its worker ends and the run is cancelled
+  rerun               start a new run with the same settings; --resume finishes an interrupted, cancelled
+                      or failed run from its first step that is not completed
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)
@@ -326,9 +332,10 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
-  --run <id>          (status, rerun) the saved run (default: the last one)
+  --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
+  --step <name>       (logs) the step: collect or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
-  --json (report, count, change applied, changes, retro, status, runs, rerun)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
+  --json (report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
@@ -421,9 +428,12 @@ const FORMS = {
   retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
   runs: 'learn-from-mistakes-axi runs [--dir <dir>] [--json]',
-  rerun: 'learn-from-mistakes-axi rerun --resume [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
+  attach: 'learn-from-mistakes-axi attach [--run <id>] [--dir <dir>] [--json]',
+  logs: 'learn-from-mistakes-axi logs --step <name> [--run <id>] [--dir <dir>] [--json]',
+  abort: 'learn-from-mistakes-axi abort [--run <id>] [--dir <dir>] [--json]',
+  rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
 };
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--step'];
 const SWITCHES = ['--json', '--full', '--foreground', '--resume'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -441,7 +451,7 @@ async function main() {
     cmd = 'change-applied';
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun)`);
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -462,15 +472,15 @@ async function main() {
   }
   const { json, full } = opts;
   if (cmd === 'guide') { console.log(guideText()); return; }
-  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['wait', /^[1-9]\d{0,3}[smh]$/, 'a time like 30s, 8m or 1h']]) {
+  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['wait', /^[1-9]\d{0,3}[smh]$/, 'a time like 30s, 8m or 1h'], ['step', /^[a-z]{1,32}$/, 'a step name such as collect or report']]) {
     if (opts[k] !== undefined && !re.test(opts[k])) throw new UsageError(`--${k} ${shown(opts[k])} must be ${rule}`, form);
   }
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
-  if (cmd === 'rerun' && !opts.resume) throw new UsageError('rerun starts a new run in a later version: pass --resume to finish a run that did not complete', form);
+  if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
-    for (const s of await ingest(cfg)) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
+    for (const s of await ingest(cfg)) console.log(sourceLine(s));
     console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);
     if (!Object.keys(cfg.causes).some((c) => c !== 'other')) hint('no causes configured: every label will be other; ask your agent to propose causes');
     hint(withContext('learn-from-mistakes-axi', 'the report for this project', opts));
@@ -478,7 +488,7 @@ async function main() {
   }
   if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
-  if (['retro', 'status', 'runs', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
+  if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   const { model, problems } = buildReport(cfg, opts, rerunHint, full);
   console.log(render(model, json));
@@ -494,7 +504,7 @@ async function main() {
   hint(model.coverage.total_records && !model.coverage.labelled ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
 }
 
-// retro, status, runs and rerun open the run store. node:sqlite warns it is experimental on Node 22, so these
+// The run commands open the run store. node:sqlite warns it is experimental on Node 22, so these
 // commands drop that one warning; every other warning still prints.
 async function runCommand(cmd, cfg, opts) {
   const print = process.listeners('warning');
@@ -503,7 +513,7 @@ async function runCommand(cmd, cfg, opts) {
   const file = join(cfg.state, 'lfm.sqlite');
   let out;
   try {
-    out = await { retro, status, runs, rerun }[cmd](cfg, opts);
+    out = await { retro, status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
   } catch (e) {
     if (e.code !== 'ERR_SQLITE_ERROR') throw e;
     if (e.message.includes('UNIQUE constraint failed: runs.status')) throw new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
@@ -512,7 +522,9 @@ async function runCommand(cmd, cfg, opts) {
   console.log(render(out, opts.json));
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --wait 8m', 'ingest and report as a saved run', opts));
-  else if (out.run.status === 'running') hint(withContext(`learn-from-mistakes-axi status --run ${out.run.id}`, `${opts.wait ? 'still running; ' : ''}the steps so far, while the run goes on in the background`, opts));
+  else if (cmd === 'logs') hint(withContext(`learn-from-mistakes-axi status --run ${out.run}`, 'the run and all its steps', opts));
+  else if (out.run.status === 'running') hint(withContext(`learn-from-mistakes-axi attach --run ${out.run.id}`, `${opts.wait ? 'still running; ' : ''}follow its steps while the run goes on in the background`, opts));
+  else if (cmd === 'abort') hint(withContext(`learn-from-mistakes-axi rerun --run ${out.run.id} --wait 8m`, `start it again; rerun --resume --run ${out.run.id} skips its completed steps`, opts));
   else if (out.run.status === 'failed') {
     console.error(`error: ${out.run.error}`);
     const step = out.steps.find((s) => s.status === 'failed')?.name;

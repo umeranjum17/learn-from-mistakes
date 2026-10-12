@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real learn-from-mistakes-axi ingest/count/report and retro/status/runs/rerun CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi ingest/count/report and retro/status/runs/attach/logs/abort/rerun CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 metadata:
   internal: true
 ---
@@ -30,7 +30,8 @@ default journey. It also drives the bare command and `report`/`--json`/`--full`,
 and (synthetic only) `change applied --what --why` plus the `changes` export,
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
-then a detached `retro --wait 1m` run as well,
+then a detached `retro --wait 1m` run, `attach` and `logs --step collect` on it,
+an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well,
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
