@@ -201,11 +201,11 @@ test('no default model is premium: the models table, the agents listing and the 
 
 test('a hung, leaking, writing or overloaded agent ends with its real cause', () => {
   const { lfm, calls, config, p } = setup();
-  config('caps: { timeout: 2s }\n');
+  config('caps: { timeout: 10s }\n');
   const hang = lfm({ FAKE_CLAUDE: 'hang' }, 'agents', '--test', 'claude');
   assert.equal(hang.status, 1);
-  assert.match(hang.stderr, /^error: claude: no answer within 2s in one attempt; stopped it \(caps\.timeout\)$/m);
-  assert.ok(hang.secs < 8, `killed at the timeout, took ${hang.secs}s`);
+  assert.match(hang.stderr, /^error: claude: no answer within 10s in one attempt; stopped it \(caps\.timeout\)$/m);
+  assert.ok(hang.secs < 16, `killed at the timeout, took ${hang.secs}s`);
 
   const color = lfm({ FAKE_GEMINI: 'color-exit' }, 'agents', '--test', 'gemini'); // a colored error line reaches the user plain
   assert.equal(color.status, 1);

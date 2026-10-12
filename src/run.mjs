@@ -9,6 +9,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { bundle } from './bundle.mjs';
 import { meets, metrics } from './metrics.mjs';
 import { locked, openStore } from './store.mjs';
 
@@ -39,7 +40,13 @@ const STEPS = {
     return { read_from, current_start, previous_start, sources };
   },
   // The numbers for this window and the last, over what collect saved.
-  metrics: (cfg, db, id) => metrics(cfg, db, id, JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json)),
+  metrics: (cfg, db, id) => metrics(cfg, db, id, collected(db, id)),
+  // The file the run's agents read: <run dir>/bundle.md, with its counts in the step log.
+  bundle: (cfg, db, id, log) => {
+    const out = bundle(cfg, db, id, join(runDir(cfg, id), 'bundle.md'), collected(db, id));
+    log(`bundle.md: ${out.items} items, ${out.dropped} dropped, ${out.chars} characters`);
+    return out;
+  },
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, {}, REPORT);
@@ -49,6 +56,7 @@ const STEPS = {
   },
 };
 const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
+const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
 const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
