@@ -12,7 +12,7 @@ once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m
 ends or the time is over; `--foreground` runs the steps in the same process.
 A failed step fails the run (exit 1, the error saved on the step and the run).
 `status [--run <id>]` prints a run and its steps, `runs` lists the last 10 runs
-newest first. `retro`, `status`, `runs` and `rerun` first reconcile: a running
+newest first. `retro`, `status`, `runs`, `attach`, `logs`, `abort` and `rerun` first reconcile: a running
 run whose owner pid is dead (or now another process, by start time) becomes
 `interrupted`, with its running step. A unique index and a `BEGIN IMMEDIATE`
 check allow one running run; a second `retro` exits 2 and names it. The worker
@@ -31,10 +31,10 @@ moves the step lines to stderr). `logs --step <name> [--run <id>]` prints
 exits 2 naming the run's steps. `abort [--run <id>]` (default: the running run)
 sends SIGTERM to the worker (only when its pid still has the saved start time),
 and SIGKILL after 3 s if it is still alive, then marks the run `cancelled`; it
-exits 2 when no run is running (3 before the first run), and its `next:` names `rerun --resume --run <id>`. A plain
-`rerun [--run <id>]` starts a new run with the same settings (today all in the config) and prints
-`rerun: started run <new> from run <id>`; `retro` while a run is running
-exits 2 and names it, with `next: ... attach --run <id>`.
+exits 2 when no run is running (3 before the first run), and its `next:` names
+`rerun --resume --run <id>`. A plain `rerun [--run <id>]` starts a new run with the
+same settings (today all in the config) and prints `rerun: started run <new> from run <id>`;
+`retro` while a run is running exits 2 and names it, with `next: ... attach --run <id>`.
 The store commands silence only node:sqlite's `ExperimentalWarning` (Node 22),
 and the worker starts with `--disable-warning=ExperimentalWarning`.
 
