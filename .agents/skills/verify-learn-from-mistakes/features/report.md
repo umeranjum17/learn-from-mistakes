@@ -11,8 +11,9 @@ Run `lfm` or `lfm report --labels <file> --proposals <file>` after ingest; add
 ## Driving it with the public CLI
 Inspect helper `report`/`report-detail`/`report-json`/`report-full` and the existing
 `npm test` journeys. Examples show 0 unlabelled; the one duplicate collapses into
-the `shared-cache-lock` counts (3 incidents, 4 records); `--full` ids carry
-`gate:step-1` but not `step-5`; and accepted proposal refs appear as ids. The
+the `shared-cache-lock` counts (3 incidents, 4 records); `--full` emits non-content
+source row ids such as `gate:step-1` but never a content-derived record id, and
+proposal refs that are record ids are not echoed as evidence. The
 bad-input journey retains two unread long records (coverage falls), counts the missing
 ref `nope` as one problem and exits 1 without printing its text; malformed JSON exits 2
 and names its line; unknown IDs count as a problem; unknown config key `colour` is

@@ -3,22 +3,21 @@
 ## Sub-features
 `--help`/`-h` and `--version`/`-v` without reading config; a bare command (or a
 leading flag) runs the report; default TOON output; `--json` under the versioned
-`lfm-report.v1` schema; `--full` adds allow-listed evidence ids; a `next:` hint
-after every command.
+`lfm-report.v1` schema; `--full` adds allow-listed non-content source row ids; a
+`next:` hint after every command.
 
 ## How to get to it (user POV)
 From an installed package: `lfm --help`, `lfm --version`, `lfm` (report),
 `lfm --json`, `lfm report --full`, then `lfm report --full --json`.
 
 ## Driving it with the public CLI
-The helper drives `help`, `version`, `bare`, `report-json`, `report-full` and
-`report-detail` (`--full` alone) and decodes `bare.stdout` as TOON: it must equal
-the `--json` model (`schema: lfm-report.v1`), and every `--full` cause must carry
-`record_ids`/`store_row_ids`. It follows both hint chains (`report -> --full ->
---full --json` and `report --json -> --full --json`), asserting each hint keeps
-the detail flags already used and that `--full --json` terminates with no `next:`.
-The e2e suite re-decodes TOON, asserts help/version exit 0 with no config, and
-follows the same chains through the real CLI. Exit codes stay `0`/`1`/`2`/`3`.
+`test/cli.test.mjs` owns the behavioral assertions: help/version exit 0 with no
+config, default TOON decoding to the same `lfm-report.v1` model as `--json`,
+`--full` carrying only non-content ids, and both `next:` hint chains (`report ->
+--full -> --full --json` and `report --json -> --full --json`) with `--full
+--json` terminating. The helper drives `bare`, `report-json`, `report-full` and
+`report-detail` (`--full` alone) only to capture their real stdout/stderr as
+evidence; it does not duplicate those assertions. Exit codes stay `0`/`1`/`2`/`3`.
 
 ## Gotchas
 The default, `--json` and `--full` outputs are one privacy-bounded projection:

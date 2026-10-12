@@ -7,7 +7,6 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSy
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
-import { decode } from '@toon-format/toon';
 import { parse, stringify } from 'yaml';
 
 const repo = realpathSync(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -89,8 +88,6 @@ try {
   const stagedLabels = join(staged, 'labels.jsonl');
   const stagedProposals = join(staged, 'proposals.jsonl');
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged]);
-  drive('help', '--help');    // help and version must work with no config read
-  drive('version', '--version');
   drive('ingest', 'ingest');
   drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
   drive('count-unread', 'count');
@@ -99,41 +96,6 @@ try {
   drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
-  // The default output is TOON; --json is the same projection under lfm-report.v1.
-  const out = (name) => readFileSync(join(evidence, `${name}.stdout`), 'utf8');
-  const toon = decode(out('bare'));
-  assert.equal(toon.schema, 'lfm-report.v1', 'bare output is not valid TOON lfm-report.v1');
-  assert.deepEqual(toon, JSON.parse(out('report-json')), '--json differs from the default projection');
-  assert.ok(decode(out('report')).causes.length, 'report has no causes');
-  const full = JSON.parse(out('report-full'));
-  assert.ok(full.causes.every((c) => 'record_ids' in c && 'store_row_ids' in c), '--full omits evidence ids');
-  // Next hints keep the input flags, never echo the private staged path, and compose the detail flags used.
-  const err = (name) => readFileSync(join(evidence, `${name}.stderr`), 'utf8');
-  const hintOf = (name) => err(name).split('\n').find((l) => l.startsWith('next: '))?.slice(6).split('   #')[0].trim();
-  for (const name of ['ingest', 'report', 'report-detail', 'report-json', 'report-full']) assert.ok(!err(name).includes(staged), `${name}: hint leaked the private staged path`);
-  for (const flag of ['--dir', '--labels', '--proposals']) assert.ok(err('report').includes(flag), `report hint omits ${flag}`);
-  assert.equal(hintOf('report'), 'lfm report --full', 'report hint drops the next detail flag');
-  assert.equal(hintOf('report-detail'), 'lfm report --full --json', 'report --full hint drops --full or --json');
-  assert.equal(hintOf('report-json'), 'lfm report --full --json', 'report --json hint drops --full or --json');
-  assert.equal(hintOf('report-full'), undefined, 'full+json chain should terminate, not loop');
-  assert.equal(out('version').trim(), JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version);
-  // Privacy canary: private prose in a label and a proposal must never reach any output.
-  const canary = 'CANARY-verify-private-1f4d';
-  const plant = (file, anchor, text) => {
-    const before = readFileSync(file, 'utf8');
-    assert.ok(before.includes(anchor), `${file} has no ${anchor} to carry the canary`);
-    writeFileSync(file, before.replace(anchor, text));
-  };
-  plant(stagedLabels, '"why":"', `"why":"${canary} `);
-  plant(stagedProposals, '"change":"', `"change":"${canary} `);
-  for (const extra of [[], ['--json'], ['--full', '--json']]) {
-    const r = spawnSync(process.execPath, [cli, 'report', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals, ...extra], { cwd: repo, env, encoding: 'utf8' });
-    commands.push({ name: `canary${extra.join('') || '-default'}`, command: process.execPath, args: [cli, 'report', ...extra], cwd: repo, status: r.status });
-    save(`canary${extra.join('') || '-default'}.stdout`, r.stdout ?? '');
-    assert.equal(r.status, 0, 'canary report failed');
-    assert.ok(!r.stdout.includes(canary) && !(r.stderr ?? '').includes(canary), 'private canary text reached the output');
-  }
-  save('canary.json', { canary, absentFrom: ['default', '--json', '--full'] });
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });

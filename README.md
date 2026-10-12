@@ -68,7 +68,7 @@ lfm --version       show the version
 Every command stays useful:
 
 - Default output is **TOON** (compact, token-lean). `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema.
-- `--full` adds allow-listed evidence **ids** (record ids, store row ids, proposal refs) — never record text.
+- `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
 - Each command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
@@ -102,7 +102,7 @@ causes[1]:
 
 ## Privacy
 
-Every output is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, cause descriptions, source paths, branches or error text. That is why the default and `--full` output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds ids.
+The report and every machine output are **privacy-bounded**: identifiers and counts only. They never print record text, a label's `why`, a proposal's `change`, cause descriptions, source paths, branches or error text, and never turn a record's text into an id. That is why the default and `--full` output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
 
 ## Use it on your own records
 

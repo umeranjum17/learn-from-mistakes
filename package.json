@@ -2,6 +2,7 @@
   "name": "learn-from-mistakes",
   "version": "0.1.0",
   "description": "Find repeated causes in the record of past agent work and turn them into evidence-backed change recommendations.",
+  "license": "MIT",
   "keywords": ["agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
   "homepage": "https://github.com/umeranjum17/learn-from-mistakes#readme",
   "repository": { "type": "git", "url": "git+https://github.com/umeranjum17/learn-from-mistakes.git" },

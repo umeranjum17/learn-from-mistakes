@@ -74,7 +74,7 @@ test('next hints compose the flags already used so both report chains terminate 
     assert.equal(r.status, 0, r.stderr);
     const model = JSON.parse(r.stdout);
     assert.equal(model.schema, 'lfm-report.v1');
-    assert.ok(model.causes.find((c) => c.cause === 'shared-cache-lock').record_ids.includes('1b35bb2034fa')); // detail ids survive the chain
+    assert.ok(model.causes.find((c) => c.cause === 'agent-exit-wait').store_row_ids.includes('gate:step-1')); // detail ids survive the chain
     assert.doesNotMatch(r.stdout, /"why"|"change"|"description"|"branch"/); // no private prose field
     assert.ok(!r.stderr.includes(p), 'the hint must not echo an input path value');
     assert.equal(nextOf(r.stderr), undefined); // the chain ends here
@@ -91,17 +91,20 @@ test('next hints compose the flags already used so both report chains terminate 
   assertTerminal(runHint(hintJson));
 });
 
-test('--full adds only allow-listed ids, never record text', () => {
+test('--full adds only non-content ids, never record text or record ids', () => {
   const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);
   const full = JSON.parse(report(lfm, p, '--full', '--json').stdout);
   const cause = full.causes.find((c) => c.cause === 'shared-cache-lock');
-  assert.ok(cause.record_ids.includes('1b35bb2034fa')); // a duplicate id is still an id
+  assert.ok(!('record_ids' in cause)); // a content hash is never emitted
+  assert.deepEqual(cause.proposal_refs, []); // refs that are record ids are not echoed as evidence
   assert.equal(cause.store_row_ids.length, 0);
   const gate = full.causes.find((c) => c.cause === 'agent-exit-wait');
   assert.ok(gate.store_row_ids.includes('gate:step-1'));
+  assert.ok(gate.proposal_refs.includes('gate:step-1')); // a non-content ref survives
   const text = JSON.stringify(full);
   assert.doesNotMatch(text, /memory killer stopped/i); // no record text
+  assert.doesNotMatch(text, /1b35bb2034fa/); // no content-derived record id
   assert.doesNotMatch(text, /Give each worker its own cache/); // no proposal change text
   assert.doesNotMatch(text, /"why"|"change"|"description"|"branch"/); // no private prose fields at all
 });

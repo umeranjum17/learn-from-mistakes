@@ -24,10 +24,11 @@ folders before writing. It creates mode-0700 evidence and an isolated temporary
 HOME/XDG/TMPDIR, runs the existing `npm test` journeys, then the public CLI on copies
 of `examples`. Originals are hashed before and after; scratch is removed even
 when a CLI check fails. No model, network, pipeline, or release is started by the
-default journey. It also drives `--help`, `--version`, the bare command, `--json`
-and `--full`, decodes the default TOON to prove it equals the `--json`
-`lfm-report.v1` projection, and injects a private canary into a staged label and
-proposal to prove it never reaches default, `--json`, `--full` or stderr.
+default journey. It also drives the bare command and `report`/`--json`/`--full`
+to capture their real stdout/stderr as evidence. Behavior assertions -- help and
+version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
+`--full` carrying only non-content ids, the `next:` hint chains, and the private
+canary -- are owned by `test/cli.test.mjs`; the helper does not duplicate them.
 
 ```sh
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli
@@ -44,7 +45,7 @@ the registry; the default journey does not.
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli --package
 ```
 
-Read `commands.json`, both input manifests, `result.json`, `canary.json`,
+Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
 All command exits must be 0, all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed

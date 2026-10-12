@@ -183,7 +183,7 @@ function analyse(cfg, files) {
 
 // The one shape every machine and default output may carry: identifiers and counts only.
 // Record text, label `why`, proposal `change`, cause descriptions, source paths and branches never enter it.
-// `full` adds allow-listed evidence ids; it is not permission to print private evidence.
+// `full` adds allow-listed non-content evidence ids; it is not permission to print private evidence.
 function project(a, full) {
   const causes = a.groups.map((g) => {
     const ps = a.proposals.filter((p) => p.cause === g.cause);
@@ -196,9 +196,9 @@ function project(a, full) {
       proposals: { count: ps.length, unchecked: ps.filter((p) => !p.ok).length },
     };
     if (full) {
-      m.record_ids = g.log.records.map((r) => r.id);
+      // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
       m.store_row_ids = g.store.rows.map((r) => `${r.source}:${r.id}`);
-      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs))];
+      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.rows.some((r) => `${r.source}:${r.id}` === ref)))];
     }
     return m;
   });
