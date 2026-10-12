@@ -495,7 +495,8 @@ async function main() {
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
-  if (opts.test !== undefined && (opts.test === 'acp' || !Object.hasOwn(RUNNERS, opts.test.replace(/^acp:\S+$/, 'acp')))) {
+  // An acp target names the run dir, so it is a plain name: no path, no leading dot.
+  if (opts.test !== undefined && (opts.test === 'acp' || !Object.hasOwn(RUNNERS, opts.test.replace(/^acp:[a-z0-9][\w.-]*$/i, 'acp')))) {
     throw new UsageError(`--test ${shown(opts.test)} must be a runner: ${Object.keys(RUNNERS).filter((r) => r !== 'acp').join(', ')} or acp:<target>`, form);
   }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
