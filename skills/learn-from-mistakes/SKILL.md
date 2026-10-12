@@ -41,7 +41,7 @@ lfm count             # or just `lfm`
 
 A cause is repeated when one source shows at least `repeat.min_incidents` incidents on `repeat.min_days` days. Log counts come from your labels. Store counts come from typed failure rows matched by the config's `match` rule. They are never added together.
 
-The default output is TOON. Add `--json` to get the same data as JSON under the `lfm-report.v1` schema, and `--full` to add non-content evidence ids only: store row ids and any accepted `source:row id` proposal refs. A record's text is never turned into an id, so a ref that is a record id is not listed.
+The default output is TOON. Add `--json` to get the same data as JSON under the `lfm-report.v1` schema, and `--full` to add non-content evidence ids only: store row ids and any accepted `source:row id` proposal refs, plus applied-change ids/refs (see §6). A record's text is never turned into an id, so a ref that is a record id is not listed.
 
 ## 4. Recommend changes for repeated causes
 
@@ -62,7 +62,7 @@ lfm report            # default TOON; --json for lfm-report.v1; --full adds evid
 
 The machine and default output carries identifiers and counts only — never record text, your label `why`, or proposal `change` text. That keeps a report safe to share. To read your own labels back, open `labels.jsonl` and `proposals.jsonl` in the state dir.
 
-Exit 1 means a label or proposal has a problem; the output counts the problems (their text is not printed). Fix them and run again.
+Exit 1 means a label, proposal, or change-ledger problem; the output counts the problems (their text is not printed). Fix them and run again.
 
 ## 6. Record a change you applied
 

@@ -3,7 +3,7 @@
 ## Sub-features
 `--help`/`-h` and `--version`/`-v` without reading config; a bare command (or a
 leading flag) runs the report; default TOON output; `--json` under the versioned
-`lfm-report.v1` schema; `--full` adds allow-listed non-content source row ids; a
+`lfm-report.v1` schema; `--full` adds allow-listed non-content ids (source row ids; change ids live in [change.md](change.md)); a
 `next:` hint after every command.
 
 ## How to get to it (user POV)
@@ -13,7 +13,7 @@ From an installed package: `lfm --help`, `lfm --version`, `lfm` (report),
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the behavioral assertions: help/version exit 0 with no
 config, default TOON decoding to the same `lfm-report.v1` model as `--json`,
-`--full` carrying only non-content ids, and both `next:` hint chains (`report ->
+`--full` carrying only non-content ids (ledger change ids included, see [change.md](change.md)), and both `next:` hint chains (`report ->
 --full -> --full --json` and `report --json -> --full --json`) with `--full
 --json` terminating. The helper drives `bare`, `report-json`, `report-full` and
 `report-detail` (`--full` alone) only to capture their real stdout/stderr as
