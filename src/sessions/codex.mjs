@@ -8,10 +8,16 @@ import { TEST } from './claude.mjs';
 
 export const root = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'state_5.sqlite');
 
-// Messages Codex itself adds as user input: AGENTS.md text and tags such as <environment_context>.
-const WRAPPER = /^\s*(?:<[\w-]+>|# AGENTS\.md instructions)/;
-// The exit code of a shell call (exec_command, the legacy shell and apply_patch) or of one a code-mode script printed.
-const EXIT = /^Process exited with code (\d+)|^Exit code: (\d+)|"exit_code":\s*(\d+)/m;
+// Messages Codex itself adds as user input: AGENTS.md text and tags such as <environment_context> or
+// <codex_internal_context source="goal">. An <image name=...> label starts a person's message with an image.
+const WRAPPER = /^\s*(?:<(?!image\b)[\w-]+[\s>]|# AGENTS\.md instructions)/;
+// The exit code a shell call (exec_command, apply_patch) reports, else the first nonzero of those a code-mode script or
+// the legacy shell printed as JSON. ponytail: a script that prints "exit_code" as data reads as one (about 1 in 2000 here).
+const EXIT = /^Process exited with code (\d+)|^Exit code: (\d+)/m;
+const exitOf = (text) => {
+  const m = EXIT.exec(text), codes = [...text.matchAll(/"exit_code":\s*(\d+)/g)].map((x) => Number(x[1]));
+  return m ? Number(m[1] ?? m[2]) : codes.find(Boolean) ?? codes[0] ?? null;
+};
 const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
 
@@ -36,16 +42,18 @@ async function parse(file, { session, sub, excerpt }) {
       if (r.type !== 'response_item' || !p) continue;
       if (['function_call', 'custom_tool_call', 'local_shell_call'].includes(p.type)) {
         const raw = p.arguments ?? p.input ?? JSON.stringify(p.action ?? null), args = json(raw);
-        const command = typeof args?.cmd === 'string' ? args.cmd : Array.isArray(args?.command) ? args.command.join(' ') : String(raw);
+        // A code-mode script names its commands as cmd: "..." literals; the test check reads them one after another.
+        const command = typeof args?.cmd === 'string' ? args.cmd : Array.isArray(args?.command) ? args.command.join(' ')
+          : [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => x[2]).join('; ') || String(raw);
         const key = `${p.name}\0${raw}`;
         calls.set(p.call_id, { tool: p.name ?? p.type, key, command });
         const retry = failed.has(key); // the same call again after it failed
         events.push({ ...at, kind: 'tool_call', tool: p.name ?? p.type, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(String(raw)) : '' });
       } else if (['function_call_output', 'custom_tool_call_output', 'local_shell_call_output'].includes(p.type)) {
         const call = calls.get(p.call_id), text = textOf(p.output);
-        const m = EXIT.exec(text), exit = m ? Number(m[1] ?? m[2] ?? m[3]) : null;
-        // A code-mode script that threw ends "Script failed"; an apply_patch that did not apply ends patch_apply_end false.
-        const error = Boolean(exit) || /^Script failed/.test(text) || badPatch.has(p.call_id);
+        const exit = exitOf(text);
+        // A code-mode script that threw starts "Script failed"; a patch that did not apply says so or ends patch_apply_end false.
+        const error = Boolean(exit) || /^(?:Script failed|apply_patch verification failed)/.test(text) || badPatch.has(p.call_id);
         const signal = !error ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
         events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(text) : '' });
         if (error && call) failed.add(call.key);

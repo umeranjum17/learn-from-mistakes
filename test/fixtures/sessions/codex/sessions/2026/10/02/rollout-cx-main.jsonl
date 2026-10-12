@@ -20,5 +20,10 @@
 {"timestamp":"2026-10-02T09:00:17.000Z","type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}
 {"timestamp":"2026-10-02T09:00:18.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"throw new Error('x')","call_id":"c6"}}
 {"timestamp":"2026-10-02T09:00:19.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c6","output":[{"type":"input_text","text":"Script failed\nScript error:\nx"}]}}
+{"timestamp":"2026-10-02T09:00:19.500Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">keep going</codex_internal_context>"}]}}
+{"timestamp":"2026-10-02T09:00:21.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch\n*** Update File: b.js\n*** End Patch","call_id":"c7"}}
+{"timestamp":"2026-10-02T09:00:22.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c7","output":"apply_patch verification failed: Failed to find expected lines in b.js"}}
+{"timestamp":"2026-10-02T09:00:23.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"text(await tools.exec_command({cmd: \"npm run build\"}));\ntext(await tools.exec_command({cmd: \"npm test\"}))","call_id":"c8"}}
+{"timestamp":"2026-10-02T09:00:24.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c8","output":[{"type":"input_text","text":"Script completed\nOutput:\n"},{"type":"input_text","text":"{\"chunk_id\":\"b1\",\"exit_code\":0,\"output\":\"built\"}\n{\"chunk_id\":\"b2\",\"exit_code\":1,\"output\":\"not ok 1\"}"}]}}
 not json
 {"timestamp":"2026-10-02T09:00:20.000Z","type":"world_state","payload":{"full":true}}

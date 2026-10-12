@@ -291,13 +291,14 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
         tool('read', { filePath: 'a.js' }, { status: 'error', error: `${secrets(0, -10)} END` })]],
       ['user', [text('Called the Read tool', { synthetic: true }), text(`Umer: use src/a.js, ${secrets(-10)} END`)]],
       ['assistant', [text('Reading src/a.js.'), tool('read', { filePath: 'a.js' }, { status: 'completed', output: 'ok' })]],
-      ['user', [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==' }]],
+      ['user', [{ type: 'text' }, { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==' }]],
       ['assistant', [tool('bash', { command: 'sleep 100' }, { status: 'error', error: 'Tool execution aborted' })], 'MessageAbortedError'],
+      ['user', [text('Umer: wait, use the other script.')]], // after an interrupt, not a correction
       ['assistant', [tool('bash', { command: 'npx vitest run' }, { status: 'error', error: 'vitest crashed' }), tool('bash', { command: 'ls' }, { status: 'running' }), '{not json']],
     ]],
     ['oc-sub', p, [['user', [text('Find the loader.')]], ['assistant', [tool('edit', { filePath: 'b.js' }, { status: 'error', error: 'Could not find oldString' })]],
       ['user', [text('Try src/.')]]], { parent: 'oc-main' }],
-    ['oc-marker', p, [['user', [text('lfm-run: 3 verify')]], ...failing.slice(1)]],
+    ['oc-marker', p, [['user', [text('prompt-3.md', { synthetic: true }), { type: 'file', filename: 'prompt-3.md' }, text('"lfm-run:3:verify Follow the instructions in the attached file."')]], ...failing.slice(1)]],
     ['oc-other', join(tmp, 'elsewhere'), failing], ['oc-lfm', join(p, '.lfm', 'runs', '2'), failing],
     ['oc-old', p, failing, { at: Date.now() - 60 * 86_400_000 }],
   ]);
@@ -312,18 +313,21 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
   assert.equal(r.status, 0, r.stderr);
   const run = decode(r.stdout);
   // this repo, a worktree subdir and a subagent of a kept session; not the other dir, .lfm/, the marker run, an old
-  // session, a missing rollout or another program's database. One bad record each: a non-JSON line and a non-JSON part.
-  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 43, sessions: 4, skipped: 2 });
+  // session, a missing rollout or another program's database. Bad records: a non-JSON line, a non-JSON part and a text
+  // part with no text.
+  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 48, sessions: 4, skipped: 3 });
   assert.deepEqual(Object.fromEntries(run.metrics.filter((m) => ['tool_error_rate', 'corrections_per_session', 'interrupts', 'retries'].includes(m.name)).map((m) => [m.name, m.current])),
-    { tool_error_rate: 0.643, corrections_per_session: 0.5, interrupts: 2, retries: 2 });
+    { tool_error_rate: 0.688, corrections_per_session: 0.5, interrupts: 2, retries: 2 });
   const id = run.run.id;
   assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
-    [{ agent: 'codex', session_id: 'cx-main', n: 19 }, { agent: 'codex', session_id: 'cx-tree', n: 4 }, { agent: 'opencode', session_id: 'oc-main', n: 18 }, { agent: 'opencode', session_id: 'oc-tree', n: 2 }]);
+    [{ agent: 'codex', session_id: 'cx-main', n: 23 }, { agent: 'codex', session_id: 'cx-tree', n: 4 }, { agent: 'opencode', session_id: 'oc-main', n: 19 }, { agent: 'opencode', session_id: 'oc-tree', n: 2 }]);
   const signals = query(p, 'SELECT agent, signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2', id);
-  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['codex correction 1', 'codex interrupt 1', 'codex nonzero_exit 2', 'codex retry 1', 'codex test_fail 1', 'codex tool_error 2',
+  // The goal wrapper and the message after an interrupt are not corrections; a failed patch and a script whose second
+  // command (npm test) failed are.
+  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['codex correction 1', 'codex interrupt 1', 'codex nonzero_exit 2', 'codex retry 1', 'codex test_fail 2', 'codex tool_error 3',
     'opencode correction 1', 'opencode interrupt 1', 'opencode nonzero_exit 1', 'opencode retry 1', 'opencode test_fail 1', 'opencode tool_error 2']);
   assert.deepEqual(query(p, `SELECT tool, exit_code FROM events WHERE run_id = ? AND signal IN ('test_fail', 'nonzero_exit') ORDER BY id`, id),
-    [{ tool: 'exec_command', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'bash', exit_code: 1 }, { tool: 'bash', exit_code: null }]);
+    [{ tool: 'exec_command', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'exec', exit_code: 1 }, { tool: 'exec_command', exit_code: 2 }, { tool: 'bash', exit_code: 1 }, { tool: 'bash', exit_code: null }]);
   assert.deepEqual(query(p, `SELECT session_id, signal FROM events WHERE run_id = ? AND (ref LIKE '%rollout-cx-sub.jsonl:%' OR ref LIKE '%:part:%' AND session_id = 'oc-main' AND tool = 'edit') AND kind = 'tool_result'`, id),
     [{ session_id: 'cx-main', signal: 'nonzero_exit' }, { session_id: 'oc-main', signal: 'tool_error' }]); // subagents count in their parent session
   for (const [agent, signal] of [['codex', 'test_fail'], ['codex', 'correction'], ['opencode', 'tool_error'], ['opencode', 'correction']]) {
@@ -331,5 +335,13 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
     assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
   }
   assertNoPlanted(p, [r, lfm('status', '--json'), lfm('report', '--full')]);
+
+  // A session id the run store recorded as the tool's own agent run is skipped next time, for each agent.
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  db.exec(`CREATE TABLE invocations (id INTEGER PRIMARY KEY, session_id TEXT); INSERT INTO invocations (session_id) VALUES ('cx-main'), ('oc-main')`);
+  db.close();
+  const again = lfm('retro', '--foreground', '--json');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(JSON.parse(again.stdout).sources.find((s) => s.type === 'sessions').sessions, 2);
   assert.deepEqual(stores.map(sha), before, 'a session store changed');
 });

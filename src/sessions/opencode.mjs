@@ -9,34 +9,40 @@ import { TEST } from './claude.mjs';
 export const root = () => join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode');
 
 const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
-const mtime = (f) => { try { return statSync(f).mtimeMs; } catch { return 0; } };
+// A store that cannot be stat'd is opened anyway, so the failure is counted in skipped.
+const mtime = (f) => { try { return statSync(f).mtimeMs; } catch (e) { return e.code === 'ENOENT' ? 0 : Infinity; } };
 const iso = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
 
 // One session's events, message by message and part by part in order. Returns null when the first user message
 // carries the lfm-run: marker.
 function parse(q, file, { id, session, sub, excerpt }) {
   const events = [], failed = new Set();
-  let skipped = 0, first = true, afterError = false, user = false, message;
+  let skipped = 0, first = true, afterError = false, msg = null;
+  // A message is done at the next one: a person's message is one event over all its parts (the marker can follow an
+  // attached file), and an interrupted reply's interrupt comes after the tools it cut off. False for the marker.
+  const done = () => {
+    if (!msg) return true;
+    if (msg.aborted) { events.push({ ...msg.at, kind: 'interrupt', signal: 'interrupt', excerpt: '' }); afterError = false; }
+    if (!msg.user || !(msg.text.trim() || msg.file)) return true;
+    if (first && msg.text.replace(/^[\s"']+/, '').startsWith('lfm-run:')) return false; // this tool's own agent session
+    first = false;
+    // A person's message right after a tool error, with no assistant reply between, corrects the agent.
+    events.push({ ...msg.at, kind: afterError ? 'correction' : 'user_msg', signal: afterError ? 'correction' : null, excerpt: afterError ? excerpt(msg.text) : '' });
+    afterError = false;
+    return true;
+  };
   for (const row of q.iterate(id)) {
     const m = json(row.m), p = row.p === null ? {} : json(row.p);
-    if (!m || typeof m.role !== 'string' || !p) { skipped += 1; continue; }
-    const at = { agent: 'opencode', session_id: session, ts: iso(row.t), ref: `${file}:${row.p === null ? `message:${row.mid}` : `part:${row.pid}`}` };
-    if (row.mid !== message) { // the message's first part
-      message = row.mid;
-      user = m.role === 'user' && !sub; // a subagent's user messages come from its parent agent
-      // An interrupted reply ends MessageAbortedError; the tools it cut off are not tool failures.
-      if (m.error?.name === 'MessageAbortedError') { events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' }); afterError = false; }
+    if (!m || typeof m.role !== 'string' || !p || (p.type === 'text' && typeof p.text !== 'string')) { skipped += 1; continue; }
+    const at = { agent: 'opencode', session_id: session, ts: iso(row.t), ref: `db:${file}:${row.p === null ? `message:${row.mrid}` : `part:${row.prid}`}` };
+    if (row.mid !== msg?.id) {
+      if (!done()) return null;
+      // A subagent's user messages come from its parent agent. MessageAbortedError ends an interrupted reply.
+      msg = { id: row.mid, at, user: m.role === 'user' && !sub, aborted: m.error?.name === 'MessageAbortedError', text: '', file: false };
     }
-    if (p.type === 'text' && !p.synthetic && m.role === 'assistant' && String(p.text).trim()) afterError = false; // a reply ends the adjacency
-    if (user && (p.type === 'text' && !p.synthetic && String(p.text).trim() || p.type === 'file')) {
-      user = false; // one event per message
-      const text = p.type === 'text' ? p.text : '';
-      if (first && text.trimStart().startsWith('lfm-run:')) return null; // this tool's own agent session
-      first = false;
-      // A person's message right after a tool error, with no assistant reply between, corrects the agent.
-      events.push({ ...at, kind: afterError ? 'correction' : 'user_msg', signal: afterError ? 'correction' : null, excerpt: afterError ? excerpt(text) : '' });
-      afterError = false;
-    }
+    const text = p.type === 'text' && !p.synthetic ? p.text : '';
+    if (m.role === 'assistant' && text.trim()) afterError = false; // a reply ends the adjacency
+    if (msg.user) { msg.text += msg.text && text ? `\n${text}` : text; msg.file ||= p.type === 'file' && !p.synthetic; }
     if (p.type !== 'tool') continue;
     const s = p.state ?? {}, key = `${p.tool}\0${JSON.stringify(s.input)}`;
     const retry = failed.has(key); // the same call again after it failed
@@ -52,7 +58,7 @@ function parse(q, file, { id, session, sub, excerpt }) {
     else if (!error) failed.delete(key); // a later repeat is no longer a retry
     afterError ||= error;
   }
-  return { events, skipped };
+  return done() ? { events, skipped } : null;
 }
 
 // Every session whose directory `keep` accepts and that changed since `readFrom`, from each store file that did.
@@ -70,7 +76,7 @@ export async function read({ readFrom, keep, excerpt, skip }) {
       db = new DatabaseSync(file, { readOnly: true });
       const tables = db.prepare(`SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part')`).get().n;
       if (tables < 3) continue; // another program's database
-      const all = db.prepare('SELECT id, parent_id, directory, time_created, time_updated FROM session').all();
+      const all = db.prepare('SELECT rowid, id, parent_id, directory, time_created, time_updated FROM session').all();
       const byId = new Map(all.map((s) => [s.id, s]));
       const top = (s) => { for (let i = 0; i < 64 && byId.has(s.parent_id); i++) s = byId.get(s.parent_id); return s; };
       const groups = new Map();
@@ -80,7 +86,7 @@ export async function read({ readFrom, keep, excerpt, skip }) {
         groups.get(t.id).push(s);
       }
       // Parts in order, each with its message; a message with no parts still comes once (its error can be the signal).
-      const q = db.prepare(`SELECT m.id AS mid, m.data AS m, p.id AS pid, p.data AS p, COALESCE(p.time_created, m.time_created) AS t
+      const q = db.prepare(`SELECT m.id AS mid, m.rowid AS mrid, m.data AS m, p.rowid AS prid, p.data AS p, COALESCE(p.time_created, m.time_created) AS t
         FROM message m LEFT JOIN part p ON p.message_id = m.id WHERE m.session_id = ? ORDER BY m.time_created, m.id, p.id`);
       for (const [session, members] of groups) {
         const main = byId.get(session);
@@ -89,7 +95,7 @@ export async function read({ readFrom, keep, excerpt, skip }) {
         const got = parse(q, file, { id: session, session, excerpt });
         if (!got) continue;
         sessions += 1;
-        events.push({ agent: 'opencode', session_id: session, ts: iso(main.time_created), ref: `${file}:session:${session}`, kind: 'session_start', excerpt: '' }, ...got.events);
+        events.push({ agent: 'opencode', session_id: session, ts: iso(main.time_created), ref: `db:${file}:session:${main.rowid}`, kind: 'session_start', excerpt: '' }, ...got.events);
         skipped += got.skipped;
         for (const s of members.filter((x) => x !== main && x.time_updated >= readFrom)) {
           const sub = parse(q, file, { id: s.id, session, sub: true, excerpt });
