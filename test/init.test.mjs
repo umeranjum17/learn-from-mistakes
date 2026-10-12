@@ -223,6 +223,19 @@ test('doctor fails a worker pinned to a runner that is not offered, and names th
   assert.equal(fails[0].fix, 'set worker.runner in .learn-from-mistakes.yaml to claude');
 });
 
+// A worker on a BYOKit route is checked by BYOKit's own sign-in, not as an agent CLI: a route with no sign-in is a fail
+// with the sign-in fix, and doctor runs to the end instead of failing on the missing agent CLI row.
+test('doctor checks a BYOKit worker route by its sign-in and names the sign-in fix', () => {
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:chatgpt", model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker login');
+  assert.equal(line.level, 'fail');
+  assert.match(line.fix, /^sign in to chatgpt through BYOKit .* then: learn-from-mistakes-axi agents --test byokit:chatgpt$/);
+});
+
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
 // absent one is a fail with the login fix. The HOME is synthetic, and the auth.json in it is a placeholder.
 for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (exit 3); auth.json present'], [false, 'fail', 'pi auth check failed (exit 3); no auth.json']]) {
