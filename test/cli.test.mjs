@@ -561,9 +561,9 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(noPath.status, 2, noPath.stderr);
   assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes$/m); // a list is not a type
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions$/m); // a list is not a type
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs\.type must be one of markdown-log, no-mistakes$/m);
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs\.type must be one of markdown-log, no-mistakes, sessions$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);

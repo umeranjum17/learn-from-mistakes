@@ -86,6 +86,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
    sources:
      log: { type: markdown-log, path: defects.md }   # each "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## 2026-03-02" heading
      # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, failed steps read-only
+     # sessions: { type: sessions }   # optional: this repo's Claude Code sessions under ${CLAUDE_CONFIG_DIR:-~/.claude}, read-only (retro only)
    causes:
      agent-exit-wait:
        description: A pipeline step fails because the agent's output pipe stays open.
@@ -129,6 +130,7 @@ Every command stays useful:
 - `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
 - `retro` saves a run in `<state dir>/lfm.sqlite`: a `runs` row with its status and the pid of the process that runs it, and one `steps` row each for `collect` (ingest) and `report` (the counts with the labels already in the state dir). A detached worker runs the steps, so the run goes on when the terminal or the calling agent ends; `retro` returns at once, `--wait 8m` waits up to that time and prints the outcome (a bare `--wait` waits 8 minutes), and `--foreground` runs the steps in the same process. One run runs at a time: a second `retro` exits 2 and names the running run. A failed step fails the run and exits 1; `status` and `runs` show the saved runs, and `status` exits 3 before the first one.
 - A run whose worker stopped without ending it (a crash or a kill) shows as `interrupted` in `status` and `runs`, and no longer blocks a new `retro`. `rerun --resume [--run <id>]` runs an interrupted, cancelled or failed run again from its first step that is not completed; completed steps keep their output and do not run again. A SIGTERM or SIGINT to the worker ends the run as `cancelled`.
+- The `collect` step also reads a `sessions` source: the Claude Code sessions run in this repo, a subdir or one of its git worktrees, changed in this window and the last (`window`, default `7d`). It skips the tool's own agent runs and saves one `events` row per tool call, tool result, user message, correction and interrupt. The run output prints `sessions`, `skipped` and `tool_error_rate`, `corrections_per_session`, `interrupts`, `retries` (`n/a` with no sessions).
 - Each working command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout; `--help` and `guide` print theirs on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
@@ -187,7 +189,7 @@ causes[1]:
 
 The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name a source by its config id (for example `source log: cannot read (ENOENT)`) rather than its path, and never echo record text.
 
-The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every record, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose. It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `ingest`, `change applied` and `retro` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from.
+The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every record, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose. It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `ingest`, `change applied` and `retro` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from. With a `sessions` source, `lfm.sqlite` also keeps an excerpt of each session failure and correction: at most 300 characters, with API keys, tokens, private keys, `KEY=value` secrets and email addresses replaced by `[redacted]`. `excerpts: off` keeps none.
 
 ## Exit codes
 

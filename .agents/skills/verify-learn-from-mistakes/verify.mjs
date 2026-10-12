@@ -57,6 +57,7 @@ const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch,
   npm_config_cache: join(scratch, 'npm-cache') };
 delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
 delete env.LFM_HOME; // no global config: the CLI keeps state in the staged project's own .lfm/
+delete env.CLAUDE_CONFIG_DIR; // the sessions drive reads only the synthetic store in the scratch HOME
 const commands = [];
 function run(name, command, args, expected = 0, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
@@ -70,7 +71,8 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/sessions.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -119,6 +121,19 @@ try {
   drive('retro-v2', 'retro', '--foreground', '--json');
   writeFileSync(stagedConfig, stringify({ ...config, worker: { runner: 3 } }));
   run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
+  // Sessions: one synthetic Claude Code session in the scratch HOME, run in the staged project, with a failed test.
+  const store = join(env.HOME, '.claude', 'projects', 'staged');
+  mkdirSync(store, { recursive: true });
+  const at = { cwd: staged, sessionId: 's-verify', timestamp: '2026-10-12T09:00:00.000Z' };
+  writeFileSync(join(store, 's-verify.jsonl'), [
+    { type: 'user', ...at, message: { role: 'user', content: 'Umer: run the tests.' } },
+    { type: 'assistant', ...at, message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } }] } },
+    { type: 'user', ...at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'Exit code 1' }] } },
+  ].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  writeFileSync(stagedConfig, stringify({ ...config, sources: { ...config.sources, sessions: { type: 'sessions' } } }));
+  drive('retro-sessions', 'retro', '--foreground', '--json');
+  const read = JSON.parse(readFileSync(join(evidence, 'retro-sessions.stdout'), 'utf8')).sources.find((s) => s.type === 'sessions');
+  assert.ok(read.sessions === 1 && read.metrics.tool_error_rate === 1, 'the sessions source does not read the synthetic session');
   writeFileSync(stagedConfig, stringify(config));
   if (packageProof) {
     const pack = join(evidence, 'pack');
@@ -127,7 +142,8 @@ try {
     const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
-    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
+      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sources/sessions.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');

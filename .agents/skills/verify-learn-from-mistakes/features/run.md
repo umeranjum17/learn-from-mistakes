@@ -9,7 +9,8 @@ none, coverage shows every record unlabelled). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
 once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m) polls until the run
-ends or the time is over; `--foreground` runs the steps in the same process.
+ends or the time is over; `--foreground` runs the steps in the same process. The run output adds `sources`: each
+source's id, type and item count (and a sessions source's counts and numbers, see [sessions.md](sessions.md)).
 A failed step fails the run (exit 1, the error saved on the step and the run).
 `status [--run <id>]` prints a run and its steps, `runs` lists the last 10 runs
 newest first. `retro`, `status`, `runs` and `rerun` first reconcile: a running
@@ -70,5 +71,5 @@ stderr must hold no `ExperimentalWarning`.
 ## Gotchas
 Reconcile needs `/proc` (Linux) or `ps -o lstart=` (macOS) to read a process
 start time. Steps after a failed one stay `pending`. `collect` reads every
-record. Windows come in a later slice, with the code that applies them.
+record; only the sessions source applies the read range so far. Windows come in a later slice, with the code that applies them.
 `attach`, `logs`, `abort` and a plain `rerun` are a later slice.

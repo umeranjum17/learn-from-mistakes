@@ -146,21 +146,28 @@ function readInput(file, flag, explicit, rerunHint) {
   return readJsonl(file, { rerunHint });
 }
 
-// Reads every configured source into the state dir and returns each source's id, type, item count and hash.
-export async function ingest(cfg) {
+// Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
+// session counts and numbers of a sessions source), the session events, and the start of the read range.
+// `skip` holds session ids of the tool's own agent runs.
+export async function ingest(cfg, skip = new Set()) {
   stateDir(cfg);
-  const records = [], rows = [], sources = [];
+  // This window and the last, and far enough back to have before-numbers for every applied change.
+  const w = parseInt(cfg.window, 10) * 86_400_000;
+  const readFrom = Math.min(Date.now() - 2 * w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
+  const records = [], rows = [], events = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const got = await SOURCES[s.type].read(id, s);
+    const src = SOURCES[s.type], got = await src.read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip });
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
-    sources.push({ id, type: s.type, items: (got.records ?? got.rows).length, hash: got.hash });
+    events.push(...(got.events ?? []));
+    sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events).length, hash: got.hash,
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped, metrics: src.metrics(got.events) }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
-  return sources;
+  return { sources, events, read_from: new Date(readFrom).toISOString() };
 }
 
 function analyse(cfg, files, rerunHint) {
@@ -237,7 +244,7 @@ function analyse(cfg, files, rerunHint) {
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
 export function buildReport(cfg, files, rerunHint, full) {
   const a = analyse(cfg, files, rerunHint);
-  if (!a.records.size && !a.rows.length) throw new EmptyError('no records or rows in the sources: nothing to count',
+  if (!a.records.size && !a.rows.length && !a.meta.sources.some((s) => s.items)) throw new EmptyError('no records or rows in the sources: nothing to count',
     withContext('learn-from-mistakes-axi ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', files));
   return { model: project(a, full), problems: a.problems };
 }
@@ -470,7 +477,7 @@ async function main() {
   if (cmd === 'rerun' && !opts.resume) throw new UsageError('rerun starts a new run in a later version: pass --resume to finish a run that did not complete', form);
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
-    for (const s of await ingest(cfg)) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
+    for (const s of (await ingest(cfg)).sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
     console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);
     if (!Object.keys(cfg.causes).some((c) => c !== 'other')) hint('no causes configured: every label will be other; ask your agent to propose causes');
     hint(withContext('learn-from-mistakes-axi', 'the report for this project', opts));
