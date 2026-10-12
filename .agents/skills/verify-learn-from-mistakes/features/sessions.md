@@ -23,10 +23,11 @@ result is cut to 300 (empty with `excerpts: off`).
 `test_fail` is a failed command that runs tests (`npm test`, `node --test`,
 `pytest` and the like), not any command naming a test file. `retry` is a
 call repeated with the same input after it failed and before it succeeded. The run output adds each
-source's counts: for sessions `sessions`, `skipped` (unknown record shapes and unreadable files) and
-`metrics` (`tool_error_rate`, `corrections_per_session`, `interrupts`,
-`retries`; `n/a` with no sessions, never 0). Every event in the read range is
-stored, but the metrics count only events inside this window, and a session
+source's counts: for sessions `sessions` and `skipped` (unknown record shapes and unreadable files).
+Its numbers (`tool_error_rate`, `corrections_per_session`, `interrupts`,
+`retries`; `n/a` with no sessions, never 0) come from the `metrics` step for this
+window and the last ([metrics.md](metrics.md)). Every event in the read range is
+stored, but the numbers count only events inside a window, and a session
 counts when it has one of them. A sessions-only config completes
 the report step.
 

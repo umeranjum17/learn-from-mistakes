@@ -4,13 +4,13 @@
 `learn-from-mistakes-axi retro` saves a run in the
 run store `<state dir>/lfm.sqlite` (node:sqlite, WAL, a migrations list counted
 by `PRAGMA user_version`): one `runs` row (status, owner pid, times, error) and one `steps` row each for `collect`
-(ingest) and `report` (the counts with the labels already in the state dir; with
+(ingest), `metrics` (see [metrics.md](metrics.md)) and `report` (the counts with the labels already in the state dir; with
 none, coverage shows every record unlabelled). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
 once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m) polls until the run
 ends or the time is over; `--foreground` runs the steps in the same process. The run output adds `sources`: each
-source's id, type and item count (and a sessions source's counts and numbers, see [sessions.md](sessions.md)).
+source's id, type and item count (and a sessions source's counts, see [sessions.md](sessions.md)), then `window` and `metrics`.
 A failed step fails the run (exit 1, the error saved on the step and the run).
 `status [--run <id>]` prints a run and its steps, `runs` lists the last 10 runs
 newest first. `retro`, `status`, `runs` and `rerun` first reconcile: a running
@@ -33,7 +33,7 @@ In a project with `.learn-from-mistakes.yaml`: `learn-from-mistakes-axi retro --
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns two journeys.
 `retro --foreground saves a run and its steps in .lfm/; status and runs show it`:
-status before a run exits 3 and creates no `.lfm`; 2 completed
+status before a run exits 3 and creates no `.lfm`; 3 completed
 step rows read back from the store; collect saw 13 log and 5 gate items; report
 coverage 0 of 13 labelled; `status --json` equals the retro output; `runs` lists
 it; `git status` has no `.lfm`; a project with an empty log fails at `report`
@@ -42,9 +42,9 @@ with exit 1 and the saved error.
 `retro --wait 1m` completes; with `LFM_TEST_SLOW_STEP=report` (a test-only env
 flag: that step sleeps 60 s) a plain `retro` returns `running` while the worker
 goes on; a second `retro` exits 2 naming it; `SIGKILL` to the worker pid gives
-`interrupted` with `report` interrupted and `collect` completed; a new
+`interrupted` with `report` interrupted and `collect` and `metrics` completed; a new
 `retro --wait` (bare, 8m) completes; `rerun --resume --run <id> --wait 1m` completes
-with `collect` byte-identical (not run again); a second resume exits 2.
+with `collect` and `metrics` byte-identical (not run again) and the same numbers; a second resume exits 2.
 The rejected-input rows cover a bad `--wait`, `--wait` with `--foreground`,
 `rerun` without `--resume` and a bad `--run`. The helper drives `retro --foreground`,
 `retro --wait 1m`, `status` and `runs` on the staged examples to capture evidence.

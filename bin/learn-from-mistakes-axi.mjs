@@ -149,7 +149,7 @@ function readInput(file, flag, explicit, rerunHint) {
 }
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
-// session counts and numbers of a sessions source), the session events, and the start of the read range.
+// session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
 // The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
 export async function ingest(cfg) {
   stateDir(cfg);
@@ -158,22 +158,22 @@ export async function ingest(cfg) {
     ? db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id) : []);
   db?.close();
   // This window and the last, and far enough back to have before-numbers for every applied change.
-  const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w;
+  const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
   const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w).filter(Number.isFinite));
   const records = [], rows = [], events = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const src = SOURCES[s.type], got = await src.read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip });
+    const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes });
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
     events.push(...(got.events ?? []));
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events).length, hash: got.hash,
-      ...(got.events && { sessions: got.sessions, skipped: got.skipped, metrics: src.metrics(got.events, since) }) });
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
-  return { sources, events, read_from: new Date(readFrom).toISOString() };
+  return { sources, events, records, rows, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
 }
 
 function analyse(cfg, files, rerunHint) {
@@ -278,7 +278,7 @@ function project(a, full) {
       repeated: g.repeated,
       by: g.by,
       log: { incidents: g.incidents, records: g.log.records.length, days: g.log.days.size },
-      store: { matched: Boolean(a.cfg.causes[g.cause]?.match), rows: g.store.rows.length, days: g.store.days.size },
+      store: { matched: a.cfg.sources[a.cfg.causes[g.cause]?.match?.source]?.type === 'no-mistakes', rows: g.store.rows.length, days: g.store.days.size },
       proposals: { count: ps.length, unchecked: ps.filter((p) => !p.ok).length },
       changes: { count: applied.length, last_at: applied.length ? applied.map((c) => c.at).sort().at(-1) : '' },
     };
