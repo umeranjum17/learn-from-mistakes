@@ -5,7 +5,6 @@
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:20.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 1\n$SECRETS_A END"}]},"toolUseResult":"Error: Exit code 1"}
 {"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:25.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"npm test # $SECRETS_B END"}}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:40.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"Exit code 1\nFAIL test/fetch.test.js"}]}}
-{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:45.000Z","message":{"role":"assistant","content":[{"type":"text","text":"The tests fail."}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:00.000Z","message":{"role":"user","content":"Set UMER_FIXTURES=1 first. $SECRETS_B END"}}
 this line is not JSON
 {"cwd":"$REPO","note":"a record with no type"}
@@ -17,4 +16,5 @@ this line is not JSON
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-03T09:02:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t4","is_error":true,"content":"Exit code 1"}]},"toolUseResult":{"returnCodeInterpretation":"No matches found","stdout":"","stderr":""}}
 {"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"old.md"}}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t5","is_error":true,"content":"File does not exist."}]}}
-{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:05.000Z","message":{"role":"user","content":"No, that was the old file."}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"That file is gone."}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:00:05.000Z","message":{"role":"user","content":"Thanks, now add the README."}}
