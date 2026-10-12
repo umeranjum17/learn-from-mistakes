@@ -21,6 +21,9 @@ function readYaml(file) {
   try { text = readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return undefined; throw new UsageError(`${file}: ${e.message}`); }
   try { return parse(text) ?? {}; } catch (e) { throw new UsageError(`${file}: ${e.message.split('\n')[0]}`); }
 }
+function readText(file) {
+  try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${file}: cannot read (${e.code})`); }
+}
 function mapping(value, keys, where) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new UsageError(`${where} must be a mapping`);
   for (const k of Object.keys(value)) if (keys && !keys.includes(k)) throw new UsageError(`${where}: unknown key ${k}`);
@@ -59,7 +62,7 @@ function loadConfig(dir) {
 
 // Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.
 function readLog(source, path) {
-  const text = readFileSync(path, 'utf8');
+  const text = readText(path);
   const seen = new Map();
   let date = '';
   const records = [];
@@ -94,7 +97,7 @@ function readStore(source, path) {
 
 function readJsonl(file, required) {
   if (!existsSync(file)) { if (required) throw new UsageError(`${file} missing: run lfm ingest first`); return []; }
-  return readFileSync(file, 'utf8').split('\n').flatMap((l, i) => {
+  return readText(file).split('\n').flatMap((l, i) => {
     if (!l.trim()) return [];
     try { return [{ ...JSON.parse(l), _line: i + 1 }]; } catch { throw new UsageError(`${file}:${i + 1}: not valid JSON`); }
   });

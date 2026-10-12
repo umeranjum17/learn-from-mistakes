@@ -161,6 +161,21 @@ test('prototype-named causes are counted as problems, never crash or vanish', ()
   assert.ok(!model.causes.some((c) => c.cause === 'constructor'));
 });
 
+test('an unreadable source or input file is a usage error, never a crash', () => {
+  const { p, lfm } = setup();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: missing.md }\n');
+  const missing = lfm('ingest');
+  assert.equal(missing.status, 2, missing.stderr);
+  assert.match(missing.stderr, /missing\.md: cannot read \(ENOENT\)/);
+  assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
+  cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
+  assert.equal(lfm('ingest').status, 0);
+  const dir = lfm('count', '--labels', p);
+  assert.equal(dir.status, 2, dir.stderr);
+  assert.match(dir.stderr, /cannot read \(EISDIR\)/);
+  assert.doesNotMatch(dir.stderr, /\n\s+at /);
+});
+
 test('empty input exits 3 with a next command', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, 'defects.md'), '');
