@@ -10,7 +10,7 @@ import { sep } from 'node:path';
 import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { mapping } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
-import { redact } from '../redact.mjs';
+import { excerpt as cut } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
 import * as claude from '../sessions/claude.mjs';
 import * as codex from '../sessions/codex.mjs';
@@ -30,7 +30,7 @@ export function validate(s, where, dir) {
 
 const real = (p) => { try { return realpathSync(p); } catch { return p; } };
 // The project dir and every worktree of its repo; a dir outside git is its own only root.
-function roots(dir) {
+export function roots(dir) {
   let trees = [];
   const git = which('git');
   if (git) try {
@@ -48,9 +48,8 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
   });
   const rules = Object.entries(causes).filter(([, c]) => c.match?.source === source).map(([cause, c]) => ({ cause, ...c.match }));
   // A reader keeps what excerpt() returns as the event's excerpt; it is cut and tagged below. text_contains is checked
-  // on the whole text, so it also tags with `excerpts: off`. Whitespace is collapsed and the first 4000 characters
-  // redacted before the cut, so no secret is split at the edge of the kept part.
-  const excerpt = (text) => ({ text: excerpts ? redact(String(text).replace(/\s+/g, ' ').trim().slice(0, 4000)).slice(0, 300) : '',
+  // on the whole text, so it also tags with `excerpts: off`.
+  const excerpt = (text) => ({ text: excerpts ? cut(text) : '',
     hits: rules.filter((m) => m.text_contains && String(text).includes(m.text_contains)).map((m) => m.cause) });
   const out = { events: [], sessions: 0, skipped: 0 };
   for (const a of agents) {

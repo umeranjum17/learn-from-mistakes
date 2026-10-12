@@ -33,7 +33,7 @@ then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
 then a detached `retro --wait 1m` run, `attach` and `logs --step collect` on it,
 an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well, a sessions source over one
-synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule (`retro-sessions`: its metrics and `cause_count`), `agents --json` on the host PATH
+synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule (`retro-sessions`: its metrics, `cause_count` and its bundle cluster with the excerpt; `retro-v2` checks the `excerpts: off` bundle has none), `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
 and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
 judge clash (exit 2; live proof in [features/init.md](features/init.md)),
