@@ -80,6 +80,10 @@ async function parse(file, { session, keep, sub, excerpt }) {
 export async function read({ readFrom, keep, excerpt, skip }) {
   const events = [];
   let sessions = 0, skipped = 0;
+  // A file that cannot be read is skipped and counted; the other sessions still read.
+  const file = async (p, opts) => {
+    try { return await parse(p, opts); } catch (e) { if (!e.syscall) throw e; skipped += 1; return null; }
+  };
   for (const d of list(root(), { withFileTypes: true })) {
     if (!d.isDirectory()) continue;
     const dir = join(root(), d.name);
@@ -90,13 +94,13 @@ export async function read({ readFrom, keep, excerpt, skip }) {
       const subs = list(join(dir, session, 'subagents'), { recursive: true }).filter((p) => /^agent-.*\.jsonl$/.test(basename(p)))
         .map((p) => join(dir, session, 'subagents', p)).filter((p) => fresh(p, readFrom));
       if (!fresh(join(dir, f), readFrom) && !subs.length) continue;
-      const main = await parse(join(dir, f), { session, keep, excerpt });
+      const main = await file(join(dir, f), { session, keep, excerpt });
       if (!main) continue;
       sessions += 1;
       events.push({ agent: 'claude', session_id: session, ts: main.start, ref: `${join(dir, f)}:1`, kind: 'session_start', excerpt: '' }, ...main.events);
       skipped += main.skipped;
       for (const p of subs) {
-        const got = await parse(p, { session, sub: true, excerpt });
+        const got = await file(p, { session, sub: true, excerpt });
         events.push(...(got?.events ?? []));
         skipped += got?.skipped ?? 0;
       }
