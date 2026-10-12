@@ -127,12 +127,20 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
 });
 
 test('a runner whose tool-off mode is not confirmed is never worker or judge, and says why', () => {
-  const { lfm, config } = setup();
+  const { p, lfm, config, tmp } = setup();
   config('worker: { runner: gemini }\njudge: { runner: acp:fake-agent }\n');
   const r = lfm({}, 'agents', '--json');
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^problem: worker: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode/m);
   assert.match(r.stderr, /^problem: judge: acp is not offered: acpx --deny-all only denies the permission requests an agent sends/m);
+
+  cpSync(new URL('../examples/.learn-from-mistakes.yaml', import.meta.url).pathname, join(p, '.learn-from-mistakes.yaml'));
+  mkdirSync(join(tmp, 'lfm-home'));
+  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), JSON.stringify({ runner_path: Object.fromEntries(['claude', 'codex', 'opencode', 'pi'].map((x) => [x, join(tmp, `no-such-${x}`)])) }));
+  const auto = lfm({}, 'agents', '--json'); // only gemini is installed: auto names it and why it is not offered
+  assert.equal(auto.status, 1, auto.stderr);
+  assert.match(auto.stderr, /^problem: worker: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode/m);
+  assert.doesNotMatch(auto.stderr, /no usable agent CLI/);
 });
 
 test('agents --test starts each runner tool-off in its run dir, with the marker first and the runner default model', () => {
