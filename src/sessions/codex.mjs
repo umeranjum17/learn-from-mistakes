@@ -11,14 +11,21 @@ export const root = () => join(process.env.CODEX_HOME || join(homedir(), '.codex
 // Messages Codex itself adds as user input: AGENTS.md text and tags such as <environment_context> or
 // <codex_internal_context source="goal">. An <image name=...> label starts a person's message with an image.
 const WRAPPER = /^\s*(?:<(?!image\b)[\w-]+[\s>]|# AGENTS\.md instructions)/;
-// The exit code a shell call (exec_command, apply_patch) reports, else the first nonzero of those a code-mode script or
-// the legacy shell printed as JSON. ponytail: a script that prints "exit_code" as data reads as one (about 1 in 2000 here).
-const EXIT = /^Process exited with code (\d+)|^Exit code: (\d+)/m;
-const exitOf = (text) => {
-  const m = EXIT.exec(text), codes = [...text.matchAll(/"exit_code":\s*(\d+)/g)].map((x) => Number(x[1]));
-  return m ? Number(m[1] ?? m[2]) : codes.find(Boolean) ?? codes[0] ?? null;
-};
+// The exit code a shell call reports in its own header, the lines before the first Output: line; else the JSON
+// metadata a legacy shell returns; a code-mode script's first nonzero nested "exit_code". ponytail: a script that prints
+// "exit_code" as data reads as one (about 1 in 2000 here).
+const HEADER_EXIT = /^(?:Process exited with code |Exit code: )(\d+)/m;
 const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
+const exitOf = (text, script) => {
+  if (script) {
+    const codes = [...text.matchAll(/"exit_code":\s*(\d+)/g)].map((x) => Number(x[1]));
+    return codes.find(Boolean) ?? codes[0] ?? null;
+  }
+  const end = text.search(/^Output:/m), m = HEADER_EXIT.exec(end < 0 ? text : text.slice(0, end));
+  if (m) return Number(m[1]);
+  const code = json(text)?.metadata?.exit_code;
+  return Number.isInteger(code) ? code : null;
+};
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
 
 // One rollout's events, streamed line by line. Returns null when the first user message carries the lfm-run: marker.
@@ -44,14 +51,14 @@ async function parse(file, { session, sub, excerpt }) {
         const raw = p.arguments ?? p.input ?? JSON.stringify(p.action ?? null), args = json(raw);
         // A code-mode script names its commands as cmd: "..." literals; the test check reads them one after another.
         const command = typeof args?.cmd === 'string' ? args.cmd : Array.isArray(args?.command) ? args.command.join(' ')
-          : [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => x[2]).join('; ') || String(raw);
+          : [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => x[2]).join('; ');
         const key = `${p.name}\0${raw}`;
         calls.set(p.call_id, { tool: p.name ?? p.type, key, command });
         const retry = failed.has(key); // the same call again after it failed
-        events.push({ ...at, kind: 'tool_call', tool: p.name ?? p.type, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(args && typeof args === 'object' && !Array.isArray(args.command) ? inputText(args) : command) : '' });
+        events.push({ ...at, kind: 'tool_call', tool: p.name ?? p.type, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(args && typeof args === 'object' && !Array.isArray(args.command) ? inputText(args) : command || String(raw)) : '' });
       } else if (['function_call_output', 'custom_tool_call_output', 'local_shell_call_output'].includes(p.type)) {
         const call = calls.get(p.call_id), text = textOf(p.output);
-        const exit = exitOf(text);
+        const exit = exitOf(text, call?.tool === 'exec');
         // A code-mode script that threw starts "Script failed"; a patch that did not apply says so or ends patch_apply_end false.
         const error = Boolean(exit) || /^(?:Script failed|apply_patch verification failed)/.test(text) || badPatch.has(p.call_id);
         const signal = !error ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
