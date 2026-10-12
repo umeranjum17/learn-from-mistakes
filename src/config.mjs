@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import * as github from './sources/github.mjs';
 import * as markdownLog from './sources/markdown-log.mjs';
 import * as noMistakes from './sources/no-mistakes.mjs';
 import * as sessions from './sources/sessions.mjs';
@@ -15,7 +16,7 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // read) and metrics (its numbers from what it read; a type with no source in the config gives its metricNames as n/a),
 // detect (a config entry for init) and doctor (a check line); init calls detect, doctor calls doctor in a later slice.
 // A source slice adds one line here.
-export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions };
+export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github };
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];

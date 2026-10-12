@@ -115,8 +115,9 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   writeFileSync(cfg, examples);
   assert.deepEqual(decode(empty.stdout).sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 0, sessions: 0, skipped: 0 });
   const TARGETS = { tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', first_pass: '>= 70', p90_hours_to_merge: '<= 8', escaped: '<= 0' }; // the defaults
-  assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
-    .map((name) => ({ name, current: 'n/a', previous: 'n/a', target: TARGETS[name] ?? '', met: TARGETS[name] ? 'n/a' : '' }))); // the numbers of the types with no source here, then the targets no source measures; n/a is never met or missed
+  assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
+    'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped']
+    .map((name) => ({ name, current: 'n/a', previous: 'n/a', target: TARGETS[name] ?? '', met: TARGETS[name] ? 'n/a' : '' }))); // the numbers of the types with no source here; n/a is never met or missed
 
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
@@ -132,9 +133,10 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   // Each number with a target says whether this window met it, at the boundary too (1 <= 1, but not 1 > 1); n/a is neither.
   assert.deepEqual(run.metrics, [['defects', 2, 1, '<= 1', 'missed'], ['tool_error_rate', 0.5, 0.75, '<= 0.05', 'missed'],
     ['corrections_per_session', 0.25, 1, '<= 0.3', 'met'], ['interrupts', 1, 0, '> 1', 'missed'], ['retries', 1, 0, '', ''],
+    ...['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped']
+      .map((name) => [name, 'n/a', 'n/a', { first_pass: '>= 70', p90_hours_to_merge: '<= 8', escaped: '<= 0' }[name] ?? '', name in { first_pass: 1, p90_hours_to_merge: 1, escaped: 1 } ? 'n/a' : '']),
     ['cause_count:fetch-test-fails', 1, 0, '<= 1', 'met'], ['cause_count:missing-file', 0, 3, '= 0', 'met'], ['cause_count:server-memory-kill', 'n/a', 'n/a', '<= 0', 'n/a'],
-    ['cause_count:shared-cache-lock', 'n/a', 'n/a', '', ''], ['cause_count:agent-exit-wait', 0, 0, '', ''], ['first_pass', 'n/a', 'n/a', '>= 70', 'n/a'],
-    ['p90_hours_to_merge', 'n/a', 'n/a', '<= 8', 'n/a'], ['escaped', 'n/a', 'n/a', '<= 0', 'n/a']]
+    ['cause_count:shared-cache-lock', 'n/a', 'n/a', '', ''], ['cause_count:agent-exit-wait', 0, 0, '', '']]
     .map(([name, current, previous, target, met]) => ({ name, current, previous, target, met })));
   assert.equal(Date.parse(run.window.current_start) - Date.parse(run.window.previous_start), 7 * 86_400_000);
   assert.deepEqual(query(p, `SELECT window, value FROM metrics WHERE run_id = ? AND name IN ('defects', 'escaped') ORDER BY name, window`, id),
@@ -178,7 +180,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.deepEqual(query(p, 'SELECT count(*) AS n FROM events WHERE run_id = ?', id), [{ n: 39 }]); // the first run keeps its events
 });
 
-test('two defect logs of one type sum into defects; a config with only a no-mistakes source gives n/a for every sessions and defect number', () => {
+test('two defect logs of one type sum into defects; a config with only a no-mistakes source gives n/a for every sessions, defect and PR number', () => {
   const { p, lfm } = setup();
   const cfg = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(join(p, 'a.md'), `## ${day(1)}\n\n- [tests] A one.\n- [tests] A two.\n- [tests] A three.\n`);
@@ -191,7 +193,8 @@ test('two defect logs of one type sum into defects; a config with only a no-mist
   writeFileSync(cfg, 'sources:\n  gate: { type: no-mistakes, path: gate.sqlite }\n');
   const gate = lfm('retro', '--foreground');
   assert.equal(gate.status, 0, gate.stderr);
-  assert.deepEqual(decode(gate.stdout).metrics.map(({ name, current, previous }) => ({ name, current, previous })), ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
+  assert.deepEqual(decode(gate.stdout).metrics.map(({ name, current, previous }) => ({ name, current, previous })), ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
+    'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped']
     .map((name) => ({ name, current: 'n/a', previous: 'n/a' })));
 });
 
