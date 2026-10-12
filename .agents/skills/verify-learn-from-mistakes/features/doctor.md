@@ -14,9 +14,9 @@ Checks, in order:
 - `state`: `.lfm` is git-ignored (fail, fix `init`); ok when `.lfm` does not exist yet
   (the first run makes it with its `.gitignore`) or `state_root` moves it out of the project.
 - `source <id>`: each source's registry `doctor()` hook (sessions: stores, and the sessions and
-  skipped records in files written in this window), else a read with the item count and the count in the window. A read
-  error is a fail with the source's own fix (a missing defect log: `touch <path>   # or set
-  sources.<id>.path ...`). No sources at all: warn.
+  skipped records in files written in this window; markdown-log and no-mistakes: readable, the count in the window, and the skipped entries). A read
+  error is a fail with the source's own fix (a missing defect log: `check sources.<id>.path in
+  .learn-from-mistakes.yaml, or create it: touch <path>`). No sources at all: warn.
 - `agent <runner>`: each runner binary found; one that is not offered (gemini, acp) or
   whose `--version` fails is a warn with its reason, never a fail.
 - `worker`/`judge`: the role resolves to a usable, offered runner (`resolveRoles`), with
@@ -55,7 +55,7 @@ exactly 3 fails (`source log`, `worker model`, `identity`), each with `fix:`, ex
 and `next: ... doctor   # again after the 3 fixes above`; the pi probe argv is
 `auth check --no-refresh --model claude-opus-5-5`; the canary never prints; after the
 fixes, exit 0. The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,
-`fix: touch`) in its fresh init project with fake agents.
+`fix: check sources.log.path ...`) in its fresh init project with fake agents.
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout, `$LAB` a
 lab HOME holding only a link to the lab Claude credential; no agent call, no tokens):
@@ -65,7 +65,7 @@ lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 labenv() { HOME=$LAB CLAUDE_CONFIG_DIR=$LAB/.claude CODEX_HOME=$LAB/.codex XDG_CONFIG_HOME=$LAB/.config XDG_DATA_HOME=$LAB/.local/share "$@"; }
 cd $SCR/ky && cp $SELF/examples/defects.md . && labenv lfm init -y --no-skill
 labenv lfm doctor; echo $?            # the lab's real agents, logins and models
-mv defects.md x.md && labenv lfm doctor; echo $?   # fail source log, fix: touch ...; exit 1
+mv defects.md x.md && labenv lfm doctor; echo $?   # fail source log, fix: check sources.log.path ...; exit 1
 mv x.md defects.md && labenv lfm doctor; echo $?
 ```
 
