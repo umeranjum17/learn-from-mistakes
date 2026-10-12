@@ -56,7 +56,7 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
     const r = lfmQ(...args);
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /\.gitignore: does not ignore all of \.lfm, so state could be committed; make it contain the line \*/);
-    assert.match(r.stderr, /next: /);
+    assert.match(r.stderr, /^next: echo '\*' >> <project>\/\.lfm\/\.gitignore   # ignore all of \.lfm, and delete any line starting with !$/m);
   }
   assert.ok(readFileSync(join(q, '.lfm', '.gitignore')).equals(mine));
   assert.deepEqual(readdirSync(join(q, '.lfm')), ['.gitignore']);
@@ -89,6 +89,7 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
     const r = lfmQ(...args);
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /\.gitignore: not a regular file, so git would not ignore the state/);
+    assert.match(r.stderr, /^next: rm -r <project>\/\.lfm\/\.gitignore   # lfm then writes one that ignores all of \.lfm$/m);
   }
   assert.deepEqual(readdirSync(join(q, '.lfm')), ['.gitignore']);
   rmSync(join(q, '.lfm'), { recursive: true });
@@ -96,6 +97,7 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
   const stray = lfmQ('ingest');
   assert.equal(stray.status, 2, stray.stderr);
   assert.match(stray.stderr, /\.lfm: cannot create the state dir \(EEXIST\)/);
+  assert.match(stray.stderr, /^next: mv <project>\/\.lfm <elsewhere>   # free \.lfm for the state dir/m);
   assert.doesNotMatch(stray.stderr, /\n\s+at /);
 });
 
@@ -410,11 +412,11 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
 });
 
 test('an explicit labels or proposals path that does not exist is a usage error', () => {
-  const { p, home, lfm } = setup();
+  const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);
   const unlabelled = lfm('report');
   assert.equal(unlabelled.status, 0); // the default state-dir inputs may be absent before labelling
-  const records = join(home, 'state', 'example', 'records.jsonl');
+  const records = join(p, '.lfm', 'records.jsonl');
   assert.ok(unlabelled.stderr.split('\n').some((l) => l.startsWith(`next: label ${records} into labels.jsonl`)), unlabelled.stderr); // with zero labels, labelling the named file is the next step
   const labels = lfm('report', '--labels', join(p, 'typo-labels.jsonl'));
   assert.equal(labels.status, 2, labels.stdout);

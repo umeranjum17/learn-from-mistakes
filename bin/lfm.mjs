@@ -72,17 +72,23 @@ sources:
 // Create the state dir before a write. The in-project default gets a `*` .gitignore whenever it has none,
 // so its record text can never be committed; a file the user already has there is never overwritten.
 function stateDir(cfg) {
-  try { mkdirSync(cfg.state, { recursive: true }); } catch (e) { throw new UsageError(`${cfg.state}: cannot create the state dir (${e.code})`); }
+  try { mkdirSync(cfg.state, { recursive: true }); } catch (e) {
+    throw new UsageError(`${cfg.state}: cannot create the state dir (${e.code})`, cfg.ignore
+      ? 'mv <project>/.lfm <elsewhere>   # free .lfm for the state dir, or set state_root in $LFM_HOME/config.yaml'
+      : 'edit state_root in $LFM_HOME/config.yaml   # a dir lfm can create and write');
+  }
   if (!cfg.ignore) return;
   const file = join(cfg.state, '.gitignore');
   try { writeFileSync(file, '*\n', { flag: 'wx' }); } catch (e) {
-    if (e.code !== 'EEXIST') throw new UsageError(`${file}: cannot write (${e.code})`);
+    if (e.code !== 'EEXIST') throw new UsageError(`${file}: cannot write (${e.code})`, 'chmod u+rwx <project>/.lfm   # lfm writes .lfm/.gitignore there');
     // git reads only a regular .gitignore; a directory or symlink there would leave the state committable
-    if (!lstatSync(file).isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`);
+    if (!lstatSync(file).isFile()) throw new UsageError(`${file}: not a regular file, so git would not ignore the state; replace it with a file containing *`,
+      'rm -r <project>/.lfm/.gitignore   # lfm then writes one that ignores all of .lfm');
     let text;
-    try { text = readFileSync(file, 'utf8'); } catch (e2) { throw new UsageError(`${file}: cannot read (${e2.code})`); }
+    try { text = readFileSync(file, 'utf8'); } catch (e2) { throw new UsageError(`${file}: cannot read (${e2.code})`, 'chmod u+r <project>/.lfm/.gitignore   # lfm checks it ignores all of .lfm'); }
     const lines = text.split(/\r?\n/);
-    if (!lines.includes('*') || lines.some((l) => l.startsWith('!'))) throw new UsageError(`${file}: does not ignore all of .lfm, so state could be committed; make it contain the line *`);
+    if (!lines.includes('*') || lines.some((l) => l.startsWith('!'))) throw new UsageError(`${file}: does not ignore all of .lfm, so state could be committed; make it contain the line *`,
+      "echo '*' >> <project>/.lfm/.gitignore   # ignore all of .lfm, and delete any line starting with !");
   }
 }
 

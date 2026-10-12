@@ -23,7 +23,7 @@ In a project with `.learn-from-mistakes.yaml`: `lfm ingest` prints
 (`*.jsonl`) and a negated one (`*` plus `!records.jsonl`) each exit 2 on ingest
 and change applied with the file byte-identical and no state written, while `*`
 alone or with comments is accepted byte-identical; a `.gitignore` directory or a
-stray `.lfm` file exits 2 naming the path, before any state is written) and
+stray `.lfm` file exits 2 naming the path, with a `next:` fix, before any state is written) and
 `same-named projects keep separate state; a global state_root still wins`.
 `--package` reruns both through the installed bin (`packed-npm-test`). The
 helper keeps a copy of the staged `.lfm/` as `state/` in the evidence folder.
