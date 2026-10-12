@@ -9,7 +9,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
-import { metrics } from './metrics.mjs';
+import { meets, metrics } from './metrics.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -302,11 +302,11 @@ function show(db, id) {
   const collect = out('collect'), window = out('metrics');
   const metrics = new Map();
   // A metric with a target shows it and whether this window met it; one without has both empty.
-  for (const m of db.prepare('SELECT window, name, value, target, met FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
+  for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
     if (!metrics.has(m.name)) metrics.set(m.name, { name: m.name, current: 'n/a', previous: 'n/a', target: '', met: '' });
     const row = metrics.get(m.name);
     row[m.window] = m.value === null ? 'n/a' : Math.round(m.value * 1000) / 1000; // the verdict uses the unrounded value
-    if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: m.target ? ['missed', 'met'][m.met] ?? 'n/a' : '' });
+    if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: !m.target ? '' : m.value === null ? 'n/a' : meets(m.value, m.target) ? 'met' : 'missed' });
   }
   return {
     run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },

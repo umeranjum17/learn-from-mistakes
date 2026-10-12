@@ -1,7 +1,7 @@
 // The metrics step: the numbers for this window (current) and the last (previous), from the events and records
 // collect saved for the run. Each source type gives its numbers (its metrics(rows, window), over the rows of all its
 // sources); cause_count:<cause> counts the items collect tagged with that cause. A metric whose source type is not
-// configured is n/a (NULL), never 0. A metric with a target saves the target and whether the window met it.
+// configured is n/a (NULL), never 0. A metric with a target saves the target with its value.
 import { RULE, SOURCES } from './config.mjs';
 
 // The rows whose time is in the window: from its start, and before its end when it has one.
@@ -19,7 +19,7 @@ export function metrics(cfg, db, id, { current_start, previous_start }) {
   const windows = { current: { start: Date.parse(current_start) }, previous: { start: Date.parse(previous_start), end: Date.parse(current_start) } };
   const events = db.prepare('SELECT session_id, ts, kind, tool, signal, cause FROM events WHERE run_id = ?').all(id);
   const records = db.prepare('SELECT source, ts, cause FROM records WHERE run_id = ?').all(id);
-  const add = db.prepare('INSERT INTO metrics (run_id, window, name, value, target, met) VALUES (?, ?, ?, ?, ?, ?)');
+  const add = db.prepare('INSERT INTO metrics (run_id, window, name, value, target) VALUES (?, ?, ?, ?, ?)');
   const types = new Set(Object.values(cfg.sources).map((s) => s.type));
   db.exec('BEGIN');
   try {
@@ -39,7 +39,7 @@ export function metrics(cfg, db, id, { current_start, previous_start }) {
       for (const name of Object.keys(cfg.targets)) v[name] ??= null; // a target no source measures
       for (const [name, value] of Object.entries(v)) {
         const target = cfg.targets[name] ?? null;
-        add.run(id, window, name, value, target, target && meets(value, target));
+        add.run(id, window, name, value, target);
       }
     }
     db.exec('COMMIT');

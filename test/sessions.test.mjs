@@ -139,10 +139,10 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.equal(Date.parse(run.window.current_start) - Date.parse(run.window.previous_start), 7 * 86_400_000);
   assert.deepEqual(query(p, `SELECT window, value FROM metrics WHERE run_id = ? AND name IN ('defects', 'escaped') ORDER BY name, window`, id),
     [{ window: 'current', value: 2 }, { window: 'previous', value: 1 }, { window: 'current', value: null }, { window: 'previous', value: null }]); // n/a is NULL
-  // The store keeps the target and the comparison for both windows: 1 met, 0 missed, NULL n/a or no target.
-  assert.deepEqual(query(p, `SELECT window, target, met FROM metrics WHERE run_id = ? AND name IN ('defects', 'escaped', 'retries') ORDER BY name, window`, id),
-    [{ window: 'current', target: '<= 1', met: 0 }, { window: 'previous', target: '<= 1', met: 1 }, { window: 'current', target: '<= 0', met: null },
-      { window: 'previous', target: '<= 0', met: null }, { window: 'current', target: null, met: null }, { window: 'previous', target: null, met: null }]);
+  // The store keeps each window's target, NULL with none; the verdict is shown, not stored.
+  assert.deepEqual(query(p, `SELECT window, target FROM metrics WHERE run_id = ? AND name IN ('defects', 'escaped', 'retries') ORDER BY name, window`, id),
+    [{ window: 'current', target: '<= 1' }, { window: 'previous', target: '<= 1' }, { window: 'current', target: '<= 0' },
+      { window: 'previous', target: '<= 0' }, { window: 'current', target: null }, { window: 'previous', target: null }]);
   // The rules tag exactly the planted events: the one failed fetch test run, and the 5 failed Reads (2 older than both windows).
   const tags = (run) => query(p, 'SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND cause IS NOT NULL GROUP BY cause', run);
   assert.deepEqual(tags(id), [{ cause: 'fetch-test-fails', signal: 'test_fail', tool: 'Bash', n: 1 }, { cause: 'missing-file', signal: 'tool_error', tool: 'Read', n: 5 }]);
@@ -398,6 +398,8 @@ test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0
   assert.equal(row.current, 0.05);
   assert.equal(row.target, '<= 0.05');
   assert.equal(row.met, 'missed');
-  const [stored] = query(p, `SELECT value, met FROM metrics WHERE run_id = ? AND name = 'tool_error_rate' AND window = 'current'`, decode(r.stdout).run.id);
-  assert.deepEqual(stored, { value: 25 / 496, met: 0 });
+  const [stored] = query(p, `SELECT value, target FROM metrics WHERE run_id = ? AND name = 'tool_error_rate' AND window = 'current'`, decode(r.stdout).run.id);
+  assert.deepEqual(stored, { value: 25 / 496, target: '<= 0.05' });
+  const status = decode(lfm('status', '--run', String(decode(r.stdout).run.id)).stdout);
+  assert.equal(status.metrics.find((m) => m.name === 'tool_error_rate').met, 'missed');
 });
