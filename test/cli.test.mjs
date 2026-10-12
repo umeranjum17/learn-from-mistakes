@@ -14,6 +14,9 @@ import { decode } from '@toon-format/toon';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
+// git never looks above the temp dir, so a project that is not a git checkout is not read as part of the repo the
+// temp dir happens to sit in (the gate source matches this project's checkout).
+process.env.GIT_CEILING_DIRECTORIES = realpathSync(tmpdir());
 // The example gate store's one repo is the copy: the no-mistakes source reads only this project's rows.
 function own(p) {
   const db = new DatabaseSync(join(p, 'gate.sqlite'));
