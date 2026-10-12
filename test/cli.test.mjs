@@ -233,7 +233,7 @@ test('ingest identifies the store by the rows it read, not its mtime, and never 
   w.prepare("UPDATE step_results SET error = 'lint: 3 errors' WHERE id = 'step-5'").run(); // one failed step's text
   w.close();
   utimesSync(db, atime, mtime); // changed rows, same mtime
-  assert.equal(statSync(db).mtimeMs, mtime.getTime());
+  assert.equal(Math.round(statSync(db).mtimeMs), mtime.getTime());
   assert.notEqual(ingest(), first);
 });
 
