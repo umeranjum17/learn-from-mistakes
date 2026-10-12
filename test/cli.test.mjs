@@ -89,8 +89,10 @@ test('ingest identifies the store by the rows it read, not its mtime, and never 
   utimesSync(db, new Date('2001-02-03T04:05:06Z'), new Date('2001-02-03T04:05:06Z')); // same rows, new mtime
   assert.equal(ingest(), first);
 
-  const { atime, mtime } = statSync(db);
   const w = new DatabaseSync(db);
+  w.prepare("UPDATE step_results SET error = 'not read' WHERE id = 'step-2'").run(); // a completed step: new bytes, same rows read
+  assert.equal(ingest(), first);
+  const { atime, mtime } = statSync(db);
   w.prepare("UPDATE step_results SET error = 'lint: 3 errors' WHERE id = 'step-5'").run(); // one failed step's text
   w.close();
   utimesSync(db, atime, mtime); // changed rows, same mtime

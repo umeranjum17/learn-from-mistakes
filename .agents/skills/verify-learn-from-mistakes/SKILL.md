@@ -79,8 +79,9 @@ Private data is never a repo fixture. A private run is optional, never implied.
 ## Evidence and trusted instruction consumption
 
 `identity.json` records checkout path, exact Git HEAD/dirty status, runtime, candidate
-hashes, resolved source paths and SHA256 file identities (including SQLite, whose
-CLI digest covers only the rows read). `commands.json` records argv/cwd/exits; named stdout/stderr files
+hashes, resolved source paths and SHA256 identities of the input file bytes
+(including SQLite). The CLI's own store digest, over the rows read, is in
+`ingest.stdout` and the retained `sources.json`. `commands.json` records argv/cwd/exits; named stdout/stderr files
 record actions and results; `state/state/verification/` retains ingest artifacts.
 `inputs.before.json`, `inputs.after.json` and `result.json` prove read-only inputs.
 Review evidence is terminal output, not a screenshot/theme/viewport matrix: this
