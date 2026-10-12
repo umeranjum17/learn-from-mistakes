@@ -119,7 +119,7 @@ learn-from-mistakes-axi runs      list the saved runs, newest first (the last 10
 learn-from-mistakes-axi attach    follow the run: its step lines and states as they come, until it ends
 learn-from-mistakes-axi logs --step <name>   print one step's log (--run <id> for another run)
 learn-from-mistakes-axi abort     stop the running run; it ends as cancelled
-learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait <time>]   start the run again; --resume finishes it from its first step that is not completed
+learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait <time>]   start a new run with the same settings as a saved run (default: the last); --resume finishes that run from its first step that is not completed
 learn-from-mistakes-axi --help    show the commands and options
 learn-from-mistakes-axi --version show the version
 ```
@@ -132,7 +132,7 @@ Every command stays useful:
 - `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
 - `retro` saves a run in `<state dir>/lfm.sqlite`: a `runs` row with its status and the pid of the process that runs it, and one `steps` row each for `collect` (ingest) and `report` (the counts with the labels already in the state dir). A detached worker runs the steps, so the run goes on when the terminal or the calling agent ends; `retro` returns at once, `--wait 8m` waits up to that time and prints the outcome (a bare `--wait` waits 8 minutes), and `--foreground` runs the steps in the same process. One run runs at a time: a second `retro` exits 2 and names the running run. A failed step fails the run and exits 1; `status` and `runs` show the saved runs, and `status` exits 3 before the first one.
 - A run whose worker stopped without ending it (a crash or a kill) shows as `interrupted` in `status` and `runs`, and no longer blocks a new `retro`. `rerun --resume [--run <id>]` runs an interrupted, cancelled or failed run again from its first step that is not completed; completed steps keep their output and do not run again. A SIGTERM or SIGINT to the worker ends the run as `cancelled`.
-- `attach` prints each step's state changes and log lines as they come and exits when the run ends (0 when it completed). Each step's log is `<state dir>/runs/<id>/<step>.log`; `logs --step collect` prints one. `abort` sends SIGTERM to the run's worker (SIGKILL after 3 s) and marks the run `cancelled`. A plain `rerun` starts a new run with the same settings.
+- `attach` prints each step's state changes and log lines as they come and exits when the run ends (0 when it completed). Each step's log is `<state dir>/runs/<id>/<step>.log`; `logs --step collect` prints one. `abort` sends SIGTERM to the run's worker (SIGKILL after 3 s) and marks the run `cancelled`. A plain `rerun --run <id>` starts a new run with the same settings, names run `<id>` in its output, and leaves run `<id>` as it was; `rerun --resume --run <id>` is the one that finishes run `<id>`.
 - Each working command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout; `--help` and `guide` print theirs on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:

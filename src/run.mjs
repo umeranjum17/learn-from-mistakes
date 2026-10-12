@@ -77,10 +77,10 @@ export async function retro(cfg, opts) {
 }
 
 // `rerun --resume` runs a run again from its first step that is not completed; a plain `rerun` starts a new
-// run with the same settings, which today are all in the config.
+// run with the same settings, which today are all in the config, and returns the run it was started from.
 export async function rerun(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (!db || !opts.resume) { pick(cfg, db, opts); return retro(cfg, opts); } // pick throws: no saved runs, or no such run
+  if (!db || !opts.resume) { const from = pick(cfg, db, opts); return { ...await retro(cfg, opts), from }; } // pick throws: no saved runs, or no such run
   const id = locked(db, () => {
     reconcile(db);
     const id = pick(cfg, db, opts);
