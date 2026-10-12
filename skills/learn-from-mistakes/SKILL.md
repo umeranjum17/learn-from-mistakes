@@ -1,6 +1,6 @@
 ---
 name: learn-from-mistakes
-description: "Find what a project's coding agents keep getting wrong - repeated causes with counts and evidence from a defect log or failed pipeline runs - using the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro with counts from a defect log or failed runs, wants evidence-backed changes to AGENTS.md/CLAUDE.md/skills, or records that an instruction change was applied."
+description: "Find what a project's coding agents keep getting wrong - repeated causes with counts and evidence from a defect log or failed pipeline runs - using the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro with counts from a defect log, failed runs or this repo agent sessions, wants evidence-backed changes to AGENTS.md/CLAUDE.md/skills, or records that an instruction change was applied."
 license: MIT
 metadata:
   author: Umer Anjum (umeranjum17)
