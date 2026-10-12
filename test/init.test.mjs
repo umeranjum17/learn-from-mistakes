@@ -195,7 +195,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const level = (out, label) => out.checks.find((c) => c.label === label)?.level;
   assert.deepEqual(['config', 'state', 'source log', 'source gate', 'worker', 'worker login', 'judge login', 'identity'].map((l) => level(ok.out, l)), Array(8).fill('ok'));
   assert.equal(ok.out.checks.find((c) => c.label === 'judge login').detail, 'opencode auth list: logged in');
-  assert.deepEqual(['agent gemini', 'skill claude', 'sign-off'].map((l) => level(ok.out, l)), ['warn', 'warn', 'warn']); // listed, never a fail
+  assert.deepEqual(['skill claude', 'sign-off'].map((l) => level(ok.out, l)), ['warn', 'warn']);
   assert.match(lfm('doctor').stderr, /^next: learn-from-mistakes-axi retro --wait 8m/m);
 
   const yaml = readFileSync(config, 'utf8');
@@ -232,3 +232,24 @@ test('doctor fails a worker pinned to a runner that is not offered, and names th
   assert.match(fails[0].detail, /^gemini is not offered: /);
   assert.equal(fails[0].fix, 'set worker.runner in .learn-from-mistakes.yaml to claude');
 });
+
+// A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
+// absent one is a fail with the login fix. The HOME is synthetic, and the auth.json in it is a placeholder.
+for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (exit 3); auth.json present'], [false, 'fail', 'pi auth check failed (exit 3); no auth.json']]) {
+  test(`doctor checks pi's login file after a failed auth check: ${authJson ? 'present is a warn' : 'absent is a fail with its fix'}`, () => {
+    const { lfm, config, env } = setup(['claude', 'pi']);
+    writeFileSync(join(env.PATH, 'pi'), '#!/bin/sh\nif [ "$1" = auth ]; then echo "no session" >&2; exit 3; fi\necho "1.0.0"\n');
+    chmodSync(join(env.PATH, 'pi'), 0o755);
+    if (authJson) {
+      mkdirSync(join(env.HOME, '.pi', 'agent'), { recursive: true });
+      writeFileSync(join(env.HOME, '.pi', 'agent', 'auth.json'), '{"placeholder": true}\n');
+    }
+    assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+    const yaml = readFileSync(config, 'utf8');
+    writeFileSync(config, yaml.replace(/^worker: .*$/m, 'worker: { runner: pi, model: umer-cheap-1 }').replace(/^judge: .*$/m, 'judge: { runner: claude, model: "" }'));
+    const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker login');
+    assert.equal(line.level, level);
+    assert.equal(line.detail, detail);
+    assert.equal(line.fix, level === 'fail' ? 'pi   # then /login' : undefined);
+  });
+}
