@@ -19,6 +19,11 @@ export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes,
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
+// A metric name: one of METRICS, or cause_count:<a configured cause>. Targets and the ledger's --metric take these.
+export const isMetric = (name, causes) => METRICS.includes(name) || (name.startsWith('cause_count:') && Object.hasOwn(causes, name.slice(12)));
+export const METRIC_RULE = `a metric (${METRICS.join(', ')}, or cause_count:<cause>)`;
+// A target or a tripwire: "<op> <number>", such as ">= 70".
+export const RULE = /^(>=|<=|>|<|=) ?(\d+(?:\.\d+)?)$/;
 
 function readYaml(file) {
   let text;
@@ -112,9 +117,8 @@ sources:
   };
   const targets = mapping(p.targets ?? {}, null, `${file}: targets`);
   for (const [k, v] of Object.entries(targets)) {
-    check(METRICS.includes(k) || (k.startsWith('cause_count:') && Object.hasOwn(causes, k.slice(12))), `${file}: targets: ${k}`,
-      `a metric (${METRICS.join(', ')}, or cause_count:<cause>)`);
-    check(typeof v === 'string' && /^(>=|<=|>|<|=) ?\d+(\.\d+)?$/.test(v), `${file}: targets.${k}`, 'a quoted "<op> <number>", such as ">= 70"');
+    check(isMetric(k, causes), `${file}: targets: ${k}`, METRIC_RULE);
+    check(typeof v === 'string' && RULE.test(v), `${file}: targets.${k}`, 'a quoted "<op> <number>", such as ">= 70"');
   }
   // the read range is this window and the last one; only the sessions source applies it so far
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');

@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
-import { loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from '../src/config.mjs';
+import { isMetric, loadConfig, loadGlobal, METRIC_RULE, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { init } from '../src/init.mjs';
 import * as byokit from '../src/runners/byokit.mjs';
@@ -64,7 +64,8 @@ function readJsonl(file, { ingest, rerunHint }) {
   });
 }
 
-// The append-only change ledger: one JSON object per line, ids/cause keys/times plus the
+// The append-only change ledger: one JSON object per line, ids/cause keys/times, the metric, tripwire and kind
+// that show whether the change worked (a line written before them reads as the defaults), plus the
 // optional owner-written one-line `what`/`why` that only `learn-from-mistakes-axi changes` prints.
 // A missing file means zero entries, never an error. Problems name file:line only,
 // never line contents, so a corrupt ledger stays privacy-bounded too. A repeated id is a
@@ -79,7 +80,9 @@ export function readLedger(file) {
     const ok = e && typeof e === 'object' && !Array.isArray(e) && e.v === 1
       && typeof e.id === 'string' && e.id && typeof e.cause === 'string' && e.cause
       && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
-      && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)));
+      && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)))
+      && (e.metric === undefined || (typeof e.metric === 'string' && e.metric === oneLine(e.metric)))
+      && (e.tripwire === undefined || (typeof e.tripwire === 'string' && RULE.test(e.tripwire))) && (e.kind === undefined || KINDS.includes(e.kind));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
     else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${shown(e.id)}`);
     else { ids.add(e.id); entries.push(e); }
@@ -94,6 +97,9 @@ function cleanLedger(file, opts) {
 }
 
 const REF_RE = /^(?:[0-9a-f]{7,40}|sha256:[0-9a-f]{64})$/;
+const KINDS = ['doc', 'rule', 'code']; // what the change edited; the first is the default
+// The ledger fields that show whether a change worked, with the defaults for a line that has none.
+const measure = (e) => ({ metric: e.metric ?? `cause_count:${e.cause}`, tripwire: e.tripwire ?? '', kind: e.kind ?? KINDS[0] });
 const UNPRINTABLE = /[\p{Cc}\u2028\u2029]/u;
 // A value the user typed, safe to echo: quoted, or a placeholder when long or not printable.
 const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
@@ -123,6 +129,10 @@ function recordChange(cfg, opts, json) {
     if (Number.isNaN(ms)) throw new UsageError(`--at ${shown(opts.at)} must be an ISO 8601 time`, withContext(`learn-from-mistakes-axi change applied --cause ${opts.cause} --ref ${opts.ref} --at 2026-10-12T09:00:00Z`, 'or leave --at out for now', opts));
     at = new Date(ms).toISOString();
   }
+  if (opts.metric !== undefined && !isMetric(opts.metric, cfg.causes)) throw new UsageError(`--metric ${shown(opts.metric)} must be ${METRIC_RULE}`, form);
+  const trip = opts.tripwire === undefined ? undefined : RULE.exec(opts.tripwire.trim());
+  if (opts.tripwire !== undefined && !trip) throw new UsageError(`--tripwire ${shown(opts.tripwire)} must be "<op> <number>" with op >=, <=, >, < or =, such as "<= 0"`, form);
+  if (opts.kind !== undefined && !KINDS.includes(opts.kind)) throw new UsageError(`--kind ${shown(opts.kind)} must be doc, rule or code`, form);
   const text = {};
   for (const k of ['what', 'why']) {
     if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} ${shown(opts[k])} must be one line of 1-200 characters, with no line breaks or control characters`, form);
@@ -130,7 +140,8 @@ function recordChange(cfg, opts, json) {
   const file = join(cfg.state, 'changes.jsonl');
   const entries = cleanLedger(file, opts);
   const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
-  const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
+  const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at, metric: opts.metric ?? `cause_count:${opts.cause}`,
+    ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind: opts.kind ?? KINDS[0] };
   stateDir(cfg);
   appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
   console.log(render(entry, json)); // what/why leave only through `learn-from-mistakes-axi changes`
@@ -139,7 +150,7 @@ function recordChange(cfg, opts, json) {
 
 // lfm-changes.v1: every applied change in ledger order. The join key is `project` + `id`.
 function exportChanges(cfg, opts, json) {
-  const changes = cleanLedger(join(cfg.state, 'changes.jsonl'), opts).map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, what: e.what ?? '', why: e.why ?? '' }));
+  const changes = cleanLedger(join(cfg.state, 'changes.jsonl'), opts).map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, ...measure(e), what: e.what ?? '', why: e.why ?? '' }));
   console.log(render({ schema: 'lfm-changes.v1', generated_at: new Date().toISOString(), project: cfg.name, changes }, json));
   if (!changes.length) hint(withContext('learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>', 'record a change you already made', opts));
   else hint(json ? withContext('learn-from-mistakes-axi report', 'the per-cause counts', opts) : withContext('learn-from-mistakes-axi changes --json', 'the same export as JSON', opts));
@@ -349,6 +360,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   --proposals <file>  proposals.jsonl to read (default: the state dir)
   --cause <cause>     (change applied) cause key from the config, never \`other\`
   --ref <ref>         (change applied) version id: git sha (7-40 hex) or sha256:<64 hex>
+  --metric <metric>   (change applied) the metric that shows whether it worked (default: cause_count:<cause>)
+  --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as "<= 0" (default: none)
+  --kind <kind>       (change applied) what the change edited: doc, rule or code (default: doc)
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
@@ -426,6 +440,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
    and your proposals from proposals.jsonl.
 
 7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
+     --metric <metric> --tripwire "<op> <number>" --kind doc|rule|code   # optional: how a later retro checks it worked
      --what "<what changed>" --why "<why>"   # optional, one line each; never record text or label prose
    learn-from-mistakes-axi changes lists them (lfm-changes.v1); the report shows only counts and dates.
 
@@ -450,7 +465,7 @@ const FORMS = {
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
   count: 'learn-from-mistakes-axi count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
-  'change-applied': 'learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
+  'change-applied': 'learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
   retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
@@ -464,7 +479,7 @@ const FORMS = {
 const JUDGE_FIX = `set judge.runner and judge.model in ${PROJECT_FILE} to an agent CLI and a different model, or install a second agent CLI`;
 const AGENTS_FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
 const INSTALL_FIX = `install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml   # then run agents again`;
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--worker', '--judge'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--worker', '--judge'];
 const SWITCHES = ['--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;

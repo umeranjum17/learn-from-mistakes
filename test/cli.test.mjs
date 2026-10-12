@@ -176,7 +176,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   assert.equal(lfm('ingest').status, 0);
   writeFileSync(join(p, 'bad.jsonl'), '{"id":"x"}\n{not json\n');
   const HELP = /^next: learn-from-mistakes-axi --help   # supported commands and options$/m;
-  const CHANGE = /^next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> \[--at <time>\]/m;
+  const CHANGE = /^next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> \[--metric <metric>\] \[--tripwire "<op> <number>"\] \[--kind doc\|rule\|code\] \[--at <time>\]/m;
   const known = '(known: server-memory-kill, shared-cache-lock, agent-exit-wait; "other" is reserved)';
   const applied = (...args) => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', ...args);
   const cfgFile = join(p, '.learn-from-mistakes.yaml'), v1 = readFileSync(cfgFile, 'utf8');
@@ -204,6 +204,11 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'XYZ'), 2, '--ref "XYZ" must be a 7-40 lowercase hex commit or sha256:<64 lowercase hex>', /^next: git rev-parse HEAD/m],
     [() => applied('--at', 'not-a-time'), 2, '--at "not-a-time" must be an ISO 8601 time', /^next: learn-from-mistakes-axi change applied --cause server-memory-kill --ref abc1234 --at 2026-10-12T09:00:00Z/m],
     [() => applied('--full'), 2, 'change applied does not take --full', CHANGE],
+    [() => applied('--tripwire', '< x'), 2, '--tripwire "< x" must be "<op> <number>" with op >=, <=, >, < or =, such as "<= 0"', CHANGE],
+    [() => applied('--tripwire', '=< 1'), 2, '--tripwire "=< 1" must be "<op> <number>" with op >=, <=, >, < or =, such as "<= 0"', CHANGE],
+    [() => applied('--metric', 'speed'), 2, /^error: --metric "speed" must be a metric \(merged, first_pass, .*, or cause_count:<cause>\)$/m, CHANGE],
+    [() => applied('--metric', 'cause_count:nope'), 2, /^error: --metric "cause_count:nope" must be a metric \(/m, CHANGE], // a cause the config does not name
+    [() => applied('--kind', 'policy'), 2, '--kind "policy" must be doc, rule or code', CHANGE],
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
@@ -608,9 +613,9 @@ test('change applied appends an append-only ledger the report counts and changes
   const first = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
   assert.equal(first.status, 0, first.stderr);
   const firstEntry = decode(first.stdout); // one TOON object on stdout
-  assert.deepEqual(Object.keys(firstEntry).sort(), ['at', 'cause', 'id', 'ref', 'v']);
-  assert.deepEqual({ v: firstEntry.v, id: firstEntry.id, cause: firstEntry.cause, ref: firstEntry.ref },
-    { v: 1, id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234' });
+  assert.deepEqual(Object.keys(firstEntry).sort(), ['at', 'cause', 'id', 'kind', 'metric', 'ref', 'v']); // no --tripwire: none saved
+  assert.deepEqual({ v: firstEntry.v, id: firstEntry.id, cause: firstEntry.cause, ref: firstEntry.ref, metric: firstEntry.metric, kind: firstEntry.kind },
+    { v: 1, id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', metric: 'cause_count:server-memory-kill', kind: 'doc' }); // the defaults
   assert.ok(!Number.isNaN(Date.parse(firstEntry.at)), 'default --at is a readable time');
   assert.match(first.stderr, /next: learn-from-mistakes-axi report   # the report with the ledger/);
   const afterFirst = readFileSync(ledger);
@@ -621,9 +626,11 @@ test('change applied appends an append-only ledger the report counts and changes
   // Owner text a report must never carry; commas, quotes and colons stress the TOON table.
   const WHAT = 'OWNER-WHAT-41c2: builds run in their own "memory group", 🙂';
   const WHY = 'OWNER-WHY-7d0e: the killer, not the build, stopped the server';
-  const second = change('--cause', 'server-memory-kill', '--ref', REF2, '--at', AT, '--what', `  ${WHAT} `, '--why', WHY, '--json');
+  const second = change('--cause', 'server-memory-kill', '--ref', REF2, '--at', AT, '--metric', 'tool_error_rate', '--tripwire', '<=0.05', '--kind', 'rule',
+    '--what', `  ${WHAT} `, '--why', WHY, '--json');
   assert.equal(second.status, 0, second.stderr);
-  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z' }); // the echo never carries what/why
+  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z',
+    metric: 'tool_error_rate', tripwire: '<= 0.05', kind: 'rule' }); // the echo never carries what/why; the tripwire in one form
   const afterSecond = readFileSync(ledger);
   assert.ok(afterSecond.subarray(0, afterFirst.length).equals(afterFirst)); // the second entry keeps every prior byte
 
@@ -641,6 +648,9 @@ test('change applied appends an append-only ledger the report counts and changes
     ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--why', 'line one\nline two'], // newline
     ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--what', 'bell\u0007'], // control character
     ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--what'], // missing value
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--tripwire', '< x'], // bad tripwire
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--metric', 'speed'], // unknown metric
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--kind', 'policy'], // unknown kind
   ]) {
     assert.equal(change(...args).status, 2, args.join(' '));
     assert.ok(readFileSync(ledger).equals(afterSecond), `rejected input changed the ledger: ${args.join(' ')}`);
@@ -660,7 +670,8 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.equal(corruptExport.status, 1);
   assert.equal(corruptExport.stdout, ''); // no partial export to join on
   assert.match(corruptExport.stderr, /changes\.jsonl:3: not valid JSON/);
-  for (const bad of [{ id: 'chg-3', what: 'line one\nline two' }, { id: 'chg-3', why: 'x'.repeat(201) }, { id: 'chg-2' }]) {
+  for (const bad of [{ id: 'chg-3', what: 'line one\nline two' }, { id: 'chg-3', why: 'x'.repeat(201) }, { id: 'chg-3', tripwire: '< x' },
+    { id: 'chg-3', kind: 'policy' }, { id: 'chg-3', metric: '' }, { id: 'chg-2' }]) {
     writeFileSync(ledger, Buffer.concat([afterSecond, Buffer.from(JSON.stringify({ v: 1, cause: 'server-memory-kill', ref: 'abc1234', at: AT, ...bad }) + '\n')]));
     const r = lfm('changes', '--json'); // a hand-edited ledger never exports bad text or a repeated join key
     assert.equal(r.status, 1, JSON.stringify(bad));
@@ -679,8 +690,8 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.equal(exportModel.project, 'example');
   assert.ok(!Number.isNaN(Date.parse(exportModel.generated_at)));
   assert.deepEqual(exportModel.changes, [
-    { id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', at: firstEntry.at, what: '', why: '' },
-    { id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', what: WHAT, why: WHY },
+    { id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', at: firstEntry.at, metric: 'cause_count:server-memory-kill', tripwire: '', kind: 'doc', what: '', why: '' },
+    { id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', metric: 'tool_error_rate', tripwire: '<= 0.05', kind: 'rule', what: WHAT, why: WHY },
   ]);
   assert.match(changesJson.stderr, /next: learn-from-mistakes-axi report /);
   const changesToon = exported();
@@ -715,7 +726,19 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.equal(third.status, 0, third.stderr);
   const later = JSON.parse(exported('--json').stdout);
   assert.deepEqual(later.changes.slice(0, 2), exportModel.changes); // ids are stable after a later append
-  assert.deepEqual(later.changes[2], { id: 'chg-3', cause: 'shared-cache-lock', ref: 'def5678', at: later.changes[2].at, what: 'x'.repeat(200), why: 'y' });
+  assert.deepEqual(later.changes[2], { id: 'chg-3', cause: 'shared-cache-lock', ref: 'def5678', at: later.changes[2].at,
+    metric: 'cause_count:shared-cache-lock', tripwire: '', kind: 'doc', what: 'x'.repeat(200), why: 'y' });
+
+  // A line written before the metric, tripwire and kind fields still loads, with the defaults, and the ledger goes on.
+  appendFileSync(ledger, `${JSON.stringify({ v: 1, id: 'chg-4', cause: 'agent-exit-wait', ref: 'abc1234', at: AT })}\n`);
+  const fifth = change('--cause', 'agent-exit-wait', '--ref', 'abc1234', '--metric', 'cause_count:server-memory-kill', '--tripwire', '>= 1', '--json');
+  assert.equal(fifth.status, 0, fifth.stderr);
+  assert.equal(JSON.parse(fifth.stdout).id, 'chg-5');
+  assert.deepEqual(JSON.parse(exported('--json').stdout).changes.slice(3).map(({ id, metric, tripwire, kind }) => ({ id, metric, tripwire, kind })), [
+    { id: 'chg-4', metric: 'cause_count:agent-exit-wait', tripwire: '', kind: 'doc' },
+    { id: 'chg-5', metric: 'cause_count:server-memory-kill', tripwire: '>= 1', kind: 'doc' }, // any configured cause's count
+  ]);
+  assert.deepEqual(JSON.parse(lfm('report', ...inputs, '--json').stdout).ledger, { entries: 5 });
 });
 
 test('empty input exits 3 with a next command', () => {
