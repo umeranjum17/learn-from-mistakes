@@ -242,7 +242,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
   // One defect bullet and one failed gate step of this repo per planted shape, and a failed step of another repo in the same store.
   const one = PLANTED.filter(([t]) => !t.includes('\n'));
-  writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(0)}\n\n${one.map(([t]) => `- [deploy] Umer pasted ${t} and password=[redacted]hunter2rest in the log.`).join('\n')}\n`);
+  writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(0)}\n\n${one.map(([t]) => `- [deploy] Umer pasted ${t} and password=[redacted]hunter2rest, token=[redacted] here in the log.`).join('\n')}\n`);
   const gate = new DatabaseSync(join(p, 'gate.sqlite')), at = Math.floor(Date.now() / 1000) - 3600;
   const step = gate.prepare(`INSERT INTO step_results (id, run_id, step_name, status, error, started_at, completed_at) VALUES (?, ?, 'push', 'failed', ?, ?, ?)`);
   one.forEach(([t], i) => step.run(`step-planted-${i}`, 'run-a', `push: Umer's remote said ${t}`, at, at));
@@ -281,7 +281,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
   assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
   assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
-  assert.ok(!on.text.includes('hunter2rest') && on.text.includes('password=[redacted] in the log.'), 'a secret after a placeholder');
+  assert.ok(!on.text.includes('hunter2rest') && on.text.includes('password=[redacted] token=[redacted] here in the log.'), 'a secret after a placeholder, or a placeholder redacted again');
 
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
   writeFileSync(cfg, `${examples}excerpts: off\n`);
