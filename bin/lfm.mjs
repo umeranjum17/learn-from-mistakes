@@ -335,6 +335,20 @@ function project(a, full) {
 
 const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEncode(model));
 
+// One stdout line after the TOON report, before the stderr hints: which causes
+// repeated, in report order, with the same incidents/days the report shows.
+// A cause repeated only through store rows says rows, never incidents.
+// Identifiers and counts only, never record text.
+function summaryLine(model) {
+  const parts = [];
+  for (const c of model.causes) {
+    if (!c.repeated) continue;
+    if (c.by.includes('log')) parts.push(`${c.cause} (${c.log.incidents} incidents/${c.log.days} days)`);
+    else parts.push(`${c.cause} (${c.store.rows} rows/${c.store.days} days)`);
+  }
+  return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
+}
+
 const USAGE = `usage: lfm [<ingest|count|report|change applied|changes>] [options]
   lfm                 print the project's repeated-cause report (same as \`lfm report\`)
   ingest              read the configured sources (read-only) into the state dir
@@ -430,7 +444,9 @@ function main() {
     hint(withContext('lfm ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', opts));
     process.exit(3);
   }
-  console.log(render(project(a, full), json));
+  const model = project(a, full);
+  console.log(render(model, json));
+  if (!json) console.log(summaryLine(model));
   if (a.problems.length) {
     for (const p of a.problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
     if (a.problems.length > PROBLEM_LINES) console.error(`problem: ... and ${a.problems.length - PROBLEM_LINES} more`);
