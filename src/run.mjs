@@ -305,7 +305,7 @@ function show(db, id) {
   for (const m of db.prepare('SELECT window, name, value, target, met FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
     if (!metrics.has(m.name)) metrics.set(m.name, { name: m.name, current: 'n/a', previous: 'n/a', target: '', met: '' });
     const row = metrics.get(m.name);
-    row[m.window] = m.value ?? 'n/a';
+    row[m.window] = m.value === null ? 'n/a' : Math.round(m.value * 1000) / 1000; // the verdict uses the unrounded value
     if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: m.target ? ['missed', 'met'][m.met] ?? 'n/a' : '' });
   }
   return {

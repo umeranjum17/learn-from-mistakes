@@ -9,7 +9,8 @@ and the run output (`retro`, `status`) adds `window` (`current_start`,
 Each metric with a `targets:` entry (config or the defaults) saves its `target`
 and `met` per window (1 met, 0 missed, NULL when the number is n/a or there is
 no target); the output shows the target and `met`, `missed` or `n/a` for the
-current window, and empty strings for a metric with no target. `current` runs from
+current window, and empty strings for a metric with no target. The verdict
+compares the unrounded number; the output rounds it to 3 decimals. `current` runs from
 `now - window` with no end; `previous` is the same length before it. Collect
 saves the two starts, so `rerun --resume` counts over the same windows.
 Each source type gives its numbers through its `metrics(rows, window)` over the
@@ -76,5 +77,5 @@ sources of one type are read together: two defect logs sum into one `defects`. A
 second sessions source is rejected (exit 2): each reads every agent's stores, so
 its events would count twice.
 A metric whose source type is not configured is n/a. `gate_failures`
-and the github metrics come in later slices. A target compares the number as
-stored, so `"<= 0.3"` meets 0.3 exactly.
+and the github metrics come in later slices. A target compares the unrounded
+number, so `"<= 0.05"` misses 25 failed results of 496 (0.0504) and shows as 0.05.
