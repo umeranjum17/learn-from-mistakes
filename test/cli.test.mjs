@@ -929,3 +929,15 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed']);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs.map((x) => x.status), ['completed', 'cancelled', 'completed']);
 });
+
+test('a run id reused after the store is removed starts its step logs empty', () => {
+  const { p, lfm } = setup();
+  const first = JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout);
+  assert.equal(first.run.status, 'completed');
+  for (const f of ['lfm.sqlite', 'lfm.sqlite-wal', 'lfm.sqlite-shm']) rmSync(join(p, '.lfm', f), { force: true });
+  const again = JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout);
+  assert.equal(again.run.id, 1);
+  assert.equal(again.run.status, 'completed');
+  const log = JSON.parse(lfm('logs', '--step', 'collect', '--run', '1', '--json').stdout);
+  assert.deepEqual([log.lines, log.log.length], ['2 total', 2]);
+});
