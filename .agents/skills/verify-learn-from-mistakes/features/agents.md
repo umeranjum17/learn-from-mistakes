@@ -14,8 +14,8 @@ empty model on the same binary is equal); a judge clash exits 1 with `problem:`
 and the fix. `agents --test <runner>` makes one live call in
 `<state dir>/runs/test-<runner>/`: the prompt starts with `lfm-run:test:<runner>`
 and asks the agent to write `x.txt`; any new file in the run dir, no answer by
-`caps.timeout`, no JSON in the answer or the agent's own error exits 1 with the
-real cause. Transient errors (429/503/529, overloaded, rate_limit, ECONNRESET)
+`caps.timeout` or the agent's own error exits 1 with the
+real cause; a plain-text answer with no JSON passes and prints as `reply` (the file scan is the check). Transient errors (429/503/529, overloaded, rate_limit, ECONNRESET)
 retry twice; quota text never retries. The agent process group is killed at the
 timeout (SIGTERM, SIGKILL after 3 s); after exit a grandchild holding stdout gets
 5 s before the pipes close.

@@ -11,7 +11,8 @@ import { decode } from '@toon-format/toon';
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
 const SECRET = 'CANARY-login-secret-5d1e';
-// FAKE_<RUNNER>: ok (default), broken (--version exits 1), hang, grandchild (holds stdout after exit), write, flaky (529 once).
+// FAKE_<RUNNER>: ok (default), broken (--version exits 1), hang, grandchild (holds stdout after exit), write, flaky (529 once),
+// prose (answers in plain text, no JSON), error (claude's own is_error result).
 const FAKE = `
 const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const name = path.basename(process.argv[1]), args = process.argv.slice(2), mode = process.env['FAKE_' + name.toUpperCase()] || 'ok';
@@ -25,8 +26,8 @@ else {
   if (mode === 'flaky' && !fs.existsSync(once)) { fs.writeFileSync(once, ''); console.error('API Error: 529 overloaded'); process.exit(1); }
   if (mode === 'write') fs.writeFileSync('x.txt', 'ok');
   if (mode === 'grandchild') spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();
-  const text = JSON.stringify({ reply: 'hello from ' + name });
-  if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: false, result: text }));
+  const text = mode === 'prose' ? 'I cannot create x.txt: my tools are off.' : JSON.stringify({ reply: 'hello from ' + name });
+  if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: mode === 'error', result: mode === 'error' ? "The model's tool call could not be parsed" : text }));
   if (name === 'codex') { fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
   if (name === 'opencode') console.log(JSON.stringify({ type: 'text', part: { text: 'thinking' } }) + '\\n' + JSON.stringify({ type: 'text', part: { text } }));
 }
@@ -173,9 +174,16 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   assert.match(write.stderr, /^error: opencode wrote x\.txt in its run dir .*: its tools are not off$/m);
   assert.ok(existsSync(join(p, '.lfm', 'runs', 'test-opencode', 'x.txt')));
 
+  const prose = lfm({ FAKE_OPENCODE: 'prose' }, 'agents', '--test', 'opencode', '--json'); // no JSON, nothing written: passes
+  assert.equal(prose.status, 0, prose.stderr);
+  assert.equal(JSON.parse(prose.stdout).test.reply, 'I cannot create x.txt: my tools are off.');
+  const own = lfm({ FAKE_CLAUDE: 'error' }, 'agents', '--test', 'claude'); // the agent's own error stays a failure
+  assert.equal(own.status, 1);
+  assert.match(own.stderr, /^error: claude: The model's tool call could not be parsed$/m);
+
   const flaky = lfm({ FAKE_CLAUDE: 'flaky' }, 'agents', '--test', 'claude', '--json'); // 529 once, then an answer
   assert.equal(flaky.status, 0, flaky.stderr);
-  assert.equal(calls('claude').length, 3); // the hung call, the 529, the retry
+  assert.equal(calls('claude').length, 4); // the hung call, the own error, the 529, the retry
 
   const none = lfm({ PATH: '/nonexistent' }, 'agents', '--test', 'claude');
   assert.equal(none.status, 1);

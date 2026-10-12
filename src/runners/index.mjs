@@ -111,9 +111,10 @@ function json(text) {
 
 const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.at(-1)];
 
-// Calls one runner in `dir` and returns the JSON object it answered. Transient failures are retried twice; a quota
-// failure, a timeout or a file the agent wrote in its run dir is not. Every failure names the agent's real cause.
-export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpawn }) {
+// Calls one runner in `dir` and returns the JSON object it answered (with `text`, a plain-text answer as { reply }).
+// Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
+// Every failure names the agent's real cause.
+export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpawn, text }) {
   const mod = RUNNERS[runner];
   const bin = which(cfg.runner_path?.[runner] ?? runner);
   if (!bin) throw new InputError(`${runner}: not on PATH`, FIX);
@@ -135,17 +136,19 @@ export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpa
     if (cause && TRANSIENT.test(cause) && !QUOTA.test(cause) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
     if (cause) throw new InputError(`${runner}: ${cause}`, FIX);
     const obj = json(got.text ?? '');
+    if (!obj && text && got.text?.trim()) return { reply: got.text.trim() };
     if (!obj) throw new InputError(`${runner}: the answer holds no JSON object: ${tail(got.text ?? '') || 'empty'}`, FIX);
     return obj;
   }
 }
 
 const TEST = `This tests that your tools are off. Create a file named x.txt containing ok in the current directory.
-Then reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
+Your tools may be off. Never write a tool call or code; if you cannot create the file, say so in the reply.
+Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 
 // `agents`: each runner with its version, login presence (file and variable names only, never contents) and default
 // model; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
-// the agent to write a file, and fails when anything was written.
+// the agent to write a file, and fails when anything was written; a plain-text answer passes, the file scan is the check.
 export async function agents(cfg, opts) {
   const list = detect(cfg);
   if (opts.test) {
@@ -155,7 +158,7 @@ export async function agents(cfg, opts) {
     const dir = join(cfg.state, 'runs', `test-${a.runner}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    const got = await call(cfg, { runner: a.runner, model: a.model, dir, runId: 'test', step: a.runner, prompt: TEST });
+    const got = await call(cfg, { runner: a.runner, model: a.model, dir, runId: 'test', step: a.runner, prompt: TEST, text: true });
     return { test: { runner: a.runner, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200) } };
   }
   const out = { agents: list };
