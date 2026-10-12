@@ -25,6 +25,9 @@ function setup() {
 }
 const inputs = (p) => [join(p, 'labels.jsonl'), join(p, 'proposals.jsonl')];
 const report = (lfm, p, ...extra) => lfm('report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], ...extra);
+// The TOON report's last stdout line is the `repeated:` summary, outside lfm-report.v1.
+const summaryOf = (stdout) => stdout.trimEnd().split('\n').at(-1);
+const toonBodyOf = (stdout) => { const lines = stdout.trimEnd().split('\n'); lines.pop(); return lines.join('\n') + '\n'; };
 
 test('help and version work without a project file', () => {
   const { raw } = setup();
@@ -93,8 +96,9 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   assert.doesNotMatch(ing.stderr, /no causes configured/); // the example config names its causes
   const bare = report(lfm, p);
   assert.equal(bare.status, 0, bare.stderr);
-  const toon = decode(bare.stdout); // invalid TOON throws
+  const toon = decode(toonBodyOf(bare.stdout)); // invalid TOON throws; the summary line is outside the report
   assert.equal(toon.schema, 'lfm-report.v1');
+  assert.equal(summaryOf(bare.stdout), 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)');
   assert.match(bare.stderr, /next: lfm report --full/); // the next move is always offered
   for (const flag of ['--dir', '--labels', '--proposals']) assert.match(bare.stderr, new RegExp(flag)); // the hint names the inputs it used
   assert.ok(!bare.stderr.includes(p), 'the hint must not echo an input path value');
@@ -116,6 +120,37 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   assert.equal(causes['agent-exit-wait'].store.rows, 4); // typed store rows matched, never added to log
   assert.equal(causes['other'].repeated, false);
   assert.deepEqual(toon.coverage, { labelled: 13, total_records: 13, unlabelled: 0 });
+});
+
+test('the TOON report ends with one repeated summary line; --json is unchanged', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  const expected = 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)';
+  // report, count and the bare command print the same TOON summary last on stdout.
+  for (const args of [
+    ['report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1]],
+    ['count', '--labels', inputs(p)[0], '--proposals', inputs(p)[1]],
+    ['--labels', inputs(p)[0], '--proposals', inputs(p)[1]],
+  ]) {
+    const r = lfm(...args);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(summaryOf(r.stdout), expected, args.join(' '));
+    assert.deepEqual(decode(toonBodyOf(r.stdout)).schema, 'lfm-report.v1');
+    assert.doesNotMatch(toonBodyOf(r.stdout), /^repeated: /m); // the summary is outside the report
+  }
+  // --json carries the same projection with no summary line.
+  const json = report(lfm, p, '--json');
+  assert.equal(json.status, 0, json.stderr);
+  assert.doesNotMatch(json.stdout, /^repeated: /m);
+  assert.equal(JSON.parse(json.stdout).schema, 'lfm-report.v1');
+  // Nothing repeated prints none, with ids and counts only, never record text.
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')
+    .replace('min_incidents: 3', 'min_incidents: 99'));
+  assert.equal(lfm('ingest').status, 0);
+  const calm = report(lfm, p);
+  assert.equal(calm.status, 0, calm.stderr);
+  assert.equal(summaryOf(calm.stdout), 'repeated: none');
+  assert.doesNotMatch(calm.stdout, /memory killer stopped|wait delay expired/i);
 });
 
 test('ingest identifies the store by the rows it read, not its mtime, and never writes the store', () => {
@@ -437,7 +472,8 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.deepEqual(model.causes.find((c) => c.cause === 'shared-cache-lock').changes, { count: 0, last_at: '' });
   const bare = lfm('report', ...inputs);
   assert.equal(bare.status, 0, bare.stderr);
-  assert.deepEqual(decode(bare.stdout), model); // TOON decodes equal to JSON
+  assert.deepEqual(decode(toonBodyOf(bare.stdout)), model); // TOON decodes equal to JSON
+  assert.equal(summaryOf(bare.stdout), 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)');
   const fullRun = lfm('report', ...inputs, '--full', '--json');
   assert.equal(fullRun.status, 0, fullRun.stderr);
   const fullMem = JSON.parse(fullRun.stdout).causes.find((c) => c.cause === 'server-memory-kill');
