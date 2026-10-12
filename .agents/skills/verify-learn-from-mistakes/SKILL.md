@@ -28,7 +28,8 @@ of `examples`. Originals are hashed before and after; scratch is removed even
 when a CLI check fails. No model, network, pipeline, or release is started by the
 default journey. It also drives the bare command and `report`/`--json`/`--full`,
 and (synthetic only) `change applied --what --why` plus the `changes` export,
-then a saved run (`retro --foreground`, `status`, `runs`),
+then a saved run (`retro --foreground`, `status`, `runs`), the same run with
+every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
@@ -53,7 +54,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0, all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-runner` must be 2), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 
