@@ -3,7 +3,7 @@
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
 // labels.jsonl; this file only parses, dedups and counts.
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -80,6 +80,7 @@ function readLog(source, path) {
 }
 
 // Failed pipeline steps from a no-mistakes state database, opened read-only. One fixed query; no user SQL.
+// Its identity is the sha256 of the rows read, so it follows content, not file time.
 function readStore(source, path) {
   if (!existsSync(path)) throw new UsageError(`${path}: no such file`);
   let db;
@@ -89,7 +90,7 @@ function readStore(source, path) {
       FROM step_results s JOIN runs r ON r.id = s.run_id WHERE s.status = 'failed' ORDER BY t, s.id`).all();
     return { rows: rows.map((r) => ({ id: r.id, source, run: r.run_id, step: r.step_name, branch: r.branch,
       at: r.t ? new Date(r.t > 1e11 ? r.t : r.t * 1000).toISOString() : '', error: r.error ?? '' })),
-      hash: `mtime ${statSync(path).mtime.toISOString()}` };
+      hash: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
   } catch (e) {
     throw new UsageError(`${path}: not a readable no-mistakes store (${e.message})`);
   } finally { db?.close(); }
@@ -197,7 +198,7 @@ function ingest(cfg, opts) {
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
-  for (const s of sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  ${s.hash.startsWith('mtime') ? s.hash : `sha256 ${s.hash.slice(0, 12)}`}`);
+  for (const s of sources) console.log(`${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items  sha256 ${s.hash.slice(0, 12)}`);
   console.log(`state: ${cfg.state}\nnext: label records.jsonl into labels.jsonl (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`);
 }
 
