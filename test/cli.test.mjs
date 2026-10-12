@@ -941,3 +941,16 @@ test('a run id reused after the store is removed starts its step logs empty', ()
   const log = JSON.parse(lfm('logs', '--step', 'collect', '--run', '1', '--json').stdout);
   assert.deepEqual([log.lines, log.log.length], ['2 total', 2]);
 });
+
+test('a pending step of a reused run id shows no lines from the earlier run', () => {
+  const { p, lfm, env } = setup();
+  assert.equal(JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout).run.status, 'completed');
+  for (const f of ['lfm.sqlite', 'lfm.sqlite-wal', 'lfm.sqlite-shm']) rmSync(join(p, '.lfm', f), { force: true });
+  const started = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'collect:3000' } });
+  assert.equal(started.status, 0, started.stderr);
+  const { run } = JSON.parse(started.stdout);
+  assert.equal(run.id, 1);
+  const report = JSON.parse(lfm('logs', '--step', 'report', '--run', '1', '--json').stdout);
+  assert.deepEqual([report.status, report.lines, report.log.length], ['pending', '0 total', 0]);
+  assert.equal(lfm('attach').status, 0);
+});

@@ -82,6 +82,7 @@ export async function retro(cfg, opts) {
     const now = iso(Date.now());
     const { lastInsertRowid } = db.prepare(`INSERT INTO runs (status, pid, pid_started_at, created_at, updated_at) VALUES ('running', ?, ?, ?, ?)`)
       .run(process.pid, startTime(process.pid), now, now); // this process owns the run until the worker takes it
+    dropRunDir(cfg, lastInsertRowid);
     Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(lastInsertRowid, name, ord));
     return lastInsertRowid;
   });
@@ -215,6 +216,14 @@ export async function attach(cfg, opts) {
     }
     if (ended) return show(db, id);
     await sleep(1000);
+  }
+}
+
+// A new run takes an id that an earlier run may have had once the store was removed: its logs go with it.
+function dropRunDir(cfg, id) {
+  const dir = runDir(cfg, id);
+  try { rmSync(dir, { recursive: true, force: true }); } catch (e) {
+    throw new UsageError(`${dir}: cannot remove (${e.code})`, `rm -r ${dir}   # the logs of an earlier run with this id`);
   }
 }
 
