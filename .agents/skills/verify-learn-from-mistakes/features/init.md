@@ -12,12 +12,14 @@ and one table model, the judge is written on the worker's runner and reported as
 a gap with the fix hint; `agents` then exits 1 (no fallback to the worker).
 `--worker`/`--judge <runner>` pin a role: a pinned judge on the worker's identity
 exits 2, an unknown runner exits 2, a pinned or auto role with no usable runner
-exits 1; none of these writes a file.
+exits 1; none of these writes a file. On an existing config, `--worker`, `--judge`
+or `--no-excerpts` exit 2 (init never rewrites it), and a `--dir` that is not a
+directory exits 2 with `error:`/`next:`.
 
 Sources come from each registry module's `detect(dir)` hook (`src/sources/<type>.mjs`),
 so only types with a reader are written: `markdown-log` takes the first of
 `defects.md`, `docs/defects.md`, `DEFECTS.md` (as `log`); `no-mistakes` takes
-`$NM_HOME/state.sqlite` (else `~/.no-mistakes/state.sqlite`, written with `~`)
+`$NM_HOME/state.sqlite` (made absolute; else `~/.no-mistakes/state.sqlite`, written with `~`)
 when its `repos` table has a row whose `working_path` is the project's git top
 level or whose `upstream_url` is its `origin` URL (as `gate`). A store that
 cannot be read is listed under `skipped` with its cause; init goes on.
@@ -37,7 +39,8 @@ different judge, `docs/defects.md` and the store detected), `.lfm/.gitignore`,
 `git status`, a second init byte-identical, `retro --foreground` completing on
 the written config, gaps on an existing config, `--no-excerpts`, the
 one-agent judge gap (and `agents` exit 1), and the refusals (pinned clash,
-unknown runner, unusable runner, no agent CLI). The helper drives `init`,
+unknown runner, unusable runner, a flag on an existing config, a missing dir, no
+agent CLI). The helper drives `init`,
 `init-again` (bytes unchanged) and `init-pinned-clash` (exit 2) in a fresh
 scratch project with two fake agents, and keeps `init.yaml`.
 

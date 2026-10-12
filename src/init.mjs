@@ -1,6 +1,6 @@
 // init: write a project's .learn-from-mistakes.yaml once. The worker and the judge are agent CLIs from the runner
 // table, picked by the identity rule; the sources are what the registry's detect hooks find in the project.
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { InputError, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { expand, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
@@ -20,6 +20,9 @@ function roles(cfg, agents) {
 // returns the config as loaded, plus its gaps: a role that does not resolve, or a detected source the config lacks.
 export async function init(dir, opts) {
   const file = join(dir, PROJECT_FILE);
+  if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new UsageError(`${dir}: not a directory`, 'learn-from-mistakes-axi init --dir <project>   # an existing project dir');
+  const changes = ['worker', 'judge', 'no-excerpts'].filter((k) => opts[k]).map((k) => `--${k}`);
+  if (changes.length && existsSync(file)) throw new UsageError(`${file} exists, so ${changes.join(' and ')} would change nothing; init never rewrites a config`, `edit ${file}   # set worker.runner, judge.runner or excerpts there`);
   const found = {}, skipped = [];
   for (const [type, mod] of Object.entries(SOURCES)) {
     try {
@@ -37,13 +40,15 @@ export async function init(dir, opts) {
     if (judge.problem && !judge.bin) throw new InputError(`judge: ${judge.problem}`, FIX);
     // An auto judge with no second identity is written and reported; a judge the user pinned onto the worker is refused.
     if (judge.problem && opts.judge) throw new UsageError(`judge: ${judge.problem}`, `learn-from-mistakes-axi init --worker <runner> --judge ${opts.judge}   # a worker on another agent CLI`);
-    writeFileSync(file, `# written by learn-from-mistakes-axi init
+    try {
+      writeFileSync(file, `# written by learn-from-mistakes-axi init
 name: ${scalar(basename(dir))}
 worker: ${flow({ runner: worker.runner, model: '' })}   # "" = the runner's default model
 judge: ${flow({ runner: judge.runner, model: '' })}   # its agent CLI and model must differ from the worker's
 excerpts: ${opts['no-excerpts'] ? 'off' : 'on'}   # on: the worker and judge see redacted record excerpts; off: pointers and counts only
 sources:${Object.keys(found).length ? '' : ' {}'}
 ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { flag: 'wx' });
+    } catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
   const cfg = loadConfig(dir);
   stateDir(cfg);

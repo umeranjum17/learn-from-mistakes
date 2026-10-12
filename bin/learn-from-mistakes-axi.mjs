@@ -323,7 +323,7 @@ function summaryLine(model) {
 const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|change applied|changes|retro|status|runs|rerun|agents>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
   init                write .learn-from-mistakes.yaml if the project has none: a worker and a different judge from the
-                      agent CLIs found, and the sources found; otherwise print it and its gaps. Makes the state dir
+                      agent CLIs found, and the sources found; otherwise print it and its gaps. Either way, make the state dir
   guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
   count               print the counts (same projection as \`report\`)

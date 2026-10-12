@@ -60,7 +60,7 @@ test('init writes a working config once: a worker and a different judge, the sou
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
 
   writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten; its gaps are listed
-  const gaps = JSON.parse(lfm('init', '--no-excerpts', '--json').stdout);
+  const gaps = JSON.parse(lfm('init', '--json').stdout);
   assert.deepEqual(gaps.gaps, ['sources: markdown-log found at docs/defects.md, not configured (add it as log)',
     'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)']);
   assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
@@ -94,6 +94,14 @@ test('init refuses a pinned judge on the worker\'s identity, an unknown runner a
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
   }
+  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten, so a flag that would change it is refused
+  const pinned = lfm('init', '--worker', 'opencode');
+  assert.equal(pinned.status, 2);
+  assert.match(pinned.stderr, /^error: .*\.learn-from-mistakes\.yaml exists, so --worker would change nothing/);
+  assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
+  const missing = spawnSync(process.execPath, [CLI, 'init', '--dir', join(config, 'nope')], { encoding: 'utf8', env: { PATH: '' } });
+  assert.equal(missing.status, 2);
+  assert.match(missing.stderr, /^error: .*nope: not a directory\nnext: /);
   const none = setup([]).lfm('init');
   assert.equal(none.status, 1);
   assert.match(none.stderr, /^error: worker: no usable agent CLI/);

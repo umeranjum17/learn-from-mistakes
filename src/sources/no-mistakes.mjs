@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource } from '../config.mjs';
 
@@ -12,7 +12,7 @@ export const validate = pathSource;
 // init: the no-mistakes store ($NM_HOME, else ~/.no-mistakes) when it has a repo row for this project, by its
 // checkout path or its origin URL. A store that cannot be read throws its real cause.
 export async function detect(dir) {
-  const home = process.env.NM_HOME;
+  const home = process.env.NM_HOME && resolve(process.env.NM_HOME);
   const path = join(home || join(homedir(), '.no-mistakes'), 'state.sqlite');
   if (!existsSync(path)) return;
   const git = (...args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).stdout?.trim();
