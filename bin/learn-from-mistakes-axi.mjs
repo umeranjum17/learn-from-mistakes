@@ -151,7 +151,7 @@ function readInput(file, flag, explicit, rerunHint) {
 export const sourceLine = (s, hash = true) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items${hash ? `  sha256 ${s.hash.slice(0, 12)}` : ''}`;
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
-// session counts and numbers of a sessions source), the session events, and the start of the read range.
+// session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
 // The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
 export async function ingest(cfg) {
   stateDir(cfg);
@@ -160,22 +160,22 @@ export async function ingest(cfg) {
     ? db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id) : []);
   db?.close();
   // This window and the last, and far enough back to have before-numbers for every applied change.
-  const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w;
+  const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
   const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w).filter(Number.isFinite));
   const records = [], rows = [], events = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const src = SOURCES[s.type], got = await src.read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip });
+    const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes });
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
     events.push(...(got.events ?? []));
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events).length, hash: got.hash,
-      ...(got.events && { sessions: got.sessions, skipped: got.skipped, metrics: src.metrics(got.events, since) }) });
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
-  return { sources, events, read_from: new Date(readFrom).toISOString() };
+  return { sources, events, records, rows, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
 }
 
 function analyse(cfg, files, rerunHint) {
@@ -221,7 +221,7 @@ function analyse(cfg, files, rerunHint) {
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {
     if (!c.match) continue;
-    for (const row of rows) if (row.source === c.match.source && row.error.includes(c.match.error_contains)) {
+    for (const row of rows) if (row.cause === cause) {
       group(cause).store.rows.push(row);
       if (row.at) group(cause).store.days.add(row.at.slice(0, 10));
     }
@@ -388,7 +388,8 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
          description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
      repeat: { min_incidents: 3, min_days: 2 }
    A cause is a mechanism, not a keyword. Add causes once you have read the records.
-   Optional per cause: match: { source: gate, error_contains: "<error text>" } counts store rows.
+   Optional per cause: match: { source: gate, error_contains: "<error text>" } counts store rows, or
+   match: { source: <sessions id>, signal, tool, text_contains } counts session events.
 
 2. Ingest: learn-from-mistakes-axi ingest
    It prints the state dir. records.jsonl there: one JSON object per bullet (id, source, line, date, text).

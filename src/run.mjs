@@ -9,29 +9,37 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { metrics } from './metrics.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
 const BIN = fileURLToPath(new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url));
 const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
-  // Reads the sources; session events go to the `events` table. It can run again: it first drops the run's events.
+  // Reads the sources: session events go to the `events` table, defect-log bullets and failed gate steps to `records`,
+  // each with the cause its source tagged it with. It can run again: it first drops the run's events and records.
   collect: async (cfg, db, id, log) => {
-    const { sources, events, read_from } = await ingest(cfg);
+    const { sources, events, records, rows, read_from, current_start, previous_start } = await ingest(cfg);
     for (const s of sources) log(sourceLine(s, false));
-    const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, ref, excerpt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, cause, ref, excerpt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text) VALUES (?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
-      for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.ref, e.excerpt);
+      db.prepare('DELETE FROM records WHERE run_id = ?').run(id);
+      for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.cause ?? null, e.ref, e.excerpt);
+      for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text);
+      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error);
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
       throw e;
     }
-    return { read_from, sources };
+    return { read_from, current_start, previous_start, sources };
   },
+  // The numbers for this window and the last, over what collect saved.
+  metrics: (cfg, db, id) => metrics(cfg, db, id, JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json)),
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, {}, REPORT);
@@ -287,12 +295,20 @@ export async function runs(cfg) {
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
-// The run, its steps and, once collect is done, what each source read: counts and numbers, never content or hashes.
+// The run, its steps, what each source read once collect is done, and the numbers once metrics is done:
+// counts and numbers, never content or hashes.
 function show(db, id) {
-  const collect = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id)?.output_json;
+  const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
+  const collect = out('collect'), window = out('metrics');
+  const metrics = new Map();
+  for (const m of db.prepare('SELECT window, name, value FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
+    if (!metrics.has(m.name)) metrics.set(m.name, { name: m.name });
+    metrics.get(m.name)[m.window] = m.value ?? 'n/a';
+  }
   return {
     run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),
     ...(collect && { sources: JSON.parse(collect).sources.map(({ hash, ...s }) => s) }),
+    ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
   };
 }

@@ -12,6 +12,7 @@ export const root = () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), 
 const TEST = /(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*(?:(?:npm|pnpm|yarn|bun|deno|go|cargo|make|mix|dotnet)\s+(?:run\s+)?test\b|(?:npx\s+)?(?:jest|vitest|pytest|mocha|rspec|phpunit)\b|node\s+--test\b|python3?\s+-m\s+(?:pytest|unittest)\b)/;
 const WRAPPER = /^\s*<(?:command-name|command-message|command-args|local-command-stdout|local-command-stderr|system-reminder|user-prompt-submit-hook)>/;
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
+const inputText = (input) => Object.values(input ?? {}).filter((v) => typeof v === 'string').join(' ');
 const list = (dir, opts, miss) => { try { return readdirSync(dir, opts); } catch (e) { miss(e); return []; } };
 const fresh = (file, from, miss) => { try { return statSync(file).mtimeMs >= from; } catch (e) { miss(e); return false; } };
 
@@ -39,7 +40,7 @@ async function parse(file, { session, keep, sub, excerpt }) {
           const key = `${b.name}\0${JSON.stringify(b.input)}`;
           calls.set(b.id, { tool: b.name, key, command: typeof b.input?.command === 'string' ? b.input.command : '' });
           const retry = failed.has(key); // the same call again after it failed
-          events.push({ ...at, kind: 'tool_call', tool: b.name, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(JSON.stringify(b.input)) : '' });
+          events.push({ ...at, kind: 'tool_call', tool: b.name, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(b.input)) : '' });
         }
       }
       if (r.type !== 'user' || r.isMeta) continue;

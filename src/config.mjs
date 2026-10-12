@@ -11,8 +11,10 @@ import * as sessions from './sources/sessions.mjs';
 
 export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // The source registry: one file per source type, each exporting validate (check and normalise its config entry)
-// and read (its items). A source may also export metrics (its numbers from what it read), detect (a config entry
-// for init) and doctor (a check line); init and doctor call these two in later slices. A source slice adds one line here.
+// and read (its items). A source may also export metricNames, metricRows ('events' or 'records', the rows its metrics
+// read) and metrics (its numbers from what it read; a type with no source in the config gives its metricNames as n/a),
+// detect (a config entry for init) and doctor (a check line); init and doctor call these two in later slices.
+// A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions };
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
@@ -75,6 +77,8 @@ sources:
     const where = `${file}: sources.${id}`;
     const type = mapping(s, null, where).type;
     if (typeof type !== 'string' || !Object.hasOwn(SOURCES, type)) throw new UsageError(`${where}.type must be one of ${Object.keys(SOURCES).join(', ')}`);
+    const other = Object.keys(sources).find((k) => k !== id && sources[k]?.type === 'sessions');
+    if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads every agent's sessions; keep one and narrow it with agents`);
     sources[id] = SOURCES[type].validate(s, where, dir);
   }
   const causes = mapping(p.causes ?? {}, null, `${file}: causes`);
@@ -82,9 +86,20 @@ sources:
     mapping(c, ['description', 'match'], `${file}: causes.${id}`);
     if (typeof c.description !== 'string') throw new UsageError(`${file}: causes.${id}.description must be a string`);
     if (c.match === undefined) continue;
-    const m = mapping(c.match, ['source', 'error_contains'], `${file}: causes.${id}.match`);
-    if (sources[m.source]?.type !== 'no-mistakes') throw new UsageError(`${file}: causes.${id}.match.source must name a no-mistakes source`);
-    if (typeof m.error_contains !== 'string' || !m.error_contains) throw new UsageError(`${file}: causes.${id}.match.error_contains must be a non-empty string`);
+    // The rule tags the items of one source: gate rows by error text; session events by signal, tool and text.
+    const where = `${file}: causes.${id}.match`, type = sources[mapping(c.match, null, where).source]?.type;
+    const text = (k) => check(c.match[k] === undefined || (typeof c.match[k] === 'string' && c.match[k]), `${where}.${k}`, 'a non-empty string');
+    if (type === 'no-mistakes') {
+      mapping(c.match, ['source', 'error_contains'], where);
+      check(c.match.error_contains !== undefined, `${where}.error_contains`, 'a non-empty string');
+      text('error_contains');
+    } else if (type === 'sessions') {
+      mapping(c.match, ['source', 'signal', 'tool', 'text_contains'], where);
+      if (!['signal', 'tool', 'text_contains'].some((k) => c.match[k] !== undefined)) throw new UsageError(`${where} needs a signal, tool or text_contains`);
+      check(c.match.signal === undefined || sessions.SIGNALS.includes(c.match.signal), `${where}.signal`, `one of ${sessions.SIGNALS.join(', ')}`);
+      text('tool');
+      text('text_contains');
+    } else throw new UsageError(`${where}.source must name a no-mistakes or sessions source`);
   }
   const block = (key, defaults) => {
     const v = { ...defaults, ...mapping(p[key] ?? {}, Object.keys(defaults), `${file}: ${key}`) };

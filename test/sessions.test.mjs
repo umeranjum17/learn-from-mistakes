@@ -1,5 +1,6 @@
 // End-to-end: a retro with a sessions source reads a synthetic Claude Code store (test/fixtures/sessions/claude),
 // counts only this repo's sessions, skips the tool's own runs, and keeps planted secrets out of the store and output.
+// Its metrics step gives the numbers for this window and the last, with the events the cause match rules tagged.
 // LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -47,6 +48,7 @@ function setup() {
   git('worktree', 'add', '-q', '--detach', tree);
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
     .replace(/2026-10-0([1-3])T/g, (_, d) => `${day(3 - Number(d))}T`) // the last three days, so inside the window
+    .replaceAll('2026-09-24T', `${day(10)}T`) // inside the last window
     .replaceAll('$SECRETS_A', planted(0, -10)).replaceAll('$SECRETS_B', planted(-10));
   const src = new URL('fixtures/sessions/claude/projects', import.meta.url).pathname;
   for (const f of readdirSync(src, { recursive: true })) {
@@ -58,7 +60,11 @@ function setup() {
   utimesSync(join(claude, 'projects', '-repo', 's-old.jsonl'), old, old);
   utimesSync(join(claude, 'projects', '-repo', 's-main.jsonl'), old, old); // its subagent file changed later, so it is read
   const cfg = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(cfg, readFileSync(cfg, 'utf8').replace('sources:\n', 'sources:\n  sessions: { type: sessions }\n'));
+  writeFileSync(cfg, readFileSync(cfg, 'utf8').replace('sources:\n', 'sources:\n  sessions: { type: sessions }\n').replace('causes:\n', `causes:
+  fetch-test-fails: { description: The fetch tests fail., match: { source: sessions, signal: test_fail, text_contains: fetch.test } }
+  missing-file: { description: The agent reads a file that is not there., match: { source: sessions, signal: tool_error, tool: Read } }
+`));
+  writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(1)}\n\n- [tests] Umer's fetch tests failed.\n- [tests] Again.\n\n## ${day(10)}\n\n- [tests] Once last week.\n`);
   const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   return { tmp, p, claude, env, lfm };
@@ -94,8 +100,9 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const empty = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: join(claude, '..', 'none') } });
   assert.equal(empty.status, 0, empty.stderr);
   writeFileSync(cfg, examples);
-  assert.deepEqual(decode(empty.stdout).sources.find((s) => s.type === 'sessions'),
-    { id: 'sessions', type: 'sessions', items: 0, sessions: 0, skipped: 0, metrics: { tool_error_rate: 'n/a', corrections_per_session: 'n/a', interrupts: 'n/a', retries: 'n/a' } });
+  assert.deepEqual(decode(empty.stdout).sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 0, sessions: 0, skipped: 0 });
+  assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
+    .map((name) => ({ name, current: 'n/a', previous: 'n/a' }))); // the numbers of the types with no source here, then the targets no source measures
 
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
@@ -103,16 +110,31 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.equal(run.run.status, 'completed');
   // this repo, a subdir and a worktree; not the other project, a sibling dir, .lfm/, the marker run or an old file
   assert.deepEqual(run.sources.find((s) => s.type === 'sessions'),
-    { id: 'sessions', type: 'sessions', items: 39, sessions: 4, skipped: unreadable ? 3 : 2, metrics: { tool_error_rate: 0.5, corrections_per_session: 0.25, interrupts: 1, retries: 1 } });
+    { id: 'sessions', type: 'sessions', items: 39, sessions: 4, skipped: unreadable ? 3 : 2 });
   const id = run.run.id;
+  // This window: the 4 sessions and 2 dated defects. The last: s-main's 4 Read results (3 failed), 1 correction and
+  // 1 defect. An event or defect older than both is stored, never counted. A cause with no match rule is n/a; the gate
+  // rule's rows are from March, so 0.
+  assert.deepEqual(run.metrics, [['defects', 2, 1], ['tool_error_rate', 0.5, 0.75], ['corrections_per_session', 0.25, 1], ['interrupts', 1, 0], ['retries', 1, 0],
+    ['cause_count:fetch-test-fails', 1, 0], ['cause_count:missing-file', 0, 3], ['cause_count:server-memory-kill', 'n/a', 'n/a'],
+    ['cause_count:shared-cache-lock', 'n/a', 'n/a'], ['cause_count:agent-exit-wait', 0, 0], ['first_pass', 'n/a', 'n/a'], ['p90_hours_to_merge', 'n/a', 'n/a'],
+    ['escaped', 'n/a', 'n/a']].map(([name, current, previous]) => ({ name, current, previous })));
+  assert.equal(Date.parse(run.window.current_start) - Date.parse(run.window.previous_start), 7 * 86_400_000);
+  assert.deepEqual(query(p, `SELECT window, value FROM metrics WHERE run_id = ? AND name IN ('defects', 'escaped') ORDER BY name, window`, id),
+    [{ window: 'current', value: 2 }, { window: 'previous', value: 1 }, { window: 'current', value: null }, { window: 'previous', value: null }]); // n/a is NULL
+  // The rules tag exactly the planted events: the one failed fetch test run, and the 5 failed Reads (2 older than both windows).
+  const tags = (run) => query(p, 'SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND cause IS NOT NULL GROUP BY cause', run);
+  assert.deepEqual(tags(id), [{ cause: 'fetch-test-fails', signal: 'test_fail', tool: 'Bash', n: 1 }, { cause: 'missing-file', signal: 'tool_error', tool: 'Read', n: 5 }]);
+  assert.deepEqual(query(p, 'SELECT source, cause, count(*) AS n FROM records WHERE run_id = ? GROUP BY source, cause', id),
+    [{ source: 'gate', cause: null, n: 1 }, { source: 'gate', cause: 'agent-exit-wait', n: 4 }, { source: 'log', cause: null, n: 16 }]);
   assert.deepEqual(query(p, 'SELECT DISTINCT session_id FROM events WHERE run_id = ? ORDER BY 1', id).map((e) => e.session_id), ['s-main', 's-own', 's-sub', 's-tree']);
   const signals = Object.fromEntries(query(p, 'SELECT signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY signal', id).map((e) => [e.signal, e.n]));
-  assert.deepEqual(signals, { correction: 4, interrupt: 1, retry: 1, test_fail: 2, tool_error: 6 }); // old errors are stored, not counted; a reply after an error is not a correction, a later success does not clear it
+  assert.deepEqual(signals, { correction: 4, interrupt: 1, retry: 1, test_fail: 2, tool_error: 6 }); // every stored event; a reply after an error is not a correction, a later success does not clear it
   const sub = query(p, `SELECT session_id, tool, signal FROM events WHERE run_id = ? AND ref LIKE '%/subagents/agent-a1.jsonl:%' AND kind = 'tool_result'`, id);
   assert.deepEqual(sub, [{ session_id: 's-main', tool: 'Grep', signal: 'tool_error' }]); // a subagent file is read
   assert.deepEqual(query(p, `SELECT exit_code FROM events WHERE run_id = ? AND signal = 'test_fail'`, id).map((e) => e.exit_code), [1, 1]);
 
-  // Every planted shape is redacted in the excerpts (a tool error, the retried call as JSON, a correction), all
+  // Every planted shape is redacted in the excerpts (a tool error, the retried call's input, a correction), all
   // within the kept 300 characters, and no planted value reaches the store, state or output.
   for (const signal of ['test_fail', 'retry', 'correction']) {
     const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND signal = ? ORDER BY id LIMIT 1', id, signal);
@@ -136,5 +158,77 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const second = JSON.parse(off.stdout);
   assert.equal(second.sources.find((s) => s.type === 'sessions').sessions, 3);
   assert.deepEqual(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND excerpt != ''`, second.run.id), [{ n: 0 }]);
+  assert.deepEqual(tags(second.run.id), tags(id)); // text_contains reads the whole text, not the excerpt
   assert.deepEqual(query(p, 'SELECT count(*) AS n FROM events WHERE run_id = ?', id), [{ n: 39 }]); // the first run keeps its events
+});
+
+test('two defect logs of one type sum into defects; a config with only a no-mistakes source gives n/a for every sessions and defect number', () => {
+  const { p, lfm } = setup();
+  const cfg = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(join(p, 'a.md'), `## ${day(1)}\n\n- [tests] A one.\n- [tests] A two.\n- [tests] A three.\n`);
+  writeFileSync(join(p, 'b.md'), `## ${day(2)}\n\n- [build] B one.\n- [build] B two.\n`);
+  writeFileSync(cfg, 'sources:\n  a: { type: markdown-log, path: a.md }\n  b: { type: markdown-log, path: b.md }\n');
+  const logs = lfm('retro', '--foreground');
+  assert.equal(logs.status, 0, logs.stderr);
+  assert.deepEqual(decode(logs.stdout).metrics.find((m) => m.name === 'defects'), { name: 'defects', current: 5, previous: 0 });
+
+  writeFileSync(cfg, 'sources:\n  gate: { type: no-mistakes, path: gate.sqlite }\n');
+  const gate = lfm('retro', '--foreground');
+  assert.equal(gate.status, 0, gate.stderr);
+  assert.deepEqual(decode(gate.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
+    .map((name) => ({ name, current: 'n/a', previous: 'n/a' })));
+});
+
+test('a rule tags signal events only, and text_contains reads a retried call as its plain command text', () => {
+  const { p, claude, lfm } = setup();
+  const now = new Date().toISOString();
+  const cwd = p;
+  const call = (id, command) => ({ type: 'assistant', cwd, timestamp: now, message: { content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } });
+  const result = (id, content, is_error) => ({ type: 'user', cwd, timestamp: now, message: { content: [{ type: 'tool_result', tool_use_id: id, content, ...(is_error && { is_error }) }] } });
+  const quoted = 'grep "a b" x';
+  writeFileSync(join(claude, 'projects', '-repo', 's-fix.jsonl'), [
+    call('a1', 'ls'), result('a1', 'ok'),
+    call('a2', quoted), result('a2', 'Exit code 1\nno match', true),
+    call('a3', quoted), result('a3', 'ok'),
+  ].map((r) => JSON.stringify(r)).join('\n'));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
+  sessions: { type: sessions }
+causes:
+  quoted-grep:
+    description: A retried grep with quotes.
+    match: { source: sessions, text_contains: 'grep "a b"' }
+  bash-fail:
+    description: A Bash call that fails.
+    match: { source: sessions, tool: Bash }
+`);
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(query(p, `SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND session_id = 's-fix' AND cause IS NOT NULL GROUP BY cause, signal ORDER BY cause`, decode(r.stdout).run.id),
+    [{ cause: 'bash-fail', signal: 'nonzero_exit', tool: 'Bash', n: 1 }, { cause: 'quoted-grep', signal: 'retry', tool: 'Bash', n: 1 }]);
+});
+
+test('a gate row takes one cause, the first in config order, in both the metrics and the report', () => {
+  const { p, lfm } = setup();
+  const gate = new DatabaseSync(join(p, 'gate.sqlite'));
+  const failed = gate.prepare(`UPDATE step_results SET error = 'wait delay expired after timeout', completed_at = ? WHERE status = 'failed'`)
+    .run(Math.floor(Date.now() / 1000)).changes;
+  gate.close();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
+  gate: { type: no-mistakes, path: gate.sqlite }
+causes:
+  timeout-hit:
+    description: A timeout.
+    match: { source: gate, error_contains: timeout }
+  wait-delay:
+    description: A wait delay.
+    match: { source: gate, error_contains: 'wait delay' }
+`);
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const count = (name) => decode(r.stdout).metrics.find((m) => m.name === `cause_count:${name}`).current;
+  assert.equal(count('timeout-hit'), failed);
+  assert.equal(count('wait-delay'), 0);
+  const report = JSON.parse(lfm('report', '--json').stdout);
+  assert.equal(report.causes.find((c) => c.cause === 'timeout-hit').store.rows, failed);
+  assert.equal(report.causes.find((c) => c.cause === 'wait-delay')?.store.rows ?? 0, 0);
 });
