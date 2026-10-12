@@ -5,7 +5,7 @@
 // gone is interrupted, and `rerun --resume` runs it again from its first step that is not completed.
 // Each step writes its lines to <state dir>/runs/<id>/<step>.log; `attach` follows them and `logs` prints one.
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
@@ -163,7 +163,6 @@ async function work(cfg, db, id) {
   for (const { name } of db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status != 'completed' ORDER BY ord`).all(id)) {
     if (!running.get(id)) return;
     const file = join(runDir(cfg, id), `${name}.log`);
-    writeFileSync(file, ''); // the log holds the step's latest attempt
     const log = (line) => appendFileSync(file, `${line}\n`);
     step.run('running', iso(Date.now()), null, null, null, id, name);
     try {
