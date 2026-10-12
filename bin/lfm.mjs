@@ -134,7 +134,7 @@ function readLedger(file) {
       && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
       && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
-    else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${e.id}`);
+    else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${shown(e.id)}`);
     else { ids.add(e.id); entries.push(e); }
   });
   return { entries, problems };
@@ -178,7 +178,7 @@ function recordChange(cfg, opts, json) {
   }
   const text = {};
   for (const k of ['what', 'why']) {
-    if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} must be one line of 1-200 characters, with no line breaks or control characters`, form);
+    if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} ${shown(opts[k])} must be one line of 1-200 characters, with no line breaks or control characters`, form);
   }
   const file = join(cfg.state, 'changes.jsonl');
   const entries = cleanLedger(file, opts);
@@ -198,8 +198,8 @@ function exportChanges(cfg, opts, json) {
   else hint(json ? withContext('lfm report', 'the per-cause counts', opts) : withContext('lfm changes --json', 'the same export as JSON', opts));
 }
 
-function readInput(file, explicit, rerun) {
-  if (explicit && !existsSync(file)) throw new UsageError(`${file}: no such file`);
+function readInput(file, flag, explicit, rerun) {
+  if (explicit && !existsSync(file)) throw new UsageError(`--${flag} ${file}: no such file`, `--${flag} <an existing ${flag}.jsonl>   # or leave --${flag} out to read the state dir`);
   return readJsonl(file, { rerun });
 }
 
@@ -235,16 +235,15 @@ function analyse(cfg, files, rerun) {
   problems.push(...ledgerProblems);
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
-  // Problem lines name file:line and the rule broken; a value is echoed only when it is not a
-  // real record id (a hash of private text), and then only through `shown`.
-  const id = (v) => (typeof v === 'string' ? shown(v) : 'a non-string id');
-  for (const l of readInput(lf, files.labels, rerun)) {
+  // Problem lines name file:line and the rule broken, never a record id (a hash of private
+  // text) or a ref; a cause is echoed only through `shown`.
+  for (const l of readInput(lf, 'labels', files.labels, rerun)) {
     const at = `${basename(lf)}:${l._line}`;
-    if (!records.has(l.id)) problems.push(`${at}: unknown record id ${id(l.id)} (its record text changed or it was never ingested)`);
+    if (!records.has(l.id)) problems.push(`${at}: unknown record id (its record text changed or it was never ingested)`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for the record labelled at line ${labels.get(l.id)._line}`);
     else if (typeof l.event !== 'boolean' || typeof l.why !== 'string' || !l.why.trim()) problems.push(`${at}: needs event (true/false) and why`);
     else if (l.event && (typeof l.cause !== 'string' || (!Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other'))) problems.push(`${at}: cause ${typeof l.cause === 'string' ? shown(l.cause) : 'that is not a string'} is not in the config`);
-    else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names unknown record ${id(l.duplicate_of)}`);
+    else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names an unknown record`);
     else if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) problems.push(`${at}: occurrences must be a positive integer`);
     else labels.set(l.id, l);
   }
@@ -276,12 +275,12 @@ function analyse(cfg, files, rerun) {
     const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
-  const proposals = readInput(pf, files.proposals, rerun).map((p) => {
+  const proposals = readInput(pf, 'proposals', files.proposals, rerun).map((p) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
     const missing = refs.filter((ref) => !resolves(ref));
     const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
-      : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.map(id).join(', ')}` : !p.change ? 'no change text' : '';
+      : !refs.length ? 'no evidence refs' : missing.length ? `${missing.length} of ${refs.length} refs not found` : !p.change ? 'no change text' : '';
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
     return { ...p, refs: refs.filter(resolves), ok: !bad };
   });
@@ -410,10 +409,14 @@ function main() {
     const flag = argv[i];
     if (!flag.startsWith('-')) throw new UsageError(`unexpected argument ${shown(flag)}`, next);
     if (!VALUE_FLAGS.includes(flag) && flag !== '--json' && flag !== '--full') throw new UsageError(`unknown option ${shown(flag)}`, next);
-    if (!form.includes(`${flag} `) && !form.includes(`${flag}]`)) throw new UsageError(`${name} does not take ${flag}`, next ?? form);
+    if (!form.includes(`${flag} `) && !form.includes(`${flag}]`)) throw new UsageError(`${name} does not take ${flag}`, next);
     if (flag === '--json' || flag === '--full') { if (flag === '--json') json = true; else full = true; i += 1; continue; }
     if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`, next ?? form);
-    opts[flag.slice(2)] = ['--dir', '--labels', '--proposals'].includes(flag) ? resolve(argv[i + 1]) : argv[i + 1];
+    if (['--dir', '--labels', '--proposals'].includes(flag)) {
+      // Paths are echoed whole in later errors so the user can find the file; a control character never is.
+      if (UNPRINTABLE.test(argv[i + 1])) throw new UsageError(`${flag} (invalid value): a path must not contain control characters`, next ?? form);
+      opts[flag.slice(2)] = resolve(argv[i + 1]);
+    } else opts[flag.slice(2)] = argv[i + 1];
     i += 2;
   }
   const cfg = loadConfig(opts.dir ?? resolve('.'));

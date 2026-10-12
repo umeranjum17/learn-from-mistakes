@@ -58,6 +58,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('ingest', '--json'), 2, 'ingest does not take --json', /^next: lfm ingest \[--dir <dir>\]$/m],
     [() => raw('ingest', '--labels', 'x'), 2, 'ingest does not take --labels', /^next: lfm ingest /m],
     [() => raw('report', '--cause', 'x'), 2, 'report does not take --cause', /^next: lfm report \[/m],
+    [() => raw('--cause', 'x'), 2, 'report does not take --cause', HELP], // bare: no command was typed, so --help
+    [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: lfm report \[/m],
     [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, HELP], // a config to copy
     [() => lfm('change', 'applied', '--cause', 'nope', '--ref', 'abc1234'), 2, `unknown cause "nope" ${known}`, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'other', '--ref', 'abc1234'), 2, /^error: cause "other" is reserved and never recordable \(known: server-memory-kill,/m, CHANGE],
@@ -67,7 +69,9 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'XYZ'), 2, '--ref "XYZ" must be a 7-40 lowercase hex commit or sha256:<64 lowercase hex>', /^next: git rev-parse HEAD/m],
     [() => applied('--at', 'not-a-time'), 2, '--at "not-a-time" must be an ISO 8601 time', /^next: lfm change applied --cause server-memory-kill --ref abc1234 --at 2026-10-12T09:00:00Z/m],
     [() => applied('--full'), 2, 'change applied does not take --full', CHANGE],
-    [() => applied('--what', ''), 2, '--what must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
+    [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
+    [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
+    [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: lfm count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
     const r = run();
@@ -224,7 +228,8 @@ test('bad input is counted, never echoed; unresolved refs exit 1', () => {
   const model = decode(r.stdout);
   assert.equal(model.problems, 1); // a problem is counted in the report, its line goes to stderr only
   assert.doesNotMatch(r.stdout, /nope/);
-  assert.match(r.stderr, /^problem: refs\.jsonl:1: refs not found: "nope"$/m);
+  assert.match(r.stderr, /^problem: refs\.jsonl:1: 1 of 1 refs not found$/m);
+  assert.doesNotMatch(r.stderr, /nope/); // a ref may be a record id: counted, never echoed
   const full = JSON.parse(report(lfm, p, '--proposals', join(p, 'refs.jsonl'), '--full', '--json').stdout);
   assert.deepEqual(full.causes.find((c) => c.cause === 'server-memory-kill').proposal_refs, []); // an unresolved ref is never echoed as evidence
   // A label orphaned by an edited record, and a second label for a real record: the user sees which
@@ -233,9 +238,9 @@ test('bad input is counted, never echoed; unresolved refs exit 1', () => {
     + '{"id":"2034b8c4ce57","event":true,"cause":"server-memory-kill","why":"x"}\n{"id":"2034b8c4ce57","event":false,"why":"x"}\n');
   const odd = lfm('count', '--labels', join(p, 'odd.jsonl'));
   assert.equal(decode(odd.stdout).problems, 2);
-  assert.match(odd.stderr, /^problem: odd\.jsonl:1: unknown record id "ffffffffffff"/m);
+  assert.match(odd.stderr, /^problem: odd\.jsonl:1: unknown record id \(its record text changed or it was never ingested\)$/m);
   assert.match(odd.stderr, /^problem: odd\.jsonl:3: second label for the record labelled at line 2$/m);
-  assert.doesNotMatch(odd.stderr, /2034b8c4ce57/);
+  assert.doesNotMatch(odd.stderr, /2034b8c4ce57|ffffffffffff/); // no record id, current or orphaned
   appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'colour: blue\n');
   assert.equal(lfm('count').status, 2);
   assert.match(lfm('count').stderr, /unknown key colour/);
@@ -294,10 +299,10 @@ test('an explicit labels or proposals path that does not exist is a usage error'
   assert.ok(unlabelled.stderr.split('\n').some((l) => l.startsWith(`next: label ${records} into labels.jsonl`)), unlabelled.stderr); // with zero labels, labelling the named file is the next step
   const labels = lfm('report', '--labels', join(p, 'typo-labels.jsonl'));
   assert.equal(labels.status, 2, labels.stdout);
-  assert.match(labels.stderr, /typo-labels\.jsonl: no such file/);
+  assert.match(labels.stderr, /^error: --labels .*typo-labels\.jsonl: no such file$/m);
   const proposals = lfm('report', '--proposals', join(p, 'typo-proposals.jsonl'));
   assert.equal(proposals.status, 2, proposals.stdout);
-  assert.match(proposals.stderr, /typo-proposals\.jsonl: no such file/);
+  assert.match(proposals.stderr, /^error: --proposals .*typo-proposals\.jsonl: no such file$/m);
 });
 
 test('change applied appends an append-only ledger the report counts and changes exports', () => {
@@ -368,7 +373,7 @@ test('change applied appends an append-only ledger the report counts and changes
     assert.ok(readFileSync(ledger).equals(afterSecond), `rejected input changed the ledger: ${args.join(' ')}`);
   }
   const badWhy = change('--cause', 'server-memory-kill', '--ref', 'abc1234', '--why', `${WHY}\nsecond line`);
-  assert.match(badWhy.stderr, /--why must be one line of 1-200 characters/); // the real cause, never the text
+  assert.match(badWhy.stderr, /^error: --why \(invalid value\) must be one line of 1-200 characters/m); // the rule, never the text
   assert.doesNotMatch(badWhy.stderr, /OWNER-WHY/);
   appendFileSync(ledger, 'not json\n');
   const beforeRetry = readFileSync(ledger);
@@ -387,7 +392,7 @@ test('change applied appends an append-only ledger the report counts and changes
     const r = lfm('changes', '--json'); // a hand-edited ledger never exports bad text or a repeated join key
     assert.equal(r.status, 1, JSON.stringify(bad));
     assert.equal(r.stdout, '');
-    assert.match(r.stderr, bad.id === 'chg-2' ? /changes\.jsonl:3: repeats change id chg-2/ : /changes\.jsonl:3: not a valid change entry/);
+    assert.match(r.stderr, bad.id === 'chg-2' ? /changes\.jsonl:3: repeats change id "chg-2"/ : /changes\.jsonl:3: not a valid change entry/);
   }
   writeFileSync(ledger, afterSecond); // repair the scratch corruption for the report below
 
