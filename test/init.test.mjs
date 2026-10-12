@@ -271,6 +271,18 @@ test('doctor fails a BYOKit worker on a route that is not a plan route, before a
   assert.equal(checks.some((c) => c.label === 'worker login'), false);
 });
 
+// A BYOKit plan-key route with no model has no catalogue default, and no agent CLI would pick one for it: the model is a
+// fail with the config path to set, not an agent-CLI warn.
+test('doctor fails a BYOKit worker with no model and no catalogue default, and names the config to set', () => {
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:opencode-go", model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker model');
+  assert.deepEqual([line.level, line.detail, line.fix], ['fail', 'BYOKit has no default model for opencode-go', `set worker.model in ${config}`]);
+});
+
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
 // absent one is a fail with the login fix. The HOME is synthetic, and the auth.json in it is a placeholder.
 for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (exit 3); auth.json present'], [false, 'fail', 'pi auth check failed (exit 3); no auth.json']]) {
