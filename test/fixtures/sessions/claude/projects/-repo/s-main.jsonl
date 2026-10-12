@@ -1,12 +1,12 @@
 {"type":"permission-mode","permissionMode":"default","sessionId":"s-main"}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:00.000Z","message":{"role":"user","content":"Umer here: add a retry to the fetch helper and run the tests."}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:01.000Z","isMeta":true,"message":{"role":"user","content":"Caveat: a meta message, never counted."}}
-{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Running the tests."},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test"}}]}}
-{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:20.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 1\nFAIL test/fetch.test.js $SECRETS"}]},"toolUseResult":"Error: Exit code 1"}
-{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:25.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"npm test"}}]}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Running the tests."},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test # $SECRETS_B END"}}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:20.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 1\n$SECRETS_A END"}]},"toolUseResult":"Error: Exit code 1"}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:25.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"npm test # $SECRETS_B END"}}]}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:40.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"Exit code 1\nFAIL test/fetch.test.js"}]}}
 {"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:00:45.000Z","message":{"role":"assistant","content":[{"type":"text","text":"The tests fail."}]}}
-{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:00.000Z","message":{"role":"user","content":"Set UMER_FIXTURES=1 first. $SECRETS"}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:00.000Z","message":{"role":"user","content":"Set UMER_FIXTURES=1 first. $SECRETS_B END"}}
 this line is not JSON
 {"cwd":"$REPO","note":"a record with no type"}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-10-01T09:01:05.000Z","message":{"role":"user","content":"<command-name>/clear</command-name>"}}
