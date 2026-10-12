@@ -13,8 +13,8 @@ resolved `worker` and `judge` by the identity rule (real binary path + model; an
 empty model on the same binary is equal); a judge clash exits 1 with `problem:`
 and the fix. `agents --test <runner>` makes one live call in
 `<state dir>/runs/test-<runner>/`: the prompt starts with `lfm-run:test:<runner>`
-and asks the agent to write `x.txt`; any new file in the run dir, no answer by
-`caps.timeout` or the agent's own error exits 1 with the
+and asks the agent to write `x.txt`; any new file in the run dir, no answer within
+`caps.timeout` in an attempt (each attempt has its own; a call makes at most 3 attempts) or the agent's own error exits 1 with the
 real cause; a plain-text answer with no JSON passes and prints as `reply` (the file scan is the check). Transient errors (429/503/529, overloaded, rate_limit, ECONNRESET)
 retry twice; quota text never retries. The agent process group is killed at the
 timeout (SIGTERM, SIGKILL after 3 s); after exit a grandchild holding stdout gets

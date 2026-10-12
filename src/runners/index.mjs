@@ -129,7 +129,7 @@ export async function call(cfg, { runner, model, dir, runId, step, prompt, onSpa
     const r = await spawnOnce(bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
     const wrote = readdirSync(dir).filter((f) => !before.has(f));
     if (wrote.length) throw new InputError(`${runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, FIX);
-    if (r.timedOut) throw new InputError(`${runner}: no answer after ${timeout}; stopped it (caps.timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, FIX);
+    if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (caps.timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, FIX);
     if (r.spawnError) throw new InputError(`${runner}: cannot start ${bin} (${r.spawnError.code})`, FIX);
     const got = mod.answer(r.out, { dir, step });
     const cause = got.error ?? (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');

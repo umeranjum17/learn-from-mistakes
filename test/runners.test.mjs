@@ -163,7 +163,7 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   config('caps: { timeout: 2s }\n');
   const hang = lfm({ FAKE_CLAUDE: 'hang' }, 'agents', '--test', 'claude');
   assert.equal(hang.status, 1);
-  assert.match(hang.stderr, /^error: claude: no answer after 2s; stopped it \(caps\.timeout\)$/m);
+  assert.match(hang.stderr, /^error: claude: no answer within 2s in one attempt; stopped it \(caps\.timeout\)$/m);
   assert.ok(hang.secs < 8, `killed at the timeout, took ${hang.secs}s`);
 
   const leak = lfm({ FAKE_CODEX: 'grandchild' }, 'agents', '--test', 'codex'); // a grandchild keeps stdout open
