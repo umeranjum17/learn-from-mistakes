@@ -26,3 +26,9 @@ this line is not JSON
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:02:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t8","is_error":true,"content":"File does not exist."}]},"toolUseResult":"Error: File does not exist."}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:02:03.000Z","message":{"role":"user","content":"<command-name>/compact</command-name>"}}
 {"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:02:05.000Z","message":{"role":"user","content":"Now use the c file instead."}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:03:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"Read","input":{"file_path":"d.md"}}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:03:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t9","is_error":true,"content":"File does not exist."}]},"toolUseResult":"Error: File does not exist."}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:03:05.000Z","message":{"role":"user","content":"<div>The preview is not rendering, fix it.</div>"}}
+{"type":"assistant","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:04:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t10","name":"Read","input":{"file_path":"e.md"}}]}}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:04:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t10","is_error":true,"content":"File does not exist."}]},"toolUseResult":"Error: File does not exist."}
+{"type":"user","cwd":"$REPO","sessionId":"s-main","timestamp":"2026-08-01T10:04:05.000Z","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}}

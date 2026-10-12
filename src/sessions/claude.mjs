@@ -10,6 +10,7 @@ export const root = () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), 
 
 // A command that runs tests, at its start or after ;, &&, || or a pipe (env assignments before it are fine).
 const TEST = /(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*(?:(?:npm|pnpm|yarn|bun|deno|go|cargo|make|mix|dotnet)\s+(?:run\s+)?test\b|(?:npx\s+)?(?:jest|vitest|pytest|mocha|rspec|phpunit)\b|node\s+--test\b|python3?\s+-m\s+(?:pytest|unittest)\b)/;
+const WRAPPER = /^\s*<(?:command-name|command-message|command-args|local-command-stdout|local-command-stderr|system-reminder|user-prompt-submit-hook)>/;
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
 const list = (dir, opts, miss) => { try { return readdirSync(dir, opts); } catch (e) { miss(e); return []; } };
 const fresh = (file, from, miss) => { try { return statSync(file).mtimeMs >= from; } catch (e) { miss(e); return false; } };
@@ -59,10 +60,10 @@ async function parse(file, { session, keep, sub, excerpt }) {
       }
       // A subagent's user messages come from its parent agent, never from a person.
       const text = blocks.filter((b) => b?.type === 'text').map((b) => b.text).join('\n');
-      if (sub || results.length || !text.trim() || r.isCompactSummary) continue;
+      if (sub || results.length || r.isCompactSummary || !(text.trim() || blocks.some((b) => b?.type === 'image'))) continue;
       if (first && text.trimStart().startsWith('lfm-run:')) return null; // this tool's own agent session
       first = false;
-      if (/^\s*</.test(text)) { afterError = false; continue; } // a command, hook or system message wrapped in a tag
+      if (WRAPPER.test(text)) { afterError = false; continue; } // a command, hook or system message Claude Code wraps in a tag
       if (text.startsWith('[Request interrupted')) events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' });
       // A person's message right after a tool error, with no assistant reply between, corrects the agent.
       else events.push({ ...at, kind: afterError ? 'correction' : 'user_msg', signal: afterError ? 'correction' : null, excerpt: afterError ? excerpt(text) : '' });
