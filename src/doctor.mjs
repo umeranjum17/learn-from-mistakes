@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import * as byokit from './runners/byokit.mjs';
 import { loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, detect, INSTALL, MODELS, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
 
@@ -59,21 +60,27 @@ export async function doctor(dir, opts) {
         : `install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml`);
       continue;
     }
-    add('ok', name, `${r.runner} ${a.version}, tools ${a.tools}`);
-    // Login: the agent's own status command where it has one, else whether its login file or key variable exists.
-    const probe = mod.loginStatus?.(r.model);
-    if (probe) {
-      const p = spawnSync(which(binName(cfg, key)), probe.args, { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] });
-      const shown = `${r.runner} ${probe.args.join(' ')}`;
-      if (probe.ok(p)) add('ok', `${name} login`, `${shown}: logged in`);
-      else if (probe.file) {
-        // The probe failed for any reason: the login file decides, checked for existence only.
-        const why = p.error?.code ?? p.signal ?? `exit ${p.status}`;
-        if (existsSync(probe.file)) add('warn', `${name} login`, `pi auth check failed (${why}); auth.json present`);
-        else add('fail', `${name} login`, `pi auth check failed (${why}); no auth.json`, probe.fix);
-      } else if (p.error || p.signal) add('warn', `${name} login`, `${shown} did not finish (${p.error?.code ?? p.signal})`, probe.fix);
-      else add('fail', `${name} login`, `${shown}: not logged in${p.status ? ` (exit ${p.status})` : ''}`, probe.fix);
-    } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
+    const route = byokit.routeOf(r.runner);
+    if (route) { // BYOKit's own checks for its sign-in or plan key, with no paid call; its node row is the node check above
+      add('ok', name, `${r.runner}, a BYOKit route`);
+      for (const c of await byokit.doctor(route)) if (c.label !== 'node') add(c.status, `${name} login`, c.detail, c.fix);
+    } else {
+      add('ok', name, `${r.runner} ${a.version}, tools ${a.tools}`);
+      // Login: the agent's own status command where it has one, else whether its login file or key variable exists.
+      const probe = mod.loginStatus?.(r.model);
+      if (probe) {
+        const p = spawnSync(which(binName(cfg, key)), probe.args, { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] });
+        const shown = `${r.runner} ${probe.args.join(' ')}`;
+        if (probe.ok(p)) add('ok', `${name} login`, `${shown}: logged in`);
+        else if (probe.file) {
+          // The probe failed for any reason: the login file decides, checked for existence only.
+          const why = p.error?.code ?? p.signal ?? `exit ${p.status}`;
+          if (existsSync(probe.file)) add('warn', `${name} login`, `pi auth check failed (${why}); auth.json present`);
+          else add('fail', `${name} login`, `pi auth check failed (${why}); no auth.json`, probe.fix);
+        } else if (p.error || p.signal) add('warn', `${name} login`, `${shown} did not finish (${p.error?.code ?? p.signal})`, probe.fix);
+        else add('fail', `${name} login`, `${shown}: not logged in${p.status ? ` (exit ${p.status})` : ''}`, probe.fix);
+      } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
+    }
     const fromEnv = name === 'worker' && (process.env.LFM_MODEL ?? '').trim();
     const cheap = MODELS[key]?.[0];
     if (!r.model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${PROJECT_FILE}`);
