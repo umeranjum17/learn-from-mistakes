@@ -7,10 +7,9 @@ It saves one row per metric and window in the store's `metrics` table
 and the run output (`retro`, `status`) adds `window` (`current_start`,
 `previous_start`) and `metrics[]{name,current,previous,target,met}`.
 Each metric with a `targets:` entry (config or the defaults) saves its `target`
-and `met` per window (1 met, 0 missed, NULL when the number is n/a or there is
-no target); the output shows the target and `met`, `missed` or `n/a` for the
-current window, and empty strings for a metric with no target. The verdict
-compares the unrounded number; the output rounds it to 3 decimals. `current` runs from
+per window (NULL when there is no target). The output compares the unrounded
+stored value with the target and shows `met`, `missed` or `n/a` for the current
+window, and empty strings for a metric with no target; it rounds the number to 3 decimals. `current` runs from
 `now - window` with no end; `previous` is the same length before it. Collect
 saves the two starts, so `rerun --resume` counts over the same windows.
 Each source type gives its numbers through its `metrics(rows, window)` over the
@@ -44,7 +43,7 @@ records (0/0, all from March), causes with no rule and unmeasured targets are
 `n/a` (NULL in the table); targets give `missed` for `defects` 2 `<= 1`,
 `tool_error_rate` and `interrupts` 1 `> 1`, `met` for `corrections_per_session`,
 `cause_count` 1 `<= 1` and 0 `= 0`, `n/a` for an n/a number, and the store keeps
-both windows' `target`/`met`; the `excerpts: off` run tags the same events.
+both windows' `target`; the `excerpts: off` run tags the same events.
 The same file's `a rule tags signal events only` journey adds a `tool: Bash` rule
 that tags the failed Bash result and not the successful one, and a retried quoted
 grep matched by `text_contains` on its plain input; `a gate row takes one cause`
@@ -62,7 +61,7 @@ Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky && cp $SELF/examples/{defects.md,gate.sqlite,.learn-from-mistakes.yaml} .
 lfm retro --foreground   # 3 completed steps; metrics with n/a where nothing measures
-sqlite3 -readonly .lfm/lfm.sqlite "select window,name,ifnull(value,'n/a'),target,met from metrics"
+sqlite3 -readonly .lfm/lfm.sqlite "select window,name,ifnull(value,'n/a'),target from metrics"
 ```
 
 On `$SELF`, counts only: an untracked `.learn-from-mistakes.yaml` with only a
