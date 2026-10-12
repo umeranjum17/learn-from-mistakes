@@ -69,6 +69,20 @@ const query = (p, sql, ...args) => {
   try { return db.prepare(sql).all(...args).map((r) => ({ ...r })); } finally { db.close(); }
 };
 
+test('a project dir that cannot be listed is counted as skipped and the retro still completes', { skip: process.getuid?.() === 0 }, () => {
+  const { claude, lfm } = setup();
+  const before = decode(lfm('retro', '--foreground').stdout).sources.find((s) => s.type === 'sessions');
+  const dir = join(claude, 'projects', '-repo');
+  chmodSync(dir, 0o000);
+  try {
+    const r = lfm('retro', '--foreground');
+    assert.equal(r.status, 0, r.stderr);
+    const after = decode(r.stdout).sources.find((s) => s.type === 'sessions');
+    assert.equal(after.skipped, 1); // the unlistable dir; its own malformed records are not read
+    assert.ok(after.sessions < before.sessions, `${after.sessions} sessions with the repo dir unlistable`);
+  } finally { chmodSync(dir, 0o755); }
+});
+
 test('a retro reads this repo\'s Claude Code sessions, skips its own runs and keeps planted secrets out', () => {
   const { p, claude, env, lfm } = setup();
   const unreadable = process.getuid?.() !== 0 ? join(claude, 'projects', '-other', 's-other.jsonl') : null; // root reads anything

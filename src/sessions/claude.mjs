@@ -11,8 +11,8 @@ export const root = () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), 
 // A command that runs tests, at its start or after ;, &&, || or a pipe (env assignments before it are fine).
 const TEST = /(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*(?:(?:npm|pnpm|yarn|bun|deno|go|cargo|make|mix|dotnet)\s+(?:run\s+)?test\b|(?:npx\s+)?(?:jest|vitest|pytest|mocha|rspec|phpunit)\b|node\s+--test\b|python3?\s+-m\s+(?:pytest|unittest)\b)/;
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
-const list = (dir, opts) => { try { return readdirSync(dir, opts); } catch { return []; } };
-const fresh = (file, from) => { try { return statSync(file).mtimeMs >= from; } catch { return false; } };
+const list = (dir, opts, miss) => { try { return readdirSync(dir, opts); } catch (e) { miss(e); return []; } };
+const fresh = (file, from, miss) => { try { return statSync(file).mtimeMs >= from; } catch (e) { miss(e); return false; } };
 
 // One file's events, streamed line by line (a session file can be larger than one string can hold).
 // Returns null when `keep` refuses the first cwd, or the first user message carries the lfm-run: marker.
@@ -80,20 +80,22 @@ async function parse(file, { session, keep, sub, excerpt }) {
 export async function read({ readFrom, keep, excerpt, skip }) {
   const events = [];
   let sessions = 0, skipped = 0;
+  // A path that cannot be listed or stat'd is counted, except one that is gone; the other sessions still read.
+  const miss = (e) => { if (e.code !== 'ENOENT') skipped += 1; };
   // A file that cannot be read is skipped and counted; the other sessions still read.
   const file = async (p, opts) => {
     try { return await parse(p, opts); } catch (e) { if (!e.syscall) throw e; skipped += 1; return null; }
   };
-  for (const d of list(root(), { withFileTypes: true })) {
+  for (const d of list(root(), { withFileTypes: true }, miss)) {
     if (!d.isDirectory()) continue;
     const dir = join(root(), d.name);
-    for (const f of list(dir)) {
+    for (const f of list(dir, undefined, miss)) {
       const session = f.slice(0, -'.jsonl'.length);
       if (!f.endsWith('.jsonl') || skip.has(session)) continue;
       // A subagent can still write after its parent file last changed: either one being fresh reads the session.
-      const subs = list(join(dir, session, 'subagents'), { recursive: true }).filter((p) => /^agent-.*\.jsonl$/.test(basename(p)))
-        .map((p) => join(dir, session, 'subagents', p)).filter((p) => fresh(p, readFrom));
-      if (!fresh(join(dir, f), readFrom) && !subs.length) continue;
+      const subs = list(join(dir, session, 'subagents'), { recursive: true }, miss).filter((p) => /^agent-.*\.jsonl$/.test(basename(p)))
+        .map((p) => join(dir, session, 'subagents', p)).filter((p) => fresh(p, readFrom, miss));
+      if (!fresh(join(dir, f), readFrom, miss) && !subs.length) continue;
       const main = await file(join(dir, f), { session, keep, excerpt });
       if (!main) continue;
       sessions += 1;
