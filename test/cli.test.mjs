@@ -100,6 +100,20 @@ test('ingest identifies the store by the rows it read, not its mtime, and never 
   assert.notEqual(ingest(), first);
 });
 
+test('a store row with no timestamp still counts as a row but never as a day', () => {
+  const { p, lfm } = setup();
+  const w = new DatabaseSync(join(p, 'gate.sqlite'));
+  w.exec(`UPDATE step_results SET started_at = 1772618400, completed_at = 1772619000 WHERE id IN ('step-1', 'step-3');
+    UPDATE step_results SET started_at = NULL, completed_at = NULL WHERE id = 'step-4';`); // 3 matching rows on one day, 1 undated
+  w.close();
+  assert.equal(lfm('ingest').status, 0);
+  const r = report(lfm, p, '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const c = JSON.parse(r.stdout).causes.find((x) => x.cause === 'agent-exit-wait');
+  assert.deepEqual(c.store, { matched: true, rows: 4, days: 1 });
+  assert.equal(c.repeated, false); // min_days: 2 is not met by one real day
+});
+
 test('next hints compose the flags already used so both report chains terminate at full+json', () => {
   const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);
