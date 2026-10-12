@@ -5,7 +5,7 @@ Evidence-backed recommendations, unresolved refs, unread coverage, bad config,
 malformed labels and empty input.
 
 ## How to get to it (user POV)
-Run `lfm` or `lfm report --labels <file> --proposals <file>` after ingest; add
+Run `learn-from-mistakes-axi` or `learn-from-mistakes-axi report --labels <file> --proposals <file>` after ingest; add
 `--json` for JSON and `--full` for evidence ids.
 
 ## Driving it with the public CLI
@@ -20,7 +20,7 @@ ref `nope` as one problem and exits 1 without printing it anywhere (stderr says
 unknown IDs count as a problem and, like a second label (which names the line of the first),
 never echo a record id; with zero labels the `next:` hint is the labelling step and names the absolute `records.jsonl` path; unknown config key `colour` is
 rejected. The empty-input journey exits 3, says nothing to count and prints a
-`next: lfm ingest` hint. These are driven by the real CLI, not new unit tests.
+`next: learn-from-mistakes-axi ingest` hint. These are driven by the real CLI, not new unit tests.
 
 ## Gotchas
 A problem is counted (`problems: N`) in the report; stderr prints up to 20 `problem:` lines

@@ -1,6 +1,8 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real lfm ingest/count/report CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi ingest/count/report CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+metadata:
+  internal: true
 ---
 
 # Verify learn-from-mistakes
@@ -11,7 +13,7 @@ Read `CONSTRAINTS.md`. Requires Node >=22.13 (`node --version`, not a server).
 From the candidate checkout, install the locked dependency with `npm ci` if needed;
 use an owned temporary HOME, XDG directories, TMPDIR and npm cache outside the repo.
 Keep the install command, output and exit in the caller's private evidence folder.
-Do not use the globally linked `lfm`: the helper runs this checkout's `bin/lfm.mjs`.
+Do not use the globally linked `learn-from-mistakes-axi`: the helper runs this checkout's `bin/learn-from-mistakes-axi.mjs`.
 Doctor: `git status --short`, `git rev-parse HEAD`, `node --version`, `npm ls @toon-format/toon yaml`.
 A missing dependency or runtime is a failed prerequisite, not a passing proof.
 
@@ -38,7 +40,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 Pass `--package` to add the packaged-install journey: `npm pack` into the
 evidence dir, assert the tarball manifest carries the bin, package metadata and
 the standalone skill (and not `test`/`examples`), install that exact tarball into
-a fresh prefix, drive the installed `lfm` bin (`report --json`, `changes --json`),
+a fresh prefix, drive the installed `learn-from-mistakes-axi` bin (`report --json`, `changes --json`),
 and rerun the whole `npm test` suite with `LFM_CLI` pointing at the installed bin
 so the same journeys prove the packaged CLI. This one step resolves the
 declared npm dependencies, so it uses the isolated npm cache and may touch

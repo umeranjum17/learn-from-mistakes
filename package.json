@@ -1,16 +1,16 @@
 {
-  "name": "learn-from-mistakes",
+  "name": "learn-from-mistakes-axi",
   "version": "0.1.0",
-  "description": "Find repeated causes in the record of past agent work and turn them into evidence-backed change recommendations.",
+  "description": "AXI CLI that finds the causes your coding agents keep repeating in defect logs and failed pipeline runs, with the evidence for each and evidence-backed change recommendations.",
   "license": "MIT",
-  "keywords": ["agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
+  "keywords": ["axi", "agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
   "homepage": "https://github.com/umeranjum17/learn-from-mistakes#readme",
   "repository": { "type": "git", "url": "git+https://github.com/umeranjum17/learn-from-mistakes.git" },
   "bugs": { "url": "https://github.com/umeranjum17/learn-from-mistakes/issues" },
   "type": "module",
-  "bin": { "lfm": "bin/lfm.mjs" },
+  "bin": { "learn-from-mistakes-axi": "bin/learn-from-mistakes-axi.mjs" },
   "files": ["bin", "skills"],
   "engines": { "node": ">=22.13" },
-  "scripts": { "pretest": "npm ci", "test": "node --test" },
+  "scripts": { "pretest": "npm ci", "test": "npm run build:skill -- --check && node --test", "build:skill": "node scripts/build-skill.mjs" },
   "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" }
 }
