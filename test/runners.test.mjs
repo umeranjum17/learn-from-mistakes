@@ -26,6 +26,7 @@ else {
   if (mode === 'flaky' && !fs.existsSync(once)) { fs.writeFileSync(once, ''); console.error('API Error: 529 overloaded'); process.exit(1); }
   if (mode === 'stale' && !fs.existsSync(once)) { fs.writeFileSync(once, ''); fs.writeFileSync(args[args.indexOf('-o') + 1], 'stale answer'); console.error('API Error: 529 overloaded'); process.exit(1); }
   if (mode === 'write') fs.writeFileSync('x.txt', 'ok');
+  if (mode === 'color-exit') { console.error('\\x1b[31mAuthentication cancelled by user.\\x1b[0m'); process.exit(130); }
   if (mode === 'grandchild') spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();
   const text = mode === 'prose' ? 'I cannot create x.txt: my tools are off.' : JSON.stringify({ reply: 'hello from ' + name });
   if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: mode === 'error' || mode === 'empty-error', result: mode === 'empty-error' ? undefined : mode === 'error' ? "The model's tool call could not be parsed" : text }));
@@ -204,6 +205,11 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   assert.equal(hang.status, 1);
   assert.match(hang.stderr, /^error: claude: no answer within 2s in one attempt; stopped it \(caps\.timeout\)$/m);
   assert.ok(hang.secs < 8, `killed at the timeout, took ${hang.secs}s`);
+
+  const color = lfm({ FAKE_GEMINI: 'color-exit' }, 'agents', '--test', 'gemini'); // a colored error line reaches the user plain
+  assert.equal(color.status, 1);
+  assert.match(color.stderr, /^error: gemini: exited 130: Authentication cancelled by user\.$/m);
+  assert.ok(!color.stderr.includes('\x1b'), 'no escape bytes in the error');
 
   const leak = lfm({ FAKE_CODEX: 'grandchild' }, 'agents', '--test', 'codex'); // a grandchild keeps stdout open
   assert.equal(leak.status, 0, leak.stderr);
