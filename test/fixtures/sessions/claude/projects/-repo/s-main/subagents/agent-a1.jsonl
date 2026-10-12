@@ -1,0 +1,4 @@
+{"type":"user","cwd":"/elsewhere","sessionId":"s-main","agentId":"a1","isSidechain":true,"timestamp":"2026-10-01T09:00:06.000Z","message":{"role":"user","content":"Find the fetch helper."}}
+{"type":"assistant","cwd":"/elsewhere","sessionId":"s-main","agentId":"a1","isSidechain":true,"timestamp":"2026-10-01T09:00:07.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t4","name":"Grep","input":{"pattern":"fetchWithRetry"}}]}}
+{"type":"user","cwd":"/elsewhere","sessionId":"s-main","agentId":"a1","isSidechain":true,"timestamp":"2026-10-01T09:00:08.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t4","is_error":true,"content":"<tool_use_error>Path does not exist</tool_use_error>"}]}}
+{"type":"user","cwd":"/elsewhere","sessionId":"s-main","agentId":"a1","isSidechain":true,"timestamp":"2026-10-01T09:00:09.000Z","message":{"role":"user","content":"A parent agent message, never a correction."}}

@@ -11,12 +11,13 @@ quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts`
 `signoff` (`auto|off`), `allow_premium` (boolean). The global file adds
 `runner_path: {<runner>: <bin>}` (a bare name stays a PATH lookup) and `runner_args: {<runner>: [..]}`. An unknown key
 or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only
-loaded and checked: nothing reads `window`, the runners or the caps yet.
+loaded and checked: only the sessions source reads `window` and `excerpts`; nothing reads the runners or the caps yet.
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys) and `read`; `collect`/`ingest` call the
-registry. Today: `markdown-log` and `no-mistakes`, unchanged. A type with no
-reader yet (`sessions`, `github`) exits 2 `sources.<id>.type must be one of ...`.
+registry. Today: `markdown-log` and `no-mistakes`, unchanged, and `sessions`
+([sessions.md](sessions.md)). A type with no reader yet (`github`) exits 2
+`sources.<id>.type must be one of ...`. `window` sets the sessions read range.
 
 ## How to get to it (user POV)
 Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro --foreground`.
@@ -55,5 +56,5 @@ copy of `$SELF/examples`.
 
 ## Gotchas
 `>= 70` must be quoted in YAML (a bare `>` starts a block scalar). `on`/`off`
-are strings in YAML 1.2. Source detect/doctor/metrics hooks arrive with init,
-doctor and metrics.
+are strings in YAML 1.2. A source may export `metrics`, `detect` and `doctor`
+(the sessions source does); init and doctor call the last two in later slices.

@@ -29,7 +29,8 @@ when a CLI check fails. No model, network, pipeline, or release is started by th
 default journey. It also drives the bare command and `report`/`--json`/`--full`,
 and (synthetic only) `change applied --what --why` plus the `changes` export,
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
-every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
+every config v2 key (`retro-v2`), a rejected `worker: { runner: 3 }` (exit 2) and a
+sessions source over one synthetic session in the scratch HOME (`retro-sessions`),
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private

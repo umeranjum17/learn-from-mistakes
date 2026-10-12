@@ -9,6 +9,9 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT)`,
   `CREATE TABLE IF NOT EXISTS steps (run_id INTEGER NOT NULL REFERENCES runs(id), name TEXT NOT NULL, ord INTEGER NOT NULL,
     status TEXT NOT NULL, started_at TEXT, completed_at TEXT, error TEXT, output_json TEXT, PRIMARY KEY (run_id, name))`,
+  `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), agent TEXT NOT NULL,
+    session_id TEXT NOT NULL, ts TEXT, kind TEXT NOT NULL, tool TEXT, status TEXT, exit_code INTEGER, signal TEXT, cause TEXT,
+    ref TEXT NOT NULL, excerpt TEXT NOT NULL)`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

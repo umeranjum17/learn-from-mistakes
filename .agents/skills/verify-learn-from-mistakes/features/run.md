@@ -5,7 +5,9 @@
 run store `<state dir>/lfm.sqlite` (node:sqlite, WAL, a migrations list counted
 by `PRAGMA user_version`): one `runs` row (status, times, error) and one `steps` row each for `collect`
 (ingest) and `report` (the counts with the labels already in the state dir; with
-none, coverage shows every record unlabelled). A failed step fails the run
+none, coverage shows every record unlabelled). The run output adds `sources`: each
+source's id, type and item count (and a sessions source's counts and numbers,
+see [sessions.md](sessions.md)). A failed step fails the run
 (exit 1, the error saved on the step and the run). `status [--run <id>]` prints
 a run and its steps, `runs` lists the last 10 runs newest first. `retro`
 without `--foreground` exits 2 (the detached worker is a later slice). The
@@ -42,4 +44,4 @@ stderr must hold no `ExperimentalWarning`.
 ## Gotchas
 Foreground only: a run killed mid-step stays `running` until the reconcile of
 a later slice. Steps after a failed one stay `pending`. `collect` reads every
-record. Windows come in a later slice, with the code that applies them.
+log and store record; only the sessions source applies the read range so far.
