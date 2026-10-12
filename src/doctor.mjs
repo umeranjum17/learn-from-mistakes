@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, detect, INSTALL, MODELS, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
+import { agents, binName, detect, INSTALL, MODELS, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
 
 const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
@@ -16,6 +16,7 @@ const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', im
 export async function doctor(dir, opts) {
   const checks = [];
   const add = (level, label, detail, fix) => checks.push({ level, label, detail, ...(level !== 'ok' && fix && { fix }) });
+  const file = shq(join(dir, PROJECT_FILE));
   const [major, minor] = process.versions.node.split('.').map(Number);
   add(major > 22 || (major === 22 && minor >= 13) ? 'ok' : 'fail', 'node', `v${process.versions.node}`, 'install Node 22.13 or later');
   const git = which('git');
@@ -36,7 +37,7 @@ export async function doctor(dir, opts) {
   else if (repo) {
     const ignored = spawnSync(git, ['-C', dir, 'check-ignore', '-q', join(cfg.state, 'lfm.sqlite')]).status === 0;
     add(ignored ? 'ok' : 'fail', 'state', ignored ? `${cfg.state} is git-ignored` : `${cfg.state} is not git-ignored, so run records could be committed`,
-      `learn-from-mistakes-axi init --dir ${shq(dir)}   # writes .lfm/.gitignore`);
+      `echo '*' >> ${shq(join(cfg.state, '.gitignore'))}`);
   }
 
   // Each source's own doctor hook: readable, its count in the window, and the entries it skipped.
@@ -44,7 +45,7 @@ export async function doctor(dir, opts) {
   if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', `learn-from-mistakes-axi init --dir ${shq(dir)}   # lists the sources it finds as gaps`);
   for (const [id, s] of Object.entries(cfg.sources)) {
     let r;
-    try { r = await SOURCES[s.type].doctor(id, s, { readFrom: since, causes: cfg.causes }); }
+    try { r = await SOURCES[s.type].doctor(id, s, { readFrom: since, causes: cfg.causes, project: join(dir, PROJECT_FILE) }); }
     catch (e) { if (!(e instanceof UsageError)) throw e; r = { level: 'fail', detail: e.message.replace(`source ${id}: `, ''), fix: e.next }; }
     add(r.level, `source ${id}`, `${s.type}: ${r.detail}`, r.fix);
   }
@@ -54,16 +55,16 @@ export async function doctor(dir, opts) {
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     if (!r.bin) {
-      const offered = list.filter((x) => x.usable && !x.problem).map((x) => x.runner);
-      add('fail', name, r.problem, offered.length
-        ? `set ${name}.runner in ${PROJECT_FILE} to ${offered.join(' or ')}`
-        : `install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml`);
+      // Offered only where the role would not resolve to the other role's binary and model: that is the clash it names.
+      const other = roles[name === 'worker' ? 'judge' : 'worker'];
+      const offered = list.filter((x) => x.usable && !x.problem && !same({ bin: x.bin, model: roleModel(cfg, name, x.runner) }, other)).map((x) => x.runner);
+      add('fail', name, r.problem, r.fix ?? (offered.length
+        ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
+        : `install a second agent CLI (${INSTALL}), or set runner_path in $LFM_HOME/config.yaml`));
       continue;
     }
     const route = byokit.routeOf(r.runner);
     if (route) { // BYOKit's own checks for its sign-in or plan key, with no paid call; its node row is the node check above
-      const p = await byokit.check(route);
-      if (p) { add('fail', name, p.problem, p.fix); continue; }
       add('ok', name, `${r.runner}, a BYOKit route`);
       for (const c of await byokit.doctor(route)) if (c.label !== 'node') add(c.status, `${name} login`, c.detail, c.fix);
     } else {
@@ -83,14 +84,14 @@ export async function doctor(dir, opts) {
         else add('fail', `${name} login`, `${shown}: not logged in${p.status ? ` (exit ${p.status})` : ''}`, probe.fix);
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
-    const fromEnv = name === 'worker' && (process.env.LFM_MODEL ?? '').trim();
-    const model = route ? await byokit.modelOf(route, r.model) : r.model;
+    const { model } = r;
+    const fromEnv = name === 'worker' && !!model && model === (process.env.LFM_MODEL ?? '').trim();
     const cheap = route ? await byokit.modelOf(route, '') : MODELS[key]?.[0];
-    if (!model && route) add('fail', `${name} model`, `BYOKit has no default model for ${route}`, `set ${name}.model in ${shq(join(dir, PROJECT_FILE))}`);
-    else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${PROJECT_FILE}`);
+    if (!model && route) add('fail', `${name} model`, `BYOKit has no default model for ${route}`, `set ${name}.model in ${file}`);
+    else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${file}`);
     else if (PREMIUM.test(model) && !cfg.allow_premium) {
       add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
-        `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${PROJECT_FILE} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
+        `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
     } else add('ok', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The identity rule: the judge never checks its own work.
@@ -98,7 +99,7 @@ export async function doctor(dir, opts) {
     const clash = same(roles.worker, roles.judge);
     const id = (r) => `${r.runner}${r.model ? ` ${r.model}` : ''}`;
     add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker and the judge are both ${id(roles.worker)}, so the judge would judge its own work`
-      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge.runner and judge.model in ${PROJECT_FILE} to another agent CLI or a different model, or install a second agent CLI`);
+      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge.runner and judge.model in ${file} to another agent CLI or a different model, or install a second agent CLI`);
   }
 
   // The skill in each usable agent CLI's own skills dir, or in the project.
