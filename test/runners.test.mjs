@@ -64,7 +64,7 @@ test('agents lists each agent CLI with version, login presence and default model
   assert.equal(by.claude.usable, true);
   assert.equal(by.claude.version, '1.2.3');
   assert.equal(by.claude.login, '.credentials.json'); // the file name only, never its contents
-  assert.equal(by.opencode.login, 'none');
+  assert.equal(by.opencode.login, 'not found (it may be in the system keychain)');
   assert.equal(by.codex.usable, false);
   assert.match(by.codex.problem, /--version failed: No version is set for shim: codex/);
   for (const a of out.agents) assert.equal(a.model, MODELS[a.runner][0]); // defaults come from src/models.json

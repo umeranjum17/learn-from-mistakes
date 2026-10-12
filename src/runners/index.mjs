@@ -28,7 +28,7 @@ export function detect(cfg) {
   return Object.entries(RUNNERS).map(([runner, mod]) => {
     const found = which(cfg.runner_path?.[runner] ?? runner);
     const { files, vars } = mod.login(process.env);
-    const login = [...files.filter((f) => existsSync(f)).map((f) => basename(f)), ...vars.filter((v) => process.env[v])].join(' ') || 'none';
+    const login = [...files.filter((f) => existsSync(f)).map((f) => basename(f)), ...vars.filter((v) => process.env[v])].join(' ') || 'not found (it may be in the system keychain)';
     const a = { runner, usable: false, version: '', tools: mod.tools, login, model: roleModel(cfg, 'worker', runner), bin: found ? realpathSync(found) : '', problem: '' };
     if (!found) return { ...a, problem: `${cfg.runner_path?.[runner] ?? runner} is not on PATH` };
     const v = spawnSync(found, ['--version'], { encoding: 'utf8', timeout: 10000 });
