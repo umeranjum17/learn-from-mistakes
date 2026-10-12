@@ -61,6 +61,7 @@ lfm                 print the project's repeated-cause report (same as `lfm repo
 lfm ingest          read the configured sources (read-only) into the state dir
 lfm count           print the counts (same projection as `lfm report`)
 lfm report          print the report; --full adds evidence ids, --json prints JSON
+lfm change applied --cause <cause> --ref <ref> [--at <time>]   record an applied change in the ledger
 lfm --help          show the commands and options
 lfm --version       show the version
 ```
@@ -69,6 +70,7 @@ Every command stays useful:
 
 - Default output is **TOON** (compact, token-lean). `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema.
 - `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
+- `lfm change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now.
 - Each command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
@@ -102,7 +104,7 @@ causes[1]:
 
 ## Privacy
 
-The report and every machine output are **privacy-bounded**: identifiers and counts only. They never print record text, a label's `why`, a proposal's `change`, cause descriptions, source paths, branches or error text, and never turn a record's text into an id. That is why the default and `--full` output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
+The report and every machine output are **privacy-bounded**: identifiers and counts only. They never print record text, a label's `why`, a proposal's `change`, cause descriptions, source paths, branches or error text, and never turn a record's text into an id. The change ledger holds ids, cause keys and times only — there is no free-text field — so it can never leak private prose either. That is why the default and `--full` output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
 
 ## Use it on your own records
 
@@ -110,8 +112,8 @@ The `.learn-from-mistakes.yaml` above is all the configuration. Then `lfm ingest
 
 ## Exit codes
 
-`0` ok, `1` a label or proposal has a problem (a count of problems is included in the output), `2` bad usage or config, `3` the sources hold nothing. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
+`0` ok, `1` a label, a proposal or the existing change ledger has a problem (a count of problems is included in the output), `2` bad usage or config (a rejected `change applied` never touches the ledger), `3` the sources hold nothing. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
 
 ## What it does not do
 
-`lfm` never edits your sources, instructions or config, and it makes no network or model calls. It does not apply the recommended changes or measure whether they worked. Records nobody labelled are reported as unlabelled, never guessed.
+`lfm` never edits your sources, instructions or config, and it makes no network or model calls. It does not apply the recommended changes or measure whether they worked; `lfm change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.

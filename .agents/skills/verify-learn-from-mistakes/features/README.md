@@ -5,6 +5,7 @@
 | [Ingest](ingest.md) | `lfm ingest` | source counts and retained state; input hashes unchanged |
 | [Count](count.md) | `lfm count` before/after labels | separate source totals, duplicate/occurrence arithmetic, unread coverage |
 | [Report and errors](report.md) | `lfm report`, bare `lfm`, existing negative journeys | real refs; bad input/empty exits, no fabricated coverage |
+| [Applied-change ledger](change.md) | `lfm change applied`, `lfm report --json`/`--full` | append-only bytes, per-cause counts and ids, canary absent |
 | [Machine surface](surface.md) | `--help`, `--version`, bare command, `--json`, `--full`, TOON default | behavior asserted by `test/cli.test.mjs`: valid TOON equal to the `lfm-report.v1` JSON, non-content ids-only `--full`, a private canary absent from every output and stderr; the helper only captures evidence |
 | [Package install](package.md) | helper `--package`; `npm pack` + fresh-prefix install | manifest carries the bin, metadata and standalone skill; the installed bin drives the report |
 

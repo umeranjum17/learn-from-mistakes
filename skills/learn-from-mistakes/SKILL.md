@@ -63,3 +63,13 @@ lfm report            # default TOON; --json for lfm-report.v1; --full adds evid
 The machine and default output carries identifiers and counts only — never record text, your label `why`, or proposal `change` text. That keeps a report safe to share. To read your own labels back, open `labels.jsonl` and `proposals.jsonl` in the state dir.
 
 Exit 1 means a label or proposal has a problem; the output counts the problems (their text is not printed). Fix them and run again.
+
+## 6. Record a change you applied
+
+```sh
+lfm change applied --cause <cause id> --ref <git sha or sha256:...>   # --at <ISO-8601> to backdate
+```
+
+- `<cause>` must be a cause key from the config; `other` is never recordable.
+- `<ref>` is the version id of the change: a git commit sha (7-40 hex) or `sha256:<64 hex>` of the changed file.
+- The ledger holds ids, cause keys and times only — there is no free-text field — and the report then shows per cause `changes: { count, last_at }` (`--full` adds `change_ids`/`change_refs`).

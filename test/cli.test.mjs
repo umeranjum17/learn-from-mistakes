@@ -2,7 +2,7 @@
 // The only machine shape is the privacy-bounded lfm-report.v1 (identifiers and counts, never prose).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -17,7 +17,7 @@ function setup() {
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
   const raw = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: tmp, env });
-  return { p: join(tmp, 'p'), lfm, raw };
+  return { p: join(tmp, 'p'), home: join(tmp, 'home'), lfm, raw };
 }
 const inputs = (p) => [join(p, 'labels.jsonl'), join(p, 'proposals.jsonl')];
 const report = (lfm, p, ...extra) => lfm('report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], ...extra);
@@ -202,6 +202,85 @@ test('an explicit labels or proposals path that does not exist is a usage error'
   const proposals = lfm('report', '--proposals', join(p, 'typo-proposals.jsonl'));
   assert.equal(proposals.status, 2, proposals.stdout);
   assert.match(proposals.stderr, /typo-proposals\.jsonl: no such file/);
+});
+
+test('change applied appends an append-only ledger the report then shows', () => {
+  const { p, home, lfm } = setup();
+  const ledger = join(home, 'state', 'example', 'changes.jsonl');
+  const change = (...args) => lfm('change', 'applied', ...args);
+  assert.equal(change('--cause', 'nope', '--ref', 'abc1234').status, 2); // rejected input creates nothing
+  assert.ok(!existsSync(ledger));
+  // Private prose sits in every input; it must never reach any change or report output.
+  appendFileSync(join(p, 'defects.md'), `- [runner] ${CANARY} stopped the server -> 1 h -> OPEN.\n`);
+  const plant = (text, anchor) => {
+    assert.ok(text.includes(anchor), `fixture has no "${anchor}" to carry the canary`);
+    return text.replace(anchor, `${CANARY} ${anchor}`);
+  };
+  const labels = join(p, `${CANARY}-labels.jsonl`);
+  writeFileSync(labels, plant(readFileSync(join(p, 'labels.jsonl'), 'utf8'), 'Memory killer stopped'));
+  const proposals = join(p, `${CANARY}-proposals.jsonl`);
+  writeFileSync(proposals, plant(readFileSync(join(p, 'proposals.jsonl'), 'utf8'), 'Run builds in their own memory group'));
+  assert.equal(lfm('ingest').status, 0);
+  const inputs = ['--labels', labels, '--proposals', proposals];
+
+  const first = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
+  assert.equal(first.status, 0, first.stderr);
+  const firstEntry = decode(first.stdout); // one TOON object on stdout
+  assert.deepEqual(Object.keys(firstEntry).sort(), ['at', 'cause', 'id', 'ref', 'v']);
+  assert.deepEqual({ v: firstEntry.v, id: firstEntry.id, cause: firstEntry.cause, ref: firstEntry.ref },
+    { v: 1, id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234' });
+  assert.ok(!Number.isNaN(Date.parse(firstEntry.at)), 'default --at is a readable time');
+  assert.match(first.stderr, /next: lfm report   # the report with the ledger/);
+  const afterFirst = readFileSync(ledger);
+  assert.deepEqual(JSON.parse(afterFirst.toString()), firstEntry);
+
+  const AT = '2026-01-02T03:04:05Z';
+  const REF2 = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  const second = change('--cause', 'server-memory-kill', '--ref', REF2, '--at', AT, '--json');
+  assert.equal(second.status, 0, second.stderr);
+  assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z' });
+  const afterSecond = readFileSync(ledger);
+  assert.ok(afterSecond.subarray(0, afterFirst.length).equals(afterFirst)); // the second entry keeps every prior byte
+
+  for (const args of [
+    ['--cause', 'nope', '--ref', 'abc1234'], // unknown cause
+    ['--cause', 'other', '--ref', 'abc1234'], // `other` is never recordable
+    ['--cause', 'server-memory-kill', '--ref', 'xyz'], // bad ref
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--at', 'not-a-time'], // bad --at
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--bogus'], // unknown flag
+    ['--cause', 'server-memory-kill', '--ref', 'abc1234', '--full'], // --full is report-only
+    ['--cause', 'server-memory-kill'], // missing --ref
+  ]) {
+    assert.equal(change(...args).status, 2, args.join(' '));
+    assert.ok(readFileSync(ledger).equals(afterSecond), `rejected input changed the ledger: ${args.join(' ')}`);
+  }
+  appendFileSync(ledger, 'not json\n');
+  const beforeRetry = readFileSync(ledger);
+  const corrupt = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
+  assert.equal(corrupt.status, 1);
+  assert.match(corrupt.stderr, /changes\.jsonl:3: not valid JSON/);
+  assert.doesNotMatch(corrupt.stderr, /not json\n/); // file:line only, never line contents
+  assert.ok(readFileSync(ledger).equals(beforeRetry));
+  writeFileSync(ledger, afterSecond); // repair the scratch corruption for the report below
+
+  const json = lfm('report', ...inputs, '--json'); // a fresh process reads the persisted ledger
+  assert.equal(json.status, 0, json.stderr);
+  const model = JSON.parse(json.stdout);
+  assert.equal(model.schema, 'lfm-report.v1');
+  assert.deepEqual(model.ledger, { entries: 2 });
+  assert.deepEqual(model.causes.find((c) => c.cause === 'server-memory-kill').changes, { count: 2, last_at: firstEntry.at });
+  assert.deepEqual(model.causes.find((c) => c.cause === 'shared-cache-lock').changes, { count: 0, last_at: '' });
+  const bare = lfm('report', ...inputs);
+  assert.equal(bare.status, 0, bare.stderr);
+  assert.deepEqual(decode(bare.stdout), model); // TOON decodes equal to JSON
+  const fullRun = lfm('report', ...inputs, '--full', '--json');
+  assert.equal(fullRun.status, 0, fullRun.stderr);
+  const fullMem = JSON.parse(fullRun.stdout).causes.find((c) => c.cause === 'server-memory-kill');
+  assert.deepEqual(fullMem.change_ids, ['chg-1', 'chg-2']);
+  assert.deepEqual(fullMem.change_refs, ['abc1234', REF2]);
+  for (const out of [first.stdout, first.stderr, second.stdout, second.stderr, json.stdout, json.stderr, bare.stdout, fullRun.stdout]) {
+    assert.doesNotMatch(out, new RegExp(CANARY));
+  }
 });
 
 test('empty input exits 3 with a next command', () => {
