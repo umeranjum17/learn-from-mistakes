@@ -204,7 +204,7 @@ The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every 
 | Code | Meaning | stderr |
 | --- | --- | --- |
 | `0` | ok | a `next:` hint |
-| `1` | an input problem: a label, a proposal or the existing change ledger has a problem, including a line that is not valid JSON; for `agents`, a worker or judge problem or a failed `--test` call | `error: <file>:<line>: not valid JSON`, or for the report one `problem: <file>:<line>: ...` line each (the line and the rule broken, never record text, a record id or a ref) and `problems: N`; then `next:` |
+| `1` | an input problem: a label, a proposal or the existing change ledger has a problem, including a line that is not valid JSON; for `agents`, and for a fresh `init`, a worker or judge problem; for `agents`, also a failed `--test` call | `error: <file>:<line>: not valid JSON`, or for the report one `problem: <file>:<line>: ...` line each (the line and the rule broken, never record text, a record id or a ref) and `problems: N`; then `next:` |
 | `2` | bad usage or config: an unknown command or option, a flag the command does not take, a missing or invalid value, a bad `.learn-from-mistakes.yaml`, missing state | `error:` naming the flag or value (a value longer than 80 characters or with control characters shows as `(invalid value)`; file paths print whole, and a `--dir`/`--labels`/`--proposals` path with a control character is rejected), then `next:` with the allowed form or a runnable command, never the whole usage |
 | `3` | the sources hold nothing | `next: learn-from-mistakes-axi ingest` |
 
@@ -218,4 +218,4 @@ To use your own model instead, set `LFM_MODEL` (or `worker.model`) to its id. Wi
 
 ## What it does not do
 
-`learn-from-mistakes-axi` never edits your sources, instructions or config, and it makes no network or model calls itself; only `agents --test` starts your own agent CLI, which calls its model. It does not apply the recommended changes or measure whether they worked; `change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.
+`learn-from-mistakes-axi` never edits your sources or instructions, writes only its own config (`init`, once) and state dir, and makes no network or model calls itself; only `agents --test` starts your own agent CLI, which calls its model. It does not apply the recommended changes or measure whether they worked; `change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.
