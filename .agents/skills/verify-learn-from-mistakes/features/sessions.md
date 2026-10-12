@@ -6,7 +6,8 @@ A `sessions: { type: sessions, agents: [auto] }` source (`agents`: `auto` or
 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<id>.jsonl` and each session's
 `<id>/subagents/**/agent-*.jsonl`, streamed line by line. Store roots come only
 from env overrides. Files older than the read range (this window and the last,
-and back to one window before the first applied change) are skipped by mtime.
+and back to one window before the first applied change) are skipped by mtime;
+a session is read when its file or any of its subagent files is in range.
 A session counts when the cwd of its first record is the project dir, a subdir,
 or a `git worktree list` path, and not under `.lfm/`; a subagent file belongs to
 its parent session. The tool's own runs are skipped: a cwd under `.lfm/`, a
@@ -14,8 +15,11 @@ first user message starting `lfm-run:`, or a session id in the store's
 `invocations` table. `collect` writes one `events` row per session start, user
 message, tool call, tool result, correction and interrupt, with `signal`
 `tool_error`, `nonzero_exit`, `test_fail`, `retry`, `correction` or
-`interrupt`, a `file:line` ref and an excerpt of at most 300 characters after
-`src/redact.mjs` (empty with `excerpts: off`). The run output adds each
+`interrupt`, a `file:line` ref and an excerpt of at most 300 characters, cut
+after `src/redact.mjs` ran on the whole text (empty with `excerpts: off`).
+`test_fail` is a failed command that runs tests (`npm test`, `node --test`,
+`pytest` and the like), not any command naming a test file. `retry` is a
+call repeated with the same input after it failed and before it succeeded. The run output adds each
 source's counts: for sessions `sessions`, `skipped` (unknown record shapes) and
 `metrics` (`tool_error_rate`, `corrections_per_session`, `interrupts`,
 `retries`; `n/a` with no sessions, never 0). A sessions-only config completes
@@ -34,7 +38,10 @@ and 1 retry, a subagent file read, and the other project, a sibling dir with the
 repo's name as a prefix, a `.lfm/` cwd, a marker session and an old file
 skipped; every planted key shape is redacted and never reaches `.lfm/` or any
 output; an `invocations` session id is skipped next run; `excerpts: off` stores
-none. The helper drives `retro-sessions` (one synthetic session in its scratch
+none; a sessions-only config with no sessions completes; a parent file older
+than the read range is read through its newer subagent file. The planted keys
+cover quoted values with spaces, JSON-escaped pairs (the retried call is kept
+as JSON), Basic auth and comma-split values. The helper drives `retro-sessions` (one synthetic session in its scratch
 HOME, `sessions: 1`).
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):

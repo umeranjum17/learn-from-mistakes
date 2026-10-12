@@ -244,7 +244,8 @@ function analyse(cfg, files, rerun) {
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
 export function buildReport(cfg, files, rerun, full) {
   const a = analyse(cfg, files, rerun);
-  if (!a.records.size && !a.rows.length && !a.meta.sources.some((s) => s.items)) throw new EmptyError('no records or rows in the sources: nothing to count',
+  // A sessions source always counts: a week with no sessions still has numbers (n/a).
+  if (!a.records.size && !a.rows.length && !a.meta.sources.some((s) => s.items || s.type === 'sessions')) throw new EmptyError('no records or rows in the sources: nothing to count',
     withContext('learn-from-mistakes-axi ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', files));
   return { model: project(a, full), problems: a.problems };
 }
