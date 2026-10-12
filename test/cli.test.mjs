@@ -671,7 +671,8 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.equal(corruptExport.stdout, ''); // no partial export to join on
   assert.match(corruptExport.stderr, /changes\.jsonl:3: not valid JSON/);
   for (const bad of [{ id: 'chg-3', what: 'line one\nline two' }, { id: 'chg-3', why: 'x'.repeat(201) }, { id: 'chg-3', tripwire: '< x' },
-    { id: 'chg-3', kind: 'policy' }, { id: 'chg-3', metric: '' }, { id: 'chg-2' }]) {
+    { id: 'chg-3', kind: 'policy' }, { id: 'chg-3', metric: '' }, { id: 'chg-3', metric: 'cause_count:a\nb' }, { id: 'chg-3', metric: 'x'.repeat(201) },
+    { id: 'chg-2' }]) {
     writeFileSync(ledger, Buffer.concat([afterSecond, Buffer.from(JSON.stringify({ v: 1, cause: 'server-memory-kill', ref: 'abc1234', at: AT, ...bad }) + '\n')]));
     const r = lfm('changes', '--json'); // a hand-edited ledger never exports bad text or a repeated join key
     assert.equal(r.status, 1, JSON.stringify(bad));
