@@ -11,8 +11,9 @@ import * as sessions from './sources/sessions.mjs';
 
 export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // The source registry: one file per source type, each exporting validate (check and normalise its config entry)
-// and read (its items). A source may also export metricNames and metrics (its numbers from what it read; a type with
-// no source in the config gives its metricNames as n/a), detect (a config entry
+// and read (its items). A source may also export metricNames, metricRows ('events' or 'records', the rows its metrics
+// read) and metrics (its numbers from what it read; a type with no source in the config gives its metricNames as n/a),
+// detect (a config entry
 // for init) and doctor (a check line); init and doctor call these two in later slices. A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions };
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
@@ -76,6 +77,8 @@ sources:
     const where = `${file}: sources.${id}`;
     const type = mapping(s, null, where).type;
     if (typeof type !== 'string' || !Object.hasOwn(SOURCES, type)) throw new UsageError(`${where}.type must be one of ${Object.keys(SOURCES).join(', ')}`);
+    const other = Object.keys(sources).find((k) => k !== id && sources[k]?.type === 'sessions');
+    if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads every agent's sessions; keep one and narrow it with agents`);
     sources[id] = SOURCES[type].validate(s, where, dir);
   }
   const causes = mapping(p.causes ?? {}, null, `${file}: causes`);

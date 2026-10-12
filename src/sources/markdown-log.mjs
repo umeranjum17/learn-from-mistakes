@@ -27,4 +27,5 @@ export function read(source, { path }) {
 
 // defects: the records dated in the window, over every markdown-log source; n/a when no record has a date.
 export const metricNames = ['defects'];
+export const metricRows = 'records';
 export const metrics = (rows, window) => ({ defects: rows.some((r) => r.ts) ? inWindow(rows, window).length : null });

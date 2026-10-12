@@ -9,7 +9,7 @@ and the run output (`retro`, `status`) adds `window` (`current_start`,
 `now - window` with no end; `previous` is the same length before it. Collect
 saves the two starts, so `rerun --resume` counts over the same windows.
 Each source type gives its numbers through its `metrics(rows, window)` over the
-rows of all its sources, and names them in `metricNames`: the sessions type
+rows of all its sources (its `metricRows`, `events` or `records`), and names them in `metricNames`: the sessions type
 `tool_error_rate`, `corrections_per_session`, `interrupts`, `retries` (its
 `events`); the markdown-log type `defects` (its records dated in the window, summed
 over every defect log, from the new `records` table, which also holds failed gate

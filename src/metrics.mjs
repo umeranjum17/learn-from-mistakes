@@ -22,11 +22,11 @@ export function metrics(cfg, db, id, { current_start, previous_start }) {
       for (const [type, src] of Object.entries(SOURCES)) {
         if (!src.metricNames) continue;
         if (!types.has(type)) for (const name of src.metricNames) v[name] = null;
-        else Object.assign(v, src.metrics(type === 'sessions' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w));
+        else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w));
       }
       for (const [cause, c] of Object.entries(cfg.causes)) {
         // n/a with no match rule, or when the rule's sessions source has no session in the window (as its other counts)
-        const read = c.match && (cfg.sources[c.match.source].type !== 'sessions' || inWindow(events, w).length);
+        const read = c.match && (SOURCES[cfg.sources[c.match.source].type].metricRows !== 'events' || inWindow(events, w).length);
         v[`cause_count:${cause}`] = read ? inWindow([...events, ...records].filter((r) => r.cause === cause), w).length : null;
       }
       for (const name of Object.keys(cfg.targets)) v[name] ??= null; // a target no source measures
