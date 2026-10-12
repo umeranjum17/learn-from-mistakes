@@ -8,9 +8,19 @@ import { randomUUID } from 'node:crypto';
 
 export const tools = 'none';
 export const INSTALL = 'npm install -g @byokit/accounts @byokit/secrets @earendil-works/pi-ai   # or reinstall learn-from-mistakes-axi without --omit=optional';
+// The two sign-in plans BYOKit's respond() answers in one plain call (BYOKit's API); every other route comes from routes().
 export const ROUTES = ['chatgpt', 'claude'];
 const MEMBER = 'lfm';
 const NODE = '22.18';
+
+// The route a runner names as byokit:<route>, or undefined.
+export const routeOf = (runner) => runner.match(/^byokit:(.+)/)?.[1];
+
+// The routes a person can name: the sign-in plans, then BYOKit's plan key aliases whose readiness is ready.
+export async function readyRoutes() {
+  const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => r.aliases ?? []);
+  return [...ROUTES, ...keys];
+}
 
 // BYOKit's row for a plan key route, or undefined for a sign-in plan or an unknown name.
 async function planKey(route) {
@@ -31,17 +41,12 @@ export function problem() {
   try { for (const p of ['@byokit/accounts', '@byokit/secrets', '@earendil-works/pi-ai']) import.meta.resolve(p); } catch { return { problem: 'BYOKit is not installed', fix: INSTALL }; }
 }
 
-// Every route name BYOKit can call: the sign-in plans, then the plan key routes' aliases.
-export async function names() {
-  return [...ROUTES, ...(await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key').flatMap((r) => r.aliases ?? [])];
-}
-
 // problem(), then a route that is not a BYOKit plan route.
 export async function check(route) {
   const p = problem();
   if (p) return p;
   if (ROUTES.includes(route) || await planKey(route)) return;
-  return { problem: `byokit:${route} is not a BYOKit plan route`, fix: `use one of: ${(await names()).map((r) => `byokit:${r}`).join(', ')}` };
+  return { problem: `byokit:${route} is not a BYOKit plan route`, fix: `use one of: ${(await readyRoutes()).map((r) => `byokit:${r}`).join(', ')}` };
 }
 
 async function open() {
@@ -89,6 +94,7 @@ export async function ask({ route, model, prompt, timeoutMs }) {
     const key = await planKey(route);
     if (key) return await askKey(key, { model, prompt, signal });
     accounts = await open();
+    // The request shape per sign-in plan is BYOKit's own API (Ask vs ClaudePlanAsk).
     const text = route === 'claude'
       ? await accounts.respond(MEMBER, { provider: 'claude', model, max_tokens: 8192, messages: [{ role: 'user', content: prompt }], signal })
       : await accounts.respond(MEMBER, { instructions: 'Follow the instructions in the message.', input: prompt, model, signal });

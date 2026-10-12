@@ -42,7 +42,7 @@ plus model. Two kinds of route:
   itself). OpenCode Go also gets an `x-opencode-session` header, which BYOKit's
   key call drops (gap 6 in the evidence). Key not set: exit 1 and `next: set
   OPENCODE_API_KEY to your OpenCode Go key`.
-Any other name is refused before a call, with the list of plan routes. A busy
+Any other name is refused before a call, with the ready plan routes (the sign-in plans and the plan key routes whose BYOKit readiness is `ready`). As worker or judge it is a `problem:` in `agents` (exit 1, the same list). With no usable agent CLI and BYOKit installed, the `next:` hint names the ready routes; without BYOKit, the install hint. A busy
 provider (BYOKit `overloaded`/`network`, or 429/503/529 text) retries twice. Its
 doctor hook `doctor(route)` (for `doctor`, Slice 9) returns `node` (Node >= 22.18)
 and the sign-in state from `accounts.status`, or whether the key variable is set
@@ -82,7 +82,8 @@ as worker and judge (clash); `byokit:opencode-go` against a local Responses
 stand-in (no model: exit 1; no key: exit 1 and the fix, no request; then one call
 with `Bearer <key>`, a session header, the model, the marker, only the prompt file
 in the run dir and no BYOKit store in HOME; an unknown model), grok (refused with
-the route list), claude with no model,
+the route list, and as a worker `agents` exits 1 with that `problem:`), no agent CLI on PATH
+(the `next:` hint lists the ready routes), claude with no model,
 and the hook from a copy with no `node_modules` (install command). The helper drives `agents --json`
 on the host PATH in its scratch HOME to capture evidence (no live call).
 

@@ -10,8 +10,8 @@ import { encode as toonEncode } from '@toon-format/toon';
 import { loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { init } from '../src/init.mjs';
-import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
 import * as byokit from '../src/runners/byokit.mjs';
+import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
 import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -593,19 +593,12 @@ async function agentsCommand(opts) {
   const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
-  if (!out.agents.some((a) => a.usable)) hint(await noCliHint());
-  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists`);
+  const next = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner.replace(/^acp$/, 'acp:<target>');
+  if (!next && !byokit.problem()) hint(`set worker.runner and judge.runner in ${PROJECT_FILE} to byokit:<route>; ready: ${(await byokit.readyRoutes()).map((r) => `byokit:${r}`).join(', ')}`);
+  else if (!next) hint(`install ${INSTALL}, set runner_path in $LFM_HOME/config.yaml, or ${byokit.problem().fix}   # then run agents again`);
+  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI or byokit:<route>, or use a model one agent CLI lists`);
   else if (roles.includes('judge')) hint(out.judge.problem === CLASH ? JUDGE_FIX : AGENTS_FIX);
-  else hint(withContext(`learn-from-mistakes-axi agents --test ${(out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable)).runner.replace(/^acp$/, 'acp:<target>')}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
-}
-
-// No usable agent CLI: BYOKit's fix when it is not usable, else the BYOKit routes that are ready to set as a role.
-async function noCliHint() {
-  const p = byokit.problem();
-  if (p) return `install ${INSTALL}, or ${p.fix}   # then run agents again`;
-  const ready = [];
-  for (const r of await byokit.names()) if (!(await byokit.check(r))) ready.push(`byokit:${r}`);
-  return `no usable agent CLI: set worker.runner and judge.runner in ${PROJECT_FILE} to ${ready.join(' or ')}, or install ${INSTALL}`;
+  else hint(withContext(`learn-from-mistakes-axi agents --test ${next}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 
 // `init` prints the config it wrote or found (with its gaps and any source detection it skipped, with the cause), and

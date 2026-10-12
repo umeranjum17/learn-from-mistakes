@@ -69,7 +69,7 @@ const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b
 // its own work.
 export async function resolveRole(cfg, name, agents, worker, env = process.env) {
   const want = cfg[name];
-  const route = want.runner.match(/^byokit:(.+)/)?.[1];
+  const route = byokit.routeOf(want.runner);
   if (route) { // in process: its identity is the route itself
     const r = { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: '' };
     const p = await byokit.check(route);
@@ -146,7 +146,7 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, text }) {
-  const route = runner.match(/^byokit:(.+)/)?.[1];
+  const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
   if (route) model = await byokit.modelOf(route, model);
@@ -191,7 +191,7 @@ Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 export async function agents(cfg, opts) {
   const list = detect(cfg);
   if (opts.test) {
-    const route = opts.test.match(/^byokit:(.+)/)?.[1];
+    const route = byokit.routeOf(opts.test);
     const [runner, target] = route ? [opts.test] : opts.test.split(/:(.*)/);
     const a = route ? { runner, usable: true, tools: byokit.tools } : list.find((x) => x.runner === runner);
     if (!a.usable) throw new InputError(`${a.runner} is not usable: ${a.problem}`, FIX);

@@ -404,3 +404,15 @@ test('byokit: a name that is not a plan route, a claude route with no cheap mode
   assert.deepEqual(await hook('chatgpt', join(lone, 'byokit.mjs')), [{ status: 'fail', label: 'byokit:chatgpt', detail: 'BYOKit is not installed',
     fix: 'npm install -g @byokit/accounts @byokit/secrets @earendil-works/pi-ai   # or reinstall learn-from-mistakes-axi without --omit=optional' }]);
 });
+
+test('byokit: with no agent CLI the agents hint lists the ready routes; a worker that names no plan route exits 1 with the problem', async () => {
+  const { p, env, lfm, tmp } = await byokitSetup();
+  const none = await node({ ...env, PATH: join(tmp, 'empty') }, CLI, 'agents', '--dir', p); // no agent CLI on PATH; BYOKit is installed
+  assert.equal(none.status, 1, none.stderr);
+  assert.match(none.stderr, /^next: set worker\.runner and judge\.runner in \.learn-from-mistakes\.yaml to byokit:<route>; ready: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}worker: { runner: "byokit:grok" }\n`);
+  const r = await lfm('agents');
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^problem: worker: byokit:grok is not a BYOKit plan route: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
+});
