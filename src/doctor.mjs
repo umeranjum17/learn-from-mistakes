@@ -85,8 +85,9 @@ export async function doctor(dir, opts) {
     }
     const fromEnv = name === 'worker' && (process.env.LFM_MODEL ?? '').trim();
     const model = route ? await byokit.modelOf(route, r.model) : r.model;
-    const cheap = MODELS[key]?.[0];
-    if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${PROJECT_FILE}`);
+    const cheap = route ? await byokit.modelOf(route, '') : MODELS[key]?.[0];
+    if (!model && route) add('fail', `${name} model`, `BYOKit has no default model for ${route}`, `set ${name}.model in ${shq(join(dir, PROJECT_FILE))}`);
+    else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${PROJECT_FILE}`);
     else if (PREMIUM.test(model) && !cfg.allow_premium) {
       add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
         `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${PROJECT_FILE} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
