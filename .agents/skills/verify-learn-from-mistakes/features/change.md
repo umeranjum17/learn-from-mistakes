@@ -1,7 +1,7 @@
 # Applied-change ledger
 
 ## Sub-features
-`lfm change applied` validation (cause key, never `other`; git-sha or
+`learn-from-mistakes-axi change applied` validation (cause key, never `other`; git-sha or
 `sha256:` ref; readable `--at`; optional `--what`/`--why`, trimmed, one line of
 1-200 characters); one-append ledger writes with `chg-<n>` ids;
 the report's per-cause `changes` counts, `last_at`, top-level
@@ -11,9 +11,9 @@ change `id`, `cause`, `ref`, `at`, `what`, `why`) that other tools join on
 `project` + `id`.
 
 ## How to get to it (user POV)
-After making a recommended change: `lfm change applied --cause <cause>
---ref <sha> --what <text> --why <text>`, then `lfm report` shows it under that
-cause and `lfm changes --json` lists it with its what and why.
+After making a recommended change: `learn-from-mistakes-axi change applied --cause <cause>
+--ref <sha> --what <text> --why <text>`, then `learn-from-mistakes-axi report` shows it under that
+cause and `learn-from-mistakes-axi changes --json` lists it with its what and why.
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the ledger journey: two changes in separate processes

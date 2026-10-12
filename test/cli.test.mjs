@@ -12,7 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
 
-const CLI = process.env.LFM_CLI || new URL('../bin/lfm.mjs', import.meta.url).pathname;
+const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
 function setup() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
@@ -29,13 +29,21 @@ const report = (lfm, p, ...extra) => lfm('report', '--labels', inputs(p)[0], '--
 const summaryOf = (stdout) => stdout.trimEnd().split('\n').at(-1);
 const toonBodyOf = (stdout) => { const lines = stdout.trimEnd().split('\n'); lines.pop(); return lines.join('\n') + '\n'; };
 
-test('help and version work without a project file', () => {
+test('help, guide and version work without a project file', () => {
   const { raw } = setup();
   const h = raw('--help');
   assert.equal(h.status, 0);
-  assert.match(h.stdout, /usage: lfm/);
-  assert.match(h.stdout, /ingest.*count.*report/s);
-  assert.match(h.stdout, /next: lfm\b/);
+  assert.match(h.stdout, /usage: learn-from-mistakes-axi/);
+  assert.match(h.stdout, /guide.*ingest.*count.*report/s);
+  assert.match(h.stdout, /next: learn-from-mistakes-axi guide/);
+  const g = raw('guide'); // the agent procedure lives in the CLI, not in the installed skill
+  assert.equal(g.status, 0, g.stderr);
+  assert.match(g.stdout, /\.learn-from-mistakes\.yaml.*records\.jsonl.*labels\.jsonl.*proposals\.jsonl/s);
+  assert.match(g.stdout.trim().split('\n').at(-1), /^next: learn-from-mistakes-axi ingest/);
+  const bare = raw(); // no config: point the agent at the guide
+  assert.equal(bare.status, 2);
+  assert.match(bare.stderr, /no \.learn-from-mistakes\.yaml/);
+  assert.match(bare.stderr, /next: learn-from-mistakes-axi guide/);
   const v = raw('--version');
   assert.equal(v.status, 0);
   assert.match(v.stdout.trim(), /^\d+\.\d+\.\d+$/);
@@ -60,36 +68,36 @@ test('every rejected input names what was wrong and a next step, never the whole
   const { p, lfm, raw } = setup();
   assert.equal(lfm('ingest').status, 0);
   writeFileSync(join(p, 'bad.jsonl'), '{"id":"x"}\n{not json\n');
-  const HELP = /^next: lfm --help   # supported commands and options$/m;
-  const CHANGE = /^next: lfm change applied --cause <cause> --ref <ref> \[--at <time>\]/m;
+  const HELP = /^next: learn-from-mistakes-axi --help   # supported commands and options$/m;
+  const CHANGE = /^next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> \[--at <time>\]/m;
   const known = '(known: server-memory-kill, shared-cache-lock, agent-exit-wait; "other" is reserved)';
   const applied = (...args) => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', ...args);
   for (const [run, code, error, next] of [
-    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: ingest, count, report, change applied, changes)', HELP],
+    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes)', HELP],
     [() => raw('--bogus'), 2, 'unknown option "--bogus"', HELP], // a bare unknown flag points at --help
-    [() => raw('report', '--bogus'), 2, 'unknown option "--bogus"', /^next: lfm report \[--dir <dir>\]/m],
+    [() => raw('report', '--bogus'), 2, 'unknown option "--bogus"', /^next: learn-from-mistakes-axi report \[--dir <dir>\]/m],
     [() => raw('change'), 2, '"change" must be followed by "applied"', CHANGE],
-    [() => raw('report', 'extra'), 2, 'unexpected argument "extra"', /^next: lfm report \[/m],
-    [() => raw('report', '--dir'), 2, '--dir needs a value', /^next: lfm report \[/m],
-    [() => raw('changes', '--full'), 2, 'changes does not take --full', /^next: lfm changes \[--dir <dir>\] \[--json\]$/m], // before any config is read
-    [() => raw('ingest', '--json'), 2, 'ingest does not take --json', /^next: lfm ingest \[--dir <dir>\]$/m],
-    [() => raw('ingest', '--labels', 'x'), 2, 'ingest does not take --labels', /^next: lfm ingest /m],
-    [() => raw('report', '--cause', 'x'), 2, 'report does not take --cause', /^next: lfm report \[/m],
+    [() => raw('report', 'extra'), 2, 'unexpected argument "extra"', /^next: learn-from-mistakes-axi report \[/m],
+    [() => raw('report', '--dir'), 2, '--dir needs a value', /^next: learn-from-mistakes-axi report \[/m],
+    [() => raw('changes', '--full'), 2, 'changes does not take --full', /^next: learn-from-mistakes-axi changes \[--dir <dir>\] \[--json\]$/m], // before any config is read
+    [() => raw('ingest', '--json'), 2, 'ingest does not take --json', /^next: learn-from-mistakes-axi ingest \[--dir <dir>\]$/m],
+    [() => raw('ingest', '--labels', 'x'), 2, 'ingest does not take --labels', /^next: learn-from-mistakes-axi ingest /m],
+    [() => raw('report', '--cause', 'x'), 2, 'report does not take --cause', /^next: learn-from-mistakes-axi report \[/m],
     [() => raw('--cause', 'x'), 2, 'report does not take --cause', HELP], // bare: no command was typed, so --help
-    [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: lfm report \[/m],
-    [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, HELP], // a config to copy
+    [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: learn-from-mistakes-axi report \[/m],
+    [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, /^next: learn-from-mistakes-axi guide   # the full config/m], // a config to copy, then the guide
     [() => lfm('change', 'applied', '--cause', 'nope', '--ref', 'abc1234'), 2, `unknown cause "nope" ${known}`, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'other', '--ref', 'abc1234'), 2, /^error: cause "other" is reserved and never recordable \(known: server-memory-kill,/m, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'y'.repeat(81), '--ref', 'abc1234'), 2, `unknown cause (invalid value) ${known}`, CHANGE], // never echoes a long value
     [() => lfm('change', 'applied', '--cause', 'a\u001b[31m', '--ref', 'abc1234'), 2, `unknown cause (invalid value) ${known}`, CHANGE], // nor a control character
     [() => lfm('change', 'applied', '--cause', 'server-memory-kill'), 2, 'change applied needs --ref', CHANGE],
     [() => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'XYZ'), 2, '--ref "XYZ" must be a 7-40 lowercase hex commit or sha256:<64 lowercase hex>', /^next: git rev-parse HEAD/m],
-    [() => applied('--at', 'not-a-time'), 2, '--at "not-a-time" must be an ISO 8601 time', /^next: lfm change applied --cause server-memory-kill --ref abc1234 --at 2026-10-12T09:00:00Z/m],
+    [() => applied('--at', 'not-a-time'), 2, '--at "not-a-time" must be an ISO 8601 time', /^next: learn-from-mistakes-axi change applied --cause server-memory-kill --ref abc1234 --at 2026-10-12T09:00:00Z/m],
     [() => applied('--full'), 2, 'change applied does not take --full', CHANGE],
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
-    [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: lfm count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
+    [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
     const r = run();
     const what = typeof error === 'string' ? error : String(error);
@@ -98,7 +106,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     if (typeof error === 'string') assert.ok(r.stderr.split('\n').includes(`error: ${error}`), `${what}\n${r.stderr}`);
     else assert.match(r.stderr, error);
     assert.match(r.stderr, next, what);
-    assert.doesNotMatch(r.stderr, /usage: lfm|--proposals <file> +proposals\.jsonl to read/, `${what}: printed the usage block`);
+    assert.doesNotMatch(r.stderr, /usage: learn-from-mistakes-axi|--proposals <file> +proposals\.jsonl to read/, `${what}: printed the usage block`);
     assert.doesNotMatch(r.stderr, /y{81}|\u001b/, `${what}: echoed a long or control value`);
   }
 });
@@ -113,7 +121,7 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   const toon = decode(toonBodyOf(bare.stdout)); // invalid TOON throws; the summary line is outside the report
   assert.equal(toon.schema, 'lfm-report.v1');
   assert.equal(summaryOf(bare.stdout), 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)');
-  assert.match(bare.stderr, /next: lfm report --full/); // the next move is always offered
+  assert.match(bare.stderr, /next: learn-from-mistakes-axi report --full/); // the next move is always offered
   for (const flag of ['--dir', '--labels', '--proposals']) assert.match(bare.stderr, new RegExp(flag)); // the hint names the inputs it used
   assert.ok(!bare.stderr.includes(p), 'the hint must not echo an input path value');
 
@@ -123,7 +131,7 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
 
   const fullJson = report(lfm, p, '--full', '--json');
   assert.equal(fullJson.status, 0, fullJson.stderr);
-  assert.doesNotMatch(fullJson.stderr, /next: lfm report --json/); // never suggest a flag the run already used
+  assert.doesNotMatch(fullJson.stderr, /next: learn-from-mistakes-axi report --json/); // never suggest a flag the run already used
   assert.equal(JSON.parse(fullJson.stdout).schema, 'lfm-report.v1'); // the projection is unchanged
 
   const causes = Object.fromEntries(toon.causes.map((c) => [c.cause, c]));
@@ -216,7 +224,7 @@ test('next hints compose the flags already used so both report chains terminate 
   const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);
   const nextOf = (stderr) => stderr.split('\n').find((l) => l.startsWith('next: '))?.slice(6).split('   #')[0].trim();
-  const runHint = (line) => lfm(...line.replace(/^lfm /, '').split(' '), '--labels', inputs(p)[0], '--proposals', inputs(p)[1]);
+  const runHint = (line) => lfm(...line.replace(/^learn-from-mistakes-axi /, '').split(' '), '--labels', inputs(p)[0], '--proposals', inputs(p)[1]);
   const assertTerminal = (r) => {
     assert.equal(r.status, 0, r.stderr);
     const model = JSON.parse(r.stdout);
@@ -228,13 +236,13 @@ test('next hints compose the flags already used so both report chains terminate 
   };
 
   const hint1 = nextOf(report(lfm, p).stderr); // report -> --full
-  assert.equal(hint1, 'lfm report --full');
+  assert.equal(hint1, 'learn-from-mistakes-axi report --full');
   const hint2 = nextOf(runHint(hint1).stderr); // --full -> --full --json
-  assert.equal(hint2, 'lfm report --full --json');
+  assert.equal(hint2, 'learn-from-mistakes-axi report --full --json');
   assertTerminal(runHint(hint2)); // --full --json is terminal
 
   const hintJson = nextOf(report(lfm, p, '--json').stderr); // report --json -> --full --json
-  assert.equal(hintJson, 'lfm report --full --json');
+  assert.equal(hintJson, 'learn-from-mistakes-axi report --full --json');
   assertTerminal(runHint(hintJson));
 });
 
@@ -316,7 +324,7 @@ test('prototype-named causes are counted as problems, never crash or vanish', ()
   writeFileSync(join(p, 'proto-proposals.jsonl'), '{"cause":"constructor","target":"t","owner":"o","change":"c","refs":["2034b8c4ce57"]}\n');
   const r = lfm('report', '--labels', join(p, 'proto.jsonl'), '--proposals', join(p, 'proto-proposals.jsonl'));
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /next: lfm report .*--labels .*--proposals/); // the re-run keeps the inputs it was given
+  assert.match(r.stderr, /next: learn-from-mistakes-axi report .*--labels .*--proposals/); // the re-run keeps the inputs it was given
   const model = decode(r.stdout);
   assert.equal(model.problems, 2); // the label and the proposal are each counted
   assert.ok(!model.causes.some((c) => c.cause === 'constructor'));
@@ -402,7 +410,7 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.deepEqual({ v: firstEntry.v, id: firstEntry.id, cause: firstEntry.cause, ref: firstEntry.ref },
     { v: 1, id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234' });
   assert.ok(!Number.isNaN(Date.parse(firstEntry.at)), 'default --at is a readable time');
-  assert.match(first.stderr, /next: lfm report   # the report with the ledger/);
+  assert.match(first.stderr, /next: learn-from-mistakes-axi report   # the report with the ledger/);
   const afterFirst = readFileSync(ledger);
   assert.deepEqual(JSON.parse(afterFirst.toString()), firstEntry);
 
@@ -443,7 +451,7 @@ test('change applied appends an append-only ledger the report counts and changes
   const corrupt = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
   assert.equal(corrupt.status, 1);
   assert.match(corrupt.stderr, /^error: .*changes\.jsonl:3: not valid JSON$/m);
-  assert.match(corrupt.stderr, /^next: lfm changes   # check the ledger again/m);
+  assert.match(corrupt.stderr, /^next: learn-from-mistakes-axi changes   # check the ledger again/m);
   assert.doesNotMatch(corrupt.stderr, /not json\n/); // file:line only, never line contents
   assert.ok(readFileSync(ledger).equals(beforeRetry));
   const corruptExport = lfm('changes', '--json');
@@ -472,10 +480,10 @@ test('change applied appends an append-only ledger the report counts and changes
     { id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', at: firstEntry.at, what: '', why: '' },
     { id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', what: WHAT, why: WHY },
   ]);
-  assert.match(changesJson.stderr, /next: lfm report /);
+  assert.match(changesJson.stderr, /next: learn-from-mistakes-axi report /);
   const changesToon = exported();
   assert.deepEqual({ ...decode(changesToon.stdout), generated_at: exportModel.generated_at }, exportModel); // TOON decodes equal to JSON
-  assert.match(changesToon.stderr, /next: lfm changes --json/);
+  assert.match(changesToon.stderr, /next: learn-from-mistakes-axi changes --json/);
 
   const json = lfm('report', ...inputs, '--json'); // a fresh process reads the persisted ledger
   assert.equal(json.status, 0, json.stderr);
@@ -512,15 +520,18 @@ test('empty input exits 3 with a next command', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, 'defects.md'), '');
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  const early = lfm('count'); // before ingest: name the missing step, not just --help
+  assert.equal(early.status, 2);
+  assert.match(early.stderr, /next: learn-from-mistakes-axi ingest/);
   const ing = lfm('ingest');
   assert.match(ing.stdout, /log +markdown-log +0 items/);
   assert.match(ing.stderr, /^next: no causes configured: every label will be other; ask your agent to propose causes$/m);
-  assert.match(ing.stdout, /then lfm count .*--dir/); // the labelling step keeps the dir it was told to use
-  assert.match(ing.stderr, /next: lfm\b.*--dir/); // the report hint keeps the dir it was told to use
+  assert.match(ing.stdout, /then learn-from-mistakes-axi count .*--dir/); // the labelling step keeps the dir it was told to use
+  assert.match(ing.stderr, /next: learn-from-mistakes-axi\b.*--dir/); // the report hint keeps the dir it was told to use
   const r = lfm('count');
   assert.equal(r.status, 3);
   assert.match(r.stderr, /nothing to count/);
-  assert.match(r.stderr, /next: lfm ingest/);
+  assert.match(r.stderr, /next: learn-from-mistakes-axi ingest/);
   assert.match(r.stderr, /--dir/);
   assert.ok(!r.stderr.includes(p), 'the empty-input hint must not echo an input path value');
 });

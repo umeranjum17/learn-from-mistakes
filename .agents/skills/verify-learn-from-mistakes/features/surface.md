@@ -1,14 +1,14 @@
 # Machine surface (help, version, bare command, TOON/JSON/full)
 
 ## Sub-features
-`--help`/`-h` and `--version`/`-v` without reading config; a bare command (or a
+`--help`/`-h`, `guide` (the agent procedure) and `--version`/`-v` without reading config; a bare command (or a
 leading flag) runs the report; default TOON output; `--json` under the versioned
 `lfm-report.v1` schema; `--full` adds allow-listed non-content ids (source row ids; change ids live in [change.md](change.md)); a
-`next:` hint after every command.
+`next:` hint after every working command (stdout for `--help` and `guide`).
 
 ## How to get to it (user POV)
-From an installed package: `lfm --help`, `lfm --version`, `lfm` (report),
-`lfm --json`, `lfm report --full`, then `lfm report --full --json`.
+From an installed package: `learn-from-mistakes-axi --help`, `learn-from-mistakes-axi --version`, `learn-from-mistakes-axi` (report),
+`learn-from-mistakes-axi --json`, `learn-from-mistakes-axi report --full`, then `learn-from-mistakes-axi report --full --json`.
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the behavioral assertions: help/version exit 0 with no
@@ -24,7 +24,7 @@ the whole usage` drives each bad command, option, flag scope, missing value, cau
 over 80 characters, control character), `--ref`, `--at`, `--what`, a missing config (prints a minimal
 config) and a malformed labels line, asserting the exit code, the `error:` line, the `next:` line and
 that stderr never holds the usage block. For the packed proof, drive the same inputs with the
-installed bin and keep the transcript (`lfm <bad input>; echo exit=$?`). Ingest with no causes
+installed bin and keep the transcript (`learn-from-mistakes-axi <bad input>; echo exit=$?`). Ingest with no causes
 configured prints `next: no causes configured: ...`.
 
 ## Gotchas

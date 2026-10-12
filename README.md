@@ -4,76 +4,126 @@
 
 <p align="center">Find the mistakes your coding agents keep repeating, with the evidence for each, and a short list of changes to stop them.</p>
 
-## Why
+`learn-from-mistakes-axi` is an [AXI](https://axi.md), which means -
 
-Agent fleets write down what went wrong: a defect log, a pipeline's failed steps. The same cause turns up again and again, yet nobody counts it, so the fix never gets priority. Counting by keyword is wrong too: "database is locked" in one tool is not the same cause as in another.
+- It's just a CLI any capable agent can run without setup (`npx -y learn-from-mistakes-axi`).
+- It's built for agents: TOON output by default, `--json` and `--full` when asked, a contextual `next:` hint that names the likely next command, and the bare command does the main job (the report).
+- The skill below only handles discovery; agents learn the tool by using it.
 
-`lfm` splits the work. Your agent reads each record and judges what happened, using the bundled skill. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
+## Quick Start
 
-## Install
+> **Not published to npm yet.** The `npx -y learn-from-mistakes-axi` commands below work once the package is published. Until then, run the CLI from a checkout (see [Manual CLI](#manual-cli)).
 
-Needs Node 22.13 or newer.
-
-**Not published to npm yet.** These one-line installs are the proposed path and will work after the first publish:
+Install the skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx -y learn-from-mistakes            # one-shot, no install (after publication)
-npm install -g learn-from-mistakes    # global (after publication)
+npx -y skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g -a claude-code -y
 ```
 
-Until then, run it from a checkout:
+That is the entire setup - no npm install needed once the package is published.
+`-a` names your agent (`claude-code`, `codex` or `opencode`; repeat it for several) and `-y` skips the installer's questions.
+The skill teaches your agent to run the tool through `npx -y learn-from-mistakes-axi`, so the CLI comes along on demand.
+It stays a short stub and sends the agent to `npx -y learn-from-mistakes-axi --help` and `guide` for the current procedure, so an installed copy cannot go stale against a newer CLI.
+Its frontmatter also includes Hermes Agent metadata, so Hermes-compatible harnesses can categorize and surface it.
+
+Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
+
+```
+/learn-from-mistakes what keeps going wrong here?
+```
+
+Or just ask in plain words - "what keeps going wrong in this project? the log is defects.md", or "Use the learn-from-mistakes skill to label my records, propose causes, then show the report." - and the agent loads the skill on its own when it recognizes the task.
+It writes `.learn-from-mistakes.yaml` if the project has none, labels each record, and shows the repeated causes with counts and proposed changes.
+The report itself carries only ids and counts; the recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
+
+`-g` installs the skill for all projects (`~/.claude/skills/`, for example); drop it to install into the current project only.
+
+## Other Ways to Use It
+
+### Zero setup
+
+Any capable agent can run the CLI directly with nothing installed at all. Just tell your agent:
+
+```
+Run `npx -y learn-from-mistakes-axi --help` and tell me what keeps going wrong in this project.
+```
+
+### With Firstmate
+
+Nothing in Firstmate changes; the tool only reads its records.
+
+1. Install the skill into the Firstmate home (the clone). In the home, without `-g`:
+
+   ```sh
+   npx -y skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -a <agent> -y
+   ```
+
+   `-a codex` or `-a opencode` puts it in the home's `.agents/skills`; `-a claude-code` puts it in `.claude/skills`. Or keep `-g` for every project.
+2. Put `.learn-from-mistakes.yaml` in the home root. The log source is your defect log, for example `data/defects.md`; the no-mistakes store is optional:
+
+   ```yaml
+   name: firstmate
+   sources:
+     log: { type: markdown-log, path: data/defects.md }
+     # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store
+   ```
+
+3. Ask your agent: "Use the learn-from-mistakes skill to label data/defects.md, propose causes, then show the report."
+
+### Manual CLI
+
+Needs Node 22.13 or newer. From a checkout (until the package is published):
 
 ```sh
 git clone https://github.com/umeranjum17/learn-from-mistakes
-cd learn-from-mistakes && npm install && npm link
+cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-axi on your PATH
 ```
-
-Install the bundled skill for your agent (this works today, no npm publish needed):
-
-```sh
-npx skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g
-```
-
-## Quick start
 
 1. Put `.learn-from-mistakes.yaml` in your project:
 
    ```yaml
    name: my-project
    sources:
-     log: { type: markdown-log, path: defects.md }        # each "- " bullet is a record; "## 2026-03-02" headings date it
-     gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # failed steps, opened read-only
+     log: { type: markdown-log, path: defects.md }   # each "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## 2026-03-02" heading
+     # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, failed steps read-only
    causes:
      agent-exit-wait:
        description: A pipeline step fails because the agent's output pipe stays open.
-       match: { source: gate, error_contains: "wait delay expired" }  # optional: count typed store rows
+       # match: { source: gate, error_contains: "wait delay expired" }  # optional: no-mistakes store, counts typed rows
    repeat: { min_incidents: 3, min_days: 2 }
    ```
 
-2. Run `lfm ingest --dir .`. It prints the state dir (`~/.learn-from-mistakes/state/<name>`; set `LFM_HOME` to move it).
-3. Ask your agent to follow [`skills/learn-from-mistakes/SKILL.md`](skills/learn-from-mistakes/SKILL.md). It writes `labels.jsonl` and `proposals.jsonl` in the state dir.
-4. Run `lfm` for the report. A bare command, or `lfm report`, prints the repeated causes for the project you are in.
+2. Run `learn-from-mistakes-axi ingest --dir .`. It prints the state dir (`~/.learn-from-mistakes/state/<name>`; set `LFM_HOME` to move it).
+3. Ask your agent to use the learn-from-mistakes skill (or to follow `learn-from-mistakes-axi guide`). It writes `labels.jsonl` and `proposals.jsonl` in the state dir.
+4. Run `learn-from-mistakes-axi` for the report. A bare command, or `report`, prints the repeated causes for the project you are in. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
+
+## Why
+
+Agent fleets write down what went wrong: a defect log, a pipeline's failed steps. The same cause turns up again and again, yet nobody counts it, so the fix never gets priority. Counting by keyword is wrong too: "database is locked" in one tool is not the same cause as in another.
+
+`learn-from-mistakes-axi` splits the work. Your agent reads each record and judges what happened, following the CLI's own `guide`. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
 
 ## Command line
 
 ```
-lfm                 print the project's repeated-cause report (same as `lfm report`)
-lfm ingest          read the configured sources (read-only) into the state dir
-lfm count           print the counts (same projection as `lfm report`)
-lfm report          print the report; --full adds evidence ids, --json prints JSON
-lfm change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>]   record an applied change in the ledger
-lfm changes         print every applied change (lfm-changes.v1) with its what and why
-lfm --help          show the commands and options
-lfm --version       show the version
+learn-from-mistakes-axi           print the project's repeated-cause report (same as `report`)
+learn-from-mistakes-axi guide     print the agent procedure: config, ingest, label, propose, report
+learn-from-mistakes-axi ingest    read the configured sources (read-only) into the state dir
+learn-from-mistakes-axi count     print the counts (same projection as `report`)
+learn-from-mistakes-axi report    print the report; --full adds evidence ids, --json prints JSON
+learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>]   record an applied change in the ledger
+learn-from-mistakes-axi changes   print every applied change (lfm-changes.v1) with its what and why
+learn-from-mistakes-axi --help    show the commands and options
+learn-from-mistakes-axi --version show the version
 ```
 
 Every command stays useful:
 
 - Default output is **TOON** (compact, token-lean). For `report`/`count`, `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema (`changes --json` is `lfm-changes.v1`, below).
 - `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
-- `lfm change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
-- `lfm changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
-- Each command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
+- `change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
+- `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
+- Each working command ends with a `next:` hint on stderr (ingest also names the labelling step on stdout; `--help` and `guide` print theirs on stdout), so an agent can chain `ingest → report → --full → --json` without reading the docs.
 
 Default TOON output, abridged to one cause on the example project:
 
@@ -106,7 +156,7 @@ causes[1]:
 
 ## For sign-off and other tools
 
-`lfm changes --json` is the machine contract for applied changes, so a retro can join its own verdict (for example "Helped? yes/no/unclear") on a change:
+`learn-from-mistakes-axi changes --json` is the machine contract for applied changes, so a retro can join its own verdict (for example "Helped? yes/no/unclear") on a change:
 
 ```json
 {
@@ -127,11 +177,7 @@ causes[1]:
 
 ## Privacy
 
-The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `lfm changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
-
-## Use it on your own records
-
-The `.learn-from-mistakes.yaml` above is all the configuration. Then `lfm ingest`, have your agent label, and `lfm`.
+The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
 
 ## Exit codes
 
@@ -140,10 +186,10 @@ The `.learn-from-mistakes.yaml` above is all the configuration. Then `lfm ingest
 | `0` | ok | a `next:` hint |
 | `1` | an input problem: a label, a proposal or the existing change ledger has a problem, including a line that is not valid JSON | `error: <file>:<line>: not valid JSON`, or for the report one `problem: <file>:<line>: ...` line each (the line and the rule broken, never record text, a record id or a ref) and `problems: N`; then `next:` |
 | `2` | bad usage or config: an unknown command or option, a flag the command does not take, a missing or invalid value, a bad `.learn-from-mistakes.yaml`, missing state | `error:` naming the flag or value (a value longer than 80 characters or with control characters shows as `(invalid value)`; file paths print whole, and a `--dir`/`--labels`/`--proposals` path with a control character is rejected), then `next:` with the allowed form or a runnable command, never the whole usage |
-| `3` | the sources hold nothing | `next: lfm ingest` |
+| `3` | the sources hold nothing | `next: learn-from-mistakes-axi ingest` |
 
 A rejected `change applied` never touches the ledger. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
 
 ## What it does not do
 
-`lfm` never edits your sources, instructions or config, and it makes no network or model calls. It does not apply the recommended changes or measure whether they worked; `lfm change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.
+`learn-from-mistakes-axi` never edits your sources, instructions or config, and it makes no network or model calls. It does not apply the recommended changes or measure whether they worked; `change applied` only records a change you already made. Records nobody labelled are reported as unlabelled, never guessed.

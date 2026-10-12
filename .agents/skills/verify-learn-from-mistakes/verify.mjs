@@ -69,7 +69,7 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/lfm.mjs', 'package.json', 'package-lock.json', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+  candidate: ['bin/learn-from-mistakes-axi.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -85,10 +85,11 @@ try {
   copyFileSync(proposals, join(staged, 'proposals.jsonl'));
   // Reuse, don't duplicate, negative/duplicate/occurrence/unread journey coverage.
   run('npm-test', 'npm', ['test', '--ignore-scripts']);
-  const cli = join(repo, 'bin/lfm.mjs');
+  const cli = join(repo, 'bin/learn-from-mistakes-axi.mjs');
   const stagedLabels = join(staged, 'labels.jsonl');
   const stagedProposals = join(staged, 'proposals.jsonl');
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged]);
+  run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
   drive('ingest', 'ingest');
   drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
   drive('count-unread', 'count');
@@ -111,14 +112,15 @@ try {
     const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
-    assert.ok(manifest.includes('package/bin/lfm.mjs') && manifest.includes('package/package.json'), 'tarball omits the bin or package.json');
+    assert.ok(manifest.includes('package/bin/learn-from-mistakes-axi.mjs') && manifest.includes('package/package.json'), 'tarball omits the bin or package.json');
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');
     run('npm-install-pack', 'npm', ['install', '-g', '--prefix', prefix, tarball]);
-    const installed = join(prefix, 'bin', 'lfm');
+    const installed = join(prefix, 'bin', 'learn-from-mistakes-axi');
     run('packed-version', installed, ['--version']);
     run('packed-help', installed, ['--help']);
+    run('packed-guide', installed, ['guide']);
     run('packed-report', installed, ['report', '--json', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals]);
     assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v1', 'packed bin does not drive the report');
     if (!mode) {
@@ -127,7 +129,7 @@ try {
     }
     // The same e2e journeys (the ledger and lfm-changes.v1 export included), driven through the installed bin.
     run('packed-npm-test', 'npm', ['test', '--ignore-scripts'], 0, { LFM_CLI: installed });
-    assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');
+    assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes-axi', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');
     save('pack.json', { tarball: tarball.slice(evidence.length + 1), sha256: createHash('sha256').update(readFileSync(tarball)).digest('hex'), files: manifest.length });
   }
   passed = true;

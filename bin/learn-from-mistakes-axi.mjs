@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lfm: find repeated causes in the record of past work. Sources are only read; state goes to the state dir.
+// learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
 // labels.jsonl; this file only parses, dedups and counts.
 import { createHash } from 'node:crypto';
@@ -12,7 +12,7 @@ import { parse } from 'yaml';
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 class UsageError extends Error {
   code = 2;
-  constructor(message, next = 'lfm --help   # supported commands and options') { super(message); this.next = next; }
+  constructor(message, next = 'learn-from-mistakes-axi --help   # supported commands and options') { super(message); this.next = next; }
 }
 class InputError extends UsageError { code = 1; } // a line in a file the run reads is bad, not the command
 const LFM_HOME = process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
@@ -42,7 +42,7 @@ function loadConfig(dir) {
   if (p === undefined) throw new UsageError(`no ${PROJECT_FILE} in ${dir} (or pass --dir <project>); a minimal one:
 name: my-project
 sources:
-  log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`);
+  log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi guide   # the full config, then ingest, label and report');
   mapping(p, ['name', 'sources', 'causes', 'repeat'], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
@@ -106,7 +106,7 @@ async function readStore(source, path) {
   } finally { db?.close(); }
 }
 
-// `ingest` (a state file lfm wrote: missing or corrupt is exit 2, fixed by ingest again) or
+// `ingest` (a state file this tool wrote: missing or corrupt is exit 2, fixed by ingest again) or
 // `rerun` (labels/proposals the caller wrote: a bad line is an input problem, exit 1).
 function readJsonl(file, { ingest, rerun }) {
   if (!existsSync(file)) { if (ingest) throw new UsageError(`${file} missing`, ingest); return []; }
@@ -119,7 +119,7 @@ function readJsonl(file, { ingest, rerun }) {
 }
 
 // The append-only change ledger: one JSON object per line, ids/cause keys/times plus the
-// optional owner-written one-line `what`/`why` that only `lfm changes` prints.
+// optional owner-written one-line `what`/`why` that only `learn-from-mistakes-axi changes` prints.
 // A missing file means zero entries, never an error. Problems name file:line only,
 // never line contents, so a corrupt ledger stays privacy-bounded too. A repeated id is a
 // problem: `project` + `id` is the join key other tools rely on.
@@ -143,7 +143,7 @@ function readLedger(file) {
 // `change applied` and `changes` refuse a ledger with problems; the report only counts them.
 function cleanLedger(file, opts) {
   const { entries, problems } = readLedger(file);
-  if (problems.length) throw new InputError(problems.join('\nerror: '), withContext('lfm changes', 'check the ledger again after fixing those lines', opts));
+  if (problems.length) throw new InputError(problems.join('\nerror: '), withContext('learn-from-mistakes-axi changes', 'check the ledger again after fixing those lines', opts));
   return entries;
 }
 
@@ -174,7 +174,7 @@ function recordChange(cfg, opts, json) {
   if (opts.at === undefined) at = new Date().toISOString();
   else {
     const ms = Date.parse(opts.at);
-    if (Number.isNaN(ms)) throw new UsageError(`--at ${shown(opts.at)} must be an ISO 8601 time`, withContext(`lfm change applied --cause ${opts.cause} --ref ${opts.ref} --at 2026-10-12T09:00:00Z`, 'or leave --at out for now', opts));
+    if (Number.isNaN(ms)) throw new UsageError(`--at ${shown(opts.at)} must be an ISO 8601 time`, withContext(`learn-from-mistakes-axi change applied --cause ${opts.cause} --ref ${opts.ref} --at 2026-10-12T09:00:00Z`, 'or leave --at out for now', opts));
     at = new Date(ms).toISOString();
   }
   const text = {};
@@ -187,16 +187,16 @@ function recordChange(cfg, opts, json) {
   const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
   mkdirSync(cfg.state, { recursive: true });
   appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
-  console.log(render(entry, json)); // what/why leave only through `lfm changes`
-  hint(withContext('lfm report', 'the report with the ledger', opts));
+  console.log(render(entry, json)); // what/why leave only through `learn-from-mistakes-axi changes`
+  hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts));
 }
 
 // lfm-changes.v1: every applied change in ledger order. The join key is `project` + `id`.
 function exportChanges(cfg, opts, json) {
   const changes = cleanLedger(join(cfg.state, 'changes.jsonl'), opts).map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, what: e.what ?? '', why: e.why ?? '' }));
   console.log(render({ schema: 'lfm-changes.v1', generated_at: new Date().toISOString(), project: cfg.name, changes }, json));
-  if (!changes.length) hint(withContext('lfm change applied --cause <cause> --ref <ref> --what <text> --why <text>', 'record a change you already made', opts));
-  else hint(json ? withContext('lfm report', 'the per-cause counts', opts) : withContext('lfm changes --json', 'the same export as JSON', opts));
+  if (!changes.length) hint(withContext('learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>', 'record a change you already made', opts));
+  else hint(json ? withContext('learn-from-mistakes-axi report', 'the per-cause counts', opts) : withContext('learn-from-mistakes-axi changes --json', 'the same export as JSON', opts));
 }
 
 function readInput(file, flag, explicit, rerun) {
@@ -223,7 +223,7 @@ async function ingest(cfg, opts) {
 }
 
 function analyse(cfg, files, rerun) {
-  const reingest = withContext('lfm ingest', 'read the configured sources into the state dir', files);
+  const reingest = withContext('learn-from-mistakes-axi ingest', 'read the configured sources into the state dir', files);
   const records = new Map(readJsonl(join(cfg.state, 'records.jsonl'), { ingest: reingest }).map((r) => [r.id, r]));
   const rows = readJsonl(join(cfg.state, 'rows.jsonl'), { ingest: reingest });
   const metaFile = join(cfg.state, 'sources.json');
@@ -350,10 +350,11 @@ function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: lfm [<ingest|count|report|change applied|changes>] [options]
-  lfm                 print the project's repeated-cause report (same as \`lfm report\`)
+const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change applied|changes>] [options]
+  (no command)        print the project's repeated-cause report (same as \`report\`)
+  guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir
-  count               print the counts (same projection as \`lfm report\`)
+  count               print the counts (same projection as \`report\`)
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
@@ -373,12 +374,58 @@ the report is privacy-bounded: identifiers and counts only, never record text, l
 \`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
-next: lfm                        # the report for the project you are in
-next: lfm --dir <project>        # point at a project with .learn-from-mistakes.yaml
-next: lfm report --full          # add the evidence ids
-next: lfm report --json          # the same report as JSON
-next: lfm change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
-next: lfm changes --json         # every applied change with its id, version, date, what and why`;
+next: learn-from-mistakes-axi guide          # the procedure an agent follows to label and report
+next: learn-from-mistakes-axi                # the report for the project you are in
+next: learn-from-mistakes-axi --dir <project>   # point at a project with .learn-from-mistakes.yaml
+next: learn-from-mistakes-axi report --full  # add the evidence ids
+next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
+next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date, what and why`;
+// The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
+const GUIDE = `learn-from-mistakes-axi guide: you judge each record, the CLI counts. Never edit the sources,
+AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
+
+1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
+     name: <project>
+     sources:
+       log: { type: markdown-log, path: defects.md }   # each top-level "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## YYYY-MM-DD" heading
+       # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, failed steps read-only
+     causes:
+       <cause-id>:
+         description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
+     repeat: { min_incidents: 3, min_days: 2 }
+   A cause is a mechanism, not a keyword. Add causes once you have read the records.
+   Optional per cause: match: { source: gate, error_contains: "<error text>" } counts store rows.
+
+2. Ingest: learn-from-mistakes-axi ingest
+   It prints the state dir. records.jsonl there: one JSON object per bullet (id, source, line, date, text).
+
+3. Label every record you read into labels.jsonl in the state dir, one line each:
+     {"id":"<record id>","event":true,"cause":"<cause id from the config, or other>","why":"<25 words or fewer>"}
+   Optional: "duplicate_of":"<earlier record id>", "occurrences":<n separate dated incidents>, "confidence":"medium".
+   - event:true only when something went wrong. Fix notes, rules, status, plans: event:false, cause not-an-event.
+   - A consequence of an incident is not a repeat of it. A shared keyword is not a shared cause.
+   - Same incident logged twice: the later record gets duplicate_of the earlier one; it counts once.
+   - A real failure no cause names is other (never counted as repeated); say the mechanism in why.
+   - No causes in the config, or several other labels share one mechanism? Add a cause (key + description) to
+     .learn-from-mistakes.yaml, or give the user that causes: snippet if they own the config, then relabel.
+   - Label only what you read. Unlabelled records are reported as not analysed; never guess to fill coverage.
+
+4. Count: learn-from-mistakes-axi count
+   A cause repeats when one source shows min_incidents incidents on min_days days. Log and store are never added.
+
+5. Propose a change for each repeated cause in proposals.jsonl in the state dir, at most five lines:
+     {"cause":"<cause id>","target":"<file, script, config or tool>","owner":"<who>","change":"<one sentence>","refs":["<record id>","<source>:<row id>"]}
+   Prefer a check, a script or a deleted rule over more prose. Every ref must be a record id or source:row id.
+
+6. Report: learn-from-mistakes-axi report   (exit 1: fix the counted label/proposal problems and rerun)
+   The output holds ids and counts only. Tell the user each repeated cause with its description, its counts
+   and your proposals from proposals.jsonl.
+
+7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
+     --what "<what changed>" --why "<why>"   # optional, one line each; never record text or label prose
+   learn-from-mistakes-axi changes lists them (lfm-changes.v1); the report shows only counts and dates.
+
+next: learn-from-mistakes-axi ingest   # after step 1`;
 
 function hint(text) { if (text) console.error(`next: ${text}`); }
 const INPUT_FLAGS = ['dir', 'labels', 'proposals'];
@@ -389,16 +436,17 @@ const withContext = (base, note, opts) => {
 const NEXT = (json, full, opts) => {
   if (full && json) return '';
   const detail = full || json ? '--full --json' : '--full';
-  return withContext(`lfm report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
+  return withContext(`learn-from-mistakes-axi report ${detail}`, full ? 'the same report as JSON' : 'add the evidence ids', opts);
 };
-const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} into labels.jsonl in the same dir (see the learn-from-mistakes skill), then ${withContext('lfm count', 'the counts', opts)}`;
+const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} into labels.jsonl in the same dir (see learn-from-mistakes-axi guide), then ${withContext('learn-from-mistakes-axi count', 'the counts', opts)}`;
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
-  ingest: 'lfm ingest [--dir <dir>]',
-  count: 'lfm count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
-  report: 'lfm report [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
-  'change-applied': 'lfm change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
-  changes: 'lfm changes [--dir <dir>] [--json]',
+  guide: 'learn-from-mistakes-axi guide',
+  ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
+  count: 'learn-from-mistakes-axi count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
+  report: 'learn-from-mistakes-axi report [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
+  'change-applied': 'learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
+  changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
 };
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why'];
 const PROBLEM_LINES = 20;
@@ -415,9 +463,9 @@ async function main() {
     argv.shift();
     cmd = 'change-applied';
   }
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: ingest, count, report, change applied, changes)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes)`);
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
-  const next = named ? form : undefined; // a bare `lfm --bogus` points at --help
+  const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
   let json = false, full = false;
   for (let i = 0; i < argv.length;) {
@@ -434,15 +482,16 @@ async function main() {
     } else opts[flag.slice(2)] = argv[i + 1];
     i += 2;
   }
+  if (cmd === 'guide') { console.log(GUIDE); return; }
   const cfg = loadConfig(opts.dir ?? resolve('.'));
-  if (cmd === 'ingest') { await ingest(cfg, opts); hint(withContext('lfm', 'the report for this project', opts)); return; }
+  if (cmd === 'ingest') { await ingest(cfg, opts); hint(withContext('learn-from-mistakes-axi', 'the report for this project', opts)); return; }
   if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
-  const rerun = withContext(`lfm ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
+  const rerun = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   const a = analyse(cfg, opts, rerun);
   if (!a.records.size && !a.rows.length) {
     console.error('no records or rows in the sources: nothing to count');
-    hint(withContext('lfm ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', opts));
+    hint(withContext('learn-from-mistakes-axi ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', opts));
     process.exit(3);
   }
   const model = project(a, full);

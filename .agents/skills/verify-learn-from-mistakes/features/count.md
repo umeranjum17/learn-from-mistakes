@@ -4,7 +4,7 @@
 Separate sources, collapse duplicates, honor occurrences, disclose unread records.
 
 ## How to get to it (user POV)
-After ingest, run `lfm count`; provide `--labels` for judged records.
+After ingest, run `learn-from-mistakes-axi count`; provide `--labels` for judged records.
 
 ## Driving it with the public CLI
 Inspect helper count logs and the existing e2e journeys: unlabelled count is
