@@ -46,7 +46,7 @@ In a project with `.learn-from-mistakes.yaml`: `learn-from-mistakes-axi retro --
 step with `logs --step collect`, stop it with `abort`, start it again with `rerun`.
 
 ## Driving it with the public CLI
-`test/cli.test.mjs` owns three journeys.
+`test/cli.test.mjs` owns three journeys and two reused-run-id checks.
 `retro --foreground saves a run and its steps in .lfm/; status and runs show it`:
 status before a run exits 3 and creates no `.lfm`; 2 completed
 step rows read back from the store; collect saw 13 log and 5 gate items; report
@@ -69,6 +69,8 @@ exits 2; with a 60 s report step, a second `retro` exits 2 naming the run, `abor
 gives `cancelled` (`report: cancelled by SIGTERM`, the worker pid gone) and its
 `next:` names `rerun --resume --run <id>`, a second `abort` exits 2; `rerun --run <id> --wait 1m`
 completes a new run and prints `rerun: started run <new> from run <id>`.
+Reused run id (`lfm.sqlite` removed, `retro` again): the new run is id 1, its `collect`
+log holds only the 2 new lines, and a step still `pending` shows `0 total` lines.
 The rejected-input rows cover a bad `--wait`, `--wait` with `--foreground`,
 `logs` without `--step`, a bad `--step`, `attach --wait` and a bad `--run`. The helper drives
 `retro --foreground`, `retro --wait 1m`, `status`, `runs`, `attach`, `logs --step collect`,
