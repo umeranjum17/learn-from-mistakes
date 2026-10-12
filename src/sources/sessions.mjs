@@ -94,6 +94,6 @@ export async function doctor(source, entry, ctx) {
   if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<your Claude Code config dir>   # if it is not ~/.claude' };
   try {
     const got = await read(source, entry, { ...ctx, excerpts: false });
-    return { level: 'ok', detail: `${got.sessions} sessions, ${got.skipped} skipped records` };
+    return { level: 'ok', detail: `${got.sessions} sessions, ${got.skipped} skipped records since ${new Date(ctx.readFrom).toISOString().slice(0, 10)}` };
   } catch (e) { return { level: 'fail', detail: e.message, fix: e.next }; }
 }

@@ -9,12 +9,12 @@ It only reads: no state dir is made, no agent is called (unless `--live`).
 Checks, in order:
 - `node`: Node >= 22.13 (fail).
 - `git`: a git repo (warn: worktree sessions are not matched; fix `git -C <dir> init`).
-- `config`: `.learn-from-mistakes.yaml` loads (fail, then no more checks; fix `init`
-  when there is none, else edit the file).
-- `state`: `.lfm` is git-ignored (fail, fix `init`); ok when no `.lfm/.gitignore`
-  exists yet (the first run writes it) or `state_root` moves it out of the project.
-- `source <id>`: each source's registry `doctor()` hook (sessions: stores, sessions and
-  skipped records), else a read with the item count and the count in the window. A read
+- `config`: `.learn-from-mistakes.yaml` and `$LFM_HOME/config.yaml` load (fail, then no more
+  checks; fix `init` when there is no project config, else edit the file the error names).
+- `state`: `.lfm` is git-ignored (fail, fix `init`); ok when `.lfm` does not exist yet
+  (the first run makes it with its `.gitignore`) or `state_root` moves it out of the project.
+- `source <id>`: each source's registry `doctor()` hook (sessions: stores, and the sessions and
+  skipped records in files written in this window), else a read with the item count and the count in the window. A read
   error is a fail with the source's own fix (a missing defect log: `touch <path>   # or set
   sources.<id>.path ...`). No sources at all: warn.
 - `agent <runner>`: each runner binary found; one that is not offered (gemini, acp) or
