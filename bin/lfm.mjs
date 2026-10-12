@@ -132,7 +132,7 @@ function analyse(cfg, files) {
     if (!records.has(l.id)) problems.push(`${at}: unknown record id ${l.id}`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for ${l.id}`);
     else if (typeof l.event !== 'boolean' || typeof l.why !== 'string' || !l.why.trim()) problems.push(`${at}: needs event (true/false) and why`);
-    else if (l.event && !Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other') problems.push(`${at}: cause ${l.cause} is not in the config`);
+    else if (l.event && (typeof l.cause !== 'string' || (!Object.hasOwn(cfg.causes, l.cause) && l.cause !== 'other'))) problems.push(`${at}: cause ${l.cause} is not in the config`);
     else if (l.duplicate_of !== undefined && !records.has(l.duplicate_of)) problems.push(`${at}: duplicate_of names unknown record ${l.duplicate_of}`);
     else if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) problems.push(`${at}: occurrences must be a positive integer`);
     else labels.set(l.id, l);
@@ -169,7 +169,7 @@ function analyse(cfg, files) {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
     const missing = refs.filter((ref) => !resolves(ref));
-    const bad = !groups[p.cause] ? `cause ${p.cause} has no counted events` : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.join(', ')}` : !p.change ? 'no change text' : '';
+    const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${p.cause} has no counted events` : !refs.length ? 'no evidence refs' : missing.length ? `refs not found: ${missing.join(', ')}` : !p.change ? 'no change text' : '';
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
     return { ...p, refs: refs.filter(resolves), ok: !bad };
   });

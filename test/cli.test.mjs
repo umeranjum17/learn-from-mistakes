@@ -161,6 +161,17 @@ test('prototype-named causes are counted as problems, never crash or vanish', ()
   assert.ok(!model.causes.some((c) => c.cause === 'constructor'));
 });
 
+test('non-string causes are counted as problems, never coerced into a configured cause', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  writeFileSync(join(p, 'array-labels.jsonl'), '{"id":"2034b8c4ce57","event":true,"cause":["server-memory-kill"],"why":"x"}\n');
+  writeFileSync(join(p, 'array-proposals.jsonl'), '{"cause":["server-memory-kill"],"target":"t","owner":"o","change":"c","refs":["2034b8c4ce57"]}\n');
+  const r = lfm('report', '--labels', join(p, 'array-labels.jsonl'), '--proposals', join(p, 'array-proposals.jsonl'));
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(decode(r.stdout).problems, 2); // the label and the proposal are each counted
+  assert.ok(!decode(r.stdout).causes.some((c) => c.cause === 'server-memory-kill')); // and the cause is not silently grouped
+});
+
 test('an unreadable source or input file is a usage error, never a crash', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: missing.md }\n');
