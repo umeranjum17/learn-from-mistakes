@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -54,8 +54,9 @@ mkdirSync(scratch, { mode: 0o700 });
 for (const dir of ['home', 'tmp', 'xdg', 'runtime', 'project']) mkdirSync(join(scratch, dir));
 const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch, 'tmp'),
   XDG_CONFIG_HOME: join(scratch, 'xdg'), XDG_CACHE_HOME: join(scratch, 'xdg'), XDG_DATA_HOME: join(scratch, 'xdg'), XDG_RUNTIME_DIR: join(scratch, 'runtime'),
-  LFM_HOME: join(evidence, 'state'), npm_config_cache: join(scratch, 'npm-cache') };
+  npm_config_cache: join(scratch, 'npm-cache') };
 delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
+delete env.LFM_HOME; // no global config: the CLI keeps state in the staged project's own .lfm/
 const commands = [];
 function run(name, command, args, expected = 0, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
@@ -73,8 +74,8 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
+const staged = join(scratch, 'project');
 try {
-  const staged = join(scratch, 'project');
   config.name = 'verification'; // never let a caller config choose an output path
   for (const s of sources) {
     copyFileSync(s.path, join(staged, s.copy));
@@ -138,6 +139,7 @@ try {
   save('inputs.after.json', after);
   save('result.json', { commandsPassed: passed, inputsUnchanged: JSON.stringify(before) === JSON.stringify(after),
     limitation: 'Review output against the skill feature map; trusted no-mistakes prompt consumption is a separate proof.' });
+  if (existsSync(join(staged, '.lfm'))) cpSync(join(staged, '.lfm'), join(evidence, 'state'), { recursive: true }); // retain the ingest artifacts
   rmSync(scratch, { recursive: true, force: true });
   assert.deepEqual(after, before, 'Original inputs changed; proof fails');
 }
