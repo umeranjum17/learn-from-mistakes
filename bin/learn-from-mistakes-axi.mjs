@@ -380,7 +380,8 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
          description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
      repeat: { min_incidents: 3, min_days: 2 }
    A cause is a mechanism, not a keyword. Add causes once you have read the records.
-   Optional per cause: match: { source: gate, error_contains: "<error text>" } counts store rows.
+   Optional per cause: match: { source: gate, error_contains: "<error text>" } counts store rows, or
+   match: { source: <sessions id>, signal, tool, text_contains } counts session events.
 
 2. Ingest: learn-from-mistakes-axi ingest
    It prints the state dir. records.jsonl there: one JSON object per bullet (id, source, line, date, text).
