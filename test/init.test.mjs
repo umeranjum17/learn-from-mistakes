@@ -211,7 +211,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.equal(fixed.out.fails, 0);
 });
 
-test('doctor fails a worker pinned to a runner that is not offered, and names the offered runners in its fix', () => {
+test('doctor fails a worker pinned to a runner that is not offered, and asks for a second agent CLI when no other runner is left', () => {
   const { lfm, config } = setup(['claude', 'gemini']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }'));
@@ -221,6 +221,34 @@ test('doctor fails a worker pinned to a runner that is not offered, and names th
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.match(fails[0].detail, /^gemini is not offered: /);
   assert.match(fails[0].fix, /^install a second agent CLI \(/);
+});
+
+test('doctor names a usable runner that does not clash with the other role in a pinned-role fix', () => {
+  const { lfm, config } = setup(['claude', 'codex']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.equal(fails[0].fix, `set worker.runner in ${config} to claude`);
+});
+
+test('doctor names the config file in its fix when that file is not a mapping', () => {
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, 'just a scalar\n');
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fail = JSON.parse(r.stdout).checks.find((c) => c.label === 'config');
+  assert.equal(fail.fix, `edit ${config}   # then run doctor again`);
+});
+
+test('init prints a BYOKit worker problem with the route list in its error', () => {
+  const { lfm } = setup(['claude']);
+  const r = lfm('init', '-y', '--no-skill', '--worker', 'byokit:nope');
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /worker: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
 });
 
 test('doctor run from another directory names the full project file in each fix', () => {

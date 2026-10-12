@@ -63,6 +63,7 @@ export const CLASH = 'the judge resolves to the worker\'s agent and model, so it
 const WORKER_CLASH = 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
 const clashOf = (name) => (name === 'judge' ? CLASH : WORKER_CLASH);
 export const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
+export const problemText = (r) => (r.fix ? `${r.problem}: ${r.fix}` : r.problem);
 
 // Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
 // that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
