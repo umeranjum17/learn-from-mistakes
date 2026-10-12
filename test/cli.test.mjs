@@ -235,7 +235,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
-    [() => raw('retro', '--wait', '8'), 2, '--wait "8" must be a time like 30s, 8m or 1h', /^next: learn-from-mistakes-axi retro \[--wait <time> \| --foreground\]/m],
+    [() => raw('retro', '--wait', '8'), 2, '--wait "8" must be a time like 30s, 8m or 1h', /^next: learn-from-mistakes-axi retro \[--wait \[<time>\] \| --foreground\]/m],
     [() => raw('retro', '--wait', '1m', '--foreground'), 2, 'pass --wait or --foreground, not both', /^next: learn-from-mistakes-axi retro \[/m],
     [() => raw('rerun'), 2, 'rerun starts a new run in a later version: pass --resume to finish a run that did not complete', /^next: learn-from-mistakes-axi rerun --resume \[--run <id>\]/m],
     [() => raw('rerun', '--resume', '--foreground'), 2, 'rerun does not take --foreground', /^next: learn-from-mistakes-axi rerun --resume /m],
@@ -850,6 +850,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const started = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: slowEnv });
   assert.equal(started.status, 0, started.stderr);
   const { run } = JSON.parse(started.stdout);
+  after(() => { try { process.kill(run.pid, 'SIGKILL'); } catch {} }); // a failed assertion must not leave the slow worker behind
   assert.equal(run.status, 'running');
   assert.match(started.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the steps so far, while the run goes on in the background`, 'm'));
   let steps;
@@ -873,7 +874,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'interrupted']);
   assert.match(killed.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
 
-  const next = lfm('retro', '--wait', '1m', '--json'); // the interrupted run blocks nothing
+  const next = lfm('retro', '--wait', '--json'); // the interrupted run blocks nothing; a bare --wait waits 8 minutes
   assert.equal(next.status, 0, next.stderr);
   assert.equal(JSON.parse(next.stdout).run.status, 'completed');
 

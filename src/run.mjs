@@ -8,7 +8,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from 'node:f
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, stateDir, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
-import { openStore } from './store.mjs';
+import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
 const BIN = fileURLToPath(new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url));
@@ -39,7 +39,7 @@ function stop(db, id, status, why) {
   const step = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status = 'running'`).get(id)?.name ?? 'run';
   const now = iso(Date.now());
   db.prepare(`UPDATE steps SET status = ?, completed_at = ? WHERE run_id = ? AND status = 'running'`).run(status, now, id);
-  db.prepare('UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(status, `${step}: ${why}`, now, id);
+  db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(status, `${step}: ${why}`, now, id);
 }
 
 function reconcile(db) {
@@ -57,24 +57,31 @@ function blockRunning(db, opts) {
 export async function retro(cfg, opts) {
   stateDir(cfg);
   const db = await openStore(cfg.state, true);
-  reconcile(db);
-  blockRunning(db, opts);
-  const now = iso(Date.now());
-  const { lastInsertRowid: id } = db.prepare(`INSERT INTO runs (status, pid, pid_started_at, created_at, updated_at) VALUES ('running', ?, ?, ?, ?)`)
-    .run(process.pid, startTime(process.pid), now, now); // this process owns the run until the worker does
-  Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(id, name, ord));
+  const id = locked(db, () => {
+    reconcile(db);
+    blockRunning(db, opts);
+    const now = iso(Date.now());
+    const { lastInsertRowid } = db.prepare(`INSERT INTO runs (status, pid, pid_started_at, created_at, updated_at) VALUES ('running', ?, ?, ?, ?)`)
+      .run(process.pid, startTime(process.pid), now, now); // this process owns the run until the worker takes it
+    Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(lastInsertRowid, name, ord));
+    return lastInsertRowid;
+  });
   return start(cfg, db, id, opts);
 }
 
 export async function rerun(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (db) reconcile(db);
-  const id = pick(cfg, db, opts);
-  const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
-  if (status === 'completed') throw new UsageError(`run ${id} already completed`, withContext('learn-from-mistakes-axi retro --wait 8m', 'a new run', opts));
-  blockRunning(db, opts);
-  db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND status != 'completed'`).run(id);
-  db.prepare(`UPDATE runs SET status = 'running', error = NULL, pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ?`).run(process.pid, startTime(process.pid), iso(Date.now()), id);
+  if (!db) pick(cfg, db, opts); // throws: no saved runs
+  const id = locked(db, () => {
+    reconcile(db);
+    const id = pick(cfg, db, opts);
+    const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
+    if (status === 'completed') throw new UsageError(`run ${id} already completed`, withContext('learn-from-mistakes-axi retro --wait 8m', 'a new run', opts));
+    blockRunning(db, opts);
+    db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND status != 'completed'`).run(id);
+    db.prepare(`UPDATE runs SET status = 'running', error = NULL, pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ?`).run(process.pid, startTime(process.pid), iso(Date.now()), id);
+    return id;
+  });
   return start(cfg, db, id, opts);
 }
 
@@ -85,11 +92,17 @@ async function start(cfg, db, id, opts) {
   const dir = join(cfg.state, 'runs', String(id));
   mkdirSync(dir, { recursive: true });
   const log = openSync(join(dir, 'worker.log'), 'a');
-  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', BIN, '_work', String(id), '--dir', cfg.dir],
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', BIN, '_work', String(id), String(process.pid), '--dir', cfg.dir],
     { detached: true, stdio: ['ignore', log, log] });
   closeSync(log);
+  const failed = await new Promise((r) => { child.once('spawn', () => r()); child.once('error', r); });
+  if (failed) {
+    db.prepare(`UPDATE runs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`).run(`run: cannot start the worker (${failed.code ?? failed.message})`, iso(Date.now()), id);
+    return show(db, id);
+  }
   child.unref();
-  db.prepare('UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ?').run(child.pid, startTime(child.pid), iso(Date.now()), id);
+  // Hand the run to the worker unless it has already taken it.
+  db.prepare('UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND pid = ?').run(child.pid, startTime(child.pid), iso(Date.now()), id, process.pid);
   for (const end = Date.now() + (opts.wait ?? 0); Date.now() < end; await sleep(250)) {
     reconcile(db);
     if (db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status !== 'running') break;
@@ -97,9 +110,14 @@ async function start(cfg, db, id, opts) {
   return show(db, id);
 }
 
-// The hidden `_work <id>` command: the detached worker. A signal cancels the run; a kill leaves it for reconcile.
-export async function worker(cfg, id) {
+// The hidden `_work <id> <owner pid>` command: the detached worker. It takes the run from the process that
+// started it, and leaves alone a run that ended or that another worker owns. A signal cancels the run; a kill
+// leaves it for reconcile.
+export async function worker(cfg, id, owner) {
   const db = await openStore(cfg.state, false);
+  const taken = db?.prepare(`UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND status = 'running' AND pid IN (?, ?)`)
+    .run(process.pid, startTime(process.pid), iso(Date.now()), id, owner, process.pid).changes;
+  if (!taken) throw new UsageError(`run ${id} is not running, or another process owns it`);
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { stop(db, id, 'cancelled', `cancelled by ${sig}`); process.exit(1); });
   await work(cfg, db, id);
 }

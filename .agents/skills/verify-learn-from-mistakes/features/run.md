@@ -8,14 +8,16 @@ by `PRAGMA user_version`): one `runs` row (status, owner pid, times, error) and 
 none, coverage shows every record unlabelled). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
-once with the run `running`; `--wait <time>` (30s, 8m, 1h) polls until the run
+once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m) polls until the run
 ends or the time is over; `--foreground` runs the steps in the same process.
 A failed step fails the run (exit 1, the error saved on the step and the run).
 `status [--run <id>]` prints a run and its steps, `runs` lists the last 10 runs
 newest first. `retro`, `status`, `runs` and `rerun` first reconcile: a running
 run whose owner pid is dead (or now another process, by start time) becomes
-`interrupted`, with its running step. A unique index allows one running run; a
-second `retro` exits 2 and names it. `rerun --resume [--run <id>]` runs an
+`interrupted`, with its running step. A unique index and a `BEGIN IMMEDIATE`
+check allow one running run; a second `retro` exits 2 and names it. The worker
+takes the run from the process that started it and refuses a run that ended or
+that another worker owns. `rerun --resume [--run <id>]` runs an
 interrupted, cancelled or failed run from its first step that is not completed;
 completed steps keep their times and output. SIGTERM or SIGINT to the worker
 ends the run as `cancelled`. `rerun` without `--resume` exits 2 (a later slice).
@@ -40,7 +42,7 @@ with exit 1 and the saved error.
 flag: that step sleeps 60 s) a plain `retro` returns `running` while the worker
 goes on; a second `retro` exits 2 naming it; `SIGKILL` to the worker pid gives
 `interrupted` with `report` interrupted and `collect` completed; a new
-`retro --wait 1m` completes; `rerun --resume --run <id> --wait 1m` completes
+`retro --wait` (bare, 8m) completes; `rerun --resume --run <id> --wait 1m` completes
 with `collect` byte-identical (not run again); a second resume exits 2.
 The rejected-input rows cover a bad `--wait`, `--wait` with `--foreground`,
 `rerun` without `--resume` and a bad `--run`. The helper drives `retro --foreground`,

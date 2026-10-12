@@ -327,7 +327,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, rerun) the saved run (default: the last one)
-  --wait <time>       (retro, rerun) wait up to 30s, 8m or 1h for the run to end, then print it
+  --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --json (report, count, change applied, changes, retro, status, runs, rerun)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -418,10 +418,10 @@ const FORMS = {
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
   'change-applied': 'learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
-  retro: 'learn-from-mistakes-axi retro [--wait <time> | --foreground] [--dir <dir>] [--json]',
+  retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
   runs: 'learn-from-mistakes-axi runs [--dir <dir>] [--json]',
-  rerun: 'learn-from-mistakes-axi rerun --resume [--run <id>] [--wait <time>] [--dir <dir>] [--json]',
+  rerun: 'learn-from-mistakes-axi rerun --resume [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
 };
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--wait'];
 const SWITCHES = ['--json', '--full', '--foreground', '--resume'];
@@ -440,7 +440,7 @@ async function main() {
     argv.shift();
     cmd = 'change-applied';
   }
-  if (cmd === '_work') { await worker(loadConfig(argv[2]), Number(argv[0])); return; } // hidden: `_work <id> --dir <dir>`, the worker retro spawns
+  if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
   if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: guide, ingest, count, report, change applied, changes, retro, status, runs, rerun)`);
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
@@ -451,6 +451,7 @@ async function main() {
     if (!VALUE_FLAGS.includes(flag) && !SWITCHES.includes(flag)) throw new UsageError(`unknown option ${shown(flag)}`, next);
     if (!form.includes(`${flag} `) && !form.includes(`${flag}]`)) throw new UsageError(`${name} does not take ${flag}`, next);
     if (SWITCHES.includes(flag)) { opts[flag.slice(2)] = true; i += 1; continue; }
+    if (flag === '--wait' && !/^[^-]/.test(argv[i + 1] ?? '')) { opts.wait = '8m'; i += 1; continue; } // a bare --wait waits 8 minutes
     if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`, next ?? form);
     if (['--dir', '--labels', '--proposals'].includes(flag)) {
       // Paths are echoed whole in later errors so the user can find the file; a control character never is.
@@ -513,11 +514,12 @@ async function runCommand(cmd, cfg, opts) {
   else if (out.run.status === 'running') hint(withContext(`learn-from-mistakes-axi status --run ${out.run.id}`, `${opts.wait ? 'still running; ' : ''}the steps so far, while the run goes on in the background`, opts));
   else if (out.run.status === 'failed') {
     console.error(`error: ${out.run.error}`);
-    hint(withContext('learn-from-mistakes-axi retro --wait 8m', `run again after fixing the ${out.steps.find((s) => s.status === 'failed').name} step`, opts));
+    const step = out.steps.find((s) => s.status === 'failed')?.name;
+    hint(withContext('learn-from-mistakes-axi retro --wait 8m', `run again after fixing ${step ? `the ${step} step` : 'the cause'}`, opts));
     if (cmd !== 'status') process.exitCode = 1;
   } else if (out.run.status !== 'completed') { // interrupted or cancelled
     console.error(`error: ${out.run.error}`);
-    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, 'finish it without running the completed steps again', opts));
+    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again; the worker's output: ${join(cfg.state, 'runs', String(out.run.id), 'worker.log')}`, opts));
     if (cmd !== 'status') process.exitCode = 1;
   } else hint(withContext('learn-from-mistakes-axi report', 'the counts this run read', opts));
 }
