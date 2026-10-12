@@ -2,7 +2,7 @@
 // read from each agent's own store. Store roots come from the agents' env overrides, never from this config.
 // The tool's own agent runs are skipped: a cwd under .lfm/, the lfm-run: marker, or a session id the run store
 // recorded. Each event keeps a redacted excerpt of at most 300 characters, or none with `excerpts: off`, and the
-// first cause whose match rule names this source and fits it (signal, tool, and text the event's excerpt comes from).
+// first cause whose match rule names this source and fits it (signal, tool, and text_contains in the whole text of a signal event).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
@@ -57,7 +57,7 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
     for (const e of got.events) {
       const x = typeof e.excerpt === 'object' ? e.excerpt : { text: '', hits: [] };
       e.excerpt = x.text;
-      e.cause = rules.find((m) => (!m.signal || m.signal === e.signal) && (!m.tool || m.tool === e.tool) && (!m.text_contains || x.hits.includes(m.cause)))?.cause ?? null;
+      e.cause = e.signal ? rules.find((m) => (!m.signal || m.signal === e.signal) && (!m.tool || m.tool === e.tool) && (!m.text_contains || x.hits.includes(m.cause)))?.cause ?? null : null;
       out.events.push(e);
     }
     out.sessions += got.sessions;

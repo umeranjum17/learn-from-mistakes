@@ -178,3 +178,31 @@ test('two defect logs of one type sum into defects; a config with only a no-mist
   assert.deepEqual(decode(gate.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'first_pass', 'p90_hours_to_merge', 'escaped']
     .map((name) => ({ name, current: 'n/a', previous: 'n/a' })));
 });
+
+test('a rule tags signal events only, and text_contains reads a retried call as its plain command text', () => {
+  const { p, claude, lfm } = setup();
+  const now = new Date().toISOString();
+  const cwd = p;
+  const call = (id, command) => ({ type: 'assistant', cwd, timestamp: now, message: { content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } });
+  const result = (id, content, is_error) => ({ type: 'user', cwd, timestamp: now, message: { content: [{ type: 'tool_result', tool_use_id: id, content, ...(is_error && { is_error }) }] } });
+  const quoted = 'grep "a b" x';
+  writeFileSync(join(claude, 'projects', '-repo', 's-fix.jsonl'), [
+    call('a1', 'ls'), result('a1', 'ok'),
+    call('a2', quoted), result('a2', 'Exit code 1\nno match', true),
+    call('a3', quoted), result('a3', 'ok'),
+  ].map((r) => JSON.stringify(r)).join('\n'));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
+  sessions: { type: sessions }
+causes:
+  quoted-grep:
+    description: A retried grep with quotes.
+    match: { source: sessions, text_contains: 'grep "a b"' }
+  bash-fail:
+    description: A Bash call that fails.
+    match: { source: sessions, tool: Bash }
+`);
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(query(p, `SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND session_id = 's-fix' AND cause IS NOT NULL GROUP BY cause, signal ORDER BY cause`, decode(r.stdout).run.id),
+    [{ cause: 'bash-fail', signal: 'nonzero_exit', tool: 'Bash', n: 1 }, { cause: 'quoted-grep', signal: 'retry', tool: 'Bash', n: 1 }]);
+});
