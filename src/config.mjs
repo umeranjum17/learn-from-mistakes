@@ -53,9 +53,11 @@ function role(value, where) {
   return r;
 }
 
+const lfmHome = () => process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
+export const globalFile = () => join(lfmHome(), 'config.yaml');
 export function loadGlobal() {
-  const LFM_HOME = process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
-  const file = join(LFM_HOME, 'config.yaml');
+  const LFM_HOME = lfmHome();
+  const file = globalFile();
   const g = mapping(readYaml(file) ?? {}, ['state_root', 'runner_path', 'runner_args'], file);
   const runner_path = mapping(g.runner_path ?? {}, [...RUNNERS, 'acp'], `${file}: runner_path`);
   for (const [k, v] of Object.entries(runner_path)) {

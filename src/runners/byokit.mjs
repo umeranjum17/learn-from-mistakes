@@ -107,23 +107,22 @@ export async function ask({ route, model, prompt, timeoutMs }) {
   }
 }
 
-// doctor's checks for one route, with no paid call: Node, the packages, the route, then the sign-in's state or the key.
+// doctor's checks for one route, with no paid call: the route, then the sign-in's state or the key.
 export async function doctor(route) {
   const label = `byokit:${route}`;
   let accounts;
   try {
     const p = await check(route);
     if (p) return [{ status: 'fail', label, detail: p.problem, fix: p.fix }];
-    const node = { status: 'ok', label: 'node', detail: `${process.version} (BYOKit needs ${NODE} or later)` };
     const key = await planKey(route);
     if (key) {
       const set = Boolean(process.env[key.upstream.method]);
-      return [node, { status: set ? 'ok' : 'fail', label, detail: `${key.upstream.method} is ${set ? '' : 'not '}set`, ...(!set && { fix: await signIn(route) }) }];
+      return [{ status: set ? 'ok' : 'fail', label, detail: `${key.upstream.method} is ${set ? '' : 'not '}set`, ...(!set && { fix: await signIn(route) }) }];
     }
     accounts = await open();
     const s = await accounts.status(MEMBER, route);
     const state = { ready: 'ok', resting: 'warn' }[s.state] ?? 'fail'; // resting: signed in, at a limit for now
-    return [node, { status: state, label, detail: s.words, ...(state === 'fail' && { fix: await signIn(route) }) }];
+    return [{ status: state, label, detail: s.words, ...(state === 'fail' && { fix: await signIn(route) }) }];
   } catch (e) { // the store or its seal cannot be read, such as a locked keyring
     return [{ status: 'fail', label, detail: e.message, fix: await signIn(route) }];
   } finally {

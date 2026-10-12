@@ -287,8 +287,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   const { p, mock, lfm, hook, signIn } = await byokitSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml'), base = readFileSync(yaml, 'utf8');
   const config = (extra) => writeFileSync(yaml, base + extra);
-  const [node22, out] = await hook('chatgpt');
-  assert.equal(node22.status, 'ok');
+  const [out] = await hook('chatgpt');
   assert.deepEqual(out, { status: 'fail', label: 'byokit:chatgpt', detail: "ChatGPT isn't signed in yet.", fix: out.fix });
   assert.match(out.fix, /^sign in to chatgpt through BYOKit for member "lfm"/);
   const out1 = await lfm('agents', '--test', 'byokit:chatgpt');
@@ -297,7 +296,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   assert.match(out1.stderr, /^next: sign in to chatgpt through BYOKit/m);
 
   await signIn();
-  assert.deepEqual((await hook('chatgpt'))[1], { status: 'ok', label: 'byokit:chatgpt', detail: 'ChatGPT is connected.' });
+  assert.deepEqual((await hook('chatgpt'))[0], { status: 'ok', label: 'byokit:chatgpt', detail: 'ChatGPT is connected.' });
   const r = await lfm('agents', '--test', 'byokit:chatgpt', '--json');
   assert.equal(r.status, 0, r.stderr);
   const dir = join(p, '.lfm', 'runs', 'test-byokit-chatgpt');
@@ -357,7 +356,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   assert.match(noModel.stderr, /^error: byokit:opencode-go: BYOKit's catalogue has no cheap model for opencode-go$/m);
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('"byokit:opencode-go" }', '"byokit:opencode-go", model: muse-spark-1.3-contributor }'));
 
-  assert.deepEqual((await hook({}))[1], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
+  assert.deepEqual((await hook({}))[0], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
     fix: 'set OPENCODE_API_KEY to your OpenCode Go key, then: learn-from-mistakes-axi agents --test byokit:opencode-go' });
   const noKey = await run({}, 'agents', '--test', 'byokit:opencode-go');
   assert.equal(noKey.status, 1);
@@ -365,7 +364,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   assert.match(noKey.stderr, /^next: set OPENCODE_API_KEY to your OpenCode Go key/m);
   assert.equal(standIn.seen.length, 0);
 
-  assert.deepEqual((await hook({ OPENCODE_API_KEY: 'fake-key' }))[1], { status: 'ok', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is set' });
+  assert.deepEqual((await hook({ OPENCODE_API_KEY: 'fake-key' }))[0],{ status: 'ok', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is set' });
   const r = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go', '--json');
   assert.equal(r.status, 0, r.stderr);
   const dir = join(p, '.lfm', 'runs', 'test-byokit-opencode-go');
