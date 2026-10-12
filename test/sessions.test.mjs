@@ -3,7 +3,7 @@
 // LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -13,9 +13,12 @@ import { decode } from '@toon-format/toon';
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 // One planted value per redaction shape, built here so no key-shaped string sits in the repo. [text, what must never show]
 const PLANTED = [
+  [`${' '.repeat(3978)}gh${'p_'}${'Y'.repeat(36)}`, 'Y'.repeat(6)], // a key after a long whitespace run, cut inside by the 4000 cap
   [`sk${'_live_'}${'P'.repeat(24)}`, 'P'.repeat(24)], [`sk${'_test_'}${'S'.repeat(24)}`, 'S'.repeat(24)],
   [`rk${'_live_'}${'T'.repeat(24)}`, 'T'.repeat(24)], [`--password ${'Q'.repeat(12)}`, 'Q'.repeat(12)],
   [`--token ${'R'.repeat(12)}`, 'R'.repeat(12)],
+  [`postgres://umer:${'V'.repeat(16)}@localhost:5432/db`, 'V'.repeat(16)],
+  [`npm${'_'}${'W'.repeat(36)}`, 'W'.repeat(36)], [`gl${'pat-'}${'X'.repeat(26)}`, 'X'.repeat(26)],
   [`sk-proj${'A'.repeat(30)}`, 'A'.repeat(30)], [`sk-ant-api03${'B'.repeat(30)}`, 'B'.repeat(30)],
   [`gh${'p_'}${'C'.repeat(36)}`, 'C'.repeat(36)], [`github${'_pat_'}${'D'.repeat(40)}`, 'D'.repeat(40)],
   [`gh${'o_'}${'E'.repeat(36)}`, 'E'.repeat(36)], [`xo${'xb-'}1234567890-umerslack`, 'umerslack'],
@@ -66,6 +69,8 @@ const query = (p, sql, ...args) => {
 
 test('a retro reads this repo\'s Claude Code sessions, skips its own runs and keeps planted secrets out', () => {
   const { p, claude, env, lfm } = setup();
+  const unreadable = process.getuid?.() !== 0 ? join(claude, 'projects', '-other', 's-other.jsonl') : null; // root reads anything
+  if (unreadable) chmodSync(unreadable, 0o000);
   const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
 
   // No sessions yet, and no other source: the run completes with 0 sessions and every number n/a, never 0.
@@ -82,7 +87,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.equal(run.run.status, 'completed');
   // this repo, a subdir and a worktree; not the other project, a sibling dir, .lfm/, the marker run or an old file
   assert.deepEqual(run.sources.find((s) => s.type === 'sessions'),
-    { id: 'sessions', type: 'sessions', items: 25, sessions: 4, skipped: 2, metrics: { tool_error_rate: 0.5, corrections_per_session: 0.25, interrupts: 1, retries: 1 } });
+    { id: 'sessions', type: 'sessions', items: 25, sessions: 4, skipped: unreadable ? 3 : 2, metrics: { tool_error_rate: 0.5, corrections_per_session: 0.25, interrupts: 1, retries: 1 } });
   const id = run.run.id;
   assert.deepEqual(query(p, 'SELECT DISTINCT session_id FROM events WHERE run_id = ? ORDER BY 1', id).map((e) => e.session_id), ['s-main', 's-own', 's-sub', 's-tree']);
   const signals = Object.fromEntries(query(p, 'SELECT signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY signal', id).map((e) => [e.signal, e.n]));
