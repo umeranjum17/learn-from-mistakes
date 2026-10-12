@@ -1,11 +1,11 @@
-// End-to-end: runs the real CLI on copies of the synthetic examples in a throwaway LFM_HOME.
+// End-to-end: runs the real CLI on copies of the synthetic examples (state in the copy's .lfm/) with a throwaway LFM_HOME.
 // The report is the privacy-bounded lfm-report.v1 (identifiers and counts, never prose); lfm-changes.v1
 // carries only the owner-written what/why of each applied change.
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -25,6 +25,70 @@ function setup() {
 }
 const inputs = (p) => [join(p, 'labels.jsonl'), join(p, 'proposals.jsonl')];
 const report = (lfm, p, ...extra) => lfm('report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], ...extra);
+
+test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in a commit', () => {
+  const { p, lfm } = setup();
+  const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  const lfmDir = join(p, '.lfm');
+  const change = lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234'); // a ledger write on a fresh project
+  assert.equal(change.status, 0, change.stderr);
+  assert.equal(readFileSync(join(lfmDir, '.gitignore'), 'utf8'), '*\n');
+  const ingest = lfm('ingest');
+  assert.equal(ingest.status, 0, ingest.stderr);
+  assert.match(ingest.stdout, new RegExp(`state: ${lfmDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`));
+  assert.match(readFileSync(join(lfmDir, 'records.jsonl'), 'utf8'), /"text":/); // full record text, so it must stay out of git
+  cpSync(join(p, 'labels.jsonl'), join(lfmDir, 'labels.jsonl')); // the agent's default inputs live there too
+  cpSync(join(p, 'proposals.jsonl'), join(lfmDir, 'proposals.jsonl'));
+  assert.equal(lfm('report').status, 0);
+  assert.deepEqual(readdirSync(lfmDir).sort(), ['.gitignore', 'changes.jsonl', 'labels.jsonl', 'proposals.jsonl', 'records.jsonl', 'rows.jsonl', 'sources.json']);
+  const status = git('status', '--porcelain', '--untracked-files=all');
+  assert.doesNotMatch(status, /\.lfm/, status);
+  assert.match(status, /\?\? defects\.md/); // the project's own files still show: only .lfm is ignored
+  assert.match(git('status', '--porcelain', '--ignored'), /^!! \.lfm\/$/m); // ignored, not merely absent
+  assert.ok(!existsSync(join(p, '.gitignore')), 'the project\'s own .gitignore is never touched');
+
+  const { p: q, lfm: lfmQ } = setup(); // a .gitignore the owner already put there is left byte-identical
+  const mine = Buffer.from('# mine\n!keep.md\n*.jsonl\n');
+  mkdirSync(join(q, '.lfm'));
+  writeFileSync(join(q, '.lfm', '.gitignore'), mine);
+  assert.equal(lfmQ('ingest').status, 0);
+  assert.equal(lfmQ('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234').status, 0);
+  assert.ok(readFileSync(join(q, '.lfm', '.gitignore')).equals(mine));
+  assert.ok(existsSync(join(q, '.lfm', 'records.jsonl')));
+});
+
+test('same-named projects keep separate state; a global state_root still wins', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
+  after(() => rmSync(tmp, { recursive: true }));
+  const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  const projects = ['a', 'b'].map((parent) => {
+    const dir = join(tmp, parent, 'shop'); // same basename, different parents, no `name:` in either config
+    cpSync(new URL('../examples', import.meta.url).pathname, dir, { recursive: true });
+    writeFileSync(join(dir, 'defects.md'), `## 2026-03-0${parent === 'a' ? 1 : 2}\n- only in ${parent}\n`);
+    writeFileSync(join(dir, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\ncauses: { flaky: { description: d } }\n');
+    return dir;
+  });
+  const run = (dir, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', dir], { encoding: 'utf8', env });
+  for (const dir of projects) assert.equal(run(dir, 'ingest').status, 0);
+  for (const [i, dir] of projects.entries()) {
+    const text = readFileSync(join(dir, '.lfm', 'records.jsonl'), 'utf8');
+    assert.match(text, new RegExp(`only in ${'ab'[i]}`));
+    assert.doesNotMatch(text, new RegExp(`only in ${'ba'[i]}`)); // the second ingest never overwrote the first
+  }
+  assert.equal(run(projects[0], 'change', 'applied', '--cause', 'flaky', '--ref', 'abc1234').status, 0);
+  assert.equal(JSON.parse(run(projects[1], 'changes', '--json').stdout).changes.length, 0);
+
+  mkdirSync(join(tmp, 'home'));
+  writeFileSync(join(tmp, 'home', 'config.yaml'), `state_root: ${join(tmp, 'root')}\n`);
+  rmSync(join(projects[0], '.lfm'), { recursive: true });
+  const r = run(projects[0], 'ingest');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /state: .*\/root\/shop\n/); // <state_root>/<name>
+  assert.match(readFileSync(join(tmp, 'root', 'shop', 'records.jsonl'), 'utf8'), /only in a/);
+  assert.ok(!existsSync(join(tmp, 'root', 'shop', '.gitignore')), 'the .gitignore is only for the in-project default');
+  assert.ok(!existsSync(join(projects[0], '.lfm')), 'an override writes nothing into the project');
+});
 
 test('help and version work without a project file', () => {
   const { raw } = setup();
@@ -70,7 +134,7 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
 });
 
 test('ingest identifies the store by the rows it read, not its mtime, and never writes the store', () => {
-  const { p, home, lfm } = setup();
+  const { p, lfm } = setup();
   const db = join(p, 'gate.sqlite');
   const bytes = () => createHash('sha256').update(readFileSync(db)).digest('hex');
   const ingest = () => {
@@ -80,7 +144,7 @@ test('ingest identifies the store by the rows it read, not its mtime, and never 
     assert.equal(bytes(), before); // the read leaves the store's bytes as they were
     const short = r.stdout.match(/^gate +no-mistakes +5 items  sha256 ([0-9a-f]{12})$/m)?.[1];
     assert.ok(short, r.stdout);
-    const hash = JSON.parse(readFileSync(join(home, 'state', 'example', 'sources.json'), 'utf8')).sources.find((s) => s.id === 'gate').hash;
+    const hash = JSON.parse(readFileSync(join(p, '.lfm', 'sources.json'), 'utf8')).sources.find((s) => s.id === 'gate').hash;
     assert.match(hash, /^[0-9a-f]{64}$/);
     assert.equal(hash.slice(0, 12), short);
     return hash;
@@ -240,8 +304,8 @@ test('an explicit labels or proposals path that does not exist is a usage error'
 });
 
 test('change applied appends an append-only ledger the report counts and changes exports', () => {
-  const { p, home, lfm } = setup();
-  const ledger = join(home, 'state', 'example', 'changes.jsonl');
+  const { p, lfm } = setup();
+  const ledger = join(p, '.lfm', 'changes.jsonl');
   const change = (...args) => lfm('change', 'applied', ...args);
   const exported = (...args) => {
     const r = lfm('changes', ...args);

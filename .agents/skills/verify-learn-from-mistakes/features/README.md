@@ -3,6 +3,7 @@
 | Feature | Public drive | Expected evidence |
 | --- | --- | --- |
 | [Ingest](ingest.md) | `lfm ingest` | source counts, `sha256` content identity per source (store digest stable across mtime, changes with rows) and retained state; input hashes unchanged |
+| [Project state dir](state.md) | `lfm ingest`/`change applied` with no global config, in a git project | `.lfm/` beside the config with a `*` `.gitignore`, clean `git status`, separate state for same-named projects, `state_root` override, an owner `.gitignore` left byte-identical |
 | [Count](count.md) | `lfm count` before/after labels | separate source totals, duplicate/occurrence arithmetic, unread coverage |
 | [Report and errors](report.md) | `lfm report`, bare `lfm`, existing negative journeys | real refs; bad input/empty exits, no fabricated coverage |
 | [Applied-change ledger and export](change.md) | `lfm change applied [--what --why]`, `lfm changes [--json]`, `lfm report --json`/`--full` | append-only bytes, per-cause counts and ids, `lfm-changes.v1` with stable ids and owner what/why, what/why and canary absent from the report |

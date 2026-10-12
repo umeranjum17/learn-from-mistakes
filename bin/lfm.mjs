@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// lfm: find repeated causes in the record of past work. Sources are only read; state goes to the state dir.
+// lfm: find repeated causes in the record of past work. Sources are only read; state goes to the state dir,
+// <project>/.lfm by default, which the tool git-ignores itself.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
 // labels.jsonl; this file only parses, dedups and counts.
 import { createHash } from 'node:crypto';
@@ -56,8 +57,16 @@ function loadConfig(dir) {
   const repeat = { min_incidents: 3, min_days: 2, ...mapping(p.repeat ?? {}, ['min_incidents', 'min_days'], `${file}: repeat`) };
   for (const [k, v] of Object.entries(repeat)) if (!Number.isInteger(v) || v < 1) throw new UsageError(`${file}: repeat.${k} must be a positive integer`);
   const name = p.name ?? basename(dir);
-  const root = global.state_root ? expand(String(global.state_root), LFM_HOME) : join(LFM_HOME, 'state');
-  return { name, sources, causes, repeat, state: join(root, name) };
+  if (global.state_root) return { name, sources, causes, repeat, state: join(expand(String(global.state_root), LFM_HOME), name) };
+  return { name, sources, causes, repeat, state: join(dir, '.lfm'), ignore: true };
+}
+
+// Create the state dir before a write. The in-project default gets a `*` .gitignore so its record text
+// can never be committed; one the user already has there is never overwritten.
+function stateDir(cfg) {
+  mkdirSync(cfg.state, { recursive: true });
+  if (!cfg.ignore) return;
+  try { writeFileSync(join(cfg.state, '.gitignore'), '*\n', { flag: 'wx' }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
 }
 
 // Each top-level "- " bullet is one record. Its id comes from its text, so it survives line moves.
@@ -161,7 +170,7 @@ function recordChange(cfg, opts, json) {
   }
   const n = Math.max(0, ...entries.map((e) => Number(/^chg-(\d+)$/.exec(e.id)?.[1] ?? 0))) + 1;
   const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at };
-  mkdirSync(cfg.state, { recursive: true });
+  stateDir(cfg);
   appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
   console.log(render(entry, json)); // what/why leave only through `lfm changes`
   hint(withContext('lfm report', 'the report with the ledger', opts));
@@ -186,7 +195,7 @@ function readInput(file, explicit) {
 }
 
 function ingest(cfg, opts) {
-  mkdirSync(cfg.state, { recursive: true });
+  stateDir(cfg);
   const records = [], rows = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     const got = s.type === 'markdown-log' ? readLog(id, s.path) : readStore(id, s.path);
@@ -314,7 +323,7 @@ const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEnc
 
 const USAGE = `usage: lfm [<ingest|count|report|change applied|changes>] [options]
   lfm                 print the project's repeated-cause report (same as \`lfm report\`)
-  ingest              read the configured sources (read-only) into the state dir
+  ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
   count               print the counts (same projection as \`lfm report\`)
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger

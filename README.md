@@ -50,7 +50,7 @@ npx skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g
    repeat: { min_incidents: 3, min_days: 2 }
    ```
 
-2. Run `lfm ingest --dir .`. It prints the state dir (`~/.learn-from-mistakes/state/<name>`; set `LFM_HOME` to move it).
+2. Run `lfm ingest --dir .`. It prints the state dir: `.lfm/` next to `.learn-from-mistakes.yaml`. The tool writes `.lfm/.gitignore` (`*`) when it first creates it, so the state is never committed and you edit no `.gitignore` of your own. To keep state outside the project instead, set `state_root: <dir>` in `$LFM_HOME/config.yaml` (`LFM_HOME` defaults to `~/.learn-from-mistakes`); the state then goes to `<dir>/<name>`.
 3. Ask your agent to follow [`skills/learn-from-mistakes/SKILL.md`](skills/learn-from-mistakes/SKILL.md). It writes `labels.jsonl` and `proposals.jsonl` in the state dir.
 4. Run `lfm` for the report. A bare command, or `lfm report`, prints the repeated causes for the project you are in.
 
@@ -128,6 +128,8 @@ causes[1]:
 ## Privacy
 
 The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `lfm changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
+
+The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every record, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose. It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from.
 
 ## Use it on your own records
 

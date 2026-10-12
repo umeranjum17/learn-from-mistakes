@@ -82,7 +82,8 @@ Private data is never a repo fixture. A private run is optional, never implied.
 hashes, resolved source paths and SHA256 identities of the input file bytes
 (including SQLite). The CLI's own store digest, over the rows read, is in
 `ingest.stdout` and the retained `sources.json`. `commands.json` records argv/cwd/exits; named stdout/stderr files
-record actions and results; `state/state/verification/` retains ingest artifacts.
+record actions and results; `state/` retains a copy of the staged project's `.lfm/`
+(ingest artifacts, the `*` `.gitignore` and the ledger; the CLI's in-project default).
 `inputs.before.json`, `inputs.after.json` and `result.json` prove read-only inputs.
 Review evidence is terminal output, not a screenshot/theme/viewport matrix: this
 app is a short-lived CLI. Record limitations and PASS/FAIL per mapped journey.

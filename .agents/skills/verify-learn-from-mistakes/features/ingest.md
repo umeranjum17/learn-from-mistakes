@@ -6,7 +6,8 @@ Each source's identity is a sha256 of its content: the log file's text, or the
 failed-step rows read from the store (not the database file, not its mtime).
 
 ## How to get to it (user POV)
-Configure `.learn-from-mistakes.yaml`; run `lfm ingest --dir <project>`.
+Configure `.learn-from-mistakes.yaml`; run `lfm ingest --dir <project>`. State
+goes to `<project>/.lfm` (see [state.md](state.md)).
 
 ## Driving it with the public CLI
 The helper's `ingest.stdout` must show 13 log items and 5 gate items for examples.

@@ -13,7 +13,7 @@ description: Label a defect log for the lfm CLI and recommend changes for its re
 lfm ingest            # in the project that has .learn-from-mistakes.yaml
 ```
 
-It prints the state dir. `records.jsonl` there holds one JSON object per log bullet: `id`, `source`, `line`, `date`, `text`. Run `lfm --help` to see every command and option; each command prints a `next:` hint on stderr.
+It prints the state dir, `.lfm/` in the project (git-ignored by `lfm`, so nothing there is committed). `records.jsonl` there holds one JSON object per log bullet: `id`, `source`, `line`, `date`, `text`. Run `lfm --help` to see every command and option; each command prints a `next:` hint on stderr.
 
 ## 2. Label every record you read
 
