@@ -206,3 +206,29 @@ causes:
   assert.deepEqual(query(p, `SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND session_id = 's-fix' AND cause IS NOT NULL GROUP BY cause, signal ORDER BY cause`, decode(r.stdout).run.id),
     [{ cause: 'bash-fail', signal: 'nonzero_exit', tool: 'Bash', n: 1 }, { cause: 'quoted-grep', signal: 'retry', tool: 'Bash', n: 1 }]);
 });
+
+test('a gate row takes one cause, the first in config order, in both the metrics and the report', () => {
+  const { p, lfm } = setup();
+  const gate = new DatabaseSync(join(p, 'gate.sqlite'));
+  const failed = gate.prepare(`UPDATE step_results SET error = 'wait delay expired after timeout', completed_at = ? WHERE status = 'failed'`)
+    .run(Math.floor(Date.now() / 1000)).changes;
+  gate.close();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
+  gate: { type: no-mistakes, path: gate.sqlite }
+causes:
+  timeout-hit:
+    description: A timeout.
+    match: { source: gate, error_contains: timeout }
+  wait-delay:
+    description: A wait delay.
+    match: { source: gate, error_contains: 'wait delay' }
+`);
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const count = (name) => decode(r.stdout).metrics.find((m) => m.name === `cause_count:${name}`).current;
+  assert.equal(count('timeout-hit'), failed);
+  assert.equal(count('wait-delay'), 0);
+  const report = JSON.parse(lfm('report', '--json').stdout);
+  assert.equal(report.causes.find((c) => c.cause === 'timeout-hit').store.rows, failed);
+  assert.equal(report.causes.find((c) => c.cause === 'wait-delay')?.store.rows ?? 0, 0);
+});

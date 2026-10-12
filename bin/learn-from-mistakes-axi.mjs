@@ -221,7 +221,7 @@ function analyse(cfg, files, rerunHint) {
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {
     if (!c.match) continue;
-    for (const row of rows) if (row.source === c.match.source && row.error.includes(c.match.error_contains)) {
+    for (const row of rows) if (row.cause === cause) {
       group(cause).store.rows.push(row);
       if (row.at) group(cause).store.days.add(row.at.slice(0, 10));
     }
