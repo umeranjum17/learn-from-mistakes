@@ -70,7 +70,7 @@ save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
-  candidate: ['bin/learn-from-mistakes-axi.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+  candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -106,6 +106,9 @@ try {
   drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
+  drive('retro', 'retro', '--foreground'); // a saved run in the staged .lfm/lfm.sqlite
+  drive('status', 'status');
+  drive('runs', 'runs');
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });
@@ -113,7 +116,7 @@ try {
     const tarball = join(pack, readdirSync(pack).find((f) => f.endsWith('.tgz')));
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
-    assert.ok(manifest.includes('package/bin/learn-from-mistakes-axi.mjs') && manifest.includes('package/package.json'), 'tarball omits the bin or package.json');
+    for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/run.mjs', 'src/store.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');
@@ -128,6 +131,9 @@ try {
       run('packed-changes', installed, ['changes', '--json', '--dir', staged]);
       assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-changes.stdout'), 'utf8')).schema, 'lfm-changes.v1', 'packed bin does not drive the export');
     }
+    run('packed-retro', installed, ['retro', '--foreground', '--json', '--dir', staged]);
+    const packedRun = JSON.parse(readFileSync(join(evidence, 'packed-retro.stdout'), 'utf8'));
+    assert.ok(packedRun.run.status === 'completed' && packedRun.steps.length === 2, 'packed bin does not complete a saved run');
     // The same e2e journeys (the ledger and lfm-changes.v1 export included), driven through the installed bin.
     run('packed-npm-test', 'npm', ['test', '--ignore-scripts'], 0, { LFM_CLI: installed });
     assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes-axi', 'skills', 'learn-from-mistakes', 'SKILL.md')), 'packaged standalone skill is missing');

@@ -187,13 +187,13 @@ test('the agent model default is cheap, with an LFM_MODEL override, never opus/s
 
 test('runs that never read a store print no ExperimentalWarning', () => {
   const { p, lfm, raw } = setup();
-  for (const r of [raw('--version'), raw('--help')]) {
+  for (const r of [raw('--version'), raw('--help'), raw('guide')]) {
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stderr, /ExperimentalWarning/);
   }
   // A markdown-log-only project never loads node:sqlite, so ingest and report stay quiet too.
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
-  for (const r of [lfm('ingest'), lfm('report')]) {
+  for (const r of [lfm('ingest'), lfm('report'), lfm('changes')]) {
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stderr, /ExperimentalWarning/);
   }
@@ -208,7 +208,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   const known = '(known: server-memory-kill, shared-cache-lock, agent-exit-wait; "other" is reserved)';
   const applied = (...args) => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', ...args);
   for (const [run, code, error, next] of [
-    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes)', HELP],
+    [() => raw('frobnicate'), 2, 'unknown command "frobnicate" (commands: guide, ingest, count, report, change applied, changes, retro, status, runs)', HELP],
     [() => raw('--bogus'), 2, 'unknown option "--bogus"', HELP], // a bare unknown flag points at --help
     [() => raw('report', '--bogus'), 2, 'unknown option "--bogus"', /^next: learn-from-mistakes-axi report \[--dir <dir>\]/m],
     [() => raw('change'), 2, '"change" must be followed by "applied"', CHANGE],
@@ -232,6 +232,11 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', 'x'.repeat(201)), 2, '--what (invalid value) must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
+    [() => raw('retro'), 2, 'retro runs only in this process for now: pass --foreground', /^next: learn-from-mistakes-axi retro --foreground \[--window <n>d\]/m],
+    [() => raw('retro', '--foreground', '--window', '7'), 2, '--window "7" must be a whole number of days, such as 7d', /^next: learn-from-mistakes-axi retro --foreground /m],
+    [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
+    [() => raw('runs', '--limit', 'all'), 2, '--limit "all" must be a whole number from 1', /^next: learn-from-mistakes-axi runs \[--limit <n>\]/m],
+    [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
     const r = run();
@@ -724,4 +729,48 @@ test('empty input exits 3 with a next command', () => {
   assert.match(r.stderr, /next: learn-from-mistakes-axi ingest/);
   assert.match(r.stderr, /--dir/);
   assert.ok(!r.stderr.includes(p), 'the empty-input hint must not echo an input path value');
+});
+
+test('retro --foreground saves a run and its steps in .lfm/; status and runs show it', () => {
+  const { p, lfm } = setup();
+  const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  const none = lfm('status'); // before any run: nothing to read, and reads never create state
+  assert.equal(none.status, 3, none.stderr);
+  assert.match(none.stderr, /^next: learn-from-mistakes-axi retro --foreground   # ingest and report as a saved run \(keep your --dir\)$/m);
+  assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout), { runs: [] });
+  assert.ok(!existsSync(join(p, '.lfm')));
+
+  const r = lfm('retro', '--foreground', '--window', '3d');
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /ExperimentalWarning/); // the examples read a store, so node:sqlite loads
+  const run = decode(r.stdout);
+  assert.equal(run.run.status, 'completed');
+  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['report', 'completed']]);
+  assert.equal(Date.parse(run.run.window_end) - Date.parse(run.run.window_start), 3 * 864e5);
+  assert.equal(Date.parse(run.run.window_start) - Date.parse(run.run.prev_start), 3 * 864e5);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
+  db.close();
+  assert.deepEqual(JSON.parse(steps[0].output_json).sources.map((s) => s.items), [13, 5]);
+  assert.deepEqual(JSON.parse(steps[1].output_json).coverage, { labelled: 0, total_records: 13, unlabelled: 13 }); // no labels yet
+  const status = lfm('status', '--json');
+  assert.equal(status.status, 0, status.stderr);
+  assert.deepEqual(JSON.parse(status.stdout), run);
+  assert.deepEqual(decode(lfm('runs').stdout), { runs: [run.run] });
+  assert.doesNotMatch(git('status', '--porcelain', '--untracked-files=all'), /\.lfm/);
+
+  writeFileSync(join(p, 'defects.md'), ''); // a failed step fails the run with exit 1 and saves the error
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  const failed = lfm('retro', '--foreground', '--json');
+  assert.equal(failed.status, 1, failed.stderr);
+  const f = JSON.parse(failed.stdout);
+  assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
+  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'failed']);
+  assert.match(failed.stderr, /^next: learn-from-mistakes-axi retro --foreground   # run again after fixing the report step/m);
+  assert.deepEqual(JSON.parse(lfm('runs', '--json', '--limit', '1').stdout).runs, [f.run]);
+  assert.deepEqual(JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout), run);
+  const missing = lfm('status', '--run', '99');
+  assert.equal(missing.status, 2);
+  assert.match(missing.stderr, /^error: no run 99$/m);
 });
