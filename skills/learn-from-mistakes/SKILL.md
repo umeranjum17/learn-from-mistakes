@@ -41,7 +41,7 @@ lfm count             # or just `lfm`
 
 A cause is repeated when one source shows at least `repeat.min_incidents` incidents on `repeat.min_days` days. Log counts come from your labels. Store counts come from typed failure rows matched by the config's `match` rule. They are never added together.
 
-The default output is TOON. Add `--json` to get the same data as JSON under the `lfm-report.v1` schema, and `--full` to add the evidence ids (record ids, store row ids, proposal refs).
+The default output is TOON. Add `--json` to get the same data as JSON under the `lfm-report.v1` schema, and `--full` to add non-content evidence ids only: store row ids and any accepted `source:row id` proposal refs. A record's text is never turned into an id, so a ref that is a record id is not listed.
 
 ## 4. Recommend changes for repeated causes
 
@@ -52,7 +52,7 @@ Write `proposals.jsonl` in the state dir, one line per change:
 ```
 
 - One change per line, at most five per report. Prefer a check, a script or a deleted rule over more prose.
-- Every ref must be a record id or a `source:row id`. `lfm report --full` lists the id-level evidence it accepted, and marks a proposal whose evidence does not resolve.
+- Every ref must be a record id or a `source:row id`. `lfm report --full` lists the non-content evidence it accepted (`source:row id` refs only), and marks a proposal whose evidence does not resolve.
 
 ## 5. Report
 
