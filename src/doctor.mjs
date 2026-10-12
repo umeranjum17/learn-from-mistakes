@@ -62,6 +62,8 @@ export async function doctor(dir, opts) {
     }
     const route = byokit.routeOf(r.runner);
     if (route) { // BYOKit's own checks for its sign-in or plan key, with no paid call; its node row is the node check above
+      const p = await byokit.check(route);
+      if (p) { add('fail', name, p.problem, p.fix); continue; }
       add('ok', name, `${r.runner}, a BYOKit route`);
       for (const c of await byokit.doctor(route)) if (c.label !== 'node') add(c.status, `${name} login`, c.detail, c.fix);
     } else {
@@ -82,12 +84,13 @@ export async function doctor(dir, opts) {
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
     const fromEnv = name === 'worker' && (process.env.LFM_MODEL ?? '').trim();
+    const model = route ? await byokit.modelOf(route, r.model) : r.model;
     const cheap = MODELS[key]?.[0];
-    if (!r.model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${PROJECT_FILE}`);
-    else if (PREMIUM.test(r.model) && !cfg.allow_premium) {
-      add('fail', `${name} model`, `${r.model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
+    if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${PROJECT_FILE}`);
+    else if (PREMIUM.test(model) && !cfg.allow_premium) {
+      add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
         `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${PROJECT_FILE} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
-    } else add('ok', `${name} model`, `${r.model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(r.model) ? ' (allow_premium)' : ''}`);
+    } else add('ok', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The identity rule: the judge never checks its own work.
   if (roles.worker.bin && roles.judge.bin) {

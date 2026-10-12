@@ -236,6 +236,31 @@ test('doctor checks a BYOKit worker route by its sign-in and names the sign-in f
   assert.match(line.fix, /^sign in to chatgpt through BYOKit .* then: learn-from-mistakes-axi agents --test byokit:chatgpt$/);
 });
 
+// A BYOKit worker with no model is checked on the model BYOKit calls (its route default), not the agent CLI table.
+test('doctor checks a BYOKit worker with no model on the route default BYOKit calls', async () => {
+  const { provider } = await import('@byokit/accounts');
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:chatgpt", model: "" }'));
+  const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model');
+  assert.deepEqual([line.level, line.detail], ['ok', provider('chatgpt').models.fast]);
+});
+
+// A BYOKit route that is not a plan route fails the role itself, with BYOKit's problem and fix; no sign-in line follows.
+test('doctor fails a BYOKit worker on a route that is not a plan route, before any sign-in check', () => {
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:nope", model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const checks = JSON.parse(r.stdout).checks;
+  const role = checks.find((c) => c.label === 'worker');
+  assert.equal(role.level, 'fail');
+  assert.match(role.detail, /^byokit:nope is not a BYOKit plan route$/);
+  assert.match(role.fix, /^use one of: byokit:/);
+  assert.equal(checks.some((c) => c.label === 'worker login'), false);
+});
+
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
 // absent one is a fail with the login fix. The HOME is synthetic, and the auth.json in it is a placeholder.
 for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (exit 3); auth.json present'], [false, 'fail', 'pi auth check failed (exit 3); no auth.json']]) {
