@@ -49,9 +49,9 @@ export async function status(cfg, opts) {
   return show(db, id);
 }
 
-export async function runs(cfg, limit) {
+export async function runs(cfg) {
   const db = await openStore(cfg.state, false);
-  return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT ?`).all(limit).map((r) => ({ ...r })) : [] };
+  return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
 function show(db, id) {

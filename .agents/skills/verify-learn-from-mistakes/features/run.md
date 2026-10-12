@@ -7,7 +7,7 @@ by `PRAGMA user_version`): one `runs` row (status, times, error) and one `steps`
 (ingest) and `report` (the counts with the labels already in the state dir; with
 none, coverage shows every record unlabelled). A failed step fails the run
 (exit 1, the error saved on the step and the run). `status [--run <id>]` prints
-a run and its steps, `runs [--limit <n>]` lists runs newest first. `retro`
+a run and its steps, `runs` lists the last 10 runs newest first. `retro`
 without `--foreground` exits 2 (the detached worker is a later slice). The
 store commands silence only node:sqlite's `ExperimentalWarning` (Node 22).
 
@@ -23,7 +23,7 @@ step rows read back from the store; collect saw 13 log and 5 gate items; report
 coverage 0 of 13 labelled; `status --json` equals the retro output; `runs` lists
 it; `git status` has no `.lfm`; a project with an empty log fails at `report`
 with exit 1 and the saved error), and the rejected-input rows for `retro`
-without `--foreground`, a bad `--run` and `--limit`. The helper
+without `--foreground` and a bad `--run`. The helper
 drives `retro`, `status` and `runs` on the staged examples to capture evidence.
 
 Real-product proof (outside the repo; `$SCR` is a scratch dir, `$SELF` this checkout):

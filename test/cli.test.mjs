@@ -234,7 +234,6 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => applied('--what', ''), 2, '--what "" must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
     [() => raw('retro'), 2, 'retro runs only in this process for now: pass --foreground', /^next: learn-from-mistakes-axi retro --foreground \[--dir <dir>\]/m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
-    [() => raw('runs', '--limit', 'all'), 2, '--limit "all" must be a whole number from 1', /^next: learn-from-mistakes-axi runs \[--limit <n>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
@@ -766,7 +765,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi retro --foreground   # run again after fixing the report step/m);
-  assert.deepEqual(JSON.parse(lfm('runs', '--json', '--limit', '1').stdout).runs, [f.run]);
+  assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
   assert.deepEqual(JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout), run);
   const missing = lfm('status', '--run', '99');
   assert.equal(missing.status, 2);
@@ -782,4 +781,11 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const noStore = lfm('retro', '--foreground', '--json');
   assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file');
   assert.ok(!noStore.stdout.includes(p) && !noStore.stderr.includes(p), 'a source path must not reach machine output');
+
+  writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
+  const corrupt = lfm('status');
+  assert.equal(corrupt.status, 2, corrupt.stderr);
+  assert.match(corrupt.stderr, /^error: .*lfm\.sqlite: not a usable run store/m);
+  assert.match(corrupt.stderr, /^next: mv .*lfm\.sqlite <elsewhere>/m);
+  assert.doesNotMatch(corrupt.stderr, /\n\s+at /); // no stack trace
 });

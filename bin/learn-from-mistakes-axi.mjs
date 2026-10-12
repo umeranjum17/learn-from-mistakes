@@ -412,7 +412,6 @@ const USAGE = `usage: learn-from-mistakes-axi [<guide|ingest|count|report|change
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status) the saved run to print (default: the last one)
-  --limit <n>         (runs) how many runs to list (default: 10)
   --json (report, count, change applied, changes, retro, status, runs)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -505,9 +504,9 @@ const FORMS = {
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
   retro: 'learn-from-mistakes-axi retro --foreground [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
-  runs: 'learn-from-mistakes-axi runs [--limit <n>] [--dir <dir>] [--json]',
+  runs: 'learn-from-mistakes-axi runs [--dir <dir>] [--json]',
 };
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run', '--limit'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--at', '--what', '--why', '--run'];
 const SWITCHES = ['--json', '--full', '--foreground'];
 const PROBLEM_LINES = 20;
 
@@ -543,7 +542,7 @@ async function main() {
   }
   const { json, full } = opts;
   if (cmd === 'guide') { console.log(guideText()); return; }
-  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['limit', /^[1-9]\d{0,3}$/, 'a whole number from 1']]) {
+  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists']]) {
     if (opts[k] !== undefined && !re.test(opts[k])) throw new UsageError(`--${k} ${shown(opts[k])} must be ${rule}`, form);
   }
   if (cmd === 'retro' && !opts.foreground) throw new UsageError('retro runs only in this process for now: pass --foreground', form);
@@ -579,7 +578,14 @@ async function runCommand(cmd, cfg, opts) {
   const print = process.listeners('warning');
   process.removeAllListeners('warning');
   process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') for (const f of print) f(w); });
-  const out = cmd === 'retro' ? await retro(cfg) : cmd === 'status' ? await status(cfg, opts) : await runs(cfg, Number(opts.limit ?? 10));
+  const file = join(cfg.state, 'lfm.sqlite');
+  let out;
+  try {
+    out = cmd === 'retro' ? await retro(cfg) : cmd === 'status' ? await status(cfg, opts) : await runs(cfg);
+  } catch (e) {
+    if (e.code !== 'ERR_SQLITE_ERROR') throw e;
+    throw new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
+  }
   console.log(render(out, opts.json));
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --foreground', 'ingest and report as a saved run', opts));

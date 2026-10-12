@@ -115,7 +115,7 @@ learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--at <time>]
 learn-from-mistakes-axi changes   print every applied change (lfm-changes.v1) with its what and why
 learn-from-mistakes-axi retro --foreground   ingest and report as one saved run, in this process
 learn-from-mistakes-axi status    print the last saved run and its steps (--run <id> for another)
-learn-from-mistakes-axi runs      list the saved runs, newest first (--limit <n>, default 10)
+learn-from-mistakes-axi runs      list the saved runs, newest first (the last 10)
 learn-from-mistakes-axi --help    show the commands and options
 learn-from-mistakes-axi --version show the version
 ```
@@ -183,7 +183,7 @@ causes[1]:
 
 ## Privacy
 
-The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name only the configured path you supplied (for example `defects.md: cannot read (ENOENT)`), and never echo record text.
+The report (default, `--json` and `--full`) is **privacy-bounded**: identifiers and counts only. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. `changes` is the one output that prints free text, and only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name a source by its config id (for example `source log: cannot read (ENOENT)`) rather than its path, and never echo record text.
 
 The state dir is not bounded: `.lfm/records.jsonl` holds the full text of every record, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose. It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `ingest` and `change applied` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from.
 
