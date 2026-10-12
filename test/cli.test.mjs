@@ -739,6 +739,13 @@ test('change applied appends an append-only ledger the report counts and changes
     { id: 'chg-5', metric: 'cause_count:server-memory-kill', tripwire: '>= 1', kind: 'doc' }, // any configured cause's count
   ]);
   assert.deepEqual(JSON.parse(lfm('report', ...inputs, '--json').stdout).ledger, { entries: 5 });
+
+  // The default metric comes from the cause key as the config spells it, spaces and tabs too; the ledger still reads.
+  const cfgFile = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(cfgFile, readFileSync(cfgFile, 'utf8').replace('causes:\n', 'causes:\n  "spaced\\tcause ":\n    description: A key with a tab and a trailing space.\n'));
+  assert.equal(change('--cause', 'spaced\tcause ', '--ref', 'abc1234').status, 0);
+  assert.equal(change('--cause', 'agent-exit-wait', '--ref', 'abc1234').status, 0);
+  assert.deepEqual(JSON.parse(exported('--json').stdout).changes.slice(5).map((c) => c.metric), ['cause_count:spaced\tcause ', 'cause_count:agent-exit-wait']);
 });
 
 test('empty input exits 3 with a next command', () => {
