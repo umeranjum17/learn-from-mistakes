@@ -27,7 +27,7 @@ Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro 
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journeys: the `retro --foreground ...` journey runs a
-config with every v2 key plus a global `runner_path`/`runner_args` (3 completed
+config with every v2 key plus a global `runner_path`/`runner_args` (4 completed
 steps) and a bad global `runner_args` (exit 2); `every rejected input ...` holds a
 row per bad v2 key (`worker: { runner: 3 }` names `worker.runner`); `an unreadable
 source ...` covers a source without `path` and an unregistered type. The helper

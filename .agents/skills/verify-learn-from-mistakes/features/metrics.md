@@ -52,7 +52,7 @@ Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 ```sh
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky && cp $SELF/examples/{defects.md,gate.sqlite,.learn-from-mistakes.yaml} .
-lfm retro --foreground   # 3 completed steps; metrics with n/a where nothing measures
+lfm retro --foreground   # 4 completed steps; metrics with n/a where nothing measures
 sqlite3 -readonly .lfm/lfm.sqlite "select window,name,ifnull(value,'n/a') from metrics"
 ```
 
