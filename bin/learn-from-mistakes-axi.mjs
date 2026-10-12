@@ -444,7 +444,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
    and your proposals from proposals.jsonl.
 
 7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
-     --metric <metric> --tripwire "<op> <number>" --kind doc|rule|code   # optional: how a later retro checks it worked
+     --metric <metric> --tripwire "<op> <number>" --kind doc|rule|code   # optional: recorded with the change; a later retro step checks it
      --what "<what changed>" --why "<why>"   # optional, one line each; never record text or label prose
    learn-from-mistakes-axi changes lists them (lfm-changes.v1); the report shows only counts and dates.
 
