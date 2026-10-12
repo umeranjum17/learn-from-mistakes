@@ -19,7 +19,8 @@ cause and `lfm changes --json` lists it with its what and why.
 `test/cli.test.mjs` owns the ledger journey: two changes in separate processes
 with the first entry's bytes an exact prefix after the second; every rejected
 input (bad cause, `other`, bad ref, bad `--at`, unknown or report-only flag,
-missing `--ref`, corrupt existing ledger) exits without touching ledger bytes;
+missing `--ref`, corrupt existing ledger) exits without touching ledger bytes, and
+names the bad flag or value on one `error:` line (see [surface.md](surface.md));
 a fresh `report --json` shows the counts and `--full --json` the ids; TOON
 decodes equal to JSON; planted record/label/proposal prose never reaches any
 output. The same journey owns the export: `changes --json` before ingest is an

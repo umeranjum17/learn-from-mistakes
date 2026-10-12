@@ -22,6 +22,8 @@ file's sha256 is identical before and after every ingest. `--package` reruns it
 through the installed bin (`packed-npm-test`).
 
 ## Gotchas
+A missing or unreadable store exits 2 with `next: remove the <id> source or point its path at
+your no-mistakes state.sqlite` (journey `an unreadable source or input file is a usage error`).
 The store digest covers only the columns the fixed query selects for failed
 steps, including their run's branch: a non-failed step or an unselected column
 keeps it, by design. It is not a file-byte hash;
