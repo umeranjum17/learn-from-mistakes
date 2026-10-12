@@ -32,7 +32,7 @@ then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
 then a detached `retro --wait 1m` run, `attach` and `logs --step collect` on it,
 an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well, a sessions source over one
-synthetic session in the scratch HOME (`retro-sessions`), and `agents --json` on the host PATH
+synthetic session in the scratch HOME with a sessions `match` rule (`retro-sessions`: its metrics and `cause_count`), and `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
 to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,

@@ -17,14 +17,17 @@ Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys) and `read`; `collect`/`ingest` call the
 registry. Today: `markdown-log` and `no-mistakes`, unchanged, and `sessions`
 ([sessions.md](sessions.md)). A type with no reader yet (`github`) exits 2
-`sources.<id>.type must be one of ...`. `window` sets the sessions read range.
+`sources.<id>.type must be one of ...`. `window` sets the sessions read range and the metrics windows. A cause's `match`
+names a no-mistakes source (`error_contains`) or a sessions source (any of `signal`,
+`tool`, `text_contains`); other keys, a rule with none of the three, an unknown
+signal or another source type exit 2 ([metrics.md](metrics.md)).
 
 ## How to get to it (user POV)
 Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro --wait 8m`.
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journeys: the `retro --foreground ...` journey runs a
-config with every v2 key plus a global `runner_path`/`runner_args` (2 completed
+config with every v2 key plus a global `runner_path`/`runner_args` (3 completed
 steps) and a bad global `runner_args` (exit 2); `every rejected input ...` holds a
 row per bad v2 key (`worker: { runner: 3 }` names `worker.runner`); `an unreadable
 source ...` covers a source without `path` and an unregistered type. The helper
@@ -50,7 +53,7 @@ YAML
 lfm retro --foreground && lfm runs && git status --short
 ```
 
-The run is `completed` with 2 steps and collect reads 13 log and 5 gate items.
+The run is `completed` with 3 steps and collect reads 13 log and 5 gate items.
 Then `worker: { runner: 3 }` exits 2 naming `worker.runner`. Repeat in a scratch
 copy of `$SELF/examples`.
 

@@ -18,6 +18,12 @@ const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), agent TEXT NOT NULL,
     session_id TEXT NOT NULL, ts TEXT, kind TEXT NOT NULL, tool TEXT, status TEXT, exit_code INTEGER, signal TEXT, cause TEXT,
     ref TEXT NOT NULL, excerpt TEXT NOT NULL)`,
+  // The items of the other sources: defect-log bullets and failed gate steps. Local only, like the state dir.
+  `CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), source TEXT NOT NULL,
+    ts TEXT, ref TEXT NOT NULL, cause TEXT, text TEXT NOT NULL)`,
+  // Each metric in this window (current) and the last (previous); NULL is n/a.
+  `CREATE TABLE IF NOT EXISTS metrics (run_id INTEGER NOT NULL REFERENCES runs(id), window TEXT NOT NULL, name TEXT NOT NULL, value NUMERIC,
+    PRIMARY KEY (run_id, window, name))`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

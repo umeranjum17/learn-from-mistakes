@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readText } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource } from '../config.mjs';
+import { inWindow } from '../metrics.mjs';
 
 export const validate = pathSource;
 
@@ -23,3 +24,6 @@ export function read(source, { path }) {
   });
   return { records, hash: createHash('sha256').update(text).digest('hex') };
 }
+
+// defects: the records dated in the window; n/a when no record has a date.
+export const metrics = (rows, window) => ({ defects: rows.some((r) => r.ts) ? inWindow(rows, window).length : null });

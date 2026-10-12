@@ -82,9 +82,20 @@ sources:
     mapping(c, ['description', 'match'], `${file}: causes.${id}`);
     if (typeof c.description !== 'string') throw new UsageError(`${file}: causes.${id}.description must be a string`);
     if (c.match === undefined) continue;
-    const m = mapping(c.match, ['source', 'error_contains'], `${file}: causes.${id}.match`);
-    if (sources[m.source]?.type !== 'no-mistakes') throw new UsageError(`${file}: causes.${id}.match.source must name a no-mistakes source`);
-    if (typeof m.error_contains !== 'string' || !m.error_contains) throw new UsageError(`${file}: causes.${id}.match.error_contains must be a non-empty string`);
+    // The rule tags the items of one source: gate rows by error text; session events by signal, tool and text.
+    const where = `${file}: causes.${id}.match`, type = sources[mapping(c.match, null, where).source]?.type;
+    const text = (k) => check(c.match[k] === undefined || (typeof c.match[k] === 'string' && c.match[k]), `${where}.${k}`, 'a non-empty string');
+    if (type === 'no-mistakes') {
+      mapping(c.match, ['source', 'error_contains'], where);
+      check(c.match.error_contains !== undefined, `${where}.error_contains`, 'a non-empty string');
+      text('error_contains');
+    } else if (type === 'sessions') {
+      mapping(c.match, ['source', 'signal', 'tool', 'text_contains'], where);
+      if (!['signal', 'tool', 'text_contains'].some((k) => c.match[k] !== undefined)) throw new UsageError(`${where} needs a signal, tool or text_contains`);
+      check(c.match.signal === undefined || sessions.SIGNALS.includes(c.match.signal), `${where}.signal`, `one of ${sessions.SIGNALS.join(', ')}`);
+      text('tool');
+      text('text_contains');
+    } else throw new UsageError(`${where}.source must name a no-mistakes or sessions source`);
   }
   const block = (key, defaults) => {
     const v = { ...defaults, ...mapping(p[key] ?? {}, Object.keys(defaults), `${file}: ${key}`) };
