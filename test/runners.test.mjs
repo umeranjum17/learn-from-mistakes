@@ -315,7 +315,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   config('worker: { runner: claude }\njudge: { runner: "byokit:chatgpt" }\n'); // a judge with no second agent CLI
   const roles = await lfm('agents', '--json');
   assert.equal(roles.status, 0, roles.stderr);
-  assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: '', bin: 'byokit:chatgpt', problem: '' });
+  assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: 'gpt-6-luna', bin: 'byokit:chatgpt', problem: '' });
   config('worker: { runner: "byokit:chatgpt" }\njudge: { runner: "byokit:chatgpt", model: gpt-6-luna }\n'); // the same route judging itself
   const clash = await lfm('agents', '--json');
   assert.equal(clash.status, 1);

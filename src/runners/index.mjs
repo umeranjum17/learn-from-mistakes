@@ -71,9 +71,9 @@ export async function resolveRole(cfg, name, agents, worker, env = process.env) 
   const want = cfg[name];
   const route = byokit.routeOf(want.runner);
   if (route) { // in process: its identity is the route itself
-    const r = { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: '' };
     const p = await byokit.check(route);
-    if (p) return { ...r, problem: `${p.problem}: ${p.fix}` };
+    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: `${p.problem}: ${p.fix}` };
+    const r = { runner: want.runner, model: await byokit.modelOf(route, configuredModel(cfg, name, env)), bin: want.runner, problem: '' };
     return worker && same(r, worker) ? { ...r, problem: clashOf(name) } : r;
   }
   const key = want.runner.replace(/^acp:.*/, 'acp');
