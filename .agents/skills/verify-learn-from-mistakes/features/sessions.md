@@ -73,12 +73,12 @@ pairs (a retried call's input is matched as its plain string values), Basic auth
 tokens and comma-split values. A second journey reads synthetic Codex rollouts
 (`test/fixtures/sessions/codex/`, listed by a `state_5.sqlite` the test makes) and
 OpenCode databases the test makes (`opencode.db`, a `channel.db` with a worktree session,
-and a `notes.db` of another program): 4 sessions with 54 events, a subagent of each counted
+and a `notes.db` of another program): 4 sessions with 60 events, a subagent of each counted
 in its parent session, the other dir, `.lfm/`, marker (after an attached file), old,
 missing-rollout and foreign-db sessions skipped, a bad line, a bad part and a text part with
 no text in `skipped`, exactly 2 corrections (not the goal wrapper, not the message after an
 interrupt), 2 interrupts, 2 retries, 3 test failures (one inside a code-mode script), 3
-nonzero exits and 6 tool errors (failed patches by their text, one naming npm test; a successful call whose output reads `Exit code: 2` or `"exit_code": 1` is not one), planted keys redacted, the
+nonzero exits and 7 tool errors (failed patches by their text, one naming `npm test` in a `cmd:` literal; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a log with `Exit code: 1` and no `Output:` line, is not one), planted keys redacted, the
 `invocations` ids of both agents skipped on a second run, and every OpenCode database
 byte-identical after both runs. The helper drives
 `retro-sessions` (one synthetic Claude Code, Codex and OpenCode session each in its

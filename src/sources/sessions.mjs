@@ -56,7 +56,6 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
   for (const a of agents) {
     let got;
     try { got = await READERS[a].read({ readFrom, keep, excerpt, skip }); } catch (e) {
-      if (!e.syscall) throw e; // a bug, not a store the tool cannot read
       throw new UsageError(`source ${source}: cannot read a ${a} session (${e.code ?? e.message})`, `chmod -R u+r <the ${a} session store>   # the tool only reads it`);
     }
     for (const e of got.events) {
@@ -94,7 +93,7 @@ export const detect = () => (Object.values(READERS).some((r) => existsSync(r.roo
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {
   const missing = entry.agents.filter((a) => !existsSync(READERS[a].root()));
-  if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<dir> CODEX_HOME=<dir> XDG_DATA_HOME=<dir>   # where Claude Code, Codex or OpenCode keep their sessions, if not the default' };
+  if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<your Claude Code config dir>   # if it is not ~/.claude' };
   try {
     const got = await read(source, entry, { ...ctx, excerpts: false });
     return { level: 'ok', detail: `${got.sessions} sessions, ${got.skipped} skipped records` };

@@ -16,13 +16,14 @@ const WRAPPER = /^\s*(?:<(?!image\b)[\w-]+[\s>]|# AGENTS\.md instructions)/;
 // "exit_code" as data reads as one (about 1 in 2000 here).
 const HEADER_EXIT = /^(?:Process exited with code |Exit code: )(\d+)/m;
 const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
-const exitOf = (text, script) => {
-  if (script) {
+const exitOf = (text, tool) => {
+  if (tool === 'exec') {
     const codes = [...text.matchAll(/"exit_code":\s*(\d+)/g)].map((x) => Number(x[1]));
     return codes.find(Boolean) ?? codes[0] ?? null;
   }
-  const end = text.search(/^Output:/m), m = HEADER_EXIT.exec(end < 0 ? text : text.slice(0, end));
+  const end = text.search(/^Output:/m), m = end < 0 ? null : HEADER_EXIT.exec(text.slice(0, end));
   if (m) return Number(m[1]);
+  if (tool !== 'local_shell_call' && tool !== 'shell') return null;
   const code = json(text)?.metadata?.exit_code;
   return Number.isInteger(code) ? code : null;
 };
@@ -50,15 +51,16 @@ async function parse(file, { session, sub, excerpt }) {
       if (['function_call', 'custom_tool_call', 'local_shell_call'].includes(p.type)) {
         const raw = p.arguments ?? p.input ?? JSON.stringify(p.action ?? null), args = json(raw);
         // A code-mode script names its commands as cmd: "..." literals; the test check reads them one after another.
+        const script = p.type === 'custom_tool_call' && p.name === 'exec';
         const command = typeof args?.cmd === 'string' ? args.cmd : Array.isArray(args?.command) ? args.command.join(' ')
-          : [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => x[2]).join('; ');
+          : script ? [...String(raw).matchAll(/\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/gs)].map((x) => x[2]).join('; ') : '';
         const key = `${p.name}\0${raw}`;
         calls.set(p.call_id, { tool: p.name ?? p.type, key, command });
         const retry = failed.has(key); // the same call again after it failed
         events.push({ ...at, kind: 'tool_call', tool: p.name ?? p.type, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(args && typeof args === 'object' && !Array.isArray(args.command) ? inputText(args) : command || String(raw)) : '' });
       } else if (['function_call_output', 'custom_tool_call_output', 'local_shell_call_output'].includes(p.type)) {
         const call = calls.get(p.call_id), text = textOf(p.output);
-        const exit = exitOf(text, call?.tool === 'exec');
+        const exit = exitOf(text, call?.tool);
         // A code-mode script that threw starts "Script failed"; a patch that did not apply says so or ends patch_apply_end false.
         const error = Boolean(exit) || /^(?:Script failed|apply_patch verification failed)/.test(text) || badPatch.has(p.call_id);
         const signal = !error ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
