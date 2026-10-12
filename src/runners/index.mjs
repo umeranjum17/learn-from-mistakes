@@ -52,7 +52,7 @@ const lists = (runner, model) => !!MODELS[runner]?.includes(model);
 
 // A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
 // it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
-function roleModel(cfg, name, runner, env = process.env) {
+export function roleModel(cfg, name, runner, env = process.env) {
   const model = configuredModel(cfg, name, env);
   if (model && (cfg[name]?.runner === runner || lists(runner, model))) return model;
   return MODELS[runner]?.[0] ?? '';
@@ -72,7 +72,7 @@ export async function resolveRole(cfg, name, agents, worker, env = process.env) 
   const route = byokit.routeOf(want.runner);
   if (route) { // in process: its identity is the route itself
     const p = await byokit.check(route);
-    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: `${p.problem}: ${p.fix}` };
+    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: '', problem: p.problem, fix: p.fix };
     const r = { runner: want.runner, model: await byokit.modelOf(route, configuredModel(cfg, name, env)), bin: want.runner, problem: '' };
     return worker && same(r, worker) ? { ...r, problem: clashOf(name) } : r;
   }

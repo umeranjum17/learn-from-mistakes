@@ -619,7 +619,7 @@ async function agentsCommand(opts) {
   console.log(render(out, opts.json));
   if (out.test) { hint(withContext('learn-from-mistakes-axi agents', out.test.offered ? 'every agent CLI and the resolved worker and judge' : `why ${out.test.runner} is not offered as worker or judge`, opts)); return; }
   const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
-  for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
+  for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}${out[r].fix ? `: ${out[r].fix}` : ''}`);
   if (roles.length) process.exitCode = 1;
   const pick = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner;
   const next = pick?.replace(/^acp$/, 'acp:<target>');

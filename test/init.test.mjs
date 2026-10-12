@@ -196,7 +196,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const fails = bad.out.checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'identity']);
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
-  assert.match(fails[0].fix, /^check sources\.log\.path in \.learn-from-mistakes\.yaml, or create it: touch .*defects\.md$/);
+  assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
   assert.match(fails[1].fix, /allow_premium: true$/);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
@@ -220,7 +220,18 @@ test('doctor fails a worker pinned to a runner that is not offered, and names th
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.match(fails[0].detail, /^gemini is not offered: /);
-  assert.equal(fails[0].fix, 'set worker.runner in .learn-from-mistakes.yaml to claude');
+  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+});
+
+test('doctor run from another directory names the full project file in each fix', () => {
+  const { p, lfm, config, env } = setup(['claude', 'opencode']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  rmSync(join(p, 'docs', 'defects.md'));
+  const r = spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env, cwd: env.HOME });
+  assert.equal(r.status, 1, r.stderr);
+  const fail = JSON.parse(r.stdout).checks.find((c) => c.level === 'fail');
+  assert.equal(fail.label, 'source log');
+  assert.ok(fail.fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fail.fix);
 });
 
 test('doctor warns on a sessions source whose agent has no store, and names that agent\'s store variable', () => {
