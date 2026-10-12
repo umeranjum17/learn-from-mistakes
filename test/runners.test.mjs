@@ -12,7 +12,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
 const SECRET = 'CANARY-login-secret-5d1e';
 // FAKE_<RUNNER>: ok (default), broken (--version exits 1), hang, grandchild (holds stdout after exit), write, flaky (529 once),
-// prose (answers in plain text, no JSON), error (claude's own is_error result).
+// prose (answers in plain text, no JSON), error (claude's own is_error result), stale (codex writes its answer then 529s; the retry writes nothing).
 const FAKE = `
 const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const name = path.basename(process.argv[1]), args = process.argv.slice(2), mode = process.env['FAKE_' + name.toUpperCase()] || 'ok';
@@ -24,11 +24,12 @@ if (mode === 'hang') setInterval(() => {}, 1000);
 else {
   const once = path.join(process.env.FAKE_LOG, name + '.flaky');
   if (mode === 'flaky' && !fs.existsSync(once)) { fs.writeFileSync(once, ''); console.error('API Error: 529 overloaded'); process.exit(1); }
+  if (mode === 'stale' && !fs.existsSync(once)) { fs.writeFileSync(once, ''); fs.writeFileSync(args[args.indexOf('-o') + 1], 'stale answer'); console.error('API Error: 529 overloaded'); process.exit(1); }
   if (mode === 'write') fs.writeFileSync('x.txt', 'ok');
   if (mode === 'grandchild') spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();
   const text = mode === 'prose' ? 'I cannot create x.txt: my tools are off.' : JSON.stringify({ reply: 'hello from ' + name });
   if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: mode === 'error', result: mode === 'error' ? "The model's tool call could not be parsed" : text }));
-  if (name === 'codex') { fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
+  if (name === 'codex') { if (mode !== 'stale') fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
   if (name === 'opencode') console.log(JSON.stringify({ type: 'text', part: { text: 'thinking' } }) + '\\n' + JSON.stringify({ type: 'text', part: { text } }));
 }
 `;
@@ -184,6 +185,12 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   const flaky = lfm({ FAKE_CLAUDE: 'flaky' }, 'agents', '--test', 'claude', '--json'); // 529 once, then an answer
   assert.equal(flaky.status, 0, flaky.stderr);
   assert.equal(calls('claude').length, 4); // the hung call, the own error, the 529, the retry
+
+  const before = calls('codex').length;
+  const stale = lfm({ FAKE_CODEX: 'stale' }, 'agents', '--test', 'codex'); // 529 after writing an answer; the retry writes none
+  assert.equal(stale.status, 1, stale.stderr);
+  assert.match(stale.stderr, /^error: codex: the answer holds no JSON object: empty$/m);
+  assert.equal(calls('codex').length - before, 2); // the 529 and the retry
 
   const none = lfm({ PATH: '/nonexistent' }, 'agents', '--test', 'claude');
   assert.equal(none.status, 1);
