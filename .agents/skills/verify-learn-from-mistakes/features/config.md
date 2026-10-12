@@ -59,5 +59,5 @@ copy of `$SELF/examples`.
 
 ## Gotchas
 `>= 70` must be quoted in YAML (a bare `>` starts a block scalar). `on`/`off`
-are strings in YAML 1.2. A source may export `metricNames`, `metrics`, `detect` and `doctor`
-(the sessions and markdown-log sources export metrics); init and doctor call the last two in later slices.
+are strings in YAML 1.2. A source may export `metricNames`, `metricRows`, `metrics`, `detect` and `doctor`
+(the sessions and markdown-log sources export metrics; `metricRows` says which rows they read); init and doctor call the last two in later slices.

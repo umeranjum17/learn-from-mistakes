@@ -48,7 +48,7 @@ output; an `invocations` session id (table created by hand in the fixture) is sk
 none; a sessions-only config with no sessions completes; a parent file older
 than the read range is read through its newer subagent file. The planted keys
 cover a key after a long whitespace run, quoted values with spaces, JSON-escaped
-pairs (the retried call is kept as JSON), Basic auth, URL passwords, npm and glpat
+pairs (a retried call's input is matched as its plain string values), Basic auth, URL passwords, npm and glpat
 tokens and comma-split values. The helper drives `retro-sessions` (one synthetic
 session in its scratch HOME, `sessions: 1`).
 

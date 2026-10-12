@@ -134,7 +134,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   assert.deepEqual(sub, [{ session_id: 's-main', tool: 'Grep', signal: 'tool_error' }]); // a subagent file is read
   assert.deepEqual(query(p, `SELECT exit_code FROM events WHERE run_id = ? AND signal = 'test_fail'`, id).map((e) => e.exit_code), [1, 1]);
 
-  // Every planted shape is redacted in the excerpts (a tool error, the retried call as JSON, a correction), all
+  // Every planted shape is redacted in the excerpts (a tool error, the retried call's input, a correction), all
   // within the kept 300 characters, and no planted value reaches the store, state or output.
   for (const signal of ['test_fail', 'retry', 'correction']) {
     const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND signal = ? ORDER BY id LIMIT 1', id, signal);

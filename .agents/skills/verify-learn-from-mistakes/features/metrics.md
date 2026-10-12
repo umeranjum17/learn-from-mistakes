@@ -19,8 +19,8 @@ the window. `collect` tags them through `causes.<c>.match`: a no-mistakes source
 by `error_contains` in the row's error, a sessions source by any of `signal`,
 `tool` and `text_contains` (checked on the text of signal events only: failed tool
 results, retries and corrections; a successful call or a plain message is never
-checked, so it matches nothing there; `excerpts: off` tags the same events); the
-first fitting rule wins. A target
+checked, so it matches nothing there; `excerpts: off` tags the same events); each
+row takes one cause, the first fitting rule in config order (gate rows too). A target
 no source measures, a cause with no `match`, session numbers with no session in
 the window and a defect log with no dates are `n/a`, never 0.
 
@@ -37,8 +37,13 @@ gives `tool_error_rate` 0.5/0.75, `corrections_per_session` 0.25/1, `interrupts`
 run and 5 failed Reads (`cause_count` 1/0 and 0/3), the gate rule tags 4 gate
 records (0/0, all from March), causes with no rule and unmeasured targets are
 `n/a` (NULL in the table); the `excerpts: off` run tags the same events.
+The same file's `a rule tags signal events only` journey adds a `tool: Bash` rule
+that tags the failed Bash result and not the successful one, and a retried quoted
+grep matched by `text_contains` on its plain input; `a gate row takes one cause`
+checks that an overlapping pair gives the first rule in both metrics and report.
 `test/cli.test.mjs` asserts 3 steps per run, that `rerun --resume` keeps the
-completed `metrics` step and its numbers, and rejects bad `match` rules (exit 2).
+completed `metrics` step and its numbers, and rejects bad `match` rules and a
+second sessions source (exit 2).
 The helper's `retro-sessions` drive adds a sessions rule and checks
 `tool_error_rate` and its `cause_count` are 1 in `current`.
 
@@ -59,6 +64,8 @@ Remove the config and `.lfm/` after.
 ## Gotchas
 The current window has no end, so an event a clock puts slightly after the read
 still counts. A defect bullet dated `YYYY-MM-DD` counts from midnight UTC. Two
-sources of one type are read together: two defect logs sum into one `defects`.
+sources of one type are read together: two defect logs sum into one `defects`. A
+second sessions source is rejected (exit 2): each reads every agent's stores, so
+its events would count twice.
 A metric whose source type is not configured is n/a. `gate_failures`
 and the github metrics come in later slices; targets are not compared yet.
