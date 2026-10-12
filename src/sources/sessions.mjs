@@ -39,8 +39,8 @@ export async function read(source, { agents, dir }, { readFrom = 0, excerpts = t
     const rel = cwd === r ? '' : cwd.startsWith(r + sep) ? cwd.slice(r.length + 1) : null;
     return rel !== null && !rel.split(sep).includes('.lfm');
   });
-  // The whole text is redacted before the cut, so no secret is split at the edge of the kept part.
-  const excerpt = (text) => (excerpts ? redact(text).replace(/\s+/g, ' ').trim().slice(0, 300) : '');
+  // The first 4000 characters are redacted before the cut, so no secret is split at the edge of the kept part.
+  const excerpt = (text) => (excerpts ? redact(String(text).slice(0, 4000)).replace(/\s+/g, ' ').trim().slice(0, 300) : '');
   const out = { events: [], sessions: 0, skipped: 0 };
   for (const a of agents) {
     let got;

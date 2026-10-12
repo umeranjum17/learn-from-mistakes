@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { loadConfig, PROJECT_FILE, SOURCES } from '../src/config.mjs';
 import { rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -148,12 +149,16 @@ function readInput(file, flag, explicit, rerunHint) {
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts and numbers of a sessions source), the session events, and the start of the read range.
-// `skip` holds session ids of the tool's own agent runs.
-export async function ingest(cfg, skip = new Set()) {
+// The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
+export async function ingest(cfg) {
   stateDir(cfg);
+  const db = await openStore(cfg.state, false);
+  const skip = new Set(db?.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'invocations'`).get()
+    ? db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id) : []);
+  db?.close();
   // This window and the last, and far enough back to have before-numbers for every applied change.
   const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w;
-  const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
+  const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w).filter(Number.isFinite));
   const records = [], rows = [], events = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     const src = SOURCES[s.type], got = await src.read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip });

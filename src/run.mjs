@@ -16,9 +16,7 @@ const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
   // Reads the sources; session events go to the `events` table. It can run again: it first drops the run's events.
   collect: async (cfg, db, id) => {
-    const own = db.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'invocations'`).get() // the tool's own agent sessions
-      ? db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id) : [];
-    const { sources, events, read_from } = await ingest(cfg, new Set(own));
+    const { sources, events, read_from } = await ingest(cfg);
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     db.exec('BEGIN');
