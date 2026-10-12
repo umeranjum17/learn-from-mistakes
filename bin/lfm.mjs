@@ -218,7 +218,7 @@ function project(a, full) {
 
 const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEncode(model));
 
-const USAGE = `usage: lfm [<ingest|count|report>] [--dir <project dir>] [--labels <file>] [--proposals <file>] [--json] [--full]
+const USAGE = `usage: lfm [<ingest|count|report>] [options]
   lfm                 print the project's repeated-cause report (same as \`lfm report\`)
   ingest              read the configured sources (read-only) into the state dir
   count               print the counts (same projection as \`lfm report\`)
@@ -226,8 +226,8 @@ const USAGE = `usage: lfm [<ingest|count|report>] [--dir <project dir>] [--label
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)
-  --json              print lfm-report.v1 as JSON instead of the default TOON
-  --full              add allow-listed evidence ids (never record text)
+  --json (report, count)  print lfm-report.v1 as JSON instead of the default TOON
+  --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
 every output is privacy-bounded: identifiers and counts only, never record text or label/proposal prose`;
