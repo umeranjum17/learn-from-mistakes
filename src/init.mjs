@@ -4,7 +4,7 @@ import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { InputError, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { expand, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
-import { detect, resolveRoles } from './runners/index.mjs';
+import { detect, problemText, resolveRoles } from './runners/index.mjs';
 
 const ID = { 'markdown-log': 'log', 'no-mistakes': 'gate', github: 'prs' }; // the id a detected source is written under; else its type
 const FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
@@ -33,12 +33,12 @@ export async function init(dir, opts) {
     const { worker, judge } = await resolveRoles(want, agents, {});
     // A pinned judge with no worker that differs from it is refused, as is a judge pinned onto the worker's identity.
     if (worker.problem) {
-      if (opts.judge && !opts.worker && judge.bin) throw new UsageError(`worker: ${worker.problem}`, `learn-from-mistakes-axi init --worker <runner> --judge ${opts.judge}   # a worker on another agent CLI`);
-      throw new InputError(`worker: ${worker.problem}`, FIX);
+      if (opts.judge && !opts.worker && judge.bin) throw new UsageError(`worker: ${problemText(worker)}`, `learn-from-mistakes-axi init --worker <runner> --judge ${opts.judge}   # a worker on another agent CLI`);
+      throw new InputError(`worker: ${problemText(worker)}`, FIX);
     }
-    if (judge.problem && !judge.bin) throw new InputError(`judge: ${judge.problem}`, FIX);
+    if (judge.problem && !judge.bin) throw new InputError(`judge: ${problemText(judge)}`, FIX);
     // An auto judge with no second identity is written and reported; a judge the user pinned onto the worker is refused.
-    if (judge.problem && opts.judge) throw new UsageError(`judge: ${judge.problem}`, `learn-from-mistakes-axi init --worker <runner> --judge ${opts.judge}   # a worker on another agent CLI`);
+    if (judge.problem && opts.judge) throw new UsageError(`judge: ${problemText(judge)}`, `learn-from-mistakes-axi init --worker <runner> --judge ${opts.judge}   # a worker on another agent CLI`);
     try {
       writeFileSync(file, `# written by learn-from-mistakes-axi init
 name: ${scalar(basename(dir))}
@@ -52,7 +52,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   const cfg = loadConfig(dir);
   stateDir(cfg);
   const { worker, judge } = await resolveRoles(cfg, agents, {});
-  const gaps = [...Object.entries({ worker, judge }).filter(([, r]) => r.problem).map(([name, r]) => `${name}: ${r.problem}`),
+  const gaps = [...Object.entries({ worker, judge }).filter(([, r]) => r.problem).map(([name, r]) => `${name}: ${problemText(r)}`),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
   return {

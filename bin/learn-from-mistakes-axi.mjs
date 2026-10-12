@@ -12,7 +12,7 @@ import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import * as byokit from '../src/runners/byokit.mjs';
-import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
+import { agents, CLASH, INSTALL, problemText, RUNNERS } from '../src/runners/index.mjs';
 import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -620,7 +620,7 @@ async function agentsCommand(opts) {
   console.log(render(out, opts.json));
   if (out.test) { hint(withContext('learn-from-mistakes-axi agents', out.test.offered ? 'every agent CLI and the resolved worker and judge' : `why ${out.test.runner} is not offered as worker or judge`, opts)); return; }
   const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
-  for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}${out[r].fix ? `: ${out[r].fix}` : ''}`);
+  for (const r of roles) console.error(`problem: ${r}: ${problemText(out[r])}`);
   if (roles.length) process.exitCode = 1;
   const pick = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner;
   const next = pick?.replace(/^acp$/, 'acp:<target>');
