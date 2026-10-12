@@ -144,7 +144,7 @@ try {
   writeFileSync(rollout, [
     { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Umer: run the tests.' }] } },
     { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"npm test"}', call_id: 'c1' } },
-    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'Process exited with code 1' } },
+    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'Chunk ID: a1\nWall time: 0.1 seconds\nProcess exited with code 1\nOriginal token count: 1\nOutput:\n1 failing' } },
   ].map((r) => JSON.stringify({ timestamp: at.timestamp, ...r })).join('\n') + '\n');
   const threads = new DatabaseSync(join(env.HOME, '.codex', 'state_5.sqlite'));
   threads.exec('CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, source TEXT, cwd TEXT)');
