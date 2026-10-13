@@ -53,9 +53,9 @@ the upgrade). New ids are the highest `chg-<n>` + 1; a repeated id is a ledger
 problem, so `changes` never exports a duplicate join key. A missing ledger means zero entries; an invalid one exits 1 with
 file:line only. What/why are owner-written text meant to leave the privacy
 bound only through `changes`; the report never prints them. `generated_at` is
-the export time, so compare TOON to JSON without it. The ledger only records
-the metric and tripwire; the follow-up step that measures them and gives a
-verdict comes in a later slice.
+the export time, so compare TOON to JSON without it. Each retro's `followup` step
+measures the metric before and after each change and gives it a verdict (see
+[followup.md](followup.md)).
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 

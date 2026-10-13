@@ -14,33 +14,40 @@ export function meets(value, rule) {
   return Number({ '>=': value >= t, '<=': value <= t, '>': value > t, '<': value < t, '=': value === t }[op]);
 }
 
+// Each metric's value over the events and records in one window; null (n/a) where nothing measures it.
+export function values(cfg, events, records, w) {
+  const types = new Set(Object.values(cfg.sources).map((s) => s.type));
+  const v = {};
+  for (const [type, src] of Object.entries(SOURCES)) {
+    if (!src.metricNames) continue;
+    if (!types.has(type)) for (const name of src.metricNames) v[name] = null;
+    else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w));
+  }
+  for (const [cause, c] of Object.entries(cfg.causes)) {
+    // n/a with no match rule, or when the rule's sessions source has no session in the window (as its other counts)
+    const read = c.match && (SOURCES[cfg.sources[c.match.source].type].metricRows !== 'events' || inWindow(events, w).length);
+    v[`cause_count:${cause}`] = read ? inWindow([...events, ...records].filter((r) => r.cause === cause), w).length : null;
+  }
+  for (const name of Object.keys(cfg.targets)) v[name] ??= null; // a target no source measures
+  return v;
+}
+
+// The rows collect saved for the run, as the metrics read them.
+export const rowsOf = (db, id) => ({
+  events: db.prepare('SELECT session_id, ts, kind, tool, signal, cause FROM events WHERE run_id = ?').all(id),
+  records: db.prepare('SELECT source, ts, cause FROM records WHERE run_id = ?').all(id),
+});
+
 // The current window has no end, so an event the clock puts a little after the read still counts.
 export function metrics(cfg, db, id, { current_start, previous_start }) {
   const windows = { current: { start: Date.parse(current_start) }, previous: { start: Date.parse(previous_start), end: Date.parse(current_start) } };
-  const events = db.prepare('SELECT session_id, ts, kind, tool, signal, cause FROM events WHERE run_id = ?').all(id);
-  const records = db.prepare('SELECT source, ts, cause FROM records WHERE run_id = ?').all(id);
+  const { events, records } = rowsOf(db, id);
   const add = db.prepare('INSERT INTO metrics (run_id, window, name, value, target) VALUES (?, ?, ?, ?, ?)');
-  const types = new Set(Object.values(cfg.sources).map((s) => s.type));
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM metrics WHERE run_id = ?').run(id);
     for (const [window, w] of Object.entries(windows)) {
-      const v = {};
-      for (const [type, src] of Object.entries(SOURCES)) {
-        if (!src.metricNames) continue;
-        if (!types.has(type)) for (const name of src.metricNames) v[name] = null;
-        else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w));
-      }
-      for (const [cause, c] of Object.entries(cfg.causes)) {
-        // n/a with no match rule, or when the rule's sessions source has no session in the window (as its other counts)
-        const read = c.match && (SOURCES[cfg.sources[c.match.source].type].metricRows !== 'events' || inWindow(events, w).length);
-        v[`cause_count:${cause}`] = read ? inWindow([...events, ...records].filter((r) => r.cause === cause), w).length : null;
-      }
-      for (const name of Object.keys(cfg.targets)) v[name] ??= null; // a target no source measures
-      for (const [name, value] of Object.entries(v)) {
-        const target = cfg.targets[name] ?? null;
-        add.run(id, window, name, value, target);
-      }
+      for (const [name, value] of Object.entries(values(cfg, events, records, w))) add.run(id, window, name, value, cfg.targets[name] ?? null);
     }
     db.exec('COMMIT');
   } catch (e) {
