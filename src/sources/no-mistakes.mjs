@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource } from '../config.mjs';
 import { redact } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
@@ -38,13 +38,21 @@ export async function detect(dir) {
   } finally { db?.close(); }
 }
 
+// doctor: readable, the failed steps in the window, and the ones with no time, which the window cannot place.
+export async function doctor(source, entry, ctx) {
+  const { rows } = await read(source, entry, ctx);
+  const timed = rows.filter((r) => r.at);
+  const inWin = timed.filter((r) => Date.parse(r.at) >= ctx.readFrom).length;
+  return { level: 'ok', detail: `${rows.length} failed steps, ${inWin} in the window, ${rows.length - timed.length} skipped (no time)` };
+}
+
 // One store holds the runs of every repo no-mistakes gates, so only this repo's rows are read: a repo row whose
 // checkout is this project's (the git toplevel detect matches) or one of its worktrees, or whose upstream URL is its origin.
 // Its identity is the sha256 of the rows read, so it follows content, not file time. A row takes the first cause
 // whose match rule names this source and whose error_contains is in its error; the error is kept redacted.
 // node:sqlite is loaded here, and only here, so runs that never read a store never warn about it.
-export async function read(source, { path, dir }, { causes = {} } = {}) {
-  const fix = `remove the ${source} source or point its path at your no-mistakes state.sqlite`;
+export async function read(source, { path, dir }, { causes = {}, project } = {}) {
+  const fix = `set sources.${source}.path in ${shq(project)} to your no-mistakes state.sqlite, or remove that source`;
   if (!existsSync(path)) throw new UsageError(`source ${source}: no such file`, fix);
   let db;
   try {

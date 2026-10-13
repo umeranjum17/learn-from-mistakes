@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { sep } from 'node:path';
-import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { mapping } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 import { excerpt as cut } from '../redact.mjs';
@@ -25,7 +25,7 @@ export function validate(s, where, dir) {
   if (!Array.isArray(agents) || !agents.length || !agents.every((a) => a === 'auto' || Object.hasOwn(READERS, a))) {
     throw new UsageError(`${where}.agents must be a list of auto or ${Object.keys(READERS).join(', ')}`);
   }
-  return { type: s.type, agents: agents.includes('auto') ? Object.keys(READERS) : [...new Set(agents)], dir };
+  return { type: s.type, agents: agents.includes('auto') ? Object.keys(READERS) : [...new Set(agents)], auto: agents.includes('auto'), dir };
 }
 
 const real = (p) => { try { return realpathSync(p); } catch { return p; } };
@@ -92,9 +92,17 @@ export const detect = () => (Object.values(READERS).some((r) => existsSync(r.roo
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {
   const missing = entry.agents.filter((a) => !existsSync(READERS[a].root()));
-  if (missing.length === entry.agents.length) return { level: 'warn', detail: `no ${missing.join(', ')} session store`, fix: 'export CLAUDE_CONFIG_DIR=<your Claude Code config dir>   # if it is not ~/.claude' };
+  const storeFix = `${missing.map((a) => `export ${READERS[a].STORE_VAR}=<dir>`).join('; ')}   # if a store is somewhere else, or drop it from sources.${source}.agents in ${shq(ctx.project)}`;
+  if (missing.length === entry.agents.length) {
+    return { level: 'warn', detail: `no session store at ${missing.map((a) => READERS[a].root()).join(', ')}`, fix: storeFix };
+  }
   try {
     const got = await read(source, entry, { ...ctx, excerpts: false });
-    return { level: 'ok', detail: `${got.sessions} sessions, ${got.skipped} skipped records` };
+    const counts = `${got.sessions} sessions, ${got.skipped} skipped records since ${new Date(ctx.readFrom).toISOString().slice(0, 10)}`;
+    if (!missing.length) return { level: 'ok', detail: counts };
+    // With agents: auto an absent store is normal (that agent is not used here); a listed agent's absent store is a warn.
+    const gone = missing.map((a) => `${a} store not found at ${READERS[a].root()} (${READERS[a].STORE_VAR})`).join('; ');
+    if (entry.auto) return { level: 'ok', detail: `${counts}; ${gone}` };
+    return { level: 'warn', detail: `${counts}; ${gone}`, fix: storeFix };
   } catch (e) { return { level: 'fail', detail: e.message, fix: e.next }; }
 }

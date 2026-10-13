@@ -14,7 +14,7 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // The source registry: one file per source type, each exporting validate (check and normalise its config entry)
 // and read (its items). A source may also export metricNames, metricRows ('events' or 'records', the rows its metrics
 // read) and metrics (its numbers from what it read; a type with no source in the config gives its metricNames as n/a),
-// detect (a config entry for init) and doctor (a check line); init calls detect, doctor calls doctor in a later slice.
+// detect (a config entry for init) and doctor (a check line); init calls detect, doctor calls doctor.
 // A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github };
 const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
@@ -54,9 +54,11 @@ function role(value, where) {
   return r;
 }
 
+const lfmHome = () => process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
+export const globalFile = () => join(lfmHome(), 'config.yaml');
 export function loadGlobal() {
-  const LFM_HOME = process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
-  const file = join(LFM_HOME, 'config.yaml');
+  const LFM_HOME = lfmHome();
+  const file = globalFile();
   const g = mapping(readYaml(file) ?? {}, ['state_root', 'runner_path', 'runner_args'], file);
   const runner_path = mapping(g.runner_path ?? {}, [...RUNNERS, 'acp'], `${file}: runner_path`);
   for (const [k, v] of Object.entries(runner_path)) {

@@ -8,6 +8,7 @@ export const tools = 'read-only';
 // Not offered as worker or judge until a live write test passes in headless mode; `agents --test gemini` runs that test.
 export const unconfirmed = 'not offered: its read-only plan mode is not yet confirmed in headless mode (agents --test gemini runs the write test)';
 export const login = (env) => ({ files: [join(env.GEMINI_CLI_HOME || homedir(), '.gemini', 'oauth_creds.json')], vars: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'] });
+export const skills = (env) => join(env.GEMINI_CLI_HOME || homedir(), '.gemini', 'skills');
 export const command = ({ model, marker, extra }) => ({
   args: ['-p', `${marker} Follow the instructions above.`, ...(model ? ['-m', model] : []), '-o', 'json', '--approval-mode', 'plan', '--skip-trust', '-e', 'none', ...extra],
   stdin: true,

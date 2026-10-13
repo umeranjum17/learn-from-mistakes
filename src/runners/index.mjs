@@ -29,7 +29,7 @@ export function which(name) {
   }
 }
 
-const binName = (cfg, runner) => cfg.runner_path?.[runner] ?? RUNNERS[runner].bin ?? runner;
+export const binName = (cfg, runner) => cfg.runner_path?.[runner] ?? RUNNERS[runner].bin ?? runner;
 
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
@@ -48,11 +48,13 @@ export function detect(cfg) {
 
 // The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
 const configuredModel = (cfg, name, env = process.env) => (name === 'worker' ? (env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
-const lists = (runner, model) => !!MODELS[runner]?.includes(model);
+export const lists = (runner, model) => !!MODELS[runner]?.includes(model);
+export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
+export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
 // A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
 // it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
-function roleModel(cfg, name, runner, env = process.env) {
+export function roleModel(cfg, name, runner, env = process.env) {
   const model = configuredModel(cfg, name, env);
   if (model && (cfg[name]?.runner === runner || lists(runner, model))) return model;
   return MODELS[runner]?.[0] ?? '';
@@ -62,7 +64,7 @@ function roleModel(cfg, name, runner, env = process.env) {
 export const CLASH = 'the judge resolves to the worker\'s agent and model, so it would judge its own work';
 const WORKER_CLASH = 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
 const clashOf = (name) => (name === 'judge' ? CLASH : WORKER_CLASH);
-const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
+export const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
 
 // Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
 // that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
@@ -71,9 +73,9 @@ export async function resolveRole(cfg, name, agents, worker, env = process.env) 
   const want = cfg[name];
   const route = byokit.routeOf(want.runner);
   if (route) { // in process: its identity is the route itself
-    const r = { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: '' };
     const p = await byokit.check(route);
-    if (p) return { ...r, problem: `${p.problem}: ${p.fix}` };
+    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
+    const r = { runner: want.runner, model: await byokit.modelOf(route, configuredModel(cfg, name, env)), bin: want.runner, problem: '' };
     return worker && same(r, worker) ? { ...r, problem: clashOf(name) } : r;
   }
   const key = want.runner.replace(/^acp:.*/, 'acp');
@@ -151,6 +153,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
   if (route) model = await byokit.modelOf(route, model);
   if (route && !model) throw new InputError(`${runner}: BYOKit's catalogue has no cheap model for ${route}`, `set the role's model, such as worker: { runner: "${runner}", model: <model> }`);
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, 'set allow_premium: true in the project config, or use a cheap model');
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;
@@ -203,8 +206,9 @@ export async function agents(cfg, opts) {
     const dir = join(cfg.state, 'runs', `test-${step}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    const got = await call(cfg, { runner, target, model: a.model, dir, runId: 'test', step, prompt: TEST, text: true });
-    return { test: { runner: opts.test, model: a.model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
+    const model = opts.model ?? a.model; // doctor --live tests the judge with the judge's model
+    const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST, text: true });
+    return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
   }
   const out = { agents: list };
   if (cfg.worker) {

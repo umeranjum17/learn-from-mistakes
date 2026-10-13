@@ -31,7 +31,7 @@ else {
   if (mode === 'grandchild') spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();
   const text = mode === 'prose' ? 'I cannot create x.txt: my tools are off.' : JSON.stringify({ reply: 'hello from ' + name });
   if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: mode === 'error' || mode === 'empty-error', result: mode === 'empty-error' ? undefined : mode === 'error' ? "The model's tool call could not be parsed" : text }));
-  if (name === 'codex') { if (mode !== 'stale') fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
+  if (name === 'codex') { if (mode !== 'stale' && args.includes('-o')) fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
   if (name === 'opencode') console.log(JSON.stringify({ type: 'text', part: { text: 'thinking' } }) + '\\n' + JSON.stringify({ type: 'text', part: { text } }));
   if (name === 'pi') console.log(JSON.stringify({ type: 'session' }) + '\\n' + JSON.stringify({ type: 'message_end', message: mode === 'error'
     ? { role: 'assistant', content: [], stopReason: 'error', errorMessage: '400: Model is unavailable.' }
@@ -183,6 +183,27 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
   assert.deepEqual(readdirSync(join(p, '.lfm')).sort(), ['.gitignore', 'runs']);
 });
 
+test('a premium model that allow_premium forbids is never called: doctor --live skips it, agents --test refuses it', () => {
+  const { lfm, calls, config } = setup();
+  config('worker: { runner: claude, model: claude-opus-5-5 }\n');
+  const r = lfm({}, 'doctor', '--live', '--json');
+  const checks = JSON.parse(r.stdout).checks;
+  assert.equal(r.status, 1);
+  assert.equal(checks.find((c) => c.label === 'worker model').level, 'fail');
+  assert.equal(checks.find((c) => c.label === 'worker live').detail, 'skip live worker: premium model needs allow_premium');
+  const t = lfm({}, 'agents', '--test', 'claude');
+  assert.equal(t.status, 1);
+  assert.match(t.stderr, /^error: claude: claude-opus-5-5 is a premium model/m);
+  assert.ok(calls('claude').every((c) => !c.args.includes('claude-opus-5-5')), JSON.stringify(calls('claude')));
+});
+
+test('the skill row looks where the agent CLI reads skills: its login check\'s config dir, not the home default', () => {
+  const { lfm, tmp } = setup();
+  const r = lfm({ PI_CODING_AGENT_DIR: join(tmp, 'pi-agent') }, 'doctor', '--json');
+  const row = JSON.parse(r.stdout).checks.find((c) => c.label === 'skill pi');
+  assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'learn-from-mistakes')}`);
+});
+
 test('no default model is premium: the models table, the agents listing and the guide stay cheap', () => {
   const { lfm, env, p } = setup();
   const premium = /opus|sonnet|\bsol\b/i;
@@ -287,8 +308,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   const { p, mock, lfm, hook, signIn } = await byokitSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml'), base = readFileSync(yaml, 'utf8');
   const config = (extra) => writeFileSync(yaml, base + extra);
-  const [node22, out] = await hook('chatgpt');
-  assert.equal(node22.status, 'ok');
+  const [out] = await hook('chatgpt');
   assert.deepEqual(out, { status: 'fail', label: 'byokit:chatgpt', detail: "ChatGPT isn't signed in yet.", fix: out.fix });
   assert.match(out.fix, /^sign in to chatgpt through BYOKit for member "lfm"/);
   const out1 = await lfm('agents', '--test', 'byokit:chatgpt');
@@ -297,7 +317,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   assert.match(out1.stderr, /^next: sign in to chatgpt through BYOKit/m);
 
   await signIn();
-  assert.deepEqual((await hook('chatgpt'))[1], { status: 'ok', label: 'byokit:chatgpt', detail: 'ChatGPT is connected.' });
+  assert.deepEqual((await hook('chatgpt'))[0], { status: 'ok', label: 'byokit:chatgpt', detail: 'ChatGPT is connected.' });
   const r = await lfm('agents', '--test', 'byokit:chatgpt', '--json');
   assert.equal(r.status, 0, r.stderr);
   const dir = join(p, '.lfm', 'runs', 'test-byokit-chatgpt');
@@ -315,7 +335,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   config('worker: { runner: claude }\njudge: { runner: "byokit:chatgpt" }\n'); // a judge with no second agent CLI
   const roles = await lfm('agents', '--json');
   assert.equal(roles.status, 0, roles.stderr);
-  assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: '', bin: 'byokit:chatgpt', problem: '' });
+  assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: 'gpt-6-luna', bin: 'byokit:chatgpt', problem: '' });
   config('worker: { runner: "byokit:chatgpt" }\njudge: { runner: "byokit:chatgpt", model: gpt-6-luna }\n'); // the same route judging itself
   const clash = await lfm('agents', '--json');
   assert.equal(clash.status, 1);
@@ -357,7 +377,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   assert.match(noModel.stderr, /^error: byokit:opencode-go: BYOKit's catalogue has no cheap model for opencode-go$/m);
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('"byokit:opencode-go" }', '"byokit:opencode-go", model: muse-spark-1.3-contributor }'));
 
-  assert.deepEqual((await hook({}))[1], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
+  assert.deepEqual((await hook({}))[0], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
     fix: 'set OPENCODE_API_KEY to your OpenCode Go key, then: learn-from-mistakes-axi agents --test byokit:opencode-go' });
   const noKey = await run({}, 'agents', '--test', 'byokit:opencode-go');
   assert.equal(noKey.status, 1);
@@ -365,7 +385,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   assert.match(noKey.stderr, /^next: set OPENCODE_API_KEY to your OpenCode Go key/m);
   assert.equal(standIn.seen.length, 0);
 
-  assert.deepEqual((await hook({ OPENCODE_API_KEY: 'fake-key' }))[1], { status: 'ok', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is set' });
+  assert.deepEqual((await hook({ OPENCODE_API_KEY: 'fake-key' }))[0],{ status: 'ok', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is set' });
   const r = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go', '--json');
   assert.equal(r.status, 0, r.stderr);
   const dir = join(p, '.lfm', 'runs', 'test-byokit-opencode-go');

@@ -6,7 +6,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { inputText, json, TEST } from './claude.mjs';
 
-export const root = () => join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode');
+export const STORE_VAR = 'XDG_DATA_HOME';
+export const root = () => join(process.env[STORE_VAR] || join(homedir(), '.local', 'share'), 'opencode');
 
 // A store that cannot be stat'd is opened anyway, so a failure to open or read it is an error.
 const mtime = (f) => { try { return statSync(f).mtimeMs; } catch (e) { return e.code === 'ENOENT' ? 0 : Infinity; } };
