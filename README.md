@@ -80,7 +80,7 @@ git clone https://github.com/umeranjum17/learn-from-mistakes
 cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-axi on your PATH
 ```
 
-1. Run `learn-from-mistakes-axi init` in your project. It writes `.learn-from-mistakes.yaml` if the project has none (otherwise it prints `already set up` and any gaps), with a worker and a different judge from the agent CLIs found, the sources it detects, and excerpts on (`--no-excerpts` writes them off). Or write the file yourself:
+1. Run `learn-from-mistakes-axi init` in your project. It writes `.learn-from-mistakes.yaml` if the project has none (otherwise it prints `already set up` and any gaps), with the agents and models you choose (`--agent`/`--model` and `--judge-agent`/`--judge-model`, or a pick in a terminal), the sources it detects, and excerpts on (`--no-excerpts` writes them off). With no agent chosen and no terminal it exits 2 with the ask line; `init -y` writes the files without agents. Or write the file yourself:
 
    ```yaml
    name: my-project

@@ -90,7 +90,7 @@ export async function init(dir, opts) {
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
     const agent = opts[flag], takeAgent = written || !here(key);
-    const takeModel = !!opts[model] && (takeAgent || (before[key] === agent && !here(`agent_config.${agent}.model`)));
+    const takeModel = !!opts[model] && !here(`agent_config.${agent}.model`) && (takeAgent || before[key] === agent);
     if (takeAgent || takeModel) chosen[key] = { agent, model: takeModel ? opts[model] : undefined, set: takeAgent };
     if (!takeAgent) ignored.push(`--${flag}`);
     if (opts[model] && !takeModel) ignored.push(`--${model}`);
