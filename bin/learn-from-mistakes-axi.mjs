@@ -324,7 +324,7 @@ function project(a, full) {
     ledger: { entries: a.changes?.length ?? 0 },
     sources: a.meta.sources.map((s) => ({ id: s.id, type: s.type, items: s.items })),
     causes,
-    findings: a.findings.map(({ cause, count, days }) => ({ cause, count, days })), // the run worker's, counted by its check step; the summaries print as lines after the TOON report
+    findings: a.findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })), // the run worker's, counted by its check step; the summaries print as lines after the TOON report
   };
 }
 
@@ -584,7 +584,7 @@ async function main() {
   if (last && last.latest !== last.run) console.error(`note: run ${last.latest} kept no label and no finding; showing run ${last.run}`);
   const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
-  if (!json) console.log([summaryLine(model), ...(last?.findings ?? []).map((f) => `finding: ${f.cause} (${f.count}/${f.days} days): ${f.summary}`)].join('\n'));
+  if (!json) console.log([summaryLine(model), ...(last?.findings ?? []).map((f) => `finding: ${f.cause} (${f.count}/${f.days} days, ${f.verdict}): ${f.summary}`)].join('\n'));
   if (problems.length) {
     for (const p of problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
     if (problems.length > PROBLEM_LINES) console.error(`problem: ... and ${problems.length - PROBLEM_LINES} more`);

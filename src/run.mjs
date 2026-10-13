@@ -80,7 +80,7 @@ function runResult(db, id) {
   const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
     .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
-  return { run: id, runLabels, findings: db.prepare('SELECT cause, summary, count, days FROM findings WHERE run_id = ? ORDER BY id').all(id).map((f) => ({ ...f, summary: redact(f.summary).replace(/\s+/g, ' ').trim() })) };
+  return { run: id, runLabels, findings: db.prepare(`SELECT cause, summary, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f, summary: redact(f.summary).replace(/\s+/g, ' ').trim() })) };
 }
 // The latest completed run that kept labels or findings: the bare report counts them. Undefined with none, so labels.jsonl counts.
 export async function lastRun(cfg) {
@@ -368,6 +368,6 @@ function show(db, id) {
     ...(out('check') && { fixes: db.prepare('SELECT n, cause, metric, tripwire FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(id).map((f) => ({ ...f })) }),
     ...(report && { result: { labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
-      findings: runResult(db, id).findings.map(({ cause, count, days, summary }) => ({ cause, count, days, summary })) } }),
+      findings: runResult(db, id).findings.map(({ cause, count, days, verdict, summary }) => ({ cause, count, days, verdict, summary })) } }),
   };
 }

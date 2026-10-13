@@ -1168,20 +1168,20 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
   // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
-  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.' };
+  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.' };
   assert.deepEqual(result, { labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
-  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,summary\}:\n {4}umer-fixtures-unset,1,1,The tests fail when UMER_FIXTURES is unset\. No doc names it\.$/m);
+  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict,summary\}:\n {4}umer-fixtures-unset,1,1,confirmed,The tests fail when UMER_FIXTURES is unset\. No doc names it\.$/m);
   assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);
   // The bare report counts the run's labels and names their source; the findings show as counts, their summaries in status only.
   const bare = lfm({}, 'report', '--json');
   assert.equal(bare.status, 0, bare.stderr);
   const bareJson = JSON.parse(bare.stdout);
-  assert.deepEqual([bareJson.labels_from, bareJson.coverage.labelled, bareJson.causes[1].cause, bareJson.causes[1].log.incidents, bareJson.findings], [`run ${run.id}`, 2, 'shared-cache-lock', 2, [{ cause: finding.cause, count: 1, days: 1 }]]);
+  assert.deepEqual([bareJson.labels_from, bareJson.coverage.labelled, bareJson.causes[1].cause, bareJson.causes[1].log.incidents, bareJson.findings], [`run ${run.id}`, 2, 'shared-cache-lock', 2, [{ cause: finding.cause, count: 1, days: 1, verdict: 'confirmed' }]]);
   assert.doesNotMatch(bare.stdout, /UMER_FIXTURES|failed for Umer/);
   assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
   const toon = lfm({}, 'report');
   assert.equal(toon.status, 0, toon.stderr);
-  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days): ${finding.summary}`), toon.stdout);
+  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${finding.summary}`), toon.stdout);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');
