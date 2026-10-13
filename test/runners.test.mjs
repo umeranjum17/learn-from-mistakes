@@ -127,7 +127,7 @@ test('agents lists only the configured agents with version, login presence and m
   config('');
   const none = lfm({}, 'agents');
   assert.equal(none.status, 2);
-  assert.match(none.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in .*\/p\/\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, acp:<target> or byokit:<route>/m);
+  assert.match(none.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in .*\/p\/\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi or byokit:<route>/m);
   assert.equal(none.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
   assert.equal(none.stdout, '');
 });
@@ -207,17 +207,19 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   assert.match(t.stderr, /^error: claude: claude-opus-5-5 is a premium model/m);
   assert.ok(calls('claude').every((c) => !c.args.includes('claude-opus-5-5')), JSON.stringify(calls('claude')));
 
-  // pi with no model set: the CLI would pick its own, so the live call is refused with the key to set.
+  // pi with no model set: no call is made, and the key to set is named, with or without allow_premium.
   const noModel = lfm({}, 'agents', '--test', 'pi');
   assert.equal(noModel.status, 1);
-  assert.match(noModel.stderr, /^error: pi: no model set in agent_config, so the agent CLI would pick its own, which may be a premium model$/m);
-  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `set agent_config."pi".model in ${join(env.LFM_HOME, 'config.yaml')}, or set allow_premium: true in ${join(env.LFM_HOME, 'config.yaml')}`);
+  assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
+  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `set agent_config."pi".model in ${join(env.LFM_HOME, 'config.yaml')}`);
   config('agent: pi\njudge_agent: claude\n');
   const asked = lfm({}, 'doctor', '--live');
   assert.equal(asked.status, 2, asked.stderr);
   assert.match(asked.stderr, /^error: ask the user which agent to use: agent_config\.pi\.model is not set in /m);
   assert.equal(calls('pi').length, 0);
   config('agent: pi\nallow_premium: true\n');
+  assert.equal(lfm({}, 'agents', '--test', 'pi').status, 1); // allow_premium permits a premium name, never an empty model
+  config('agent: pi\nallow_premium: true\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);
 });
 
@@ -242,7 +244,7 @@ test('init writes no agent or model the user did not choose', () => {
 
 test('a hung, leaking, writing or overloaded agent ends with its real cause', () => {
   const { lfm, calls, config, p } = setup();
-  config('agent_timeout: 10s\nallow_premium: true\n'); // allow_premium: gemini and pi run on their own default model here
+  config('agent_timeout: 10s\nagent_config: { claude: { model: umer-cheap-1 }, codex: { model: umer-cheap-1 }, gemini: { model: umer-gem-1 }, opencode: { model: opencode-go/umer-cheap-1 } }\n');
   const hang = lfm({ FAKE_CLAUDE: 'hang' }, 'agents', '--test', 'claude');
   assert.equal(hang.status, 1);
   assert.match(hang.stderr, /^error: claude: no answer within 10s in one attempt; stopped it \(agent_timeout\)$/m);
@@ -283,6 +285,7 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   assert.match(stale.stderr, /^error: codex: the answer holds no JSON object: empty$/m);
   assert.equal(calls('codex').length - before, 2); // the 529 and the retry
 
+  config('agent: pi\nagent_config: { pi: { model: umer-cheap-1 }, "acp:fake-agent": { model: umer-acp-1 } }\n');
   const piErr = lfm({ FAKE_PI: 'error' }, 'agents', '--test', 'pi'); // pi exits 0 on a failed call; its error message is the cause
   assert.equal(piErr.status, 1);
   assert.match(piErr.stderr, /^error: pi: 400: Model is unavailable\.$/m);

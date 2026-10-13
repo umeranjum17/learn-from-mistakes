@@ -106,7 +106,7 @@ export async function init(dir, opts) {
     const { worker, judge } = await resolveRoles(want, agents);
     const again = `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>   # another agent for the judge: agent_config holds one model per agent`;
     if (chosen.agent && worker.problem) throw new InputError(`worker: ${worker.problem}`, worker.fix ?? FIX('--agent'));
-    if (chosen.judge_agent && judge.problem === CLASH) throw new UsageError(`judge: ${judge.problem}`, again);
+    if ((chosen.agent || chosen.judge_agent) && judge.problem === CLASH) throw new UsageError(`judge: ${judge.problem}`, again);
     if (chosen.judge_agent && judge.problem) throw new InputError(`judge: ${judge.problem}`, judge.fix ?? FIX('--judge-agent'));
   }
   if (globalWritten) {

@@ -243,9 +243,9 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('agent: [codex, claude]\n'), 2, bad('agent must be one agent, not a list'), /^next: set agent in \S+\.learn-from-mistakes\.yaml to one agent, such as agent: claude$/m],
     [() => withConfig('agent: 3\n'), 2, bad('agent must be claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
     [() => withConfig('worker: { runner: claude }\n'), 2, bad('unknown key worker'), HELP], // the old role keys are gone, with no alias
-    [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a non-empty string'), HELP],
+    [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'), HELP],
     [() => withConfig('agent_config: { gemini: { effort: low } }\n'), 2, bad('agent_config.gemini.effort: gemini has no effort setting; remove it'), HELP],
-    [() => withConfig('agent_config: { opencode: { model: muse } }\n'), 2, bad('agent_config.opencode.model must be provider/model, such as opencode-go/muse-spark-1.3-contributor'), HELP],
+    [() => withConfig('agent_config: { opencode: { model: muse } }\n'), 2, bad('agent_config.opencode.model must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'), HELP],
     [() => withConfig('agent_path_override: { claude: ./claude }\n'), 2, /^error: .*\.learn-from-mistakes\.yaml: agent_path_override is global-only: set it in .*config\.yaml$/m, HELP], // a cloned repo never picks the binary
     [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
     [() => withConfig('targets: { first_pass: 70 }\n'), 2, bad('targets.first_pass must be a quoted "<op> <number>", such as ">= 70"'), HELP],
@@ -894,7 +894,7 @@ allow_premium: false
   rmSync(join(p, '..', 'home', 'config.yaml'));
   const unset = lfm('retro', '--foreground');
   assert.equal(unset.status, 2, unset.stderr);
-  assert.match(unset.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, acp:<target> or byokit:<route>/m);
+  assert.match(unset.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi or byokit:<route>/m);
   assert.match(unset.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir \S+   # with the user's answer$/m);
   writeFileSync(join(p, '..', 'home', 'config.yaml'), AGENTS_SET);
   const failed = lfm('retro', '--foreground', '--json');

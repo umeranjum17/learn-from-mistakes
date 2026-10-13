@@ -29,7 +29,7 @@ export function which(name) {
 }
 
 export const binName = (cfg, runner) => (runner === 'acp' ? cfg.acpx_path : cfg.agent_path_override?.[runner]) ?? RUNNERS[runner].bin ?? runner;
-// The model agent_config gives an agent (claude, acp:<target>, byokit:<route>), or "": the agent CLI picks its own.
+// The model agent_config gives an agent (claude, acp:<target>, byokit:<route>), or "": none set, and no call is made.
 export const agentModel = (cfg, agent) => cfg.agent_config?.[agent]?.model ?? '';
 // The file to change an agent key in: the project file when it set the key, else the global file.
 export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? cfg.globalPath);
@@ -129,10 +129,12 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, text }) {
+  const name = target ? `acp:${target}` : runner, key = `agent_config.${name}`;
+  if (!model) throw new InputError(`${runner}: no model set in agent_config`, `set agent_config."${name}".model in ${fileOf(cfg, key)}`);
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `set agent_config."${target ? `acp:${target}` : runner}".model in ${fileOf(cfg, `agent_config.${target ? `acp:${target}` : runner}`)} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `set agent_config."${name}".model in ${fileOf(cfg, key)} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;
@@ -187,9 +189,6 @@ export async function agents(cfg, opts) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const model = opts.model ?? a.model; // doctor --live tests the judge with the judge's model
-    // A BYOKit route needs one always; an empty model lets an agent CLI pick its own, which may be a premium model.
-    if (!model && (route || !cfg.allow_premium)) throw new InputError(`${opts.test}: no model set in agent_config${route ? '' : ', so the agent CLI would pick its own, which may be a premium model'}`,
-      `set agent_config."${opts.test}".model in ${fileOf(cfg, `agent_config.${opts.test}`)}${route ? '' : `, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`}`);
     const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST, text: true });
     return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
   }

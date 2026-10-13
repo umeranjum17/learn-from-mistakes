@@ -44,6 +44,9 @@ export function pathSource(s, where, dir) {
   return { ...s, path: expand(s.path, dir) };
 }
 const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} must be ${rule}`); };
+// The model rule every path that sets a model obeys: a --model flag, the config file and the terminal pick.
+export const MODEL_RULE = 'a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor';
+export const modelOk = (agent, model) => /^[\w.\/:@+-]{1,200}$/.test(model) && (agent !== 'opencode' || model.includes('/'));
 const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a positive integer');
 
 // The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent each, which the user sets: the
@@ -72,8 +75,7 @@ function agentKeys(cfg, g, file) {
     const where = `${file}: agent_config.${a}`;
     check(NAME.test(a), `${file}: agent_config: ${a}`, 'an agent name: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>');
     mapping(c, ['model', 'effort'], where);
-    check(c.model === undefined || (typeof c.model === 'string' && c.model), `${where}.model`, 'a non-empty string');
-    if (a === 'opencode' && c.model) check(c.model.includes('/'), `${where}.model`, 'provider/model, such as opencode-go/muse-spark-1.3-contributor');
+    check(c.model === undefined || (typeof c.model === 'string' && modelOk(a, c.model)), `${where}.model`, MODEL_RULE);
     if (c.effort !== undefined && !EFFORT_AGENTS.includes(a)) throw new UsageError(`${where}.effort: ${a} has no effort setting; remove it`);
     check(c.effort === undefined || EFFORTS.includes(c.effort), `${where}.effort`, EFFORTS.join(', '));
     cfg.agent_config[a] = { ...cfg.agent_config[a], ...c };
