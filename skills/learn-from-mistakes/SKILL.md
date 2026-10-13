@@ -4,7 +4,7 @@ description: "Find what a project's coding agents keep getting wrong - repeated 
 license: MIT
 metadata:
   author: Umer Anjum (umeranjum17)
-  version: 0.1.0
+  version: 0.2.0
   argument-hint: <what keeps going wrong, or the log to read>
   hermes-tags: retrospective, defects, agents, instructions
   hermes-category: productivity
