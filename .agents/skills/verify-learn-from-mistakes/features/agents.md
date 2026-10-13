@@ -25,7 +25,8 @@ timeout (SIGTERM, SIGKILL after 3 s); after exit a grandchild holding stdout get
 BYOKit runner (`src/runners/byokit.mjs`, optional packages `@byokit/accounts`,
 `@byokit/secrets` and `@earendil-works/pi-ai`, loaded only for it): `byokit:<route>`
 as `agent`/`judge_agent` or `agents --test byokit:<route>` makes one plain
-model call in process, no agent CLI, tools `none`. Its role identity is the route
+model call in process, no agent CLI, tools `none`. Its role identity is the vendor
+agent's binary plus model for `byokit:claude` (claude) and `byokit:chatgpt` (codex), so a judge on the worker's model clashes; otherwise the route
 plus model. Two kinds of route:
 - sign-in plans `byokit:chatgpt` and `byokit:claude`: the sign-in in this
   computer's BYOKit machine store (member `lfm`, seal service `byokit`). No model

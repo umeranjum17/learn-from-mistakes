@@ -58,13 +58,13 @@ export function detect(cfg) {
 export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
-// The identity rule: a role is the real path of its binary plus its model. A role with no model is never compared: it is unset.
+// The identity rule: a role is the real path of its binary plus its model (a BYOKit sign-in route, identity below, counts as its vendor's agent). A role with no model is never compared: it is unset.
 export const CLASH = 'agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work';
 export const same = (a, b) => a.bin === b.bin && a.model === b.model;
 const VENDOR = { 'byokit:claude': 'claude', 'byokit:chatgpt': 'codex' }; // a sign-in route is the same model mind as its vendor's agent
 const identity = (r, agents) => (VENDOR[r.runner] ? { ...r, bin: agents.find((x) => x.runner === VENDOR[r.runner])?.bin || VENDOR[r.runner] } : r);
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
-// One agent as a role: its model from agent_config, its binary (a BYOKit route is its own identity), or its problem.
+// One agent as a role: its model from agent_config, its binary (a BYOKit route names its own binary), or its problem.
 async function candidate(cfg, runner, agents) {
   const model = agentModel(cfg, runner);
   const route = byokit.routeOf(runner);
