@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readText, shq } from '../../bin/learn-from-mistakes-axi.mjs';
-import { pathSource, PROJECT_FILE } from '../config.mjs';
+import { pathSource } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 
 export const validate = pathSource;
@@ -14,7 +14,7 @@ export function detect(dir) {
 }
 
 // Each record's id comes from its text, so it survives line moves.
-export function read(source, { path }, { project = PROJECT_FILE } = {}) {
+export function read(source, { path }, { project }) {
   const text = readText(path, `source ${source}`, `check sources.${source}.path in ${shq(project)}, or create it: touch ${shq(path)}`);
   const seen = new Map();
   let date = '';
