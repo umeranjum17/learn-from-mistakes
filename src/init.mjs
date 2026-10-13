@@ -114,7 +114,7 @@ export async function init(dir, opts) {
       // One agent in both roles has one model, whatever --model and --judge-model say: the judge needs another agent.
       const one = want.agent === want.judge_agent, model = (m) => (m ? shq(m) : '<model>');
       throw new UsageError(`judge: ${one ? `the worker and the judge are both ${want.agent}, and agent_config holds one model per agent, so the judge would judge its own work` : judge.problem}`,
-        `learn-from-mistakes-axi init --agent ${shq(want.agent)} --model ${model(chosen.agent?.model ?? before.agent_config[want.agent]?.model)} --judge-agent <another agent> --judge-model ${model(opts['judge-model'])}${opts.dir ? ` --dir ${shq(opts.dir)}` : ''}   # ask the user which other agent runs the judge`);
+        `learn-from-mistakes-axi init --agent ${shq(want.agent)} --model ${model(chosen.agent?.model ?? before.agent_config[want.agent]?.model)} --judge-agent <another agent> --judge-model <model>${opts.dir ? ` --dir ${shq(opts.dir)}` : ''}   # ask the user which other agent runs the judge`);
     }
     if (chosen.judge_agent && judge.problem) throw new InputError(`judge: ${judge.problem}`, judge.fix ?? FIX('--judge-agent'));
   }

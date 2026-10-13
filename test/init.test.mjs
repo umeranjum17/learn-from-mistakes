@@ -326,7 +326,7 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
-    if (args[5] === 'claude') assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model ${MODELS.claude} --judge-agent <another agent> --judge-model claude-umer-2 --dir ${p}   # ask the user which other agent runs the judge`);
+    if (args[5] === 'claude') assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model ${MODELS.claude} --judge-agent <another agent> --judge-model <model> --dir ${p}   # ask the user which other agent runs the judge`);
   }
   writeFileSync(config, `agent: claude\njudge_agent: opencode\nsources: {}\ncauses: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`); // a set key is never rewritten: the flags that would change it are reported
   const pinned = lfm('init', '--agent', 'opencode', '--judge-agent', 'claude', '--json');
