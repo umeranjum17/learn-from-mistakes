@@ -11,7 +11,7 @@ import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PRO
 import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
-import { ensureAgents, saveCommand } from '../src/ask.mjs';
+import { askError, ensureAgents, saveCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
@@ -692,7 +692,12 @@ async function initCommand(opts) {
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
   const cfg = loadConfig(opts.dir ?? resolve('.'));
   const problem = (name) => out.gaps.find((g) => g.startsWith(`${name}: `))?.slice(name.length + 2);
-  if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
+  if (out.missing.length && !opts.y) { // after what it wrote: the ask stops init, as it stops every command
+    const e = askError(cfg, out.missing, opts.dir);
+    console.error(`error: ${e.message}`);
+    hint(e.next);
+    process.exitCode = e.code;
+  } else if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
   else if (problem('worker')) hint(roleFix(cfg, 'agent', { runner: out.worker.runner, problem: problem('worker') }));
   else if (problem('judge')) hint(problem('judge') === CLASH ? JUDGE_FIX(cfg) : roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));

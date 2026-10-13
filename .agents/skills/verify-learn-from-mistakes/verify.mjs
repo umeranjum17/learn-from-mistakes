@@ -239,6 +239,13 @@ try {
     assert.deepEqual((({ cause, metric, tripwire }) => [cause, metric, tripwire])(JSON.parse(readFileSync(join(evidence, 'change-proposal.stdout'), 'utf8'))),
       ['agent-exit-wait', 'cause_count:agent-exit-wait', '<= 0'], '--proposal does not copy the fix into the ledger');
   }
+  const hold = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite')); // a busy store: another process holds its write lock
+  hold.exec('BEGIN IMMEDIATE');
+  run('status-busy', process.execPath, [cli, 'status', '--dir', staged], 2, lab);
+  hold.exec('ROLLBACK');
+  hold.close();
+  assert.match(readFileSync(join(evidence, 'status-busy.stderr'), 'utf8'), /is busy: .*\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it/, 'a busy store does not say to wait');
+  drive('status-after-busy', 'status'); // the store and its run history are kept
   writeFileSync(stagedConfig, stringify(config));
   // No agent set anywhere (no project config, no global file yet): the tool picks none and says to ask the user.
   run('agents-ask', process.execPath, [cli, 'agents', '--json'], 2);
@@ -248,6 +255,7 @@ try {
   const fresh = join(scratch, 'fresh'), fakes = join(scratch, 'agents');
   for (const d of [join(fresh, 'docs'), fakes]) mkdirSync(d, { recursive: true });
   copyFileSync(join(repo, 'examples', 'defects.md'), join(fresh, 'docs', 'defects.md'));
+  writeFileSync(join(fresh, 'reviews.md'), '- 2026-10-12 Umer: a synthetic review finding\n');
   writeFileSync(join(fakes, 'claude'), '#!/bin/sh\necho "1.0.0"\n', { mode: 0o755 });
   writeFileSync(join(fakes, 'opencode'), '#!/bin/sh\n[ "$1 $2" = "auth list" ] && { echo "1 credentials"; exit 0; }\necho "1.0.0"\n', { mode: 0o755 }); // logged in, for doctor
   run('init-unset', process.execPath, [cli, 'init', '-y', '--no-skill', '--dir', fresh], 0, { PATH: fakes }); // writes no agent: names the save command
@@ -256,6 +264,7 @@ try {
   assert.deepEqual(['agent', 'judge_agent'].map((k) => parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'))[k]), ['claude', 'opencode'], 'init did not save the chosen agents');
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
+  assert.deepEqual([Object.keys(parse(written).sources).slice(0, 2), Object.keys(parse(written).causes)], [['log', 'reviews'], ['test-failed', 'command-failed', 'tool-misused', 'user-corrected']], 'init did not write the review log or the starter causes');
   const globalWritten = readFileSync(join(env.HOME, '.learn-from-mistakes', 'config.yaml'), 'utf8'); // init writes the global agent config once
   assert.equal(parse(globalWritten), null, 'init set a key in the global file: every key there is commented');
   save('init-global.yaml', globalWritten);
@@ -264,10 +273,13 @@ try {
   assert.equal(readFileSync(join(env.HOME, '.learn-from-mistakes', 'config.yaml'), 'utf8'), globalWritten, 'a second init changed the global config');
   // doctor on the written config (ok and warn lines, exit 0), then with its defect log gone (a fail with its fix, exit 1).
   run('doctor', process.execPath, [cli, 'doctor', '--dir', fresh], 0, { PATH: fakes });
+  assert.match(readFileSync(join(evidence, 'doctor.stdout'), 'utf8'), /^warn sign-off +sign-off-axi is not on PATH: .*\n {5}fix: npm i -g sign-off-axi /m, 'doctor does not look for sign-off-axi with a fix');
   rmSync(join(fresh, 'docs', 'defects.md'));
   run('doctor-missing-log', process.execPath, [cli, 'doctor', '--dir', fresh], 1, { PATH: fakes });
   assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: check sources\.log\.path in \S+\.learn-from-mistakes\.yaml, or create it: touch \S+\/docs\/defects\.md\n/m, 'doctor names no fix for the missing log');
   run('init-pinned-clash', process.execPath, [cli, 'init', '--agent', 'claude', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
+  run('init-one-agent-two-models', process.execPath, [cli, 'init', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
+  assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /both claude, and agent_config holds one model per agent.*\nnext: learn-from-mistakes-axi init --agent claude --model umer-a --judge-agent <another agent> --judge-model umer-b /, 'the clash does not state the one-model rule');
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });

@@ -91,7 +91,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.equal(r.status, 0, r.stderr);
   const run = JSON.parse(r.stdout);
   assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 13 }]); // 13 PRs merged in the range; #2 is older
-  const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
+  const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries|cause_count:)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
   assert.deepEqual(numbers, {
     merged: [10, 3], first_pass: [77.8, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [5, 10],
     rework_ci: [1, 0], rework_other: [1, 0], reverted: [1, 1], escaped: [1, 1],
@@ -144,7 +144,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   } finally { db2.close(); }
 
   const cfgFile = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(cfgFile, `${readFileSync(cfgFile, 'utf8')}causes:\n  rework:\n    description: "a merged PR needed rework"\n`);
+  writeFileSync(cfgFile, readFileSync(cfgFile, 'utf8').replace(/^causes:\n/m, 'causes:\n  rework:\n    description: "a merged PR needed rework"\n')); // beside init's starter causes
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: true, cause: 'rework', why: 'a PR that needed rework' }) + '\n');
   writeFileSync(join(p, '.lfm', 'proposals.jsonl'), JSON.stringify({ cause: 'rework', target: 'docs', owner: 'umer', change: 'add a check', refs: ['prs:10'] }) + '\n');
   const full = JSON.parse(lfm({}, 'report', '--full', '--json', '--labels', join(p, '.lfm', 'labels.jsonl')).stdout); // not the run's labels

@@ -177,15 +177,15 @@ async function start(cfg, db, id, opts) {
   closeSync(log);
   const failed = await new Promise((r) => { child.once('spawn', () => r()); child.once('error', r); });
   if (failed) {
-    db.prepare(`UPDATE runs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`).run(`run: cannot start the worker (${failed.code ?? failed.message})`, iso(Date.now()), id);
+    locked(db, () => db.prepare(`UPDATE runs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`).run(`run: cannot start the worker (${failed.code ?? failed.message})`, iso(Date.now()), id));
     return show(db, id);
   }
   child.unref();
-  // Hand the run to the worker unless it has already taken it.
-  db.prepare('UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND pid = ?').run(child.pid, startTime(child.pid), iso(Date.now()), id, process.pid);
+  // Hand the run to the worker unless it has already taken it. Each read and write here is in the write lock, so the
+  // worker's own writes never meet a half-done one.
+  locked(db, () => db.prepare('UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND pid = ?').run(child.pid, startTime(child.pid), iso(Date.now()), id, process.pid));
   for (const end = Date.now() + (opts.wait ?? 0); Date.now() < end; await sleep(250)) {
-    locked(db, () => reconcile(db));
-    if (db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status !== 'running') break;
+    if (locked(db, () => { reconcile(db); return db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status; }) !== 'running') break;
   }
   return show(db, id);
 }
