@@ -40,9 +40,10 @@ async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, l
     .run(id, step, role, runner, model, `lfm-run:${id}:${step}`, iso()).lastInsertRowid;
   const end = db.prepare('UPDATE invocations SET completed_at = ?, exit_status = ?, session_id = ?, tokens_in = ?, tokens_out = ? WHERE id = ?');
   const who = `${role} ${runner}${model ? ` ${model}` : ''}`;
+  const target = runner.match(/^acp:(.+)/)?.[1];
   let got;
   try {
-    got = await call(cfg, { runner, model, dir, runId: id, step, prompt, empty: true, // an empty answer is a bad answer: sent back once
+    got = await call(cfg, { runner: target ? 'acp' : runner, target, model, dir, runId: id, step, prompt, empty: true, // an empty answer is a bad answer: sent back once
       onSpawn: (pgid) => db.prepare('UPDATE invocations SET child_pgid = ?, child_started_at = ? WHERE id = ?').run(pgid, startTime(pgid), row) });
   } catch (e) {
     end.run(iso(), 'error', null, null, null, row);
