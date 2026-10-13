@@ -183,6 +183,27 @@ test('agents --test starts each runner tool-off in its run dir, with the marker 
   assert.deepEqual(readdirSync(join(p, '.lfm')).sort(), ['.gitignore', 'runs']);
 });
 
+test('a premium model that allow_premium forbids is never called: doctor --live skips it, agents --test refuses it', () => {
+  const { lfm, calls, config } = setup();
+  config('worker: { runner: claude, model: claude-opus-5-5 }\n');
+  const r = lfm({}, 'doctor', '--live', '--json');
+  const checks = JSON.parse(r.stdout).checks;
+  assert.equal(r.status, 1);
+  assert.equal(checks.find((c) => c.label === 'worker model').level, 'fail');
+  assert.equal(checks.find((c) => c.label === 'worker live').detail, 'skip live worker: premium model needs allow_premium');
+  const t = lfm({}, 'agents', '--test', 'claude');
+  assert.equal(t.status, 1);
+  assert.match(t.stderr, /^error: claude: claude-opus-5-5 is a premium model/m);
+  assert.ok(calls('claude').every((c) => !c.args.includes('claude-opus-5-5')), JSON.stringify(calls('claude')));
+});
+
+test('the skill row looks where the agent CLI reads skills: its login check\'s config dir, not the home default', () => {
+  const { lfm, tmp } = setup();
+  const r = lfm({ PI_CODING_AGENT_DIR: join(tmp, 'pi-agent') }, 'doctor', '--json');
+  const row = JSON.parse(r.stdout).checks.find((c) => c.label === 'skill pi');
+  assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'learn-from-mistakes')}`);
+});
+
 test('no default model is premium: the models table, the agents listing and the guide stay cheap', () => {
   const { lfm, env, p } = setup();
   const premium = /opus|sonnet|\bsol\b/i;

@@ -8,9 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, detect, INSTALL, MODELS, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
-
-const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
+import { agents, binName, detect, INSTALL, MODELS, PREMIUM, premiumBlocked, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -90,7 +88,7 @@ export async function doctor(dir, opts) {
     const cheap = route ? await byokit.modelOf(route, '') : MODELS[key]?.[0];
     if (!model && route) add('fail', `${name} model`, `BYOKit has no default model for ${route}`, `set ${name}.model in ${file}`);
     else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${file}`);
-    else if (PREMIUM.test(model) && !cfg.allow_premium) {
+    else if (premiumBlocked(cfg, model)) {
       add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
         fromEnv ? 'unset LFM_MODEL, or set allow_premium: true' : `set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
     } else add('ok', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
@@ -117,6 +115,7 @@ export async function doctor(dir, opts) {
   if (opts.live) for (const name of ['worker', 'judge']) {
     const r = roles[name];
     if (!r.bin) continue;
+    if (premiumBlocked(cfg, r.model)) { add('warn', `${name} live`, `skip live ${name}: premium model needs allow_premium`); continue; }
     try {
       const { test } = await agents(cfg, { test: r.runner, model: r.model });
       add('ok', `${name} live`, `${r.runner} answered and wrote no file: ${JSON.stringify(test.reply.slice(0, 80))}`);
