@@ -61,4 +61,4 @@ copy of `$SELF/examples`.
 `>= 70` must be quoted in YAML (a bare `>` starts a block scalar). `on`/`off`
 are strings in YAML 1.2. A source may export `metricNames`, `metricRows`, `metrics`, `detect` and `doctor`
 (the markdown-log, sessions and github sources export metrics; `metricRows` says which rows they read); `init` calls `detect`
-([init.md](init.md)), and `doctor` calls each source's `doctor` hook, or reads it ([doctor.md](doctor.md)).
+([init.md](init.md)), and `doctor` calls each source's `doctor` hook ([doctor.md](doctor.md)).
