@@ -38,22 +38,22 @@ The CLI makes no network or model calls itself; only its runs, `npx -y learn-fro
 
 Only when the user asks, run `npx -y learn-from-mistakes-axi signoff post [--run <id>]` (latest completed run by default).
 Without the optional peer it prints findings and `npm i -g sign-off-axi`; retro never posts automatically.
-`npx -y learn-from-mistakes-axi signoff answers` reads the current answer map without waiting and stores Apply/Skip against proposals, never applies changes.
-The adapter sends `npx -y sign-off-axi post --kind finding --from -`, one contract-v1 message per kept fix:
+`npx -y learn-from-mistakes-axi signoff answers` reads the current answer map without waiting and stores Apply/Skip against proposals, never applies changes; an empty answer clears the stored one, and any other value is skipped with a warning naming the key.
+The adapter sends each kept fix to `sign-off-axi post --kind finding --from -` (the binary on PATH; `npm i -g sign-off-axi` installs it), one contract-v1 message per kept fix:
 
 ```json
-{"contract":1,"kind":"finding","schema":1,"key":"lfm-missing-env","title":"Repeated cause: missing env var in CI","filer":"learn-from-mistakes","about":"4 incidents over 3 days in 2 sources.","cause":"missing-env","incidents":4,"days":3,"evidence_ids":["rec-7f3a","rec-91be"],"change_kind":"doc","proposal":"Add the env var to the CI setup page.","options":[{"value":"apply","label":"Apply"},{"value":"skip","label":"Skip"}],"recommend_value":"apply"}
+{"contract":1,"kind":"finding","schema":1,"key":"lfm-3-1-7f3a91c2","title":"Repeated cause: missing env var in CI","filer":"learn-from-mistakes","about":"4 incidents over 3 days in 2 sources.","cause":"missing-env","incidents":4,"days":3,"evidence_ids":["rec-7f3a","rec-91be"],"change_kind":"doc","proposal":"Add the env var to the CI setup page.","options":[{"value":"apply","label":"Apply"},{"value":"skip","label":"Skip"}],"recommend_value":"apply"}
 ```
 
-To wait explicitly: `npx -y sign-off-axi wait --filer learn-from-mistakes --events` prints:
+To wait explicitly: `sign-off-axi wait --filer learn-from-mistakes --events` prints:
 
 ```json
-{"event":"answer","contract":1,"kind":"finding","schema":1,"key":"lfm-missing-env","title":"Repeated cause: missing env var in CI","answer":"apply","label":"Apply","close":"done","at":"2026-10-13T08:00:00Z","filer":"learn-from-mistakes"}
+{"event":"answer","contract":1,"kind":"finding","schema":1,"key":"lfm-3-1-7f3a91c2","title":"Repeated cause: missing env var in CI","answer":"apply","label":"Apply","close":"done","at":"2026-10-13T08:00:00Z","filer":"learn-from-mistakes"}
 ```
 
-A refused message writes nothing: exit 2, VALIDATION_ERROR and a help line naming the fix.
-Read the help line, fix the producer input and post again; never edit the board file by hand.
-Check `npx -y sign-off-axi --help` for installed support (the contract lands in parts), never guess flags.
+A refused message is not saved: exit 2, VALIDATION_ERROR and a help line naming the fix.
+Posting again sends the same message, so rerun retro to produce a valid finding first; never edit the board file by hand.
+Check `sign-off-axi --help` for installed support (the contract lands in parts), never guess flags.
 Record text stays out: about has counts only, evidence_ids names records, and proposal is the change, not a quote.
 
 ## Request
