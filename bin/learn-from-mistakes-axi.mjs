@@ -394,7 +394,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
-the report is privacy-bounded: identifiers and counts only, never record text, label/proposal prose or change what/why;
+the report --json output is privacy-bounded: identifiers and counts only; the default and --full reports also print one redacted \`finding:\` summary line per finding, never record text, label/proposal prose or change what/why;
 \`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
@@ -460,7 +460,7 @@ labels (labels_from: run <id>); labels.jsonl only when no run has labels, or --l
    Prefer a check, a script or a deleted rule over more prose. Every ref must be a record id or source:row id.
 
 6. Report: learn-from-mistakes-axi report   (exit 1: fix the counted label/proposal problems and rerun)
-   The output holds ids and counts only. Tell the user each repeated cause with its description, its counts
+   The --json output holds ids and counts only; the default and --full output also print one redacted finding summary line per finding. Tell the user each repeated cause with its description, its counts
    and your proposals from proposals.jsonl.
 
 7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
@@ -589,7 +589,7 @@ async function main() {
     for (const p of problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
     if (problems.length > PROBLEM_LINES) console.error(`problem: ... and ${problems.length - PROBLEM_LINES} more`);
     console.error(`problems: ${problems.length}   # fix the inputs or the change ledger`);
-    hint(last ? withContext('learn-from-mistakes-axi retro --wait', 'a new run relabels the records', opts) : rerunHint);
+    hint(last && problems.some((p) => p.startsWith("the run's label")) ? withContext('learn-from-mistakes-axi retro --wait', 'a new run relabels the records', opts) : rerunHint);
     process.exitCode = 1;
     return;
   }
