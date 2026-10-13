@@ -21,17 +21,19 @@ follow-up to explain it asks no agent (`nothing to propose: ...`).
 report uses (`repeats`). A cause repeats by `repeat:` over the run's labels
 (duplicates and occurrences counted as v1), over the records and session events
 a `match` rule tagged, or over the items a finding cites (a cluster ref counts
-its events; the finding's `count` and `days` are saved). A fix is kept when its
-cause has counted events and repeated, its refs name bundle items, and it has a
+its events; the finding's `count` and `days` are saved; a finding the judge refuted
+counts nothing and keeps them empty). A fix is kept when the judge did not refute it
+(`the judge refuted it`), its cause has counted events and repeated, its refs name bundle items, and it has a
 target, an owner, a metric (default `cause_count:<cause>`, else a metric name)
 and a `"<op> <number>"` tripwire. A fix that breaks a rule is logged as
 `problem: proposals[<i>]: <rule>`, saved with `proposals.problem` and not kept;
-it is not sent back. Kept fixes are ranked by their cause's count, then by how
+it is not sent back. Kept fixes are ranked by the judge's verdict (weakened or not judged after
+the others), then by their cause's count, then by how
 far their metric misses its target this window, then the worker's order, and
 numbered 1 to 5 (`proposals.n`); one past five is
 `more than 5 fixes: ranked below the top 5`. The step logs
 `fixes: <k> kept of <n>, problems: <p>`. `status` lists the kept fixes as
-`fixes` (n, cause, metric, tripwire). The delete rule (a flat rule change in 2
+`fixes` (n, cause, metric, tripwire, verdict). The delete rule (a flat rule change in 2
 retros) is the follow-up verdict `delete` ([followup.md](followup.md)).
 
 `change applied --proposal <run>:<n>` records the run's kept fix `n`: its
@@ -50,9 +52,9 @@ a fix is made.
 `test/cli.test.mjs` owns the journey `propose, verify and check: ...`, with the fake
 Claude Code (`FAKE_PROPOSE=eight`) as the whole PATH and `repeat:
 { min_incidents: 2, min_days: 1 }`, `targets: { defects: "<= 0" }`: the propose
-prompt's cause lines and method; 6 fixes that follow the rules give 5 kept, the
-one with metric `defects` (missing its target) ranked first and the sixth by
-rank a problem; a fix for a cause that did not repeat and one with no tripwire
+prompt's cause lines and method; the judge refutes fix 2 (`the judge refuted
+it`) and weakens fix 3; 5 fixes that follow the rules are kept, the one with
+metric `defects` (missing its target) ranked first and the weakened one last; a fix for a cause that did not repeat and one with no tripwire
 are problems; the finding's count and days; `--proposal <run>:1` copies the
 cause, metric and tripwire into the ledger, `--proposal <run>:6` exits 2; the
 next retro asks the reason for the change's `no-data` follow-up and saves it;
@@ -62,7 +64,7 @@ with `FAKE_PROPOSE=long` (a four-sentence change on every answer): the step logs
 `dropped: proposals[1].change has more than 3 sentences` and keeps the valid fix.
 The helper's drives: `retro-propose` (`FAKE_PROPOSE=eight` for the gate's
 repeated `agent-exit-wait`: 5 kept fixes, a reason for each follow-up),
-`logs-check` (the 3 problem lines) and `change-proposal` (the ledger entry).
+`logs-check` (the 3 problem lines, the refuted fix first) and `change-proposal` (the ledger entry).
 
 Real-product proof (outside the repo; lab sessions only, never the captain's):
 

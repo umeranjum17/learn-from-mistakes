@@ -141,7 +141,7 @@ try {
   drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
   // Config v2: every new key loads and the run completes the same steps; a bad agent exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
-  Object.assign(config, { agent: 'claude', judge_agent: 'acp:gemini', agent_config: { 'acp:gemini': { model: 'cheap-model' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
+  Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'gpt-6-luna' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
     caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'auto', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));
@@ -150,6 +150,10 @@ try {
   assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
   writeFileSync(stagedConfig, stringify({ ...config, agent: 3 }));
   run('config-bad-agent', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
+  // A judge on the worker's agent and model stops retro before the run starts.
+  writeFileSync(stagedConfig, stringify({ ...config, judge_agent: 'claude' }));
+  run('retro-judge-clash', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
+  assert.match(readFileSync(join(evidence, 'retro-judge-clash.stderr'), 'utf8'), /^error: judge: the judge resolves to the worker's agent and model[^\n]*\nnext: ask the user which agent and model to use, then set judge_agent/m, 'retro started with the judge on the worker\'s identity');
   Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'gpt-6-luna' } } }); // the drives below call the judge
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
@@ -221,20 +225,21 @@ try {
     drive('retro-followup', 'retro', '--foreground', '--json'); // 1 failed test run before the change, 3 after: rollback
     const verdicts = JSON.parse(readFileSync(join(evidence, 'retro-followup.stdout'), 'utf8')).followups.map((f) => [f.change, f.before, f.after, f.verdict]);
     assert.deepEqual(verdicts, [['chg-1', 'n/a', 'n/a', 'no-data'], ['chg-2', 1, 3, 'rollback']], 'the followup step does not give the verdicts');
-    // Propose and check: eight fixes for the gate's repeated cause; five are kept, three are problems; one goes into the ledger.
-    run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2' });
+    // Propose, verify and check: eight fixes for the gate's repeated cause; the judge refutes fix 2 (a problem) and weakens
+    // fix 3 (ranked last of the five kept); three are problems; one goes into the ledger.
+    run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2', FAKE_WEAKEN: 'p3' });
     const proposed = JSON.parse(readFileSync(join(evidence, 'retro-propose.stdout'), 'utf8'));
-    assert.deepEqual(proposed.fixes.map((f) => [f.n, f.cause, f.tripwire]), [1, 2, 3, 4, 5].map((n) => [n, 'agent-exit-wait', '<= 0']), 'check does not keep five ranked fixes');
+    assert.deepEqual(proposed.fixes.map((f) => [f.n, f.cause, f.tripwire, f.verdict]), [1, 2, 3, 4, 5].map((n) => [n, 'agent-exit-wait', '<= 0', n === 5 ? 'weakened' : 'confirmed']), 'check does not keep five ranked fixes, the weakened one last');
     const db = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
     try {
       assert.deepEqual(db.prepare('SELECT change_id, reason IS NOT NULL AS given FROM followups WHERE run_id = ?').all(proposed.run.id).map((f) => [f.change_id, f.given]), [['chg-1', 1], ['chg-2', 1]], 'a follow-up that is not keep has no reason');
-      assert.deepEqual(db.prepare('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id').all(proposed.run.id).map((f) => f.verdict), ['confirmed', 'refuted', ...Array(6).fill('confirmed')], 'the judge\'s verdicts are not on the fixes');
+      assert.deepEqual(db.prepare('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id').all(proposed.run.id).map((f) => f.verdict), ['confirmed', 'refuted', 'weakened', ...Array(5).fill('confirmed')], 'the judge\'s verdicts are not on the fixes');
       assert.deepEqual({ ...db.prepare(`SELECT role, runner FROM invocations WHERE run_id = ? AND step = 'verify'`).get(proposed.run.id) }, { role: 'judge', runner: 'codex' }, 'the judge is not the second agent');
     } finally { db.close(); }
     drive('logs-verify', 'logs', '--step', 'verify');
-    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*verdicts: 8 confirmed, 0 weakened, 1 refuted, 0 not judged/, 'logs do not show the judge\'s verdicts');
+    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted, 0 not judged/, 'logs do not show the judge\'s verdicts');
     drive('logs-check', 'logs', '--step', 'check');
-    assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[5\]: more than 5 fixes[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
+    assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[1\]: the judge refuted it[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
     drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', 'abc1234', '--json');
     assert.deepEqual((({ cause, metric, tripwire }) => [cause, metric, tripwire])(JSON.parse(readFileSync(join(evidence, 'change-proposal.stdout'), 'utf8'))),
       ['agent-exit-wait', 'cause_count:agent-exit-wait', '<= 0'], '--proposal does not copy the fix into the ledger');
