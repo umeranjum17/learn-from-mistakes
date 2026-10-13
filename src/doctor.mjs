@@ -54,6 +54,7 @@ export async function doctor(dir, opts) {
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     const fromEnv = name === 'worker' && !!r.model && r.model === (process.env.LFM_MODEL ?? '').trim();
+    if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) {
       // Offered only where the role would not resolve to the other role's binary and model, and where its runner lists the
       // role's model: that is the clash it names.
@@ -65,7 +66,7 @@ export async function doctor(dir, opts) {
       }).map((x) => x.runner);
       // An auto role takes only the models a usable CLI lists, so a model none lists is replaced by one that CLI lists.
       const cheap = list.find((x) => x.usable && !x.problem && MODELS[x.runner]?.length);
-      add('fail', name, r.problem, r.fix ?? (offered.length
+      add('fail', name, r.problem, (offered.length
         ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
         : a && !a.usable ? `install ${binName(cfg, key)}, or set runner_path in ${shq(globalFile())}`
         : a?.problem ? `set ${name}.runner in ${file} to another agent CLI`
@@ -100,11 +101,12 @@ export async function doctor(dir, opts) {
     else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${file}`);
     else if (premiumBlocked(cfg, model)) {
       add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
-        fromEnv ? 'unset LFM_MODEL, or set allow_premium: true' : `set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
+        fromEnv ? 'unset LFM_MODEL, or set allow_premium: true' : `set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true in ${file}`);
     } else add('ok', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The identity rule: the judge never checks its own work.
-  if (roles.worker.bin && roles.judge.bin) {
+  const checked = (r) => r.bin && !r.fix;
+  if (checked(roles.worker) && checked(roles.judge)) {
     const clash = same(roles.worker, roles.judge);
     const id = (r) => `${r.runner}${r.model ? ` ${r.model}` : ''}`;
     add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker (${id(roles.worker)}) and the judge (${id(roles.judge)}) resolve to the same agent and model, so the judge would judge its own work`
