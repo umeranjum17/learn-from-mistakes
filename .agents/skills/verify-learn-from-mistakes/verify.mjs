@@ -246,7 +246,7 @@ try {
     copyFileSync(join(repo, 'test', 'fake-agent', 'sign-off-axi'), join(agentBin, 'sign-off-axi')); chmodSync(join(agentBin, 'sign-off-axi'), 0o755);
     run('signoff-post', process.execPath, [cli, 'signoff', 'post', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });
     const posted = JSON.parse(readFileSync(join(signDir, 'board.json'), 'utf8'));
-    writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [posted[0].key]: { answer: 'apply' }, [posted[1].key]: { answer: 'skip' } }));
+    writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [posted[0].key]: { answer: 'apply', label: 'Apply', close: 'done', at: '2026-10-13T22:00:52Z' }, [posted[1].key]: { answer: 'skip', label: 'Skip', close: 'done', at: '2026-10-13T22:00:52Z' } }));
     run('signoff-answers', process.execPath, [cli, 'signoff', 'answers', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });
     save('signoff-board.json', posted); save('signoff-calls.jsonl', readFileSync(join(signDir, 'calls.jsonl'), 'utf8'));
     drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', 'abc1234', '--json');
