@@ -25,15 +25,15 @@ const STEPS = {
     for (const s of sources) log(sourceLine(s, false));
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, cause, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, data) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, data, record_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
       db.prepare('DELETE FROM records WHERE run_id = ?').run(id);
       for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.cause ?? null, e.ref, e.excerpt);
-      for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text, null);
-      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, null);
-      for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data));
+      for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text, null, r.id);
+      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, null, `${r.source}:${r.id}`);
+      for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data), null);
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');

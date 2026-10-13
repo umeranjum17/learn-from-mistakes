@@ -9,9 +9,10 @@ Sections: the metrics table (this window, the last, the target), follow-ups
 (`No follow-ups yet.` until the follow-up step exists), signal clusters (this
 window's session events with a signal, grouped by tool and signal, largest
 first, `[c<n>]` with events, sessions, days and the causes the rules tagged,
-then the 3 latest `[e<event row id>]` events with time, session id and
+then the 3 latest `[e<n>]` events (`n` is the event's store row id: bundle-local, not a label id) with time, session id and
 `file:line`) and unlabelled defect records (this window's and undated records
-no `match` rule tagged, `[r<record row id>]` with source, ref and date).
+no `match` rule tagged, `[<record id>]` with source, ref and date). A record id is the
+one labels.jsonl takes: a defect-log record's records.jsonl id, a gate row's `gate:<step id>`.
 With `excerpts: on` each event and record has a `  > ` excerpt of at most 300
 characters; with `excerpts: off` there is none, only pointers and counts.
 With `excerpts: on`, redact() removes secret-shaped values only; plain record text stays in the bundle by design, so the canary guarantee for prose is `excerpts: off`.
@@ -34,8 +35,8 @@ excerpts, ...`: one planted key of each one-line shape in a defect bullet and in
 a gate error of this repo, the planted session keys of the fixture, and a failed
 gate step of another repo in the same store (`OTHER-REPO-CANARY`). No planted
 value and no other-repo row reaches `bundle.md` (the other row is not read at
-all); clusters are numbered and ranked by count; every `[e]` and `[r]` id is a
-row of the run; every item has its excerpt. `excerpts: off` gives the same items
+all); clusters are numbered and ranked by count; every record id is in
+records.jsonl or rows.jsonl of the state dir, and the bundle's ids survive a collect rerun; every item has its excerpt. `excerpts: off` gives the same items
 with no excerpt and no record or session text; `caps: { bundle_chars: 1000 }`
 keeps the file under 1000 characters with the dropped line, also when 40 more
 causes' metrics fill it before the later headings, and 999 exits 2; a sweep of
