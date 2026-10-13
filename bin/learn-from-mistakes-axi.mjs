@@ -16,6 +16,7 @@ import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
+import { signoff } from '../src/signoff.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -346,6 +347,8 @@ export function summaryLine(model) {
 
 const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
+  signoff post       explicitly post a completed run's kept fixes (optional sign-off-axi)
+  signoff answers    save Apply/Skip answers against proposals; never apply changes
   init                write $LFM_HOME/config.yaml (the agent keys, commented) and .learn-from-mistakes.yaml (the sources found, the agents the user chose)
                       where each is missing, then print the resolved worker and judge and the gaps. Either way, make the state dir .lfm/ and its .gitignore
   doctor              check node, git, the config, .lfm ignored, each source, the worker and judge (usable, login, model,
@@ -501,6 +504,8 @@ const FORMS = {
   abort: 'learn-from-mistakes-axi abort [--run <id>] [--dir <dir>] [--json]',
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
+  'signoff-post': 'learn-from-mistakes-axi signoff post [--run <id>] [--dir <dir>]',
+  'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
 };
 const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent');
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
@@ -521,6 +526,10 @@ async function main(ctx) {
     if (argv[0] !== 'applied') throw new UsageError('"change" must be followed by "applied"', FORMS['change-applied']);
     argv.shift();
     cmd = 'change-applied';
+  }
+  if (cmd === 'signoff') {
+    if (!['post', 'answers'].includes(argv[0])) throw new UsageError('signoff needs post or answers', FORMS['signoff-post']);
+    cmd = `signoff-${argv.shift()}`;
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
   if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)`);
@@ -577,6 +586,7 @@ async function main(ctx) {
     hint(withContext('learn-from-mistakes-axi', 'the report for this project', opts));
     return;
   }
+  if (cmd.startsWith('signoff-')) { quietSqlite(); await signoff(cmd.slice(8), cfg, opts); return; }
   if (cmd === 'change-applied') { await recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
