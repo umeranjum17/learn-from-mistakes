@@ -74,16 +74,16 @@ test('init writes the global agent config and a working project config once: the
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
 
-  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten, but for the starter causes it lacks; its gaps are listed
+  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten: no starter causes, and its gaps say how to add them
   const gaps = JSON.parse(lfm('init', '-y', '--json').stdout).gaps;
   assert.match(gaps[0], ASK);
-  assert.deepEqual(gaps.slice(1), ['sources: markdown-log found at docs/defects.md, not configured (add it as log)',
+  assert.deepEqual(gaps.slice(1), ['causes: none in .learn-from-mistakes.yaml, so every label is other: add a causes key with a description per cause',
+    'sources: markdown-log found at docs/defects.md, not configured (add it as log)',
     'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)',
     'sources: sessions found, not configured (add it as sessions)']);
-  const kept = parse(readFileSync(config, 'utf8')); // no sessions source configured: the causes have no match rule
-  assert.deepEqual([kept.sources, Object.keys(kept.causes), kept.causes['test-failed'].match], [{}, STARTER.map(([id]) => id), undefined]);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')), { sources: {} });
   const own = readFileSync(config, 'utf8');
-  assert.equal(JSON.parse(lfm('init', '-y', '--json').stdout).causes_status, 'kept'); // a file with causes keeps its own
+  assert.equal(JSON.parse(lfm('init', '-y', '--json').stdout).causes_status, 'kept');
   assert.equal(readFileSync(config, 'utf8'), own);
   rmSync(config);
   mkdirSync(join(p, 'data'));

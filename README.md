@@ -80,7 +80,7 @@ git clone https://github.com/umeranjum17/learn-from-mistakes
 cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-axi on your PATH
 ```
 
-1. Run `learn-from-mistakes-axi init` in your project. It writes `.learn-from-mistakes.yaml` if the project has none (otherwise it prints `already set up` and any gaps), with the agents and models you choose (`--agent`/`--model` and `--judge-agent`/`--judge-model`, or a pick in a terminal), the sources it detects (a defect log, `reviews.md`, a no-mistakes store, agent sessions, GitHub PRs), 4 starter causes (also into a file with no `causes` key; edit them), and excerpts on (`--no-excerpts` writes them off). With no agent chosen and no terminal it prints what it wrote, then exits 2 with the ask line; `init -y` writes the files without agents. Or write the file yourself:
+1. Run `learn-from-mistakes-axi init` in your project. It writes `.learn-from-mistakes.yaml` if the project has none (otherwise it prints `already set up` and any gaps), with the agents and models you choose (`--agent`/`--model` and `--judge-agent`/`--judge-model`, or a pick in a terminal), the sources it detects (a defect log, `reviews.md`, a no-mistakes store, agent sessions, GitHub PRs), 4 starter causes (only into a project file it creates, an existing file is never rewritten: its gaps say how to add causes; edit them), and excerpts on (`--no-excerpts` writes them off). With no agent chosen and no terminal it prints what it wrote, then exits 2 with the ask line; `init -y` writes the files without agents. Or write the file yourself:
 
    ```yaml
    name: my-project

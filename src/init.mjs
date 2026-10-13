@@ -13,7 +13,7 @@ const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an i
 const scalar = (v) => JSON.stringify(v); // a JSON string is a YAML scalar
 const flow = (o) => `{ ${Object.entries(o).map(([k, v]) => `${k}: ${scalar(v)}`).join(', ')} }`;
 // Starter causes for any project, so the worker has causes to label with, not only "other": each tags the session events
-// of one signal. Edit or replace them; init writes them only into a project file with no causes key.
+// of one signal. Edit or replace them; init writes them only into a project file it creates.
 const STARTER = {
   'test-failed': ['test_fail', 'a test or check failed: the change went on before its tests passed'],
   'command-failed': ['nonzero_exit', 'a shell command failed: a wrong path, flag or argument, or a tool that is not installed'],
@@ -139,8 +139,8 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   }
   if (Object.keys(chosen).length) save(file, chosen);
   let cfg = loadConfig(dir);
-  const doc = parseDocument(readFileSync(file, 'utf8')), causesWritten = !doc.has('causes');
-  if (causesWritten) { // each match names the config's sessions source; with none, the causes are for the worker's labels only
+  if (written) { // each match names the config's sessions source; with none, the causes are for the worker's labels only
+    const doc = parseDocument(readFileSync(file, 'utf8'));
     const sessions = Object.keys(cfg.sources).find((id) => cfg.sources[id].type === 'sessions');
     const pair = doc.createPair('causes', Object.fromEntries(Object.entries(STARTER).map(([id, [signal, description]]) => [id, { description, ...(sessions && { match: { source: sessions, signal } }) }])));
     pair.key.commentBefore = ' Starter causes, written by init: the worker labels records with them. Edit, add or remove them.';
@@ -155,11 +155,12 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   const { worker, judge } = await resolveRoles(cfg, agents);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
+    ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
   return {
     config: file, status: written ? 'written' : 'already set up', global, global_status: globalWritten ? 'written' : 'kept', ignored,
-    causes: Object.keys(cfg.causes), causes_status: causesWritten ? 'written' : 'kept',
+    causes: Object.keys(cfg.causes), causes_status: written ? 'written' : 'kept',
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
     gaps, skipped,
