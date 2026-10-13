@@ -12,15 +12,13 @@
 
 ## Quick Start
 
-> **Not published to npm yet.** The `npx -y learn-from-mistakes-axi` commands below work once the package is published. Until then, run the CLI from a checkout (see [Manual CLI](#manual-cli)).
-
 Install the skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
 ```sh
 npx -y skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g -a claude-code -y
 ```
 
-That is the entire setup - no npm install needed once the package is published.
+That is the entire setup - no npm install needed.
 `-a` names your agent (`claude-code`, `codex` or `opencode`; repeat it for several) and `-y` skips the installer's questions.
 The skill teaches your agent to run the tool through `npx -y learn-from-mistakes-axi`, so the CLI comes along on demand.
 It stays a short stub and sends the agent to `npx -y learn-from-mistakes-axi --help` and `guide` for the current procedure, so an installed copy cannot go stale against a newer CLI.
@@ -73,7 +71,7 @@ Nothing in Firstmate changes; the tool only reads its records.
 
 ### Manual CLI
 
-Needs Node 22.13 or newer (22.18 or newer for `byokit:<route>`, see [Command line](#command-line)). From a checkout (until the package is published):
+Needs Node 22.13 or newer (22.18 or newer for `byokit:<route>`, see [Command line](#command-line)). To install from a checkout:
 
 ```sh
 git clone https://github.com/umeranjum17/learn-from-mistakes

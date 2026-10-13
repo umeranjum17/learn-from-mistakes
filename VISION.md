@@ -90,7 +90,7 @@ Planned:
 
 ## Works with
 
-- [sign-off](https://github.com/umeranjum17/sign-off): the family's communication board; `changes --json` is the contract it can join on.
+- [sign-off](https://github.com/umeranjum17/sign-off): the family's communication board. sign-off owns one strict, versioned [communication contract](https://github.com/umeranjum17/sign-off/blob/main/docs/contract.md) for messages between the tools. The planned hand-off sends learn-from-mistakes' retro findings as the contract's `finding` kind, with Apply or Skip options, and reads the answers back. A message the board refuses is fixed at the producer, never stored or shown half-valid. learn-from-mistakes still works alone without sign-off.
 - [done-done](https://github.com/umeranjum17/done-done-axi): the family's verification tool.
 - [Firstmate](https://github.com/kunchenguid/firstmate): an agent supervisor; the tool reads its records (see the README).
 - [no-mistakes](https://github.com/kunchenguid/no-mistakes): its failed pipeline steps are a source.
