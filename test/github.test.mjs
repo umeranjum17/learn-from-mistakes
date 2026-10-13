@@ -94,6 +94,10 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.ok(gql[0].includes('owner=umer') && gql[0].includes('name=umer-app') && !gql[0].some((a) => a.startsWith('after=')));
   assert.ok(gql[1].includes('after=second'));
   assert.ok(!r.stdout.includes(SECRET) && !r.stderr.includes(SECRET));
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8'), /^- \[prs:10\] prs at PR #10, /m);
+  writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: false, why: 'a merged PR' }) + '\n');
+  const labelled = lfm({}, 'report');
+  assert.equal(labelled.status, 0, labelled.stderr);
 
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
@@ -111,11 +115,21 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   const off = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(off.status, 0, off.stderr);
   assert.deepEqual(JSON.parse(off.stdout).metrics.find((m) => m.name === 'merged'), run.metrics.find((m) => m.name === 'merged'));
+  const prRecords = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(prRecords.map((r) => r.source), Array(13).fill('prs'));
+  assert.ok(prRecords.every((r) => !('text' in r)), 'PR text in records.jsonl with excerpts off');
   const db2 = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
     const texts = db2.prepare(`SELECT text FROM records WHERE source = 'prs' AND run_id = (SELECT max(id) FROM runs)`).all().map((x) => x.text);
     assert.deepEqual([texts.length, texts.filter(Boolean)], [13, []]);
   } finally { db2.close(); }
+
+  const cfgFile = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(cfgFile, `${readFileSync(cfgFile, 'utf8')}causes:\n  rework:\n    description: "a merged PR needed rework"\n`);
+  writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: true, cause: 'rework', why: 'a PR that needed rework' }) + '\n');
+  writeFileSync(join(p, '.lfm', 'proposals.jsonl'), JSON.stringify({ cause: 'rework', target: 'docs', owner: 'umer', change: 'add a check', refs: ['prs:10'] }) + '\n');
+  const full = JSON.parse(lfm({}, 'report', '--full', '--json').stdout);
+  assert.deepEqual(full.causes.find((c) => c.cause === 'rework').proposal_refs, ['prs:10']);
 });
 
 test('a window with no merged PR: merged is 0, the ratios and the sums are n/a', () => {

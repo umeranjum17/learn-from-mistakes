@@ -18,7 +18,7 @@ In a project with `.learn-from-mistakes.yaml`: `learn-from-mistakes-axi ingest` 
 `test/cli.test.mjs` owns the journeys
 `state lives in the project's own .lfm/, git-ignored by the tool, never in a commit`
 (git-initialised copy: `change applied` then `ingest`/`report` create `.lfm/` with
-`*`, records hold full text, `git status --porcelain --untracked-files=all` has no
+`*`, records hold their text (excerpts on), `git status --porcelain --untracked-files=all` has no
 `.lfm` line and `--ignored` shows `!! .lfm/`; a deficient owner `.gitignore`
 (`*.jsonl`) and a negated one (`*` plus `!records.jsonl`) each exit 2 on ingest
 and change applied with the file byte-identical and no state written, while `*`

@@ -12,6 +12,7 @@ import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/
 import { init } from '../src/init.mjs';
 import * as byokit from '../src/runners/byokit.mjs';
 import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
+import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -165,6 +166,9 @@ function readInput(file, flag, explicit, rerunHint) {
   return readJsonl(file, { rerunHint });
 }
 
+// The id a gate row or PR takes in records.jsonl and the store's record_id: its source's name and its own id.
+export const recordId = (r) => `${r.source}:${r.id}`;
+
 export const sourceLine = (s, hash = true) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items${hash ? `  sha256 ${s.hash.slice(0, 12)}` : ''}`;
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
@@ -190,8 +194,12 @@ export async function ingest(cfg) {
       ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
-  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
-  writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
+  // The agent reads records.jsonl: a record's text is there only with excerpts on, redacted; with excerpts off it has no text field.
+  const forAgent = ({ text, ...rest }) => (cfg.excerpts === 'on' ? { ...rest, text: redact(text ?? '') } : rest);
+  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records,
+    ...rows.map((r) => ({ id: recordId(r), source: r.source, date: r.at.slice(0, 10), text: r.error })),
+    ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))].map(forAgent)));
+  writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows.map(({ error, ...r }) => (cfg.excerpts === 'on' ? { ...r, error } : r))));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   return { sources, events, records, rows, prs, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
 }
@@ -239,7 +247,7 @@ function analyse(cfg, files, rerunHint) {
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {
     if (!c.match) continue;
-    for (const row of rows) if (row.cause === cause) {
+    for (const row of rows) if (row.cause === cause && !labels.has(recordId(row))) {
       group(cause).store.rows.push(row);
       if (row.at) group(cause).store.days.add(row.at.slice(0, 10));
     }
@@ -253,7 +261,7 @@ function analyse(cfg, files, rerunHint) {
   const repeatedByCause = new Map(list.map((g) => [g.cause, g.repeated]));
   const proposals = readInput(pf, 'proposals', files.proposals, rerunHint).map((p, index) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
-    const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
+    const resolves = (ref) => records.has(ref);
     const missing = refs.filter((ref) => !resolves(ref));
     const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
       : !refs.length ? 'no evidence refs' : missing.length ? `${missing.length} of ${refs.length} refs not found` : !p.change ? 'no change text'
@@ -306,8 +314,10 @@ function project(a, full) {
       m.change_ids = applied.map((c) => c.id);
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
       // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
-      m.store_row_ids = g.store.rows.map((r) => `${r.source}:${r.id}`);
-      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.rows.some((r) => `${r.source}:${r.id}` === ref)))];
+      m.store_row_ids = g.store.rows.map(recordId);
+      // A content-hash record id (a defect-log bullet) is left out by the same rule.
+      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.records.has(ref)
+        && ['no-mistakes', 'github'].includes(a.cfg.sources[a.records.get(ref).source]?.type)))];
     }
     return m;
   });
@@ -372,7 +382,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect, metrics, followup or report
+  --step <name>       (logs) the step: collect, metrics, followup, bundle or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
   --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)
@@ -410,7 +420,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
      name: <project>
      sources:
        log: { type: markdown-log, path: defects.md }   # each top-level "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## YYYY-MM-DD" heading
-       # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, failed steps read-only
+       # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
      causes:
        <cause-id>:
          description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
@@ -420,7 +430,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
    match: { source: <sessions id>, signal, tool, text_contains } counts session events.
 
 2. Ingest: learn-from-mistakes-axi ingest
-   It prints the state dir. records.jsonl there: one JSON object per bullet (id, source, line, date, text).
+   It prints the state dir. records.jsonl there: one JSON object per record (id, source, date; text only with excerpts on, redacted; a defect bullet also has its line).
 
 3. Label every record you read into labels.jsonl in the state dir, one line each:
      {"id":"<record id>","event":true,"cause":"<cause id from the config, or other>","why":"<25 words or fewer>"}

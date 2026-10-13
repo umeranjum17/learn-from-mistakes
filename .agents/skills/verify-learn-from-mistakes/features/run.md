@@ -4,7 +4,7 @@
 `learn-from-mistakes-axi retro` saves a run in the
 run store `<state dir>/lfm.sqlite` (node:sqlite, WAL, a migrations list counted
 by `PRAGMA user_version`): one `runs` row (status, owner pid, times, error) and one `steps` row each for `collect`
-(ingest), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)) and `report` (the counts with the labels already in the state dir; with
+(ingest), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)), `bundle` (see [bundle.md](bundle.md)) and `report` (the counts with the labels already in the state dir; with
 none, coverage shows every record unlabelled). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
@@ -22,7 +22,7 @@ that another worker owns. `rerun --resume [--run <id>]` runs an
 interrupted, cancelled or failed run from its first step that is not completed;
 completed steps keep their times and output. SIGTERM or SIGINT to the worker
 ends the run as `cancelled`. Each step writes its lines (collect: one per source;
-report: the `repeated:` summary; a failed step: `error: <why>`) to
+bundle: the item, dropped and character counts; report: the `repeated:` summary; a failed step: `error: <why>`) to
 `.lfm/runs/<id>/<step>.log`, new for each attempt. `attach [--run <id>]` polls
 every second and prints `<step>: running`, `<step>: <log line>` and
 `<step>: <end state>` as they come, then the run as `status` prints it; it exits
@@ -48,7 +48,7 @@ step with `logs --step collect`, stop it with `abort`, start it again with `reru
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns three journeys and two reused-run-id checks.
 `retro --foreground saves a run and its steps in .lfm/; status and runs show it`:
-status before a run exits 3 and creates no `.lfm`; 4 completed
+status before a run exits 3 and creates no `.lfm`; 5 completed
 step rows read back from the store; collect saw 13 log and 5 gate items; report
 coverage 0 of 13 labelled; `status --json` equals the retro output; `runs` lists
 it; `git status` has no `.lfm`; a project with an empty log fails at `report`

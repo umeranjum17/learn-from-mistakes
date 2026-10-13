@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { parse } from 'yaml';
@@ -26,8 +26,7 @@ function setup(agents, extraEnv = {}) {
   }
   copyFileSync(new URL('../examples/gate.sqlite', import.meta.url), join(nm, 'state.sqlite'));
   const db = new DatabaseSync(join(nm, 'state.sqlite'));
-  db.exec('CREATE TABLE repos (id TEXT PRIMARY KEY, working_path TEXT NOT NULL, upstream_url TEXT NOT NULL)');
-  db.prepare('INSERT INTO repos VALUES (?, ?, ?)').run('r1', realpathSync(p), 'https://example.com/umer/umer-app.git');
+  db.prepare('UPDATE repos SET working_path = ?, upstream_url = ?').run(realpathSync(p), 'https://example.com/umer/umer-app.git');
   db.close();
   const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm, ...extraEnv };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
@@ -162,4 +161,15 @@ test('init refuses a pinned judge on the worker\'s identity, an unknown runner a
   const none = setup([]).lfm('init');
   assert.equal(none.status, 1);
   assert.match(none.stderr, /^error: worker: no usable agent CLI/);
+});
+
+test('init finds the no-mistakes repo of a git worktree of the project, as the source reads it', () => {
+  const { p, nm, env } = setup(['claude']);
+  const git = (...args) => execFileSync('git', ['-C', p, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8' });
+  git('commit', '-q', '--allow-empty', '-m', 'init');
+  const wt = join(dirname(p), 'umer-app-wt');
+  git('worktree', 'add', '-q', wt);
+  const r = spawnSync(process.execPath, [CLI, 'init', '-y', '--no-skill', '--json', '--dir', wt], { encoding: 'utf8', env: { ...env, PATH: `${env.PATH}:${process.env.PATH}` } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
 });

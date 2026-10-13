@@ -5,7 +5,7 @@
 // LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -48,6 +48,10 @@ function setup() {
   git('init', '-q');
   git('-c', 'user.name=Umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init');
   git('worktree', 'add', '-q', '--detach', tree);
+  const gate = new DatabaseSync(join(p, 'gate.sqlite')); // the example store's one repo is this project, by its origin
+  gate.prepare('UPDATE repos SET working_path = ?').run('/elsewhere/p');
+  gate.close();
+  git('remote', 'add', 'origin', 'https://example.invalid/umer/example.git');
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
     .replace(/2026-10-0([1-3])T/g, (_, d) => `${day(3 - Number(d))}T`) // the last three days, so inside the window
     .replaceAll('2026-09-24T', `${day(10)}T`) // inside the last window
@@ -405,4 +409,133 @@ test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0
   assert.deepEqual(stored, { value: 25 / 496, target: '<= 0.05' });
   const status = decode(lfm('status', '--run', String(decode(r.stdout).run.id)).stdout);
   assert.equal(status.metrics.find((m) => m.name === 'tool_error_rate').met, 'missed');
+});
+
+test('the bundle has ids, refs and redacted excerpts, pointers and counts only with excerpts off, no other repo\'s rows, and keeps to its cap', () => {
+  const { p, lfm, env } = setup();
+  const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
+  // One defect bullet and one failed gate step of this repo per planted shape, and a failed step of another repo in the same store.
+  const one = PLANTED.filter(([t]) => !t.includes('\n'));
+  writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(0)}\n\n${one.map(([t]) => `- [deploy] Umer pasted ${t} and password=[redacted]hunter2rest, token=[redacted] here in the log.`).join('\n')}\n`);
+  const gate = new DatabaseSync(join(p, 'gate.sqlite')), at = Math.floor(Date.now() / 1000) - 3600;
+  const step = gate.prepare(`INSERT INTO step_results (id, run_id, step_name, status, error, started_at, completed_at) VALUES (?, ?, 'push', 'failed', ?, ?, ?)`);
+  one.forEach(([t], i) => step.run(`step-planted-${i}`, 'run-a', `push: Umer's remote said ${t}`, at, at));
+  gate.exec(`INSERT INTO repos VALUES ('repo-other', '/elsewhere/other', 'https://example.invalid/umer/other.git');
+    INSERT INTO runs VALUES ('run-x', 'repo-other', 'feat/other')`);
+  step.run('step-other', 'run-x', 'push: OTHER-REPO-CANARY', at, at);
+  gate.close();
+  const bundleOf = (r) => {
+    assert.equal(r.status, 0, r.stderr);
+    const { id } = decode(r.stdout).run;
+    return { id, text: readFileSync(join(p, '.lfm', 'runs', String(id), 'bundle.md'), 'utf8') };
+  };
+
+  // The canaries are secret-shaped values, which redact() removes; with excerpts on, plain record text stays in the bundle by design.
+  const on = bundleOf(lfm('retro', '--foreground'));
+  for (const [, needle] of PLANTED) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
+  assert.ok(!on.text.includes('OTHER-REPO-CANARY') && !on.text.includes('step-other'), 'another repo\'s gate row in bundle.md');
+  assert.deepEqual(query(p, `SELECT count(*) AS n FROM records WHERE text LIKE '%OTHER-REPO-CANARY%'`), [{ n: 0 }]); // never read at all
+  const stored = query(p, `SELECT text FROM records WHERE run_id = ? AND source = 'gate'`, on.id).map((r) => r.text).join('\n');
+  for (const [, needle] of one) assert.ok(!stored.includes(needle), `${needle} stored from a gate error`); // kept redacted
+  assert.match(on.text, /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
+  assert.match(on.text, /^No follow-ups yet\.$/m);
+  // Clusters by tool and signal, the largest first, each with its latest events; then the records no rule tagged.
+  const clusters = [...on.text.matchAll(/^### \[c(\d+)\] .+: (\d+) events, \d+ sessions, \d+ days, causes: .+$/gm)];
+  assert.deepEqual(clusters.map((c) => Number(c[1])), clusters.map((_, i) => i + 1));
+  assert.deepEqual(clusters.map((c) => Number(c[2])), clusters.map((c) => Number(c[2])).toSorted((a, b) => b - a));
+  assert.match(on.text, /^### \[c1\] Bash test_fail: 2 events, 1 sessions, 1 days, causes: fetch-test-fails$/m); // the failed Reads are in the last window
+  const events = [...on.text.matchAll(/^- \[e(\d+)\] \S+ session s-\w+ at \S+\.jsonl:\d+$/gm)].map((m) => Number(m[1]));
+  const records = [...on.text.matchAll(/^- \[([^\]]+)\] (?:log|gate) at \S+, [\d-]+$/gm)].map((m) => m[1]);
+  assert.ok(events.length && records.length === 2 * one.length + 2, on.text); // the planted ones, and the two from yesterday
+  assert.equal(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND id IN (${events})`, on.id)[0].n, events.length); // ids are store rows
+  const quotes = on.text.match(/^  > .+$/gm);
+  assert.ok(quotes.every((q) => q.length <= 304), 'an excerpt over 300 characters');
+  assert.equal(on.text.match(/^- \[(?!e\d+\])[^\]]+\] .+\n  > .+$/gm).length, records.length, 'a record without its excerpt');
+  assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
+  assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
+  assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
+  assert.ok(!on.text.includes('hunter2rest') && on.text.includes('password=[redacted] token=[redacted] here in the log.'), 'a secret after a placeholder, or a placeholder redacted again');
+
+  // The bundle step is interrupted after metrics; the config then changes its target. The resumed bundle shows the target the metrics step stored.
+  const bundlePath = join(p, '.lfm', 'runs', String(on.id), 'bundle.md');
+  const interrupt = (...names) => {
+    const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+    db.exec(`UPDATE runs SET status = 'interrupted' WHERE id = ${on.id}`);
+    for (const name of names) db.prepare(`UPDATE steps SET status = 'interrupted' WHERE run_id = ? AND name = ?`).run(on.id, name);
+    db.close();
+  };
+  interrupt('bundle');
+  writeFileSync(cfg, examples.replace('targets: { ', 'targets: { tool_error_rate: "<= 0.1", '));
+  let resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.match(readFileSync(bundlePath, 'utf8'), /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
+
+  // A collect rerun reads the records again; each record id the bundle cites is one labels.jsonl takes, and a label names it.
+  interrupt('collect', 'metrics', 'bundle', 'report');
+  resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const ledger = (file) => readFileSync(join(p, '.lfm', file), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const recordIds = new Set(ledger('records.jsonl').map((r) => r.id));
+  const cited = [...readFileSync(bundlePath, 'utf8').matchAll(/^- \[([^\]]+)\] (log|gate) at /gm)];
+  assert.equal(cited.length, records.length);
+  for (const [, id, source] of cited) assert.ok(recordIds.has(id), `[${id}] is not a ${source} id of records.jsonl`);
+  for (const [, needle] of PLANTED) assert.ok(!readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').includes(needle), `${needle} in records.jsonl`);
+  const label = (id) => {
+    writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id, event: false, why: 'a fix note' }) + '\n');
+    return lfm('report');
+  };
+  const gateId = cited.find(([, , source]) => source === 'gate')[1];
+  assert.equal(label(gateId).status, 0, `a cited gate id is not accepted by labels.jsonl`);
+  assert.match(label('gate:step-missing').stderr, /unknown record id/);
+  rmSync(join(p, '.lfm', 'labels.jsonl'));
+
+  // excerpts: off: the same items as pointers and counts, and no text of any record or event.
+  writeFileSync(cfg, `${examples}excerpts: off\n`);
+  const off = bundleOf(lfm('retro', '--foreground'));
+  assert.doesNotMatch(off.text, /^  > /m);
+  const offRecords = ledger('records.jsonl');
+  assert.ok(offRecords.some((r) => r.source === 'gate') && offRecords.some((r) => r.source === 'log'));
+  assert.ok(offRecords.every((r) => !('text' in r)), 'record text in records.jsonl with excerpts off');
+  const offRows = readFileSync(join(p, '.lfm', 'rows.jsonl'), 'utf8');
+  assert.ok(offRows.includes('step-planted-0'));
+  for (const [, needle] of PLANTED) assert.ok(!offRows.includes(needle), `${needle} in rows.jsonl with excerpts off`);
+  assert.ok(!offRows.includes('remote said'), 'gate error text in rows.jsonl with excerpts off');
+  const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
+  for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
+  assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));
+  assert.equal([...off.text.matchAll(/^- \[(?!e\d+\])[^\]]+\] /gm)].length, records.length);
+  assert.equal([...off.text.matchAll(/^### \[c\d+\] /gm)].length, clusters.length);
+
+  // A config in a subdirectory of the checkout counts this repo's gate rows, matched by its checkout, and no other repo's.
+  const store = new DatabaseSync(join(p, 'gate.sqlite'));
+  store.prepare('UPDATE repos SET working_path = ?, upstream_url = ? WHERE working_path = ?').run(realpathSync(p), 'https://example.invalid/umer/moved.git', '/elsewhere/p');
+  const mine = store.prepare(`SELECT count(*) AS n FROM step_results s JOIN runs r ON r.id = s.run_id JOIN repos o ON o.id = r.repo_id
+    WHERE s.status = 'failed' AND o.working_path = ?`).get(realpathSync(p)).n;
+  store.close();
+  const sub = join(p, 'app');
+  mkdirSync(sub);
+  writeFileSync(join(sub, '.learn-from-mistakes.yaml'), `sources:\n  gate: { type: no-mistakes, path: ${join(p, 'gate.sqlite')} }\n`);
+  const nested = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', sub], { encoding: 'utf8', env });
+  assert.equal(nested.status, 0, nested.stderr);
+  assert.ok(mine > 0, 'no failed gate step of this repo');
+  assert.equal(decode(nested.stdout).sources.find((s) => s.type === 'no-mistakes').items, mine);
+
+  // The cap: items that would pass it are dropped, and counted.
+  writeFileSync(cfg, `${examples}caps: { bundle_chars: 1000 }\n`);
+  const capped = bundleOf(lfm('retro', '--foreground'));
+  assert.ok(capped.text.length <= 1000, `${capped.text.length} characters`);
+  const more = Array.from({ length: 40 }, (_, i) => `  c${i}: { description: d }\n`).join('');
+  writeFileSync(cfg, `${examples.replace('causes:\n', `causes:\n${more}`)}caps: { bundle_chars: 1000 }\n`);
+  const metricsOnly = bundleOf(lfm('retro', '--foreground')); // the metrics fill it; the later headings still fit
+  assert.ok(metricsOnly.text.length <= 1000 && metricsOnly.text.includes('## Unlabelled defect records'), `${metricsOnly.text.length} characters`);
+  assert.match(capped.text, /^Dropped \d+ items to keep the bundle under 1000 characters\.$/m);
+  for (let cap = 1000; cap <= 4000; cap += 150) { // once a cluster does not fit, no smaller one below it is admitted
+    writeFileSync(cfg, `${examples}caps: { bundle_chars: ${cap} }\n`);
+    const b = bundleOf(lfm('retro', '--foreground'));
+    const nums = [...b.text.matchAll(/^### \[c(\d+)\]/gm)].map((c) => Number(c[1]));
+    assert.deepEqual(nums, nums.map((_, i) => i + 1), `clusters ${nums} under ${cap}`);
+    assert.ok(b.text.length <= cap, `${b.text.length} characters under ${cap}`);
+  }
+  writeFileSync(cfg, `${examples}caps: { bundle_chars: 999 }\n`);
+  assert.match(lfm('retro', '--foreground').stderr, /caps\.bundle_chars must be at least 1000$/m);
 });

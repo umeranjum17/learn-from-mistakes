@@ -77,7 +77,7 @@ export async function read(source, { dir }, { readFrom = 0, excerpts = true } = 
     // A commit after the PR opened is rework; it is CI rework when the commit before it had failing checks.
     const own = commits.filter((c) => c.parents.totalCount < 2);
     const rework = own.map((c, i) => Date.parse(c.authoredDate) > opened && (['FAILURE', 'ERROR'].includes(own[i - 1]?.statusCheckRollup?.state) ? 'ci' : 'other'));
-    return { source, ts: n.mergedAt, ref: `PR #${n.number}`, text: excerpts ? redact(`${n.title}\n\n${n.body ?? ''}`.trim()) : '', data: {
+    return { source, id: n.number, ts: n.mergedAt, ref: `PR #${n.number}`, text: excerpts ? redact(`${n.title}\n\n${n.body ?? ''}`.trim()) : '', data: {
       bot: n.author?.__typename === 'Bot', hours: (Date.parse(n.mergedAt) - opened) / 3_600_000,
       rework_ci: rework.filter((x) => x === 'ci').length, rework_other: rework.filter((x) => x === 'other').length,
       reverted: later(/^revert(s|ed)?\b/i, n), escaped: later(/^fix(es|ed)?\b/i, n),
