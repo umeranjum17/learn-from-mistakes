@@ -3,7 +3,8 @@
 // change to the end of the run. The verdict is set by code, by the first rule that fits:
 //   no-data   the after range has fewer than followup.min_sessions sessions or followup.min_days days, the metric is
 //             n/a before or after it (nothing measures it), or a records-based metric's source has no record on or
-//             before the start of the before window (it does not cover that window)
+//             before the start of the before window (it does not cover that window), or collect's read started after the
+//             before window's start, or after the change (a change added after collect with an older `at`: n/a)
 //   keep      the tripwire is met
 //   delete    a rule change whose metric moved less than 10% of before (or stayed 0) in this retro and the last
 //   no-data   the change has no tripwire, so there is nothing to check
@@ -51,7 +52,7 @@ function recordsOf(cfg, metric) {
 
 // Saves one followups row per applied change, with the unrounded numbers; it can run again: it first drops the run's rows.
 export function followup(cfg, db, id, window, log) {
-  const w = Date.parse(window.current_start) - Date.parse(window.previous_start), end = readAt(window);
+  const w = Date.parse(window.current_start) - Date.parse(window.previous_start), end = readAt(window), from = Date.parse(window.read_from);
   const { events, records } = rowsOf(db, id);
   const { min_sessions, min_days } = cfg.followup;
   const last = db.prepare(`SELECT f.before, f.after, f.tripwire, s.output_json FROM followups f JOIN steps s ON s.run_id = f.run_id AND s.name = 'collect'
@@ -61,12 +62,13 @@ export function followup(cfg, db, id, window, log) {
     const { metric, tripwire, kind } = measure(c), at = Date.parse(c.at);
     const value = (range) => values(cfg, events, records, range)[metric] ?? null; // a cause no longer in the config is n/a
     const of = recordsOf(cfg, metric);
+    const covered = (ms) => from <= ms;
     // A records-based metric's before is n/a unless its source has a record on or before the window's start.
-    const before = of && !records.some((r) => of(r) && Date.parse(r.ts) <= at - w) ? null : value({ start: at - w, end: at });
+    const before = !covered(at - w) || (of && !records.some((r) => of(r) && Date.parse(r.ts) <= at - w)) ? null : value({ start: at - w, end: at });
     // The first no-data rule over the after range up to `upTo` (this run's has no end, as the current window).
     const enough = (r, readTime, upTo) => r.before !== null && r.after !== null && (readTime - at) / DAY >= min_days
       && new Set(inWindow(events, { start: at, end: upTo }).map((e) => e.session_id)).size >= min_sessions;
-    const row = { change_id: c.id, metric, before, after: value({ start: at }), tripwire: tripwire || null };
+    const row = { change_id: c.id, metric, before, after: covered(at) ? value({ start: at }) : null, tripwire: tripwire || null };
     row.enough = enough(row, end, Infinity);
     const prev = last.all(c.id, id).map((p) => ({ ...p, readTime: readAt(JSON.parse(p.output_json)) }))
       .find((p) => end - p.readTime >= min_days * DAY);
