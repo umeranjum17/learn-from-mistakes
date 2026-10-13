@@ -558,7 +558,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);
   assert.match(store.stderr, /^error: source gate: no such file$/m);
-  assert.match(store.stderr, /^next: remove the gate source or point its path at your no-mistakes state\.sqlite$/m);
+  assert.ok(store.stderr.includes(`next: set sources.gate.path in ${join(p, '.learn-from-mistakes.yaml')} to your no-mistakes state.sqlite, or remove that source`), store.stderr);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);
