@@ -225,7 +225,7 @@ A rejected `change applied` never touches the ledger. A missing prerequisite or 
 
 The label/propose reading is agent work: do it on the cheap default model of the agent CLI that runs it; `learn-from-mistakes-axi agents` lists each one.
 Never take Opus, Sonnet or Sol as the default.
-To use your own model instead, set `LFM_MODEL` (or `worker.model`) to its id. With `worker.runner: auto` it must be a model an agent CLI lists as its default, else set `worker.runner` to the CLI that runs it (`learn-from-mistakes-axi guide` then names it in the procedure). A premium model (a name with `opus`, `sonnet` or `sol` in it) is refused by every call that would use it, retro and `agents --test` alike, unless `allow_premium: true` is set in `.learn-from-mistakes.yaml`.
+To use your own model instead, set `LFM_MODEL` (or `worker.model`) to its id. With `worker.runner: auto` it must be a model an agent CLI lists as its default, else set `worker.runner` to the CLI that runs it (`learn-from-mistakes-axi guide` then names it in the procedure). A premium model (a name with `opus`, `sonnet` or `sol` as a separate word in it) is refused by every call that would use it, retro and `agents --test` alike, unless `allow_premium: true` is set in `.learn-from-mistakes.yaml`.
 
 ## What it does not do
 

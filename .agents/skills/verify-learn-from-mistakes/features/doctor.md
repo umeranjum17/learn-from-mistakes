@@ -4,7 +4,8 @@
 `src/doctor.mjs` prints one line per check, `ok|warn|fail <label> <detail>`, and an
 indented `fix: <command or edit>` under each line that is not ok; `--json` prints
 `{ checks: [{ level, label, detail, fix? }], fails }`. Any `fail` exits 1, else 0.
-It only reads: no state dir is made, no agent is called (unless `--live`).
+It only reads: no state dir is made and no agent is called, except with `--live`, which writes
+its one test run dir under the state dir (`runs/test-<step>`).
 
 Checks, in order:
 - `node`: Node >= 22.13 (fail).
