@@ -580,6 +580,7 @@ async function main() {
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   if (!opts.labels) quietSqlite();
   const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts); }); // --labels names the file; else the last retro's labels, if a run has them
+  if (last && last.latest !== last.run) console.error(`note: run ${last.latest} labelled nothing; showing run ${last.run}`);
   const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
   if (!json) console.log([summaryLine(model), ...(last?.findings ?? []).map((f) => `finding: ${f.cause} (${f.count}/${f.days} days): ${f.summary}`)].join('\n'));
@@ -607,6 +608,7 @@ function storeError(e, cfg, opts) {
   if (e.code !== 'ERR_SQLITE_ERROR') return e;
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
+  if ((e.errcode & 0xff) === 5) return new UsageError(`${file} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
 async function runCommand(cmd, cfg, opts) {

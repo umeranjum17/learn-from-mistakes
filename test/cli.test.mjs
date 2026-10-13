@@ -1189,6 +1189,9 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const outside = JSON.parse(kept.stdout).run.id;
   assert.deepEqual(lines(outside).slice(-2), ['problem: labels[0] names no defect record in the bundle', 'labels: 0 of 2 records, 1 dropped, findings: 0, problems: 1']);
   assert.equal(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, outside)[0].output_json).coverage.labelled, 0);
+  const shown = lfm({}, 'report');
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.match(shown.stderr, new RegExp(`^note: run ${outside} labelled nothing; showing run ${run.id}$`, 'm'));
 
   // Bad JSON twice: the answer goes back once with the validation error, then the step fails with it.
   const bad = lfm({ FAKE_ANALYSE: 'prose' }, 'retro', '--foreground', '--json');
@@ -1272,6 +1275,15 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(stale.status, 1, stale.stderr);
   assert.match(stale.stderr, /^problem: /m);
   assert.match(stale.stderr, /^next: learn-from-mistakes-axi retro --wait   # a new run relabels the records/m);
+  // A store another process holds past busy_timeout is busy: the report says so and never suggests moving it.
+  const locked = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  locked.exec('BEGIN IMMEDIATE');
+  const busy = lfm({}, 'report');
+  locked.exec('ROLLBACK');
+  locked.close();
+  assert.equal(busy.status, 2, busy.stderr);
+  assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy/m);
+  assert.doesNotMatch(busy.stderr, /^next: mv /m);
   // A store sqlite cannot read is one error line with the file to move, never a stack trace.
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database');
   const broken = lfm({}, 'report');
