@@ -12,7 +12,7 @@ import * as gemini from './gemini.mjs';
 import * as acp from './acp.mjs';
 import * as byokit from './byokit.mjs';
 
-export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // in auto order; acp runs as acp:<target>
+export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // acp runs as acp:<target>
 const FIX = 'learn-from-mistakes-axi agents   # check the agent CLI is usable and logged in';
 export const INSTALL = 'claude, codex, opencode, pi or gemini';
 const TRANSIENT = /\b(429|503|529)\b|overloaded|rate_limit|ECONNRESET/i;
@@ -67,25 +67,18 @@ async function candidate(cfg, runner, agents) {
   }
   const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));
   if (a.problem) return { runner, model, bin: '', problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
-  return { runner, model, bin: a.bin, problem: '' };
+  return { runner, model, bin: runner.startsWith('acp:') ? runner : a.bin, problem: '' }; // an ACP target is its own identity
 }
 
-// Resolve the worker (agent:) or the judge (judge_agent:): the first agent in the list the user wrote that is usable
-// and, for the judge, differs from the worker. With only clashing agents left, it keeps the clash, so the caller
-// reports it rather than judging its own work. A role that is not set resolves to nothing: the tool never picks one.
+// Resolve the worker (agent:) or the judge (judge_agent:): the one agent the user set. When it is not ready, its own
+// problem is the result and no other agent is tried. A judge on the worker's identity is a clash, which the caller
+// reports rather than judging its own work. A role that is not set resolves to nothing: the tool never picks one.
 export async function resolveRole(cfg, name, agents, worker, env = process.env) {
-  const list = cfg[KEY[name]];
-  if (!list.length) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
-  const installed = (r) => !!agents.find((x) => x.runner === r?.runner.replace(/^acp:.*/, 'acp'))?.usable;
-  let first, clash;
-  for (const runner of list) {
-    const r = await candidate(cfg, runner, agents);
-    if (r.problem) { if (!first || (!installed(first) && installed(r))) first = r; } // an installed agent's problem says more
-    else if (worker && same(r, worker)) clash ??= r;
-    else return r;
-  }
-  if (clash) return { ...clash, problem: CLASH };
-  return first;
+  const runner = cfg[KEY[name]];
+  if (!runner) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
+  const r = await candidate(cfg, runner, agents);
+  if (!r.problem && worker && same(r, worker)) return { ...r, problem: CLASH };
+  return r;
 }
 
 // The worker first, then a judge that differs from it.
@@ -202,6 +195,6 @@ export async function agents(cfg, opts) {
     return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem } };
   }
   // Only the configured agents: the tool never lists others to pick from.
-  const used = new Set([...cfg.agent, ...cfg.judge_agent].map((a) => a.replace(/^acp:.*/, 'acp')));
+  const used = new Set([cfg.agent, cfg.judge_agent].map((a) => a.replace(/^acp:.*/, 'acp')));
   return { agents: list.filter((a) => used.has(a.runner)), ...(await resolveRoles(cfg, list)) };
 }

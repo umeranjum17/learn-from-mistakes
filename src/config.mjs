@@ -46,12 +46,12 @@ export function pathSource(s, where, dir) {
 const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} must be ${rule}`); };
 const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a positive integer');
 
-// The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent or an ordered fallback list.
-// The user sets both: the tool never picks an agent (no auto, no detection).
+// The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent each, which the user sets: the
+// tool never picks an agent (no auto, no detection) and never tries another when the one set is not ready.
 export const AGENTS = ['claude', 'codex', 'opencode', 'pi', 'gemini']; // the native agent CLIs
 export const AGENT_NAME = /^(claude|codex|opencode|pi|gemini|(acp|byokit):[a-z0-9][\w.-]*)$/;
 const NAME = AGENT_NAME;
-export const AGENT_RULE = 'claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them';
+export const AGENT_RULE = 'claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>';
 const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with an effort flag
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
@@ -63,9 +63,9 @@ const GLOBAL_ONLY = ['state_root', 'agent_path_override', 'agent_args_override',
 function agentKeys(cfg, g, file) {
   for (const k of ['agent', 'judge_agent']) {
     if (g[k] === undefined) continue;
-    const list = [g[k]].flat();
-    check(list.length && list.every((a) => NAME.test(a)), `${file}: ${k}`, AGENT_RULE);
-    cfg[k] = list;
+    if (Array.isArray(g[k])) throw new UsageError(`${file}: ${k} must be one agent, not a list`, `set ${k} in ${file} to one agent, such as ${k}: claude`);
+    check(NAME.test(g[k]), `${file}: ${k}`, AGENT_RULE);
+    cfg[k] = g[k];
     cfg.from[k] = file;
   }
   for (const [a, c] of Object.entries(mapping(g.agent_config ?? {}, null, `${file}: agent_config`))) {
@@ -104,7 +104,7 @@ export function loadGlobal() {
   const agent_args_override = mapping(g.agent_args_override ?? {}, [...AGENTS, 'acp'], `${file}: agent_args_override`);
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
-    agent: [], judge_agent: [], agent_config: {}, agent_timeout: '20m', allow_premium: false, from: {} };
+    agent: '', judge_agent: '', agent_config: {}, agent_timeout: '20m', allow_premium: false, from: {} };
   return agentKeys(cfg, g, file);
 }
 

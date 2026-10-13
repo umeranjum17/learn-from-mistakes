@@ -140,7 +140,7 @@ try {
   drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
   // Config v2: every new key loads and the run completes the same steps; a bad agent exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
-  Object.assign(config, { agent: ['claude', 'codex'], judge_agent: 'acp:gemini', agent_config: { 'acp:gemini': { model: 'cheap-model' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
+  Object.assign(config, { agent: 'claude', judge_agent: 'acp:gemini', agent_config: { 'acp:gemini': { model: 'cheap-model' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
     caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'auto', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));

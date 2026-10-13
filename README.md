@@ -230,8 +230,8 @@ Never take Opus, Sonnet or Sol as the default.
 Every retro starts the tool's own agents, a worker and a judge. You set them: the tool never picks an agent or a model. They are set in `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`), which `init` writes once, fully commented, or in a project's `.learn-from-mistakes.yaml`; this is the same config shape as no-mistakes. For example:
 
 ```yaml
-# Agent that runs the retro's agent steps; also an ordered fallback list you write, e.g. [codex, claude].
-# Options: claude, codex, opencode, pi, gemini, acp:<target>, byokit:<route>
+# Agent that runs the retro's agent steps: one agent, and the tool never tries another when it is not ready.
+# Options: claude, codex, opencode, pi, acp:<target>, byokit:<route>
 agent: "byokit:opencode-go"
 # Agent that checks the worker's output: another agent than the worker.
 judge_agent: claude
@@ -251,7 +251,7 @@ agent_timeout: "20m"
 # state_root: ~/.learn-from-mistakes/state   # global only
 ```
 
-When `agent` or `judge_agent` is not set, `init`, `retro`, `rerun`, `doctor` and `agents` ask: in a terminal, a pick list of the supported agents and then the model, saved to the config file; otherwise (an agent calling the CLI) they exit 2 with `ask the user which agent to use`, the choices, and `next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>` to save the user's answer. `init -y` asks nothing. A list you write is tried in your order; a judge is never the worker's agent and model. A project's `.learn-from-mistakes.yaml` may override `agent`, `judge_agent`, `agent_config`, `agent_timeout` and `allow_premium`; the other keys are global only, so a cloned repo never picks the binary an agent runs or its flags. A premium model (a name with `opus`, `sonnet` or `sol` as a separate word in it) is refused by every call that would use it, retro, `agents --test` and `doctor --live` alike, unless `allow_premium: true`.
+When `agent` or `judge_agent` is not set, `init`, `retro`, `rerun`, `doctor` and `agents` ask: in a terminal, a pick list of the supported agents and then the model, saved to the config file; otherwise (an agent calling the CLI) they exit 2 with `ask the user which agent to use`, the choices, and `next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>` to save the user's answer. `init -y` asks nothing. `agent` and `judge_agent` each take one agent: a list is refused, and a set agent that is not ready stops with its own fix, never another agent. A judge is never the worker's agent and model. A project's `.learn-from-mistakes.yaml` may override `agent`, `judge_agent`, `agent_config`, `agent_timeout` and `allow_premium`; the other keys are global only, so a cloned repo never picks the binary an agent runs or its flags. A premium model (a name with `opus`, `sonnet` or `sol` as a separate word in it) is refused by every call that would use it, retro, `agents --test` and `doctor --live` alike, unless `allow_premium: true`.
 
 ## What it does not do
 

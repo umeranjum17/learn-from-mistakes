@@ -18,9 +18,9 @@ const globalText = `# learn-from-mistakes global configuration
 # allow_premium; the other keys here are global-only.
 
 # Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never picks one, and asks
-# when it is not set (init --agent <agent> --model <model> saves the answer). This may also be an ordered fallback
-# list that you write, for example: agent: [codex, claude]
-# Options: claude, codex, opencode, pi, gemini, acp:<target>, byokit:<route>
+# when it is not set (init --agent <agent> --model <model> saves the answer). It is one agent: the tool never
+# tries another when this one is not ready.
+# Options: claude, codex, opencode, pi, acp:<target>, byokit:<route>
 # byokit:<route> calls a model through BYOKit with no agent CLI: a sign-in plan (chatgpt, claude) or a
 # plan key route such as opencode-go (learn-from-mistakes-axi agents --test byokit:<route> checks one)
 # agent: claude
@@ -87,7 +87,7 @@ export async function init(dir, opts) {
   const chosen = {}, ignored = [];
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
-    if (written || !before[key].length) chosen[key] = { agent: opts[flag], model: opts[model] };
+    if (written || !before[key]) chosen[key] = { agent: opts[flag], model: opts[model] };
     else ignored.push(`--${flag}`, ...(opts[model] ? [`--${model}`] : []));
   }
   if (!written && opts['no-excerpts']) ignored.push('--no-excerpts');
@@ -95,7 +95,7 @@ export async function init(dir, opts) {
   if (Object.keys(chosen).length) {
     const want = { ...before, agent_config: structuredClone(before.agent_config) };
     for (const [key, c] of Object.entries(chosen)) {
-      want[key] = [c.agent];
+      want[key] = c.agent;
       if (c.model) want.agent_config[c.agent] = { ...want.agent_config[c.agent], model: c.model };
     }
     const { worker, judge } = await resolveRoles(want, agents);
@@ -114,7 +114,7 @@ export async function init(dir, opts) {
 name: ${scalar(basename(dir))}
 # The agent keys come from $LFM_HOME/config.yaml (default ~/.learn-from-mistakes/config.yaml); set one here to
 # override it for this project. The tool never picks an agent: set agent and judge_agent, each with its model.
-# agent: claude   # or codex, opencode, pi, gemini, acp:<target>, byokit:<route>, or a list you write
+# agent: claude   # or codex, opencode, pi, acp:<target>, byokit:<route>
 # judge_agent: codex   # its agent and model must differ from the worker's
 # agent_config: { claude: { model: claude-haiku-5-5, effort: low } }
 # agent_timeout: "20m"
@@ -134,6 +134,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   }
   stateDir(cfg);
   const missing = unset(cfg);
+  if (missing.length && !opts.y) throw askError(missing, file, opts.dir);
   const { worker, judge } = await resolveRoles(cfg, agents);
   const gaps = [...(missing.length ? [`agents: ${askError(missing, file).message}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),

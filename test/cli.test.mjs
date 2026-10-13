@@ -242,7 +242,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
-    [() => withConfig('agent: [codex, 3]\n'), 2, bad('agent must be claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them'), HELP],
+    [() => withConfig('agent: [codex, claude]\n'), 2, bad('agent must be one agent, not a list'), /^next: set agent in \S+\.learn-from-mistakes\.yaml to one agent, such as agent: claude$/m],
+    [() => withConfig('agent: 3\n'), 2, bad('agent must be claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
     [() => withConfig('worker: { runner: claude }\n'), 2, bad('unknown key worker'), HELP], // the old role keys are gone, with no alias
     [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a non-empty string'), HELP],
     [() => withConfig('agent_config: { gemini: { effort: low } }\n'), 2, bad('agent_config.gemini.effort: gemini has no effort setting; remove it'), HELP],
@@ -867,7 +868,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
 
   // A project config with every key, and a global config with the agent keys, loads and runs the same steps.
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}agent: claude
-judge_agent: [acp:gemini, codex]
+judge_agent: codex
 agent_config: { "acp:gemini": { model: cheap-model }, claude: { effort: low } }
 agent_timeout: 20m
 window: 30d
@@ -879,7 +880,7 @@ signoff: auto
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: [claude, codex]\njudge_agent: codex\nagent_config: { codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
@@ -895,7 +896,7 @@ allow_premium: false
   rmSync(join(p, '..', 'home', 'config.yaml'));
   const unset = lfm('retro', '--foreground');
   assert.equal(unset.status, 2, unset.stderr);
-  assert.match(unset.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>/m);
+  assert.match(unset.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, acp:<target> or byokit:<route>/m);
   assert.match(unset.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir \S+   # with the user's answer$/m);
   writeFileSync(join(p, '..', 'home', 'config.yaml'), AGENTS_SET);
   const failed = lfm('retro', '--foreground', '--json');
