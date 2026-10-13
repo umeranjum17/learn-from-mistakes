@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, detect, INSTALL, MODELS, PREMIUM, premiumBlocked, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
+import { agents, binName, detect, INSTALL, lists, MODELS, PREMIUM, premiumBlocked, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -53,18 +53,21 @@ export async function doctor(dir, opts) {
   const roles = await resolveRoles(cfg, list);
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
+    const fromEnv = name === 'worker' && !!r.model && r.model === (process.env.LFM_MODEL ?? '').trim();
     if (!r.bin) {
       // Offered only where the role would not resolve to the other role's binary and model, and where its runner lists the
       // role's model: that is the clash it names.
       const other = roles[name === 'worker' ? 'judge' : 'worker'];
       const offered = list.filter((x) => {
-        if (!x.usable || x.problem || (r.model && !MODELS[x.runner]?.includes(r.model))) return false;
+        if (!x.usable || x.problem || (r.model && !lists(x.runner, r.model))) return false;
         const model = roleModel({ ...cfg, [name]: { ...cfg[name], runner: x.runner } }, name, x.runner);
         return !premiumBlocked(cfg, model) && !same({ bin: x.bin, model }, other);
       }).map((x) => x.runner);
-      const premium = premiumBlocked(cfg, r.model);
-      add('fail', name, r.problem, r.fix ?? (premium ? `set allow_premium: true in ${file}, or use a cheap model`
-        : offered.length ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
+      // An auto role takes only the models a usable CLI lists, so a model none lists is replaced by one that CLI lists.
+      const cheap = list.find((x) => x.usable && !x.problem && MODELS[x.runner]?.length);
+      add('fail', name, r.problem, r.fix ?? (offered.length
+        ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
+        : cfg[name].runner === 'auto' && r.model && cheap ? `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${file} to ${MODELS[cheap.runner][0]}`
         : `install a second agent CLI (${INSTALL}), or set runner_path in ${shq(globalFile())}`));
       continue;
     }
@@ -90,7 +93,6 @@ export async function doctor(dir, opts) {
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
     const { model } = r;
-    const fromEnv = name === 'worker' && !!model && model === (process.env.LFM_MODEL ?? '').trim();
     const cheap = route ? await byokit.modelOf(route, '') : MODELS[key]?.[0];
     if (!model && route) add('fail', `${name} model`, `BYOKit has no default model for ${route}`, `set ${name}.model in ${file}`);
     else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${file}`);
