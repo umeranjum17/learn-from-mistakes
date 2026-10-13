@@ -15,14 +15,16 @@ const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--
 // A role is unset when its agent is, or when the agent has no model: both are the user's to set.
 export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k] || !cfg.agent_config?.[cfg[k]]?.model);
 // The names of the unset keys as the user reads them: a role's agent, or the model of the agent it already names.
-export const named = (cfg, keys) => keys.map((k) => (cfg[k] ? `agent_config.${cfg[k]}.model` : k)).join(' and ');
+// Two roles on one agent with no model share one name, so it is listed once.
+export const named = (cfg, keys) => [...new Set(keys.map((k) => (cfg[k] ? `agent_config.${cfg[k]}.model` : k)))];
 export const interactive = () => !!(process.stdin.isTTY && process.stdout.isTTY);
 
 // The init command that saves the user's answer for the keys that are not set.
 export const saveCommand = (keys, dir) => `learn-from-mistakes-axi init ${keys.map((k) => `${FLAG[k][0]} <agent> ${FLAG[k][1]} <model>`).join(' ')}${dir ? ` --dir ${shq(dir)}` : ''}   # with the user's answer`;
 
 export function askError(cfg, keys, file, dir) {
-  return new UsageError(`ask the user which agent to use: ${named(cfg, keys)} ${keys.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model. Then run the command that stopped again`,
+  const names = named(cfg, keys);
+  return new UsageError(`ask the user which agent to use: ${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model. Then run the command that stopped again`,
     saveCommand(keys, dir));
 }
 
@@ -49,7 +51,7 @@ export async function pick(keys, cfg, dir) {
   const ask = async (q) => {
     process.stderr.write(q);
     const { value, done } = await lines.next();
-    if (done) throw new UsageError(`no answer given: ${named(cfg, keys)} not saved`, saveCommand(keys, dir));
+    if (done) throw new UsageError(`no answer given: ${named(cfg, keys).join(' and ')} not saved`, saveCommand(keys, dir));
     return value.trim();
   };
   const picks = {};
@@ -89,6 +91,6 @@ export async function ensureAgents(cfg, file, dir) {
   if (!keys.length) return false;
   if (!interactive()) throw askError(cfg, keys, file, dir);
   save(file, await pick(keys, cfg, dir));
-  process.stderr.write(`saved: ${named(cfg, keys)} in ${file}\n`);
+  process.stderr.write(`saved: ${named(cfg, keys).join(' and ')} in ${file}\n`);
   return true;
 }

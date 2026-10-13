@@ -568,6 +568,14 @@ test('init does not refuse a judge with no model as a clash, and asks for its mo
   assert.doesNotMatch(r.stderr, /would judge its own work/);
 });
 
+test('init names a shared unset model once when the worker and judge are the same agent', () => {
+  const { lfm } = setup(['claude']);
+  const r = lfm('init', '--agent', 'claude', '--judge-agent', 'claude');
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^error: ask the user which agent to use: agent_config\.claude\.model is not set in /m);
+  assert.doesNotMatch(r.stderr, /agent_config\.claude\.model and agent_config\.claude\.model/);
+});
+
 test('init refuses a model that starts with a dash, at --model and --judge-model, and writes nothing', () => {
   const { lfm, config, env } = setup(['claude', 'opencode']);
   for (const args of [['--agent', 'claude', '--model', '--yolo'], ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', '-x']]) {
