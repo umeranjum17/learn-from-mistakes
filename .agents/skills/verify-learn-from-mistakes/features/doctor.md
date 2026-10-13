@@ -24,7 +24,7 @@ Checks, in order:
   version and tools. A role that is not set is a fail (`agent is not set`) whose fix is the init save command
   (`learn-from-mistakes-axi init --agent <agent> --model <model> ... # with the user's answer`); the command asks first, as `init` does: in a terminal it saves the answer, otherwise it exits 2 with `error: ask the user which agent to use` and the same `next:` before any check.
   Any other role that does not resolve is a fail whose fix is `install <bin>, or set agent_path_override.<bin> in <global>` when the agent
-  is not installed, else `set agent in <file> to another agent the user chooses` (usable but not offered, or a judge that
+  is not installed, else `ask the user which agent and model to use, then set agent and its agent_config model in <file>; the run never picks one` (usable but not offered, or a judge that
   clashes). `<file>` is the project file when it set the key, else the global file. A BYOKit route that failed its own check keeps its problem and fix.
 - `worker login`/`judge login`: the agent's own status command through `which()`, its
   output never printed: `codex login status` (exit 0), `opencode auth list` (a
@@ -40,7 +40,7 @@ Checks, in order:
   is never acceptable, `allow_premium: true` included. A premium name (`opus`, `sonnet`, `sol`) is a fail unless
   `allow_premium: true` (its fix names both files).
 - `judge`: a judge on the worker's identity (real binary, model) is a fail with the reason that it would judge its own
-  work; fix: `set judge_agent in <file> to another agent the user chooses`. There is no separate identity line.
+  work; fix: `ask the user which agent and model to use, then set judge_agent and its agent_config model in <file>; the run never picks one`. There is no separate identity line.
 - `skill <runner>`: per configured, usable runner with a skills dir, `SKILL.md` under
   `learn-from-mistakes/` in its global dir (`${CLAUDE_CONFIG_DIR:-~/.claude}/skills`,
   `${CODEX_HOME:-~/.codex}/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`,

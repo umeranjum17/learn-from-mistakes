@@ -34,7 +34,7 @@ cd $SCR/ky && cp $SELF/examples/{defects.md,gate.sqlite,.learn-from-mistakes.yam
 cat >> .learn-from-mistakes.yaml <<'YAML'
 agent: claude
 judge_agent: codex
-agent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }
+agent_config: { claude: { model: <model> }, codex: { model: <model> } }
 window: 7d
 targets: { first_pass: ">= 70", escaped: "<= 0" }
 followup: { min_sessions: 3, min_days: 2 }

@@ -56,9 +56,9 @@ Real-product proof (outside the repo; lab sessions only, never the captain's):
 ```sh
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky   # a test command that fails unless UMER_FIXTURES=1, a cause matching it,
-             # agent: "byokit:opencode-go", judge_agent: claude, agent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor },
-             # claude: { model: claude-haiku-5-5 } } (or agent: opencode with model opencode-go/muse-spark-1.3-contributor)
-for ask in ...; do opencode run -m opencode-go/muse-spark-1.3-contributor "$ask, and run the tests"; done
+             # agent: "byokit:opencode-go", judge_agent: claude, agent_config: { "byokit:opencode-go": { model: <model> },
+             # claude: { model: <model> } } (or agent: opencode with model <provider>/<model>)
+for ask in ...; do opencode run -m <provider>/<model> "$ask, and run the tests"; done
 OPENCODE_API_KEY=$(node -p 'require(process.argv[1])["opencode-go"].key' ~/.local/share/opencode/auth.json) \
   lfm retro --wait 15m && lfm logs --step analyse
 sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status,tokens_in,tokens_out from invocations'
