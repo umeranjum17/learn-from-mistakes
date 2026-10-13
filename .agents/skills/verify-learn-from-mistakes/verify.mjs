@@ -74,7 +74,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
-    'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
+    'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
     'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
@@ -129,17 +129,17 @@ try {
   drive('abort', 'abort', '--json'); // the worker ends and the run is cancelled
   assert.equal(JSON.parse(readFileSync(join(evidence, 'abort.stdout'), 'utf8')).run.status, 'cancelled', 'abort does not cancel the run');
   drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
-  // Config v2: every new key loads and the run completes the same steps; a bad runner exits 2 naming the key.
+  // Config v2: every new key loads and the run completes the same steps; a bad agent exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
-  Object.assign(config, { worker: { runner: 'auto', model: '' }, judge: { runner: 'acp:gemini', model: 'cheap-model' }, window: '7d',
+  Object.assign(config, { agent: ['auto'], judge_agent: 'acp:gemini', agent_config: { 'acp:gemini': { model: 'cheap-model' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
-    caps: { invocations: 12, bundle_chars: 60000, timeout: '20m' }, signoff: 'auto', allow_premium: false });
+    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'auto', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));
   drive('retro-v2', 'retro', '--foreground', '--json');
   const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id), 'bundle.md'), 'utf8');
   assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
-  writeFileSync(stagedConfig, stringify({ ...config, worker: { runner: 3 } }));
-  run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
+  writeFileSync(stagedConfig, stringify({ ...config, agent: 3 }));
+  run('config-bad-agent', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
@@ -202,14 +202,18 @@ try {
   run('init', process.execPath, [cli, 'init', '-y', '--no-skill', '--dir', fresh], 0, { PATH: fakes });
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
+  const globalWritten = readFileSync(join(env.HOME, '.learn-from-mistakes', 'config.yaml'), 'utf8'); // init writes the global agent config once
+  assert.match(globalWritten, /^agent: auto$/m, 'init wrote no global agent: key');
+  save('init-global.yaml', globalWritten);
   run('init-again', process.execPath, [cli, 'init', '--json', '--dir', fresh], 0, { PATH: fakes });
   assert.equal(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'), written, 'a second init changed the config');
+  assert.equal(readFileSync(join(env.HOME, '.learn-from-mistakes', 'config.yaml'), 'utf8'), globalWritten, 'a second init changed the global config');
   // doctor on the written config (ok and warn lines, exit 0), then with its defect log gone (a fail with its fix, exit 1).
   run('doctor', process.execPath, [cli, 'doctor', '--dir', fresh], 0, { PATH: fakes });
   rmSync(join(fresh, 'docs', 'defects.md'));
   run('doctor-missing-log', process.execPath, [cli, 'doctor', '--dir', fresh], 1, { PATH: fakes });
   assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: check sources\.log\.path in \S+\.learn-from-mistakes\.yaml, or create it: touch \S+\/docs\/defects\.md\n/m, 'doctor names no fix for the missing log');
-  run('init-pinned-clash', process.execPath, [cli, 'init', '--worker', 'claude', '--judge', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
+  run('init-pinned-clash', process.execPath, [cli, 'init', '--agent', 'claude', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });
@@ -218,7 +222,7 @@ try {
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
-      'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
+      'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
       'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');

@@ -3,7 +3,7 @@
 // for the repo.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -11,7 +11,8 @@ import { after, test } from 'node:test';
 import { parse } from 'yaml';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
-const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
+import { AGENT_DEFAULTS } from '../src/config.mjs';
+const MODELS = Object.fromEntries(Object.entries(AGENT_DEFAULTS).map(([a, c]) => [a, [c.model]])); // the cheap default per agent
 
 function setup(agents, extraEnv = {}) {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-init-'));
@@ -31,19 +32,22 @@ function setup(agents, extraEnv = {}) {
   const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm, ...extraEnv };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   const config = join(p, '.learn-from-mistakes.yaml');
-  return { p, nm, lfm, config, env };
+  const keys = (text) => appendFileSync(config, text); // agent keys after the commented ones init wrote
+  return { p, nm, lfm, config, env, keys, global: join(env.LFM_HOME, 'config.yaml') };
 }
 
-test('init writes a working config once: a worker and a different judge, the sources found, a git-ignored .lfm', () => {
-  const { p, nm, lfm, config } = setup(['claude', 'opencode']);
+test('init writes the global agent config and a working project config once: a worker and a different judge, the sources found, a git-ignored .lfm', () => {
+  const { p, nm, lfm, config, global } = setup(['claude', 'opencode']);
   const r = lfm('init', '-y', '--no-skill', '--json');
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
-  assert.equal(out.status, 'written');
+  assert.deepEqual([out.status, out.global, out.global_status], ['written', global, 'written']);
   assert.deepEqual([out.worker, out.judge], [{ runner: 'claude', model: MODELS.claude[0] }, { runner: 'opencode', model: MODELS.opencode[0] }]);
   assert.deepEqual(out.gaps, []);
   const yaml = parse(readFileSync(config, 'utf8'));
-  assert.deepEqual(yaml, { name: 'umer-app', worker: { runner: 'claude', model: '' }, judge: { runner: 'opencode', model: '' }, excerpts: 'on',
+  assert.deepEqual(parse(readFileSync(global, 'utf8')), { agent: 'auto', judge_agent: 'auto', agent_config: AGENT_DEFAULTS, agent_timeout: '20m' }); // the rest is comments
+  assert.match(readFileSync(config, 'utf8'), /^# agent: auto /m); // the project file names the keys it may override, commented
+  assert.deepEqual(yaml, { name: 'umer-app', excerpts: 'on',
     sources: { log: { type: 'markdown-log', path: 'docs/defects.md' }, gate: { type: 'no-mistakes', path: join(nm, 'state.sqlite') },
       sessions: { type: 'sessions', agents: ['auto'] } } });
   assert.equal(readFileSync(join(p, '.lfm', '.gitignore'), 'utf8'), '*\n');
@@ -51,11 +55,12 @@ test('init writes a working config once: a worker and a different judge, the sou
   const text = lfm('init');
   assert.match(text.stdout, /^excerpts on: the worker \(claude\) and the judge \(opencode\) see redacted record excerpts/m);
 
-  const bytes = readFileSync(config);
+  const bytes = readFileSync(config), globalBytes = readFileSync(global);
   const again = lfm('init', '--json');
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(JSON.parse(again.stdout).status, 'already set up');
+  assert.deepEqual([JSON.parse(again.stdout).status, JSON.parse(again.stdout).global_status], ['already set up', 'kept']);
   assert.deepEqual(readFileSync(config), bytes);
+  assert.deepEqual(readFileSync(global), globalBytes); // never overwritten
   const run = lfm('retro', '--foreground', '--json'); // the written config runs: every detected source is read
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
@@ -71,13 +76,12 @@ test('init writes a working config once: a worker and a different judge, the sou
   assert.equal(parse(readFileSync(config, 'utf8')).excerpts, 'off');
 });
 
-test('one agent CLI with one table model: the judge is written on the worker\'s identity and reported, never a silent fallback', () => {
-  const { lfm, config } = setup(['claude']);
+test('one agent CLI: the judge resolves to the worker\'s identity and is reported, never a silent fallback', () => {
+  const { lfm, global } = setup(['claude']);
   const r = lfm('init', '--json');
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout).gaps, ['judge: the judge resolves to the worker\'s agent and model, so it would judge its own work']);
-  assert.match(r.stderr, /^next: set judge\.runner and judge\.model in \.learn-from-mistakes\.yaml to an agent CLI and a different model, or install a second agent CLI$/m);
-  assert.deepEqual(parse(readFileSync(config, 'utf8')).judge, { runner: 'claude', model: '' });
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `set judge_agent in ${global} to another agent, or install a second agent CLI`);
   const agents = lfm('agents'); // the clash fails every later check of the config
   assert.equal(agents.status, 1);
   assert.match(agents.stderr, /^problem: judge: the judge resolves to the worker's agent/m);
@@ -85,12 +89,13 @@ test('one agent CLI with one table model: the judge is written on the worker\'s 
 
 test('a pinned judge steers the auto worker onto a different agent CLI, and the pair is written', () => {
   const { lfm, config } = setup(['claude', 'codex']);
-  const r = lfm('init', '--judge', 'claude', '--json');
+  const r = lfm('init', '--judge-agent', 'claude', '--json');
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.deepEqual([out.worker, out.judge], [{ runner: 'codex', model: MODELS.codex[0] }, { runner: 'claude', model: MODELS.claude[0] }]);
   assert.deepEqual(out.gaps, []);
-  assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'codex', model: '' });
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.judge_agent], [undefined, 'claude']); // only the pinned key is written
 });
 
 test('an empty or relative PATH entry never runs an agent CLI from the project dir', () => {
@@ -114,45 +119,37 @@ test('an existing config with no agent CLI at all says how to install one', () =
   writeFileSync(config, 'sources: {}\n');
   const r = lfm('init');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /^next: install claude, codex, opencode, pi or gemini, or set runner_path/m);
-});
-
-test('LFM_MODEL is a run-time override: init writes the same pair with it set', () => {
-  const { lfm, config } = setup(['claude', 'codex'], { LFM_MODEL: 'my-own-model' });
-  const r = lfm('init', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const out = JSON.parse(r.stdout);
-  assert.deepEqual([out.worker, out.judge], [{ runner: 'claude', model: MODELS.claude[0] }, { runner: 'codex', model: MODELS.codex[0] }]);
-  assert.deepEqual(parse(readFileSync(config, 'utf8')).worker, { runner: 'claude', model: '' });
+  assert.match(r.stderr, /^next: install claude, codex, opencode, pi or gemini, or set agent_path_override in .*lfm-home\/config\.yaml/m);
 });
 
 test('an unusable judge is not named as seeing excerpts', () => {
   const { lfm, config } = setup(['claude']);
-  writeFileSync(config, 'judge: { runner: codex, model: "" }\n');
+  writeFileSync(config, 'judge_agent: codex\n');
   const r = lfm('init');
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^excerpts on: the worker \(claude\) and the judge \(no usable runner\) see redacted record excerpts/m);
 });
 
 test('init refuses a pinned judge on the worker\'s identity, an unknown runner and no agent CLI, and writes nothing', () => {
-  const { lfm, config } = setup(['claude', 'opencode', 'gemini']);
+  const { lfm, config, env } = setup(['claude', 'opencode', 'gemini']);
   for (const [args, code, error] of [
-    [['--worker', 'claude', '--judge', 'claude'], 2, 'error: judge: the judge resolves to the worker\'s agent and model, so it would judge its own work'],
-    [['--worker', 'umer'], 2, 'error: --worker "umer" must be a runner: claude, codex, opencode, pi, gemini or acp:<target>'],
-    [['--judge', 'codex'], 1, 'error: judge: codex is not usable: codex is not on PATH'],
-    [['--judge', 'gemini'], 1, 'error: judge: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode (agents --test gemini runs the write test)'],
+    [['--agent', 'claude', '--judge-agent', 'claude'], 2, 'error: judge: the judge resolves to the worker\'s agent and model, so it would judge its own work'],
+    [['--agent', 'umer'], 2, 'error: --agent "umer" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'],
+    [['--judge-agent', 'codex'], 1, 'error: judge: codex is not usable: codex is not on PATH'],
+    [['--judge-agent', 'gemini'], 1, 'error: judge: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode (agents --test gemini runs the write test)'],
   ]) {
     const r = lfm('init', ...args);
     assert.equal(r.status, code, r.stderr);
     assert.equal(r.stderr.split('\n')[0], error);
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
+    assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
   }
   writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten: the flags that would change it are reported
-  const pinned = lfm('init', '--worker', 'opencode', '--judge', 'claude', '--json');
+  const pinned = lfm('init', '--agent', 'opencode', '--judge-agent', 'claude', '--json');
   assert.equal(pinned.status, 0, pinned.stderr);
   const { status, ignored } = JSON.parse(pinned.stdout);
-  assert.deepEqual([status, ignored], ['already set up', ['--worker', '--judge']]);
+  assert.deepEqual([status, ignored], ['already set up', ['--agent', '--judge-agent']]);
   assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m);
   assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
   const missing = spawnSync(process.execPath, [CLI, 'init', '--dir', join(config, 'nope')], { encoding: 'utf8', env: { PATH: '' } });
@@ -178,7 +175,7 @@ test('init finds the no-mistakes repo of a git worktree of the project, as the s
 // a premium model are 3 fail lines, each with its fix, exit 1; after the fixes, exit 0 again. Login checks run the
 // agent's own status command (pi's never refreshes a token) and print no credential text.
 test('doctor names each fail with its fix and exits 1 until the fixes are made', () => {
-  const { p, lfm, config, env } = setup(['claude', 'opencode', 'pi', 'gemini']);
+  const { p, lfm, config, env, global } = setup(['claude', 'opencode', 'pi', 'gemini']);
   const fake = (name, body) => { writeFileSync(join(env.PATH, name), `#!/bin/sh\n${body}\necho "1.0.0"\n`); chmodSync(join(env.PATH, name), 0o755); };
   fake('opencode', 'if [ "$1 $2" = "auth list" ]; then echo "Anthropic api sk-ant-UMERCANARY"; echo "1 credentials"; exit 0; fi');
   fake('pi', `if [ "$1" = auth ]; then echo "$*" > "${join(p, '..', 'pi-argv')}"; echo sk-UMERCANARY; exit 0; fi`);
@@ -200,60 +197,49 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
 
   const yaml = readFileSync(config, 'utf8');
   rmSync(join(p, 'docs', 'defects.md'));
-  writeFileSync(config, yaml.replace(/^worker: .*$/m, 'worker: { runner: pi, model: claude-opus-5-5 }').replace(/^judge: .*$/m, 'judge: { runner: pi, model: "" }'));
+  writeFileSync(config, `${yaml}agent: pi\njudge_agent: pi\nagent_config: { pi: { model: claude-opus-5-5 } }\n`);
   const bad = doctor();
   assert.equal(bad.status, 1);
   const fails = bad.out.checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'identity']);
+  assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'judge model', 'identity']);
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
-  assert.ok(fails[1].fix.endsWith(`allow_premium: true in ${config}`), fails[1].fix);
+  // each fix names the file the key came from: agent_config.pi from the project file, allow_premium from neither (the global file)
+  assert.equal(fails[1].fix, `set agent_config."pi".model in ${config} to a cheap model, or set allow_premium: true in ${global}`);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
-  assert.match(text.stdout, /^fail identity +the worker \(pi [^)]*\) and the judge \(pi\) resolve to the same agent and model.*\n {5}fix: set judge\.runner/m);
-  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
+  assert.match(text.stdout, /^fail identity +the worker \(pi [^)]*\) and the judge \(pi [^)]*\) resolve to the same agent and model.*\n {5}fix: set judge_agent in /m);
+  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 4 fixes above/m);
 
   writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
-  writeFileSync(config, yaml.replace(/^worker: .*$/m, 'worker: { runner: pi, model: umer-cheap-1 }'));
+  writeFileSync(config, `${yaml}agent: pi\nagent_config: { pi: { model: umer-cheap-1 } }\n`);
   const fixed = doctor();
   assert.equal(fixed.status, 0, fixed.stdout);
   assert.equal(fixed.out.fails, 0);
 });
 
-test('doctor fails a worker pinned to a runner that is not offered, and asks to set it to another agent CLI', () => {
-  const { lfm, config } = setup(['claude', 'gemini']);
+test('doctor fails a worker pinned to a runner that is not offered, and asks to set it to another agent when the judge takes the only other CLI', () => {
+  const { lfm, config, keys } = setup(['claude', 'gemini']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }'));
+  keys('agent: gemini\n');
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.match(fails[0].detail, /^gemini is not offered: /);
-  assert.equal(fails[0].fix, `set worker.runner in ${config} to another agent CLI`);
-});
-
-test('doctor names an unconfirmed pinned worker\'s reason and a set-runner fix, not a second CLI, when the judge takes the only other CLI', () => {
-  const { lfm, config } = setup(['claude', 'gemini']);
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }').replace(/^judge: .*$/m, 'judge: { runner: auto, model: "" }'));
-  const r = lfm('doctor', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.match(fails[0].detail, /^gemini is not offered: /);
-  assert.equal(fails[0].fix, `set worker.runner in ${config} to another agent CLI`);
+  assert.equal(fails[0].fix, `set agent in ${config} to another agent`);
 });
 
 test('doctor names a usable runner that does not clash with the other role in a pinned-role fix', () => {
-  const { lfm, config } = setup(['claude', 'codex']);
+  const { lfm, config, keys } = setup(['claude', 'codex']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }'));
+  keys('agent: gemini\n');
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `set worker.runner in ${config} to claude`);
+  assert.equal(fails[0].fix, `set agent in ${config} to codex`); // claude is the auto judge
 });
 
 test('doctor names the config file in its fix when that file is not a mapping', () => {
@@ -268,17 +254,17 @@ test('doctor names the config file in its fix when that file is not a mapping', 
 
 test('init prints a BYOKit worker problem with the route list in its error', () => {
   const { lfm } = setup(['claude']);
-  const r = lfm('init', '-y', '--no-skill', '--worker', 'byokit:nope');
+  const r = lfm('init', '-y', '--no-skill', '--agent', 'byokit:nope');
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /worker: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
 });
 
-test('init refuses a judge on a BYOKit route that is not a plan route, with the --worker and --judge hint and exit 2', () => {
+test('init refuses a judge on a BYOKit route that is not a plan route, with the --agent and --judge-agent hint and exit 2', () => {
   const { lfm, config } = setup(['claude']);
-  const r = lfm('init', '-y', '--no-skill', '--worker', 'claude', '--judge', 'byokit:nope');
+  const r = lfm('init', '-y', '--no-skill', '--agent', 'claude', '--judge-agent', 'byokit:nope');
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /judge: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
-  assert.match(r.stderr, /^next: learn-from-mistakes-axi init --worker <runner> --judge byokit:nope/m);
+  assert.match(r.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --judge-agent byokit:nope/m);
   assert.equal(existsSync(config), false);
 });
 
@@ -324,80 +310,34 @@ test('doctor names an absent store of an auto agent as information, and warns on
   assert.equal(listed.fix, `export CODEX_HOME=<dir>   # if a store is somewhere else, or drop it from sources.sessions.agents in ${config}`);
 });
 
-test('doctor offers no runner whose model, as the pinned role would use it, clashes with the other role', () => {
-  const { lfm, config } = setup(['claude', 'gemini']);
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "umer-x" }').replace(/^judge: .*$/m, 'judge: { runner: claude, model: "umer-x" }'));
-  const r = lfm('doctor', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `set worker.runner in ${config} to another agent CLI`);
-});
-
 test('doctor offers no runner whose premium model allow_premium forbids, so the fix does not make a new fail', () => {
-  const { lfm, config, env } = setup(['claude', 'codex']);
+  const { lfm, keys, global } = setup(['claude', 'codex']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "claude-opus-5-5" }'));
+  keys('agent: gemini\nagent_config: { codex: { model: claude-opus-5-5 } }\n'); // codex would run a premium model; claude is the judge
   const fails = JSON.parse(lfm('doctor', '--json').stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `install gemini, or set runner_path in ${join(env.LFM_HOME, 'config.yaml')}`);
-});
-
-test('doctor fails an auto worker on a model no installed CLI lists, names a listed model, and that fix makes exit 0', () => {
-  const { lfm, config } = setup(['claude', 'codex']);
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: auto, model: "claude-opus-5-5" }'));
-  const r = lfm('doctor', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `set worker.model in ${config} to ${MODELS.claude[0]}`);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, `worker: { runner: auto, model: "${MODELS.claude[0]}" }`));
-  const fixed = lfm('doctor', '--json');
-  assert.equal(fixed.status, 0, fixed.stdout);
+  assert.equal(fails[0].fix, `install gemini, or set agent_path_override.gemini in ${global}`);
 });
 
 test('doctor names the pinned runner\'s own problem, not a premium fix, when that runner is not on PATH', () => {
-  const { lfm, config, env } = setup(['claude', 'codex']);
+  const { lfm, keys, env, global } = setup(['claude', 'codex']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: claude, model: "claude-opus-5-5" }'));
+  keys('agent: claude\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
   rmSync(join(env.PATH, 'claude'));
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.equal(fails[0].detail, 'claude is not usable: claude is not on PATH');
-  assert.equal(fails[0].fix, `install claude, or set runner_path in ${join(env.LFM_HOME, 'config.yaml')}`);
-});
-
-test('doctor offers only a runner that lists the pinned worker model, never one that would run it with a model it does not list', () => {
-  const { lfm, config } = setup(['claude', 'codex', 'gemini']);
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "gpt-6-luna" }').replace(/^judge: .*$/m, 'judge: { runner: claude, model: "" }'));
-  const r = lfm('doctor', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `set worker.runner in ${config} to codex`);
-});
-
-test('doctor says to unset LFM_MODEL when the premium model comes from it', () => {
-  const { lfm, config } = setup(['claude', 'codex'], { LFM_MODEL: 'claude-opus-5-5' });
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: claude, model: "" }'));
-  const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model');
-  assert.equal(line.level, 'fail');
-  assert.equal(line.detail, 'claude-opus-5-5 (LFM_MODEL) is a premium model');
-  assert.equal(line.fix, 'unset LFM_MODEL, or set allow_premium: true');
+  assert.equal(fails[0].fix, `install claude, or set agent_path_override.claude in ${global}`);
 });
 
 // A worker on a BYOKit route is checked by BYOKit's own sign-in, not as an agent CLI: a route with no sign-in is a fail
 // with the sign-in fix, and doctor runs to the end instead of failing on the missing agent CLI row.
 test('doctor checks a BYOKit worker route by its sign-in and names the sign-in fix', () => {
-  const { lfm, config } = setup(['claude']);
+  const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:chatgpt", model: "" }'));
+  keys('agent: "byokit:chatgpt"\n');
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker login');
@@ -408,18 +348,18 @@ test('doctor checks a BYOKit worker route by its sign-in and names the sign-in f
 // A BYOKit worker with no model is checked on the model BYOKit calls (its route default), not the agent CLI table.
 test('doctor checks a BYOKit worker with no model on the route default BYOKit calls', async () => {
   const { provider } = await import('@byokit/accounts');
-  const { lfm, config } = setup(['claude']);
+  const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:chatgpt", model: "" }'));
+  keys('agent: "byokit:chatgpt"\n');
   const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model');
   assert.deepEqual([line.level, line.detail], ['ok', provider('chatgpt').models.fast]);
 });
 
 // A BYOKit route that is not a plan route fails the role itself, with BYOKit's problem and fix; no sign-in line follows.
 test('doctor fails a BYOKit worker on a route that is not a plan route, before any sign-in check', () => {
-  const { lfm, config } = setup(['claude']);
+  const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:nope", model: "" }'));
+  keys('agent: "byokit:nope"\n');
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const checks = JSON.parse(r.stdout).checks;
@@ -431,9 +371,9 @@ test('doctor fails a BYOKit worker on a route that is not a plan route, before a
 });
 
 test('doctor --live prints one fail for a judge on a failed BYOKit route, and no live call for it', () => {
-  const { lfm, config } = setup(['claude']);
+  const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^judge: .*$/m, 'judge: { runner: "byokit:nope", model: "" }'));
+  keys('judge_agent: "byokit:nope"\n');
   const r = lfm('doctor', '--live', '--json');
   assert.equal(r.status, 1, r.stderr);
   const checks = JSON.parse(r.stdout).checks;
@@ -443,33 +383,26 @@ test('doctor --live prints one fail for a judge on a failed BYOKit route, and no
   assert.equal(checks.some((c) => c.label === 'judge live'), false);
 });
 
-// A BYOKit plan-key route with no model has no catalogue default, and no agent CLI would pick one for it: the model is a
-// fail with the config path to set, not an agent-CLI warn.
-test('doctor fails a BYOKit worker with no model and no catalogue default, and names the config to set', () => {
-  const { lfm, config } = setup(['claude']);
+// A BYOKit plan-key route with no model in agent_config has no catalogue default, and no agent CLI would pick one for it:
+// the model is a fail with the key to set, not an agent-CLI warn, and --live makes no call that would fail a second time.
+test('doctor fails a BYOKit worker with no model and no default, names the key to set, and --live adds no second fail', () => {
+  const { lfm, keys, global } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: "byokit:opencode-go", model: "" }'));
-  const r = lfm('doctor', '--json');
+  keys('agent: "byokit:zai-coding-cn"\n');
+  const r = lfm('doctor', '--live', '--json');
   assert.equal(r.status, 1, r.stderr);
-  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker model');
-  assert.deepEqual([line.level, line.detail, line.fix], ['fail', 'BYOKit has no default model for opencode-go', `set worker.model in ${config}`]);
+  const checks = JSON.parse(r.stdout).checks;
+  const line = checks.find((c) => c.label === 'worker model');
+  assert.deepEqual([line.level, line.detail, line.fix], ['fail', 'BYOKit has no default model for zai-coding-cn', `set agent_config."byokit:zai-coding-cn".model in ${global}`]);
+  assert.equal(checks.some((c) => c.label === 'worker live'), false);
 });
 
-// Two BYOKit roles on one route are the same identity only when they call the same model: an unset model is the
-// catalogue default, so a judge on another model is not a clash, and a judge on that default is.
-test('doctor compares BYOKit roles by the model each calls: another model is no clash, the same model is', async () => {
-  const { provider } = await import('@byokit/accounts');
-  const fast = provider('chatgpt').models.fast;
-  const { lfm, config } = setup(['claude']);
+// Two BYOKit roles on one route read one agent_config entry, so they call the same model: the judge would judge its own work.
+test('doctor fails two BYOKit roles on one route as one identity', () => {
+  const { lfm, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  const identity = (judgeModel) => {
-    writeFileSync(config, readFileSync(config, 'utf8')
-      .replace(/^worker: .*$/m, 'worker: { runner: "byokit:chatgpt", model: "" }')
-      .replace(/^judge: .*$/m, `judge: { runner: "byokit:chatgpt", model: "${judgeModel}" }`));
-    return JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'identity');
-  };
-  assert.equal(identity('umer-cheap-1').level, 'ok');
-  const clash = identity(fast);
+  keys('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\n');
+  const clash = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'identity');
   assert.equal(clash.level, 'fail');
   assert.match(clash.detail, /^the worker \(byokit:chatgpt [^)]*\) and the judge \(byokit:chatgpt [^)]*\) resolve to the same agent and model/);
 });
@@ -478,7 +411,7 @@ test('doctor compares BYOKit roles by the model each calls: another model is no 
 // absent one is a fail with the login fix. The HOME is synthetic, and the auth.json in it is a placeholder.
 for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (exit 3); auth.json present'], [false, 'fail', 'pi auth check failed (exit 3); no auth.json']]) {
   test(`doctor checks pi's login file after a failed auth check: ${authJson ? 'present is a warn' : 'absent is a fail with its fix'}`, () => {
-    const { lfm, config, env } = setup(['claude', 'pi']);
+    const { lfm, keys, env } = setup(['claude', 'pi']);
     writeFileSync(join(env.PATH, 'pi'), '#!/bin/sh\nif [ "$1" = auth ]; then echo "no session" >&2; exit 3; fi\necho "1.0.0"\n');
     chmodSync(join(env.PATH, 'pi'), 0o755);
     if (authJson) {
@@ -486,8 +419,7 @@ for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (e
       writeFileSync(join(env.HOME, '.pi', 'agent', 'auth.json'), '{"placeholder": true}\n');
     }
     assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-    const yaml = readFileSync(config, 'utf8');
-    writeFileSync(config, yaml.replace(/^worker: .*$/m, 'worker: { runner: pi, model: umer-cheap-1 }').replace(/^judge: .*$/m, 'judge: { runner: claude, model: "" }'));
+    keys('agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 } }\n');
     const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker login');
     assert.equal(line.level, level);
     assert.equal(line.detail, detail);

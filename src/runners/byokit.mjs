@@ -22,6 +22,13 @@ export async function readyRoutes() {
   return [...ROUTES, ...keys];
 }
 
+// auto takes a plan key route only when it is ready: BYOKit loads, the route is a plan key route and its key is set.
+export async function ready(route, env = process.env) {
+  if (problem()) return false;
+  const key = await planKey(route);
+  return !!key && !!env[key.upstream.method];
+}
+
 // BYOKit's row for a plan key route, or undefined for a sign-in plan or an unknown name.
 async function planKey(route) {
   if (!ROUTES.includes(route)) return (await import('@byokit/accounts')).routes().find((r) => r.via === 'plan_key' && r.aliases?.includes(route));

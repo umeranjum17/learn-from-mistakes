@@ -29,7 +29,7 @@ Never edit the sources or instruction files; your output is a report and recomme
 
 Do this work on the cheap default model of the agent CLI that runs it; `npx -y learn-from-mistakes-axi agents` lists each one.
 Never take Opus, Sonnet or Sol as the default.
-To use your own model instead, set LFM_MODEL (or worker.model) to its id. With worker.runner auto it must be a model an agent CLI lists as its default, else set worker.runner to the CLI that runs it (`npx -y learn-from-mistakes-axi guide` then names it).
+The tool's own agent is `agent:` in ~/.learn-from-mistakes/config.yaml (default auto), with its model in `agent_config.<agent>.model`; a project's .learn-from-mistakes.yaml may override both.
 The CLI makes no network or model calls itself; only its runs, `npx -y learn-from-mistakes-axi agents --test` and `npx -y learn-from-mistakes-axi doctor --live` start your own agent CLI or a BYOKit route.
 
 ## Request

@@ -1,17 +1,8 @@
 # Config v2 and the source registry
 
 ## Sub-features
-`src/config.mjs` loads `.learn-from-mistakes.yaml` and `$LFM_HOME/config.yaml`.
-v1 configs (`name`, `sources`, `causes`, `repeat`) load unchanged. The v2 keys
-load with defaults and strict checks: `worker`/`judge` (`runner`: `auto`, `claude`,
-`codex`, `opencode`, `pi`, `gemini`, `acp:<target>`, `byokit:<route>`; `model`: a
-string), `window` (`<n>d`), `targets` (a known metric or `cause_count:<cause>` to a
-quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts`
-(`on|off`), `caps` (`invocations`, `bundle_chars`, `timeout` such as `20m`),
-`signoff` (`auto|off`), `allow_premium` (boolean). The global file adds
-`runner_path: {<runner>: <bin>}` (a bare name is looked up on absolute PATH entries only) and `runner_args: {<runner>: [..]}`. An unknown key
-or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only
-loaded and checked: the sessions and github sources and the bundle step read `excerpts`; the bundle step reads `caps.bundle_chars`, runners read `caps.timeout`, `agents` and `init` resolve `worker`/`judge`; nothing reads `caps.invocations` yet.
+`src/config.mjs` loads `.learn-from-mistakes.yaml` and the global `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`), in the same config shape as no-mistakes.
+v1 configs (`name`, `sources`, `causes`, `repeat`) load unchanged. The agent keys load with defaults and strict checks: `agent` and `judge_agent` (`auto`, `claude`, `codex`, `opencode`, `pi`, `gemini`, `acp:<target>`, `byokit:<route>`, or an ordered list of them), `agent_config.<agent>` (`model`: a string; `effort`: `minimal|low|medium|high|xhigh|max`, refused for gemini, acp and byokit; an opencode model is `provider/model`), `agent_timeout` (`<n>s|m|h`, such as `20m`) and `allow_premium` (boolean). A project file may set those five keys; `agent_path_override`, `agent_args_override`, `acpx_path` and `state_root` are global-only and exit 2 `<key> is global-only: set it in <global file>` in a project file. The rest of the v2 keys load with defaults and strict checks: `window` (`<n>d`), `targets` (a known metric or `cause_count:<cause>` to a quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts` (`on|off`), `caps` (`invocations`, `bundle_chars`), `signoff` (`auto|off`). An unknown key (the retired role keys, the runner path and args keys, or the caps timeout) or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only loaded and checked: the sessions and github sources and the bundle step read `excerpts`; the bundle step reads `caps.bundle_chars`; `agents`, `init` and `doctor` resolve `agent`/`judge_agent`; `agent_timeout` bounds each agent call; nothing reads `caps.invocations` yet.
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys), `read` and `detect` (init); `collect`/`ingest` call the
@@ -27,12 +18,13 @@ Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro 
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journeys: the `retro --foreground ...` journey runs a
-config with every v2 key plus a global `runner_path`/`runner_args` (5 completed
-steps) and a bad global `runner_args` (exit 2); `every rejected input ...` holds a
-row per bad v2 key (`worker: { runner: 3 }` names `worker.runner`); `an unreadable
+config with every agent and v2 key, a global `agent_path_override` and `agent_args_override`
+(5 completed steps) and a bad global `agent_args_override` (exit 2); `every rejected input ...`
+holds a row per bad key (`agent: 3` names `agent`; the retired `worker` role form is an unknown key;
+`agent_path_override` in a project file is global-only); `an unreadable
 source ...` covers a source without `path` and an unregistered type. The helper
-drives `retro-v2` (v2 keys on the staged examples) and `config-bad-runner`
-(`worker: { runner: 3 }`, exit 2).
+drives `retro-v2` (every agent and v2 key on the staged examples) and `config-bad-agent`
+(`agent: 3`, exit 2 naming `agent`).
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 
@@ -40,13 +32,15 @@ Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky && cp $SELF/examples/{defects.md,gate.sqlite,.learn-from-mistakes.yaml} .
 cat >> .learn-from-mistakes.yaml <<'YAML'
-worker: { runner: auto, model: "" }
-judge: { runner: auto, model: "" }
+agent: auto
+judge_agent: auto
+agent_config: { claude: { model: claude-haiku-5-5 } }
 window: 7d
 targets: { first_pass: ">= 70", escaped: "<= 0" }
 followup: { min_sessions: 3, min_days: 2 }
 excerpts: on
-caps: { invocations: 12, bundle_chars: 60000, timeout: 20m }
+agent_timeout: 20m
+caps: { invocations: 12, bundle_chars: 60000 }
 signoff: auto
 allow_premium: false
 YAML
@@ -54,7 +48,7 @@ lfm retro --foreground && lfm runs && git status --short
 ```
 
 The run is `completed` with 5 steps and collect reads 13 log and 5 gate items.
-Then `worker: { runner: 3 }` exits 2 naming `worker.runner`. Repeat in a scratch
+Then `agent: 3` exits 2 naming `agent`. Repeat in a scratch
 copy of `$SELF/examples`.
 
 ## Gotchas

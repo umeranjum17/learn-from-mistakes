@@ -6,7 +6,7 @@
 // A PR with more than 100 commits is read from its first 100 and marked partial.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { mapping, PROJECT_FILE } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
@@ -48,8 +48,8 @@ export function detect(dir) {
   return { type: 'github' };
 }
 
-export async function read(source, { dir }, { readFrom = 0, excerpts = true } = {}) {
-  const fail = (why, fix) => { throw new UsageError(`source ${source}: ${why}`, `remove sources.${source} from ${PROJECT_FILE}, or ${fix}`); };
+export async function read(source, { dir }, { readFrom = 0, excerpts = true, project = PROJECT_FILE } = {}) {
+  const fail = (why, fix) => { throw new UsageError(`source ${source}: ${why}`, `remove sources.${source} from ${shq(project)}, or ${fix}`); };
   const r = repo(dir);
   if (!r) fail(`the project's git origin is not a GitHub repo`, 'git remote add origin https://github.com/<owner>/<repo>');
   const bin = which('gh');

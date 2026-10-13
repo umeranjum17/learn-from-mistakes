@@ -1,5 +1,6 @@
-// The project config (.learn-from-mistakes.yaml) and the global one ($LFM_HOME/config.yaml). v1 configs load
-// unchanged; the v2 keys get their defaults. Every key is checked here, and an unknown key is a usage error.
+// The project config (.learn-from-mistakes.yaml) and the global one ($LFM_HOME/config.yaml), in no-mistakes' shape:
+// the agent keys live in the global file and a project file may override some of them. Every key is checked here, and
+// an unknown key is a usage error.
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -17,7 +18,6 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // detect (a config entry for init) and doctor (a check line); init calls detect, doctor calls doctor.
 // A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github };
-const RUNNERS = ['claude', 'codex', 'opencode', 'pi', 'gemini'];
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
 // A metric name: one of METRICS, or cause_count:<a configured cause>. Targets and the ledger's --metric take these.
@@ -46,28 +46,67 @@ export function pathSource(s, where, dir) {
 const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} must be ${rule}`); };
 const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a positive integer');
 
-// worker and judge: which agent CLI runs the tool's agent steps, and with which model ("" = the runner's default).
-function role(value, where) {
-  const r = { runner: 'auto', model: '', ...mapping(value ?? {}, ['runner', 'model'], where) };
-  check(r.runner === 'auto' || RUNNERS.includes(r.runner) || /^(acp|byokit):\S+$/.test(r.runner), `${where}.runner`, `auto, ${RUNNERS.join(', ')}, acp:<target> or byokit:<route>`);
-  check(typeof r.model === 'string', `${where}.model`, 'a string');
-  return r;
+// The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent or an ordered fallback list.
+export const AGENTS = ['claude', 'codex', 'opencode', 'pi', 'gemini']; // the native agent CLIs, in auto order
+const NAME = /^(claude|codex|opencode|pi|gemini|(acp|byokit):[a-z0-9][\w.-]*)$/;
+export const AGENT_RULE = 'auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them';
+const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with an effort flag
+// The cheap model per agent when agent_config names none; init writes the same into the global file.
+export const AGENT_DEFAULTS = { claude: { model: 'claude-haiku-5-5' }, codex: { model: 'gpt-6-luna' },
+  opencode: { model: 'opencode-go/muse-spark-1.3-contributor' }, 'byokit:opencode-go': { model: 'muse-spark-1.3-contributor' } };
+// A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
+// in a cloned repo cannot run a program of its choosing.
+const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout', 'allow_premium'];
+const GLOBAL_ONLY = ['state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
+
+// Applies the agent keys one file sets onto cfg, and records that file in cfg.from as the place to change each one.
+function agentKeys(cfg, g, file) {
+  for (const k of ['agent', 'judge_agent']) {
+    if (g[k] === undefined) continue;
+    const list = [g[k]].flat();
+    check(list.length && list.every((a) => a === 'auto' || NAME.test(a)), `${file}: ${k}`, AGENT_RULE);
+    cfg[k] = list;
+    cfg.from[k] = file;
+  }
+  for (const [a, c] of Object.entries(mapping(g.agent_config ?? {}, null, `${file}: agent_config`))) {
+    const where = `${file}: agent_config.${a}`;
+    check(NAME.test(a), `${file}: agent_config: ${a}`, 'an agent name: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>');
+    mapping(c, ['model', 'effort'], where);
+    check(c.model === undefined || (typeof c.model === 'string' && c.model), `${where}.model`, 'a non-empty string');
+    if (a === 'opencode' && c.model) check(c.model.includes('/'), `${where}.model`, 'provider/model, such as opencode-go/muse-spark-1.3-contributor');
+    if (c.effort !== undefined && !EFFORT_AGENTS.includes(a)) throw new UsageError(`${where}.effort: ${a} has no effort setting; remove it`);
+    check(c.effort === undefined || EFFORTS.includes(c.effort), `${where}.effort`, EFFORTS.join(', '));
+    cfg.agent_config[a] = { ...cfg.agent_config[a], ...c };
+    cfg.from[`agent_config.${a}`] = file;
+  }
+  if (g.agent_timeout !== undefined) {
+    check(typeof g.agent_timeout === 'string' && /^[1-9]\d*[smh]$/.test(g.agent_timeout), `${file}: agent_timeout`, 'a duration such as 90s, 20m or 1h');
+    cfg.agent_timeout = g.agent_timeout;
+    cfg.from.agent_timeout = file;
+  }
+  if (g.allow_premium !== undefined) {
+    check(typeof g.allow_premium === 'boolean', `${file}: allow_premium`, 'true or false');
+    cfg.allow_premium = g.allow_premium;
+    cfg.from.allow_premium = file;
+  }
+  return cfg;
 }
 
 const lfmHome = () => process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
 export const globalFile = () => join(lfmHome(), 'config.yaml');
+// The global file with every default; cfg.from names, per agent key, the file that set it (here: the global file).
 export function loadGlobal() {
-  const LFM_HOME = lfmHome();
-  const file = globalFile();
-  const g = mapping(readYaml(file) ?? {}, ['state_root', 'runner_path', 'runner_args'], file);
-  const runner_path = mapping(g.runner_path ?? {}, [...RUNNERS, 'acp'], `${file}: runner_path`);
-  for (const [k, v] of Object.entries(runner_path)) {
-    check(typeof v === 'string' && v, `${file}: runner_path.${k}`, 'a path to the agent binary');
-    if (v.includes('/')) runner_path[k] = expand(v, LFM_HOME); // a bare name stays a PATH lookup
-  }
-  const runner_args = mapping(g.runner_args ?? {}, [...RUNNERS, 'acp'], `${file}: runner_args`);
-  for (const [k, v] of Object.entries(runner_args)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: runner_args.${k}`, 'a list of strings');
-  return { home: LFM_HOME, state_root: g.state_root, runner_path, runner_args };
+  const home = lfmHome(), file = globalFile();
+  const g = mapping(readYaml(file) ?? {}, [...AGENT_KEYS, ...GLOBAL_ONLY], file);
+  const path = (v, where) => { check(typeof v === 'string' && v, where, 'a path to the binary'); return v.includes('/') ? expand(v, home) : v; }; // a bare name stays a PATH lookup
+  const agent_path_override = mapping(g.agent_path_override ?? {}, AGENTS, `${file}: agent_path_override`);
+  for (const [k, v] of Object.entries(agent_path_override)) agent_path_override[k] = path(v, `${file}: agent_path_override.${k}`);
+  const agent_args_override = mapping(g.agent_args_override ?? {}, [...AGENTS, 'acp'], `${file}: agent_args_override`);
+  for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
+  const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
+    agent: ['auto'], judge_agent: ['auto'], agent_config: structuredClone(AGENT_DEFAULTS), agent_timeout: '20m', allow_premium: false, from: {} };
+  return agentKeys(cfg, g, file);
 }
 
 export function loadConfig(dir) {
@@ -79,7 +118,8 @@ name: my-project
 sources:
   log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi guide   # the full config, then ingest, label and report');
   if (p.name !== undefined) check(typeof p.name === 'string', `${file}: name`, 'a string');
-  mapping(p, ['name', 'worker', 'judge', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', 'allow_premium'], file);
+  for (const k of GLOBAL_ONLY) if (Object.hasOwn(p, k)) throw new UsageError(`${file}: ${k} is global-only: set it in ${global.globalPath}`);
+  mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', ...AGENT_KEYS], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
     const where = `${file}: sources.${id}`;
@@ -126,17 +166,15 @@ sources:
   }
   // the read range is this window and the last one; only the sessions source applies it so far
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
-  const caps = block('caps', { invocations: 12, bundle_chars: 60000, timeout: '20m' });
+  const caps = block('caps', { invocations: 12, bundle_chars: 60000 });
   check(caps.bundle_chars >= 1000, `${file}: caps.bundle_chars`, 'at least 1000');
-  check(typeof caps.timeout === 'string' && /^[1-9]\d*[smh]$/.test(caps.timeout), `${file}: caps.timeout`, 'a duration such as 90s, 20m or 1h');
   const cfg = {
     dir,
     name: p.name ?? basename(dir), sources, causes, repeat: block('repeat', { min_incidents: 3, min_days: 2 }),
-    worker: role(p.worker, `${file}: worker`), judge: role(p.judge, `${file}: judge`), window: p.window ?? '7d',
+    window: p.window ?? '7d',
     targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets },
     followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps,
-    signoff: one('signoff', ['auto', 'off']), allow_premium: one('allow_premium', [false, true]),
-    runner_path: global.runner_path, runner_args: global.runner_args,
+    signoff: one('signoff', ['auto', 'off']), ...agentKeys(global, p, file),
   };
   if (global.state_root) return { ...cfg, state: join(expand(String(global.state_root), global.home), cfg.name) };
   return { ...cfg, state: join(dir, '.lfm'), ignore: true };
