@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import * as doneDone from './sources/done-done.mjs';
 import * as github from './sources/github.mjs';
 import * as markdownLog from './sources/markdown-log.mjs';
 import * as noMistakes from './sources/no-mistakes.mjs';
@@ -17,7 +18,7 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // read) and metrics (its numbers from what it read; a type with no source in the config gives its metricNames as n/a),
 // detect (a config entry for init) and doctor (a check line); init calls detect, doctor calls doctor.
 // A source slice adds one line here.
-export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github };
+export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github, 'done-done': doneDone };
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
 // A metric name: one of METRICS, or cause_count:<a configured cause>. Targets and the ledger's --metric take these.

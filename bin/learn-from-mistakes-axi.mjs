@@ -424,6 +424,7 @@ the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
      sources:
        log: { type: markdown-log, path: defects.md }   # each top-level "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## YYYY-MM-DD" heading
        # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
+       # proof: { type: done-done, apps: [<app>] }   # optional: done-done's failed verify run steps, read-only
      causes:
        <cause-id>:
          description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
@@ -433,7 +434,7 @@ the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
    match: { source: <sessions id>, signal, tool, text_contains } counts session events.
 
 2. Ingest: learn-from-mistakes-axi ingest
-   It prints the state dir. records.jsonl there: one JSON object per record (id, source, date; text only with excerpts on, redacted; a defect bullet also has its line).
+   It prints the state dir. records.jsonl there: one JSON object per record (id, source, date; text only with excerpts on, redacted; a defect bullet also has its line, a done-done step its step and run file).
 
 3. Label every record you read into labels.jsonl in the state dir, one line each:
      {"id":"<record id>","event":true,"cause":"<cause id from the config, or other>","why":"<25 words or fewer>"}
