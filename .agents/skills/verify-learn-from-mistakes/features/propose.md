@@ -56,7 +56,10 @@ rank a problem; a fix for a cause that did not repeat and one with no tripwire
 are problems; the finding's count and days; `--proposal <run>:1` copies the
 cause, metric and tripwire into the ledger, `--proposal <run>:6` exits 2; the
 next retro asks the reason for the change's `no-data` follow-up and saves it;
-`FAKE_PROPOSE=long` answers a four-sentence change every time, so it is sent back once, dropped on the second answer, and the valid fix is kept.
+`test/cli.test.mjs` also owns the journey `propose: a rule-breaking fix is sent
+back once, then dropped on the second answer while the valid fixes are kept`,
+with `FAKE_PROPOSE=long` (a four-sentence change on every answer): the step logs
+`dropped: proposals[1].change has more than 3 sentences` and keeps the valid fix.
 The helper's drives: `retro-propose` (`FAKE_PROPOSE=eight` for the gate's
 repeated `agent-exit-wait`: 5 kept fixes, a reason for each follow-up),
 `logs-check` (the 3 problem lines) and `change-proposal` (the ledger entry).
