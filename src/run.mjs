@@ -73,7 +73,7 @@ const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Ends a running run and its running step: interrupted (its owner is gone) or cancelled (a signal). An agent call the
-// run left going is ended too: its process group gets SIGTERM, then SIGKILL after 3 s.
+// run left going is ended too: its process group gets SIGTERM, then SIGKILL once its leader has gone or after 3 s.
 function stop(db, id, status, why) {
   const step = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status = 'running'`).get(id)?.name ?? 'run';
   const now = iso(Date.now());
