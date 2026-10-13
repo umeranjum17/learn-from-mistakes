@@ -34,7 +34,7 @@ export const agentModel = (cfg, agent) => cfg.agent_config?.[agent]?.model ?? ''
 export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? cfg.globalPath);
 // The fix for an agent or its model the user has not set, or that is not ready: the user chooses, and the file and key are named.
 export const chooseAgentFix = (cfg, key) => `ask the user which agent and model to use, then set ${key} and its agent_config model in ${fileOf(cfg, key)}; the run never picks one`;
-export const chooseModelFix = (cfg, name) => `ask the user which model to use, then set agent_config."${name}".model in ${fileOf(cfg, `agent_config.${name}`)}`;
+export const chooseModelFix = (cfg, name) => `ask the user which agent and model to use, then set agent and its agent_config model in ${fileOf(cfg, `agent_config.${name}.model`)}; the run never picks one`;
 
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
@@ -196,5 +196,7 @@ export async function agents(cfg, opts) {
   }
   // Only the configured agents: the tool never lists others to pick from.
   const used = new Set([cfg.agent, cfg.judge_agent].map((a) => a.replace(/^acp:.*/, 'acp')));
-  return { agents: list.filter((a) => used.has(a.runner)), ...(await resolveRoles(cfg, list)) };
+  const configured = [cfg.agent, cfg.judge_agent];
+  const rows = list.filter((a) => used.has(a.runner)).map((a) => ({ ...a, model: agentModel(cfg, configured.find((n) => n.replace(/^acp:.*/, 'acp') === a.runner)) }));
+  return { agents: rows, ...(await resolveRoles(cfg, list)) };
 }

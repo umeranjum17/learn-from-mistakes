@@ -14,7 +14,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const MODELS = { claude: 'claude-haiku-5-5', codex: 'gpt-6-luna', opencode: 'opencode-go/muse-spark-1.3-contributor' };
 // The agents the user chose, in the global file: the tool never picks one.
 const CHOSEN = (agent, judge) => `agent: ${agent}\njudge_agent: ${judge}\nagent_config: ${JSON.stringify(Object.fromEntries(Object.entries(MODELS).map(([a, model]) => [a, { model }])))}\n`;
-const ASK = /^agents: ask the user which agent to use: agent and judge_agent are not set in .*\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi or byokit:<route>/;
+const ASK = /^agents: ask the user which agent and model to use, then run learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>/;
 
 function setup(agents, chosen) {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-init-'));
@@ -218,6 +218,20 @@ test('init refuses a worker chosen as the set judge\'s agent and model, and writ
   assert.equal(existsSync(config), false);
 });
 
+test('a premium model fix names the file that sets the model, not the file that sets another key of its agent', () => {
+  const { lfm, config, global } = setup(['pi', 'claude'], 'agent_config: { pi: { model: claude-opus-5-5 } }\n');
+  writeFileSync(config, `agent: pi\njudge_agent: claude\nagent_config: { pi: { effort: low }, claude: { model: ${MODELS.claude} } }\n`);
+  const fix = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model').fix;
+  assert.equal(fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${global}`);
+});
+
+test('agents lists a configured acp target with the model set for that target', () => {
+  const { lfm, config } = setup(['claude'], 'agent: claude\n');
+  writeFileSync(config, `agent: acp:umer-target\njudge_agent: claude\nagent_config: { "acp:umer-target": { model: umer-acp-1 }, claude: { model: ${MODELS.claude} } }\n`);
+  const row = JSON.parse(lfm('agents', '--json').stdout).agents.find((a) => a.runner === 'acp');
+  assert.equal(row.model, 'umer-acp-1');
+});
+
 test('a judge on the worker\'s agent and model is reported by init and fails agents, never a silent fallback', () => {
   const { lfm, config } = setup(['claude']);
   writeFileSync(config, `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
@@ -336,7 +350,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
   // each fix names the file the key came from: agent_config.pi from the project file, allow_premium from neither (the global file)
-  assert.equal(fails[1].fix, `ask the user which model to use, then set agent_config."pi".model in ${config}, or set allow_premium: true in ${global}`);
+  assert.equal(fails[1].fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${config}; the run never picks one, or set allow_premium: true in ${global}`);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);

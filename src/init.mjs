@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { InputError, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { askError, ensureAgents, save, unset } from './ask.mjs';
+import { ensureAgents, save, saveCommand, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { CLASH, detect, KEY, resolveRoles } from './runners/index.mjs';
 
@@ -133,7 +133,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   stateDir(cfg);
   const missing = unset(cfg);
   const { worker, judge } = await resolveRoles(cfg, agents);
-  const gaps = [...(missing.length ? [`agents: ${askError(cfg, missing, file).message}`] : []),
+  const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];

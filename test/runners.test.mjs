@@ -211,7 +211,7 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   const noModel = lfm({}, 'agents', '--test', 'pi');
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
-  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which model to use, then set agent_config."pi".model in ${join(env.LFM_HOME, 'config.yaml')}`);
+  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set agent and its agent_config model in ${join(env.LFM_HOME, 'config.yaml')}; the run never picks one`);
   config('agent: pi\njudge_agent: claude\n');
   const asked = lfm({}, 'doctor', '--live');
   assert.equal(asked.status, 2, asked.stderr);
@@ -400,7 +400,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   const noModel = await run({ ZAI_CODING_CN_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:zai-coding-cn'); // no default model: never a guessed one
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: byokit:zai-coding-cn: no model set in agent_config$/m);
-  assert.match(noModel.stderr, /^next: ask the user which model to use, then set agent_config\."byokit:zai-coding-cn"\.model in /m);
+  assert.match(noModel.stderr, /^next: ask the user which agent and model to use, then set agent and its agent_config model in /m);
   writeFileSync(yaml, `${base}agent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n`);
 
   assert.deepEqual((await hook({}))[0], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
@@ -442,7 +442,7 @@ test('byokit: a name that is not a plan route, a route with no model set and a m
   const claude = await lfm('agents', '--test', 'byokit:claude'); // never a model the user did not set
   assert.equal(claude.status, 1);
   assert.match(claude.stderr, /^error: byokit:claude: no model set in agent_config$/m);
-  assert.match(claude.stderr, /^next: ask the user which model to use, then set agent_config\."byokit:claude"\.model in /m);
+  assert.match(claude.stderr, /^next: ask the user which agent and model to use, then set agent and its agent_config model in /m);
   const bad = await lfm('agents', '--test', 'byokit:../x');
   assert.equal(bad.status, 2);
 

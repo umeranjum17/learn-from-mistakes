@@ -59,10 +59,10 @@ Checks, in order:
 `pi` and `gemini` (and `git`) on PATH, a synthetic Claude credential and fakes whose
 login output carries a canary: exit 0 with the config, state, both sources, the worker,
 both logins ok, and the skill for claude and sign-off as warns; then a missing
-defect log, `agent: pi`, `judge_agent: pi` and `agent_config: { pi: { model: claude-opus-5-5 } }` give
+defect log, `agent: pi`, `judge_agent: pi` and `agent_config: { pi: { model: <premium model> } }` give
 exactly 3 fails (`source log`, `worker model`, `judge`), each with `fix:`, exit 1
 and `next: ... doctor   # again after the 4 fixes above`; the pi probe argv is
-`auth check --no-refresh --model claude-opus-5-5`; the canary never prints; after the
+`auth check --no-refresh --model <premium model>`; the canary never prints; after the
 fixes, exit 0. `doctor` with no agent set exits 2 with the ask, and stops on a BYOKit worker with no model with the ask for its model (exit 2, no call). The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,
 `fix: check sources.log.path ...`) in its fresh init project with fake agents.
 

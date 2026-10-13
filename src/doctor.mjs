@@ -9,7 +9,6 @@ import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, CLASH, chooseAgentFix, chooseModelFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
-import { saveCommand } from './ask.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -57,7 +56,6 @@ export async function doctor(dir, opts) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     if (r.problem === CLASH) { add('fail', name, r.problem, chooseAgentFix(cfg, 'judge_agent')); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
-    if (!r.runner) { add('fail', name, r.problem, saveCommand([KEY[name]], opts.dir)); continue; } // not set: the user chooses
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
       add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
         : chooseAgentFix(cfg, KEY[name]));
