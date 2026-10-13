@@ -14,7 +14,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const MODELS = { claude: 'claude-haiku-5-5', codex: 'gpt-6-luna', opencode: 'opencode-go/muse-spark-1.3-contributor' };
 // The agents the user chose, in the global file: the tool never picks one.
 const CHOSEN = (agent, judge) => `agent: ${agent}\njudge_agent: ${judge}\nagent_config: ${JSON.stringify(Object.fromEntries(Object.entries(MODELS).map(([a, model]) => [a, { model }])))}\n`;
-const ASK = /^agents: ask the user which agent to use: agent and judge_agent are not set in .*\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>/;
+const ASK = /^agents: ask the user which agent to use: agent and judge_agent are not set in .*\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, acp:<target> or byokit:<route>/;
 
 function setup(agents, chosen) {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-init-'));
@@ -71,14 +71,16 @@ test('init writes the global agent config and a working project config once: the
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
 
   writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten; its gaps are listed
-  const gaps = JSON.parse(lfm('init', '--json').stdout).gaps;
+  const gaps = JSON.parse(lfm('init', '-y', '--json').stdout).gaps;
   assert.match(gaps[0], ASK);
   assert.deepEqual(gaps.slice(1), ['sources: markdown-log found at docs/defects.md, not configured (add it as log)',
     'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)',
     'sources: sessions found, not configured (add it as sessions)']);
   assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
   rmSync(config);
-  assert.equal(lfm('init', '--no-excerpts').status, 0);
+  const plain = lfm('init', '--no-excerpts'); // a plain init with no agent set writes the files, then asks the user
+  assert.equal(plain.status, 2, plain.stderr);
+  assert.match(plain.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set/m);
   assert.equal(parse(readFileSync(config, 'utf8')).excerpts, 'off');
 });
 
@@ -100,10 +102,14 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
     assert.equal(stop.stderr.match(/^next: (.*)$/m)[1], save);
   }
 
-  const worker = lfm('init', '--agent', 'claude', '--model', MODELS.claude, '--json'); // an existing file takes an unset key
+  const worker = lfm('init', '-y', '--agent', 'claude', '--model', MODELS.claude, '--json'); // an existing file takes an unset key
   assert.equal(worker.status, 0, worker.stderr);
   assert.deepEqual([JSON.parse(worker.stdout).missing, JSON.parse(worker.stdout).ignored], [['judge_agent'], []]);
   assert.equal(worker.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
+  const plainWorker = lfm('init', '--agent', 'codex', '--model', MODELS.codex); // not -y: the unset judge is still asked, after the write
+  assert.equal(plainWorker.status, 2, plainWorker.stderr);
+  assert.equal(plainWorker.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
+  assert.equal(parse(readFileSync(config, 'utf8')).agent, 'claude'); // a set key is never rewritten
   const set = lfm('init', '--agent', 'codex', '--model', MODELS.codex, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode, '--json');
   assert.deepEqual([JSON.parse(set.stdout).ignored, JSON.parse(set.stdout).gaps], [['--agent', '--model'], []]); // a set key is never rewritten
   assert.deepEqual(Object.entries(parse(readFileSync(config, 'utf8'))).filter(([k]) => k.includes('agent')),
@@ -228,7 +234,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const ok = doctor();
   assert.equal(ok.status, 0, ok.stdout);
   const level = (out, label) => out.checks.find((c) => c.label === label)?.level;
-  assert.deepEqual(['config', 'state', 'source log', 'source gate', 'worker', 'worker login', 'judge login', 'identity'].map((l) => level(ok.out, l)), Array(8).fill('ok'));
+  assert.deepEqual(['config', 'state', 'source log', 'source gate', 'worker', 'worker login', 'judge login'].map((l) => level(ok.out, l)), Array(7).fill('ok'));
   assert.equal(ok.out.checks.find((c) => c.label === 'judge login').detail, 'opencode auth list: logged in');
   assert.deepEqual(['skill claude', 'sign-off'].map((l) => level(ok.out, l)), ['warn', 'warn']);
   assert.match(lfm('doctor').stderr, /^next: learn-from-mistakes-axi retro --wait 8m/m);
@@ -239,7 +245,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const bad = doctor();
   assert.equal(bad.status, 1);
   const fails = bad.out.checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'judge model', 'identity']);
+  assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'judge']);
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
   // each fix names the file the key came from: agent_config.pi from the project file, allow_premium from neither (the global file)
@@ -247,8 +253,8 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
-  assert.match(text.stdout, /^fail identity +the worker \(pi [^)]*\) and the judge \(pi [^)]*\) resolve to the same agent and model.*\n {5}fix: set judge_agent in /m);
-  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 4 fixes above/m);
+  assert.match(text.stdout, /^fail judge +the judge resolves to the worker's agent and model, so it would judge its own work\n {5}fix: set judge_agent in /m);
+  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
 
   writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
   writeFileSync(config, `${yaml}agent: pi\nagent_config: { pi: { model: umer-cheap-1 } }\n`);
@@ -406,13 +412,13 @@ test('doctor fails a BYOKit worker with no model set, names the key to set, and 
 });
 
 // Two BYOKit roles on one route read one agent_config entry, so they call the same model: the judge would judge its own work.
-test('doctor fails two BYOKit roles on one route as one identity', () => {
+test('doctor fails a judge that resolves to the worker\'s BYOKit route and model', () => {
   const { lfm, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   keys('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\nagent_config: { "byokit:chatgpt": { model: gpt-6-luna } }\n');
-  const clash = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'identity');
+  const clash = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'judge');
   assert.equal(clash.level, 'fail');
-  assert.match(clash.detail, /^the worker \(byokit:chatgpt [^)]*\) and the judge \(byokit:chatgpt [^)]*\) resolve to the same agent and model/);
+  assert.equal(clash.detail, 'the judge resolves to the worker\'s agent and model, so it would judge its own work');
 });
 
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an

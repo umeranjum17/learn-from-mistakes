@@ -1,7 +1,8 @@
 // The agents are the user's choice: the tool never picks one. When agent or judge_agent is not set, a terminal is
 // asked (a pick list of the supported agents, then the model) and the answer is saved to the config file; any other
 // caller, such as an agent, gets one line that says to ask the user, the choices, and the command that saves the answer.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseDocument } from 'yaml';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
@@ -9,9 +10,9 @@ import { AGENT_NAME } from './config.mjs';
 
 // The fixed list a terminal picks from (never a PATH scan); any other acp:<target> or byokit:<route> can be typed.
 export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
-const LIST = 'claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route> (such as byokit:opencode-go)';
+const LIST = 'claude, codex, opencode, pi, acp:<target> or byokit:<route> (such as byokit:opencode-go)';
 const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--judge-model'] };
-export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k].length);
+export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k]);
 export const interactive = () => !!(process.stdin.isTTY && process.stdout.isTTY);
 
 // The init command that saves the user's answer for the keys that are not set.
@@ -30,6 +31,7 @@ export function save(file, picks) {
     doc.set(key, agent);
     if (model) doc.setIn(['agent_config', agent, 'model'], model);
   }
+  mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, doc.toString());
 }
 
@@ -48,7 +50,7 @@ export async function pick(keys, cfg) {
     for (const key of keys) {
       const role = key === 'agent' ? 'worker (agent)' : 'judge (judge_agent)';
       process.stderr.write(`Which agent runs the ${role}?\n${CHOICES.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type acp:<target> or byokit:<route>\n`);
-      const worker = picks.agent?.agent ?? cfg.agent[0];
+      const worker = picks.agent?.agent ?? cfg.agent;
       let agent, model;
       for (;;) {
         const a = await ask('agent: ');

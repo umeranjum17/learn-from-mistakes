@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
+import { agents, binName, CLASH, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
 import { saveCommand } from './ask.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
@@ -56,6 +56,7 @@ export async function doctor(dir, opts) {
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     const at = fileOf(cfg, KEY[name]);
+    if (r.problem === CLASH) { add('fail', name, r.problem, `set judge_agent in ${at} to another agent the user chooses`); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.runner) { add('fail', name, r.problem, saveCommand([KEY[name]], opts.dir)); continue; } // not set: the user chooses
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
@@ -94,15 +95,6 @@ export async function doctor(dir, opts) {
       add('fail', `${name} model`, `${model} is a premium model`, `${setModel} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
     } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
-  // The identity rule: the judge never checks its own work.
-  const checked = (r) => r.bin && !r.fix;
-  if (checked(roles.worker) && checked(roles.judge)) {
-    const clash = same(roles.worker, roles.judge);
-    const id = (r) => `${r.runner}${r.model ? ` ${r.model}` : ''}`;
-    add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker (${id(roles.worker)}) and the judge (${id(roles.judge)}) resolve to the same agent and model, so the judge would judge its own work`
-      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge_agent in ${fileOf(cfg, 'judge_agent')} to another agent the user chooses`);
-  }
-
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.
   const used = new Set([roles.worker.runner, roles.judge.runner]);
   for (const a of list.filter((x) => used.has(x.runner) && x.usable && RUNNERS[x.runner].skills)) {

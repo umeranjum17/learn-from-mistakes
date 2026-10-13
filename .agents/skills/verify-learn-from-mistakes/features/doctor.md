@@ -40,8 +40,8 @@ Checks, in order:
   `set agent_config."<agent>".model in <file>, or set allow_premium: true in <file>`), only a warn with `allow_premium: true`; a
   premium name (`opus`, `sonnet`, `sol`) is a fail unless `allow_premium: true` (its fix names both files); a BYOKit
   route with no model is always a fail, `none set for byokit:<route>: a BYOKit route needs one`, with the `agent_config` fix.
-- `identity`: the worker's and judge's (real binary, model) differ (fail: the judge
-  would judge its own work; fix: `set judge_agent in <file> to another agent the user chooses`).
+- `judge`: a judge on the worker's identity (real binary, model) is a fail with the reason that it would judge its own
+  work; fix: `set judge_agent in <file> to another agent the user chooses`. There is no separate identity line.
 - `skill <runner>`: per configured, usable runner with a skills dir, `SKILL.md` under
   `learn-from-mistakes/` in its global dir (`${CLAUDE_CONFIG_DIR:-~/.claude}/skills`,
   `${CODEX_HOME:-~/.codex}/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`,
@@ -59,9 +59,9 @@ Checks, in order:
 `test/init.test.mjs` owns the journey: after `init` with the agents the user chose and fake `claude`, `opencode`,
 `pi` and `gemini` (and `git`) on PATH, a synthetic Claude credential and fakes whose
 login output carries a canary: exit 0 with the config, state, both sources, the worker,
-both logins and identity ok, and the skill for claude and sign-off as warns; then a missing
+both logins ok, and the skill for claude and sign-off as warns; then a missing
 defect log, `agent: pi`, `judge_agent: pi` and `agent_config: { pi: { model: claude-opus-5-5 } }` give
-exactly 4 fails (`source log`, `worker model`, `judge model`, `identity`), each with `fix:`, exit 1
+exactly 3 fails (`source log`, `worker model`, `judge`), each with `fix:`, exit 1
 and `next: ... doctor   # again after the 4 fixes above`; the pi probe argv is
 `auth check --no-refresh --model claude-opus-5-5`; the canary never prints; after the
 fixes, exit 0. `doctor` with no agent set exits 2 with the ask, and fails a BYOKit worker with no model. The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,

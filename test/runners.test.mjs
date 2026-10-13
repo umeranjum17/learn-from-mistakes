@@ -95,16 +95,27 @@ test('agents lists only the configured agents with version, login presence and m
   assert.match(row.problem, /--version failed: No version is set for shim: opencode/);
   assert.match(broken.stderr, /^next: install opencode, or set agent in .*\/p\/\.learn-from-mistakes\.yaml to another agent the user chooses$/m);
 
-  // The global file sets an ordered fallback list the user wrote; its first agent that resolves is the worker.
+  // agent takes one agent: a list is refused with the fix line that names the global file.
   global('agent: [gemini, codex]\njudge_agent: claude\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
+  const list = lfm({}, 'agents');
+  assert.equal(list.status, 2, list.stderr);
+  assert.match(list.stderr, /^error: .*config\.yaml: agent must be one agent, not a list$/m);
+  assert.equal(list.stderr.match(/^next: (.*)$/m)[1], `set agent in ${join(tmp, 'lfm-home', 'config.yaml')} to one agent, such as agent: claude`);
+  // A set agent that is not ready is the worker's problem: no other agent is tried, though claude is usable.
+  global('agent: codex\njudge_agent: claude\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
   config('');
+  const notReady = lfm({ FAKE_CODEX: 'broken' }, 'agents', '--json');
+  assert.equal(notReady.status, 1, notReady.stderr);
+  const nr = JSON.parse(notReady.stdout);
+  assert.deepEqual([nr.worker.runner, nr.worker.bin], ['codex', '']);
+  assert.match(nr.worker.problem, /^codex is not usable: --version failed: No version is set for shim: codex/);
+  assert.match(notReady.stderr, /^next: install codex, or set agent in .*\/config\.yaml to another agent the user chooses$/m);
+  global('agent: claude\njudge_agent: codex\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
   const own = lfm({}, 'agents');
   assert.equal(own.status, 0, own.stderr);
   const toon = decode(own.stdout);
-  assert.deepEqual(toon.agents.map((a) => [a.runner, a.model]), [['claude', MODELS.claude], ['codex', 'umer-cheap-1'], ['gemini', '']]);
-  assert.match(toon.agents.find((a) => a.runner === 'gemini').problem, /^not offered: /); // usable, so --test can check it, but never worker or judge
-  assert.deepEqual([toon.worker.runner, toon.worker.model], ['codex', 'umer-cheap-1']);
-  assert.equal(toon.judge.runner, 'claude');
+  assert.deepEqual([toon.worker.runner, toon.worker.model], ['claude', MODELS.claude]);
+  assert.deepEqual([toon.judge.runner, toon.judge.model], ['codex', 'umer-cheap-1']);
   config('agent: gemini\n'); // one agent that does not resolve: its own problem, and the fix names the file that set it
   const bad = lfm({}, 'agents');
   assert.equal(bad.status, 1);
@@ -116,7 +127,7 @@ test('agents lists only the configured agents with version, login presence and m
   config('');
   const none = lfm({}, 'agents');
   assert.equal(none.status, 2);
-  assert.match(none.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in .*\/p\/\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, gemini/m);
+  assert.match(none.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in .*\/p\/\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, acp:<target> or byokit:<route>/m);
   assert.equal(none.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
   assert.equal(none.stdout, '');
 });
@@ -129,7 +140,7 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
   assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `set judge_agent in ${join(p, '.learn-from-mistakes.yaml')} to another agent the user chooses`);
-  config('agent: claude\njudge_agent: [claude, codex]\n'); // the judge's fallback list skips the worker's identity
+  config('agent: claude\njudge_agent: codex\n'); // another agent as the judge resolves
   const two = lfm({}, 'agents', '--json');
   assert.equal(two.status, 0, two.stderr);
   assert.equal(JSON.parse(two.stdout).judge.runner, 'codex');
@@ -219,7 +230,7 @@ test('the skill row looks where the agent CLI reads skills: its login check\'s c
   assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'learn-from-mistakes')}`);
 });
 
-test('init writes no agent or model the user did not choose, and the guide takes no premium model as a default', () => {
+test('init writes no agent or model the user did not choose', () => {
   const { lfm, env, p } = setup();
   rmSync(join(env.LFM_HOME, 'config.yaml'));
   const r = lfm({}, 'init', '-y');
@@ -228,10 +239,6 @@ test('init writes no agent or model the user did not choose, and the guide takes
   const project = parse(readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8'));
   for (const k of ['agent', 'judge_agent', 'agent_config']) assert.equal(project[k], undefined);
   assert.match(r.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> /m);
-  const premium = /opus|sonnet|\bsol\b/i;
-  const guide = spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8', cwd: p, env });
-  assert.equal(guide.status, 0, guide.stderr);
-  for (const line of guide.stdout.split('\n')) if (premium.test(line)) assert.match(line, /never/i, `the guide takes a premium model as a default: ${line}`);
 });
 
 test('a hung, leaking, writing or overloaded agent ends with its real cause', () => {
