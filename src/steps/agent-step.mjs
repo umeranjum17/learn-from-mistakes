@@ -1,29 +1,31 @@
-// The harness every agent step runs through. It resolves the step's role (worker or judge) to an agent CLI by the
-// identity rule, calls it in the run dir with the step's prompt and the bundle, and checks the answer with the step's
+// The harness every agent step runs through. The step's role (worker or judge) is the agent the user set in the config;
+// the run never picks one: a role that is not set, or does not resolve to a ready agent, fails the step. It calls it in the run dir with the step's prompt and the bundle, and checks the answer with the step's
 // own check. An answer that fails the check is sent back once with the problems; a second one fails the step with them.
 // Each call is one `invocations` row, with the agent's process group while it runs and the tokens it reported; a run
 // makes at most caps.invocations calls.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { PROJECT_FILE } from '../config.mjs';
 import { startTime } from '../proc.mjs';
-import { call, detect, resolveRoles } from '../runners/index.mjs';
+import { call, detect, resolveRole } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
 
-// Returns `{ value }` with the checked JSON object, or `{ problem }` when the role resolves to no usable agent (no agent is
-// called). `check(value)` returns the problems with the answer, each naming a field and the rule it broke, never the
-// agent's own text.
+// Returns the checked JSON object. `check(value)` returns the problems with the answer, each naming a field and the rule
+// it broke, never the agent's own text.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
-  const r = (await resolveRoles(cfg, detect(cfg)))[role];
-  if (r.problem) return { problem: r.problem };
+  const fix = `set ${role}.runner (and ${role}.model) in ${join(cfg.dir, PROJECT_FILE)} to an agent you have; the run never picks one`;
+  if (cfg[role].runner === 'auto') throw new InputError(`${role} is not set: ${fix}`);
+  const r = await resolveRole(cfg, role, detect(cfg));
+  if (r.problem) throw new InputError(`${role}: ${r.problem}; ${fix}`);
   const bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');
   const invalid = db.prepare(`UPDATE invocations SET exit_status = 'invalid' WHERE id = ?`);
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}\n\n${bundle}`, log);
     problems = got.value ? check(got.value) : ['the answer holds no JSON object'];
-    if (!problems.length) return { value: got.value };
+    if (!problems.length) return got.value;
     invalid.run(got.row);
     log(`${role} answer ${attempt} is not valid: ${problems.join('; ')}`);
     ask = `${prompt}\n\nYour last answer was not valid: ${problems.join('; ')}. Answer again with one JSON object that fixes this.`;

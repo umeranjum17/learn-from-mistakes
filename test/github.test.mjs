@@ -113,8 +113,19 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
       partial: false, labels: ['demo'], changes_requested: 0 });
   } finally { db.close(); }
 
-  // excerpts: off keeps the numbers and stores no PR title or body.
   const cfg = join(p, '.learn-from-mistakes.yaml');
+  // A record id is printed as the store keeps it, even when its source id holds a key word, so the worker's labels name it.
+  const plain = readFileSync(cfg, 'utf8');
+  writeFileSync(cfg, plain.replace(/^(\s+)prs:/m, '$1gh-token-prs:'));
+  const keyed = lfm({ FAKE_ANALYSE: 'label' }, 'retro', '--foreground', '--json');
+  assert.equal(keyed.status, 0, keyed.stderr);
+  const keyedRun = JSON.parse(keyed.stdout).run.id;
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(keyedRun), 'bundle.md'), 'utf8'), /^- \[gh-token-prs:10\] gh-token-prs at PR #10, /m);
+  const kdb = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  try { assert.ok(kdb.prepare('SELECT record_id FROM labels WHERE run_id = ?').all(keyedRun).some((l) => l.record_id === 'gh-token-prs:10')); } finally { kdb.close(); }
+  writeFileSync(cfg, plain);
+
+  // excerpts: off keeps the numbers and stores no PR title or body.
   writeFileSync(cfg, readFileSync(cfg, 'utf8').replace(/^excerpts: on\b/m, 'excerpts: off'));
   const off = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(off.status, 0, off.stderr);

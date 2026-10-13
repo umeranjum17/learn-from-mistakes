@@ -2,7 +2,8 @@
 // the follow-ups, the top signal clusters (this window's session events with a failure signal, by tool and signal)
 // and the records no match rule tagged, this window's and the undated ones. Each item has an id and refs (an event's id
 // is its store row id, for reference only; a record's is the id labels.jsonl takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
-// pointers and counts only. Every string it writes goes through redact(). Items that would pass caps.bundle_chars are
+// pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
+// and a number or a hash, never record text, and the worker must cite it as the store keeps it. Items that would pass caps.bundle_chars are
 // dropped, and a last line counts them.
 import { writeFileSync } from 'node:fs';
 import { inWindow } from './metrics.mjs';
@@ -38,7 +39,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
     ['Unlabelled defect records', 'No record in this window lacks a cause.', records.map((r) =>
-      `- [${redact(r.record_id)}] ${redact(r.source)} at ${redact(r.ref)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
+      `- [${r.record_id}] ${redact(r.source)} at ${redact(r.ref)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
   const cap = cfg.caps.bundle_chars, heads = sections.map(([title, empty, list, head = '']) => `\n## ${title}\n\n${list.length ? head : `${empty}\n`}`);

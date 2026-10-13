@@ -424,9 +424,10 @@ Model: do this work on ${lfmModel() ? `${lfmModel()} (LFM_MODEL)` : 'the cheap d
 lists each agent CLI's default. Never take Opus, Sonnet or Sol as the default. LFM_MODEL or worker.model overrides it; with
 worker.runner auto, the model must be one an agent CLI lists as its default, else set worker.runner to the CLI that runs it.
 
-With a worker ready (learn-from-mistakes-axi agents names it), do step 1, then start a retro: learn-from-mistakes-axi
-retro --wait 15m. The tool's own agent labels the records and the run prints the report with their counts. You only
-start it and read the result. Label by hand (steps 2-6) only when no worker is ready.
+Set the agent that labels in the config (worker: { runner: <agent>, model: <model> }); the run never picks one.
+Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m. The tool's own agent labels the records and the
+run prints the report with their counts. You only start it and read the result. With no worker set, the retro stops and
+names the key to set; steps 2-6 are the manual way, without a retro.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>

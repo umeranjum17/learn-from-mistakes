@@ -1,10 +1,9 @@
 # Analyse step and the agent-step harness
 
 ## Sub-features
-`src/steps/agent-step.mjs` is the harness every agent step runs through. It
-resolves the step's role (`worker` or `judge`) by the identity rule
-([agents.md](agents.md)); a role with a problem fails the step with it and
-`next:` names `agents`. It calls the agent in `.lfm/runs/<id>/` with the step's
+`src/steps/agent-step.mjs` is the harness every agent step runs through. Its role
+(`worker` or `judge`) is the agent the user set in the config, resolved by the
+identity rule ([agents.md](agents.md)); the run never picks one. It calls the agent in `.lfm/runs/<id>/` with the step's
 prompt and then `bundle.md` ([bundle.md](bundle.md)), behind the `lfm-run:<id>:<step>`
 marker. It checks the JSON answer with the step's own check. A bad answer goes
 back once with the problems; a second bad answer fails the step (exit 1) with
@@ -29,10 +28,10 @@ step counts with these labels instead of `labels.jsonl` (kept for a run with non
 `problem: ...` and that finding or label is not kept; it is not sent back.
 The step logs `labels: <n> of <m> records, findings: <f>, problems: <p>`.
 A bundle with no cluster, event or record id asks no agent
-(`nothing to analyse: ...`), so the example journeys make no agent call. With no agent ready (no usable CLI, or a clashing role), the step completes with zero counts and a `no agent ready: ...` warning, shown in the run output and the report step's output, and `labels.jsonl` still counts.
+(`nothing to analyse: ...`), so the example journeys make no agent call. A worker that is not set (`runner: auto`) or does not resolve fails the step (exit 1) with one fix line naming the config file and `worker.runner`: the run never picks an agent.
 
 ## How to get to it (user POV)
-Set `worker:` in `.learn-from-mistakes.yaml` (or let `auto` pick), then
+Set `worker:` in `.learn-from-mistakes.yaml` (the run never picks one), then
 `learn-from-mistakes-axi retro --wait 15m` and `logs --step analyse`.
 
 ## Driving it with the public CLI
@@ -43,7 +42,11 @@ the end of the prompt; the `labels`, `findings` and `invocations` rows (tokens
 12 in, 5 out); a ref to `c99` is a problem; prose twice fails the step with
 2 `invalid` rows and the retry prompt; the report step counts the 2 labels with no
 `labels.jsonl`; a third call past `caps.invocations: 3`
-fails; a hung agent's process group is gone after its worker is killed.
+fails; a hung agent's process group is gone after its worker is killed, and a
+group whose leader is another process is never signalled; a worker that is not
+set, or set to an agent not on PATH, stops the run with the fix line.
+`test/github.test.mjs` checks a record id whose source id holds `token` is
+printed raw in the bundle and labelled as the store keeps it.
 The helper's drives run on the same fake PATH: `retro-analyse` (`FAKE_ANALYSE=label`)
 checks the kept finding and the invocation row, `logs-analyse` the problem line,
 `retro-analyse-prose` exits 1 and `logs-analyse-prose` shows the validation error.

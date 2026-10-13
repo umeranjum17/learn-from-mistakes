@@ -5,7 +5,6 @@
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { redact } from '../redact.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/analyse.md', import.meta.url), 'utf8');
@@ -60,16 +59,9 @@ export async function analyse(cfg, db, id, dir, log) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
     return { labels: 0, findings: 0, problems: 0 };
   }
-  // The bundle prints each record id redacted; the worker names it that way, and the labels table keeps the raw id.
-  const records = new Map(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => [redact(r.record_id), r.record_id]).filter(([shown]) => ids.has(shown)));
+  const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
-  const got = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x) => check(cfg, x), log });
-  if (got.problem) {
-    const warning = `no agent ready: ${got.problem}; run learn-from-mistakes-axi agents to see the agent CLIs found and the worker they resolve to; records stay unlabelled until an agent is ready or you label by hand`;
-    log(warning);
-    return { labels: 0, findings: 0, problems: 0, warning };
-  }
-  const v = got.value;
+  const v = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x) => check(cfg, x), log });
   const problems = [];
   const findings = v.findings.filter((f, i) => {
     const bad = f.refs.findIndex((r) => !ids.has(r));
@@ -85,7 +77,7 @@ export async function analyse(cfg, db, id, dir, log) {
   const finding = db.prepare('INSERT INTO findings (run_id, cause, summary, refs_json) VALUES (?, ?, ?, ?)');
   db.exec('BEGIN');
   try {
-    for (const l of labels) label.run(id, records.get(l.id), l.event ? 1 : 0, l.cause ?? null, l.why.trim(), records.get(l.duplicate_of) ?? null, l.occurrences ?? null, l.confidence ?? null);
+    for (const l of labels) label.run(id, l.id, l.event ? 1 : 0, l.cause ?? null, l.why.trim(), l.duplicate_of ?? null, l.occurrences ?? null, l.confidence ?? null);
     for (const f of findings) finding.run(id, f.cause, f.summary.trim(), JSON.stringify(f.refs));
     db.exec('COMMIT');
   } catch (e) {

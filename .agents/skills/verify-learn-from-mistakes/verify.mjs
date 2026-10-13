@@ -138,7 +138,7 @@ try {
   drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
   // Config v2: every new key loads and the run completes the same steps; a bad runner exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
-  Object.assign(config, { worker: { runner: 'auto', model: '' }, judge: { runner: 'acp:gemini', model: 'cheap-model' }, window: '7d',
+  Object.assign(config, { worker: { runner: 'claude', model: '' }, judge: { runner: 'acp:gemini', model: 'cheap-model' }, window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
     caps: { invocations: 12, bundle_chars: 60000, timeout: '20m' }, signoff: 'auto', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));

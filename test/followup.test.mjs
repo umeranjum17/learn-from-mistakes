@@ -48,7 +48,8 @@ function journey() {
   utimesSync(session('s-old', 20, fail(2, 'Read')), old, old);
 
   const rule = (tool) => `{ description: The agent's ${tool} calls fail., match: { source: sessions, signal: tool_error, tool: ${tool} } }`;
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `worker: { runner: claude }
+sources:
   sessions: { type: sessions, agents: [claude] }
   defects: { type: markdown-log, path: defects.md }
 causes:

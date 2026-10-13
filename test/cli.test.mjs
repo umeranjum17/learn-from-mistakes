@@ -1040,6 +1040,8 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`);
+  const config = join(p, '.learn-from-mistakes.yaml'), plain = readFileSync(config, 'utf8');
+  writeFileSync(config, `${plain}worker: { runner: claude }\n`); // the user sets the agent; the run never picks one
   const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, ...extra } });
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
   const calls = () => readFileSync(join(log, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -1114,22 +1116,20 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.throws(() => process.kill(-pgid, 0), { code: 'ESRCH' }, 'the agent outlived the run');
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', h.id), [{ exit_status: 'interrupted' }]);
 
-  // No agent CLI on PATH: analyse completes with no labels and the warning shows in the run and the report; labels.jsonl still counts.
+  // A worker that is not set, or set to an agent that is not ready, stops the run with the fix: the run never picks one.
   const nobin = join(p, '..', 'nobin');
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
-  writeFileSync(join(p, '.lfm', 'labels.jsonl'), `${JSON.stringify({ id: query('SELECT record_id FROM records WHERE run_id = ? ORDER BY record_id', run.id)[0].record_id, event: true, cause: 'shared-cache-lock', why: 'The run failed for Umer.' })}\n`);
-  const none = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
-  assert.equal(none.status, 0, none.stderr);
-  const n = JSON.parse(none.stdout);
-  assert.deepEqual(n.steps.map((s) => [s.name, s.status]).slice(4), [['analyse', 'completed'], ['report', 'completed']]);
-  assert.match(n.warning, /^no agent ready: no usable agent CLI \(install /);
-  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, n.run.id)[0].output_json), { labels: 0, findings: 0, problems: 0, warning: n.warning });
-  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', n.run.id)[0].n, 0);
-  const noneReport = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, n.run.id)[0].output_json);
-  assert.equal(noneReport.warning, n.warning);
-  assert.equal(noneReport.coverage.labelled, 1);
+  const fix = `set worker.runner (and worker.model) in ${join(p, '.learn-from-mistakes.yaml')} to an agent you have; the run never picks one`;
+  const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
+  assert.equal(missing.status, 1, missing.stderr);
+  assert.match(JSON.parse(missing.stdout).run.error, new RegExp(`^analyse: worker: .+; ${fix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+  writeFileSync(config, plain);
+  const unset = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(unset.status, 1, unset.stderr);
+  assert.equal(JSON.parse(unset.stdout).run.error, `analyse: worker is not set: ${fix}`);
+  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', JSON.parse(unset.stdout).run.id)[0].n, 0);
 
   // An open invocation whose group leader is not the stored process is not signalled when its run ends.
   const decoy = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
