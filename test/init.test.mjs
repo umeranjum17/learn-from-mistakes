@@ -201,7 +201,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
-  assert.match(text.stdout, /^fail identity +the worker and the judge are both pi.*\n {5}fix: set judge\.runner/m);
+  assert.match(text.stdout, /^fail identity +the worker \(pi [^)]*\) and the judge \(pi\) resolve to the same agent and model.*\n {5}fix: set judge\.runner/m);
   assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
 
   writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
@@ -389,7 +389,7 @@ test('doctor compares BYOKit roles by the model each calls: another model is no 
   assert.equal(identity('umer-cheap-1').level, 'ok');
   const clash = identity(fast);
   assert.equal(clash.level, 'fail');
-  assert.match(clash.detail, /^the worker and the judge are both byokit:chatgpt /);
+  assert.match(clash.detail, /^the worker \(byokit:chatgpt [^)]*\) and the judge \(byokit:chatgpt [^)]*\) resolve to the same agent and model/);
 });
 
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
