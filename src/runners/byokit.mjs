@@ -17,16 +17,9 @@ const NODE = '22.18';
 export const routeOf = (runner) => runner.match(/^byokit:(.+)/)?.[1];
 
 // The routes a person can name: the sign-in plans, then BYOKit's plan key aliases whose readiness is ready.
-export async function readyRoutes() {
+async function readyRoutes() {
   const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => r.aliases ?? []);
   return [...ROUTES, ...keys];
-}
-
-// auto takes a plan key route only when it is ready: BYOKit loads, the route is a plan key route and its key is set.
-export async function ready(route, env = process.env) {
-  if (problem()) return false;
-  const key = await planKey(route);
-  return !!key && !!env[key.upstream.method];
 }
 
 // BYOKit's row for a plan key route, or undefined for a sign-in plan or an unknown name.
@@ -86,12 +79,6 @@ async function askKey(key, { model, prompt, signal }) {
   } finally {
     accounts.stop();
   }
-}
-
-// The model a call uses: the configured one, else the cheap (fast) model in BYOKit's own catalogue, never its strong
-// one; "" when the catalogue has no cheap model for the route (a plan key route has none).
-export async function modelOf(route, configured) {
-  return configured || (ROUTES.includes(route) && (await import('@byokit/accounts')).provider(route).models.fast) || '';
 }
 
 // One call. The answer is { text } (with tokens_in and tokens_out when the provider reports them), or { error } with `transient` for a busy provider or a dropped network; the

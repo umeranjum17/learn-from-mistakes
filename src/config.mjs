@@ -47,14 +47,13 @@ const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} mus
 const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a positive integer');
 
 // The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent or an ordered fallback list.
-export const AGENTS = ['claude', 'codex', 'opencode', 'pi', 'gemini']; // the native agent CLIs, in auto order
-const NAME = /^(claude|codex|opencode|pi|gemini|(acp|byokit):[a-z0-9][\w.-]*)$/;
-export const AGENT_RULE = 'auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them';
+// The user sets both: the tool never picks an agent (no auto, no detection).
+export const AGENTS = ['claude', 'codex', 'opencode', 'pi', 'gemini']; // the native agent CLIs
+export const AGENT_NAME = /^(claude|codex|opencode|pi|gemini|(acp|byokit):[a-z0-9][\w.-]*)$/;
+const NAME = AGENT_NAME;
+export const AGENT_RULE = 'claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them';
 const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with an effort flag
-// The cheap model per agent when agent_config names none; init writes the same into the global file.
-export const AGENT_DEFAULTS = { claude: { model: 'claude-haiku-5-5' }, codex: { model: 'gpt-6-luna' },
-  opencode: { model: 'opencode-go/muse-spark-1.3-contributor' }, 'byokit:opencode-go': { model: 'muse-spark-1.3-contributor' } };
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
 // in a cloned repo cannot run a program of its choosing.
 const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout', 'allow_premium'];
@@ -65,7 +64,7 @@ function agentKeys(cfg, g, file) {
   for (const k of ['agent', 'judge_agent']) {
     if (g[k] === undefined) continue;
     const list = [g[k]].flat();
-    check(list.length && list.every((a) => a === 'auto' || NAME.test(a)), `${file}: ${k}`, AGENT_RULE);
+    check(list.length && list.every((a) => NAME.test(a)), `${file}: ${k}`, AGENT_RULE);
     cfg[k] = list;
     cfg.from[k] = file;
   }
@@ -105,7 +104,7 @@ export function loadGlobal() {
   const agent_args_override = mapping(g.agent_args_override ?? {}, [...AGENTS, 'acp'], `${file}: agent_args_override`);
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
-    agent: ['auto'], judge_agent: ['auto'], agent_config: structuredClone(AGENT_DEFAULTS), agent_timeout: '20m', allow_premium: false, from: {} };
+    agent: [], judge_agent: [], agent_config: {}, agent_timeout: '20m', allow_premium: false, from: {} };
   return agentKeys(cfg, g, file);
 }
 

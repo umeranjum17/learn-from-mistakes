@@ -10,6 +10,8 @@ import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
+// The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
+const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }\n';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
@@ -71,6 +73,8 @@ followup: { min_sessions: 3, min_days: 1 }
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   const env = { ...process.env, PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: join(tmp, 'home', '.claude'),
     CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share') };
+  mkdirSync(env.LFM_HOME, { recursive: true });
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   const change = (cause, days, ...flags) => {
     const r = lfm('change', 'applied', '--cause', cause, '--ref', 'abc1234', '--at', ago(days), ...flags);

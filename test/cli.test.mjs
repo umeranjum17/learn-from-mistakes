@@ -11,6 +11,8 @@ import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
+// The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
+const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }\n';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
@@ -30,6 +32,8 @@ function setup() {
   cpSync(new URL('../examples', import.meta.url).pathname, join(tmp, 'p'), { recursive: true });
   own(join(tmp, 'p'));
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  mkdirSync(env.LFM_HOME);
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
   const raw = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: tmp, env });
   return { p: join(tmp, 'p'), lfm, raw, env };
@@ -119,6 +123,8 @@ test('same-named projects keep separate state; a global state_root still wins', 
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
   after(() => rmSync(tmp, { recursive: true }));
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  mkdirSync(env.LFM_HOME);
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const projects = ['a', 'b'].map((parent) => {
     const dir = join(tmp, parent, 'shop'); // same basename, different parents, no `name:` in either config
     cpSync(new URL('../examples', import.meta.url).pathname, dir, { recursive: true });
@@ -136,8 +142,8 @@ test('same-named projects keep separate state; a global state_root still wins', 
   assert.equal(run(projects[0], 'change', 'applied', '--cause', 'flaky', '--ref', 'abc1234').status, 0);
   assert.equal(JSON.parse(run(projects[1], 'changes', '--json').stdout).changes.length, 0);
 
-  mkdirSync(join(tmp, 'home'));
-  writeFileSync(join(tmp, 'home', 'config.yaml'), `state_root: ${join(tmp, 'root')}\n`);
+  mkdirSync(join(tmp, 'home'), { recursive: true });
+  writeFileSync(join(tmp, 'home', 'config.yaml'), `${AGENTS_SET}state_root: ${join(tmp, 'root')}\n`);
   rmSync(join(projects[0], '.lfm'), { recursive: true });
   const r = run(projects[0], 'ingest');
   assert.equal(r.status, 0, r.stderr);
@@ -236,7 +242,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
-    [() => withConfig('agent: [codex, 3]\n'), 2, bad('agent must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them'), HELP],
+    [() => withConfig('agent: [codex, 3]\n'), 2, bad('agent must be claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them'), HELP],
     [() => withConfig('worker: { runner: claude }\n'), 2, bad('unknown key worker'), HELP], // the old role keys are gone, with no alias
     [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a non-empty string'), HELP],
     [() => withConfig('agent_config: { gemini: { effort: low } }\n'), 2, bad('agent_config.gemini.effort: gemini has no effort setting; remove it'), HELP],
@@ -860,8 +866,8 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.doesNotMatch(git('status', '--porcelain', '--untracked-files=all'), /\.lfm/);
 
   // A project config with every key, and a global config with the agent keys, loads and runs the same steps.
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}agent: auto
-judge_agent: [acp:gemini, auto]
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}agent: claude
+judge_agent: [acp:gemini, codex]
 agent_config: { "acp:gemini": { model: cheap-model }, claude: { effort: low } }
 agent_timeout: 20m
 window: 30d
@@ -873,7 +879,7 @@ signoff: auto
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: [claude, codex]\njudge_agent: auto\nagent_config: { codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: [claude, codex]\njudge_agent: codex\nagent_config: { codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
@@ -881,10 +887,17 @@ allow_premium: false
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
   assert.match(badGlobal.stderr, /^error: .*config\.yaml: agent_args_override\.codex must be a list of strings$/m);
-  rmSync(join(p, '..', 'home', 'config.yaml'));
 
   writeFileSync(join(p, 'defects.md'), ''); // a failed step fails the run with exit 1 and saves the error
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  // With no agent set, a run is never started on an agent the tool picked: a caller that is not a terminal is told to
+  // ask the user, with the choices and the init command that saves the answer.
+  rmSync(join(p, '..', 'home', 'config.yaml'));
+  const unset = lfm('retro', '--foreground');
+  assert.equal(unset.status, 2, unset.stderr);
+  assert.match(unset.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>/m);
+  assert.match(unset.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir \S+   # with the user's answer$/m);
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), AGENTS_SET);
   const failed = lfm('retro', '--foreground', '--json');
   assert.equal(failed.status, 1, failed.stderr);
   const f = JSON.parse(failed.stdout);

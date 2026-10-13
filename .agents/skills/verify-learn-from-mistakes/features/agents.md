@@ -2,18 +2,18 @@
 
 ## Sub-features
 `src/runners/index.mjs` holds the runner table (claude, codex, opencode, pi, gemini,
-acp, in auto order; acp runs as `acp:<target>` through the `acpx` binary) and `AGENT_DEFAULTS` in `src/config.mjs` the cheap default model per agent (`agent_config`). A runner is usable when its binary (global `agent_path_override`, else an absolute PATH entry) runs
+acp; acp runs as `acp:<target>` through the `acpx` binary). The tool never picks an agent or a model: `agent`, `judge_agent` and `agent_config.<agent>.model` are the user's, with no default model for any agent (see [init.md](init.md) for the ask). A runner is usable when its binary (global `agent_path_override`, else an absolute PATH entry) runs
 `--version` with exit 0; a broken shim is not usable and shows the cause. A usable
 runner whose tool-off mode is not confirmed live (gemini, acp) has `problem:
 not offered: <why>` and is never resolved as worker or judge (a pinned one gives
 `problem: worker: gemini is not offered: ...`); `--test` still runs on it (a pass does not offer it). An acp target is a plain
 name (`[a-z0-9][\w.-]*`): it names the run dir, so a path or `..` exits 2.
-`agents` prints each runner: usable, version, tools (`off`, `read-only` for
+`agents` lists only the configured agents (the ones `agent` and `judge_agent` name; never other installed ones) and prints each: usable, version, tools (`off`, `read-only` for
 Codex and Gemini, or `unconfirmed` for acp), login presence (file and variable names only, never contents), the
-default model (`agent_config.<agent>.model`: claude, codex, opencode and byokit:opencode-go have a cheap default, pi, gemini and acp none) and the real binary path. With a project config it adds the
+model (`agent_config.<agent>.model`, empty when the user set none) and the real binary path. With a project config it adds the
 resolved `worker` and `judge` by the identity rule (real binary path + model; an
 empty model on the same binary is equal); a judge clash exits 1 with `problem:`
-and the fix. `agents --test <runner>` refuses an empty model on an agent with no default (pi, gemini, acp) unless `allow_premium` (the fix names `agent_config.<agent>.model`), and makes one live call in
+and the fix. `agents` with an unset role asks like `init` (a terminal: pick list, model, `saved: ... in <file>`, to the project file, or the global file when the directory has no project file; otherwise exit 2 `error: ask the user which agent to use: ...` and the `next:` init command). A role that does not resolve exits 1 with a hint: `install X, or set agent in <file> to another agent the user chooses` only when X is not installed, `set agent in <file> to another agent the user chooses` when it is installed but not offered, and for a judge on the worker's identity `set judge_agent in <file> to another agent the user chooses`. `agents --test <runner>` refuses an empty model: `<agent>: no model set in agent_config, so the agent CLI would pick its own, which may be a premium model` unless `allow_premium`, and for a byokit route always (`byokit:<route>: no model set in agent_config`); the fix names `agent_config."<agent>".model`. Otherwise it makes one live call in
 `<state dir>/runs/test-<runner>/`: the prompt starts with `lfm-run:test:<runner>`
 and asks the agent to write `x.txt`; any new file in the run dir, no answer within
 `agent_timeout` in an attempt (each attempt has its own; a call makes at most 3 attempts) or the agent's own error exits 1 with the
@@ -29,18 +29,17 @@ model call in process, no agent CLI, tools `none`. Its role identity is the rout
 plus model. Two kinds of route:
 - sign-in plans `byokit:chatgpt` and `byokit:claude`: the sign-in in this
   computer's BYOKit machine store (member `lfm`, seal service `byokit`). No model
-  set: the catalogue's `fast` model (`gpt-6-luna` for chatgpt); claude has no
-  cheap model, so the role needs one. Signed out: exit 1 with BYOKit's words and
+  set: refused (`no model set in agent_config`); the user names the model. Signed out: exit 1 with BYOKit's words and
   a sign-in `next:`.
 - plan key routes from BYOKit's route list (`via: plan_key` aliases, such as
   `byokit:opencode-go`): the key from the variable the route names
   (`OPENCODE_API_KEY`), held in an in-memory key store with an in-memory account
   index for the one call, so nothing reaches a BYOKit store; the pi-ai model from
-  pi-ai's built-in list (the default is muse-spark-1.3-contributor, or the `agent_config` model; an unknown one names
+  pi-ai's built-in list (the `agent_config` model, which a route always needs; an unknown one names
   itself). OpenCode Go also gets an `x-opencode-session` header, which BYOKit's
   key call drops (gap 6 in the evidence). Key not set: exit 1 and `next: set
   OPENCODE_API_KEY to your OpenCode Go key`.
-Any other name is refused before a call, with the ready plan routes (the sign-in plans and the plan key routes whose BYOKit readiness is `ready`). As worker or judge it is a `problem:` in `agents` (exit 1, the same list). With no usable agent CLI and BYOKit installed, the `next:` hint names the ready routes; without BYOKit, the install hint. A busy
+Any other name is refused before a call, with the ready plan routes (the sign-in plans and the plan key routes whose BYOKit readiness is `ready`). As worker or judge it is a `problem:` in `agents` (exit 1, the same list). With BYOKit not installed, the role's problem carries BYOKit's own install command as the fix. A busy
 provider (BYOKit `overloaded`/`network`, or 429/503/529 text) retries twice. Its
 doctor hook `doctor(route)`, which `doctor` calls, returns the route's row (the sign-in
 state from `accounts.status`, or whether the key variable is set; no paid call; a
@@ -62,7 +61,7 @@ in a project with `.learn-from-mistakes.yaml`.
 
 ## Driving it with the public CLI
 `test/runners.test.mjs` owns the journeys with fake `claude`, `codex`,
-`opencode`, `pi`, `gemini` and `acpx` binaries (PATH holds only them): the listing (versions, login file
+`opencode`, `pi`, `gemini` and `acpx` binaries (PATH holds only them): the listing of only the configured agents (versions, login file
 name without its canary contents, models from `agent_config`, a broken shim), the judge clash (exit 1 and fix), each runner's exact argv, cwd,
 marker and `OPENCODE_PERMISSION` (including `--test acp:fake-agent`), gemini and
 acp listed as not offered and refused as pinned worker or judge, pi's exit-0 error,
@@ -73,14 +72,14 @@ CLI against BYOKit's stand-in OpenAI (`mockOpenAI`) with a sign-in seeded into t
 throwaway HOME's machine store (DBus pointed at a missing socket, so the seal is a
 host key file there and no session keyring is touched): signed out (exit 1 and
 the sign-in fix), the doctor hook before and after sign-in, one `--test` call
-(model `gpt-6-luna`, marker in the input, only `prompt-byokit-chatgpt.md` in the
+(the model set in `agent_config`, marker in the input, only `prompt-byokit-chatgpt.md` in the
 run dir), a busy-once retry, a byokit judge beside a claude worker, the same route
 as worker and judge (clash); `byokit:opencode-go` against a local Responses
-stand-in (the default model; no key: exit 1 and the fix, no request; then one call
+stand-in (the `agent_config` model; no key: exit 1 and the fix, no request; then one call
 with `Bearer <key>`, a session header, the model, the marker, only the prompt file
 in the run dir and no BYOKit store in HOME; an unknown `agent_config` model), grok (refused with
-the route list, and as a worker `agents` exits 1 with that `problem:`), no agent CLI on PATH
-(the `next:` hint lists the ready routes), pi with no model,
+the route list, and as a worker `agents` exits 1 with that `problem:`), a `--test` of a byokit route with no model set (exit 1, `no model set in agent_config`), a configured agent CLI not on PATH
+(`next: install X, or set agent in <file> to another agent the user chooses`), `agents` with no agent set (exit 2, the ask), pi with no model,
 and the hook from a copy with no `node_modules` (install command). The helper drives `agents --json`
 on the host PATH in its scratch HOME to capture evidence (no live call).
 
@@ -91,7 +90,9 @@ Real-product proof (outside the repo; small cost; `$SCR` scratch, `$SELF` this c
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 labenv() { HOME=$LAB CLAUDE_CONFIG_DIR=$LAB/.claude CODEX_HOME=$LAB/.codex XDG_CONFIG_HOME=$LAB/.config XDG_DATA_HOME=$LAB/.local/share "$@"; }
 cd $SCR/ky && cp $SELF/examples/{defects.md,gate.sqlite,.learn-from-mistakes.yaml} .
-labenv lfm agents
+labenv lfm agents; echo $?                         # no agent set: exit 2, error: ask the user which agent to use, next: init --agent ...
+labenv lfm init --agent claude --model <the user's model> --judge-agent codex --judge-model <the user's model> --no-skill
+labenv lfm agents                                  # only claude and codex, and the resolved worker and judge
 labenv <credential lock> lfm agents --test claude   # one Claude run at a time on the lab credential
 labenv lfm agents --test codex
 lfm agents --test opencode                          # the desktop's own OpenCode login, read only
@@ -112,15 +113,14 @@ labenv env DBUS_SESSION_BUS_ADDRESS=unix:path=$SCR/no-bus XDG_STATE_HOME=$LAB/.l
 
 BYOKit plan key route (live, small cost): the desktop's own OpenCode Go key, read in
 place into the one command's environment (never copied, linked or saved; never
-printed), with no model set (the default is muse-spark-1.3-contributor; `agent: auto`
-also picks this route when `OPENCODE_API_KEY` is set):
+printed), with the model the user names in `agent_config` (a route needs one; the tool picks no route):
 
 ```sh
 OPENCODE_API_KEY=$(node -p 'require(process.argv[1])["opencode-go"].key' ~/.local/share/opencode/auth.json) \
   lfm agents --test byokit:opencode-go
 ```
 
-Each `--test` prints `reply` and `offered`, or the real
+Each `--test` needs a model set for that agent in `agent_config` (the user's). Each `--test` prints `reply` and `offered`, or the real
 error (no gemini login: "Authentication cancelled by user"). `ls` shows no `x.txt` (only `prompt-<runner>.md`, and Codex's
 `out-codex.txt`); `git status --short` shows only the 3 copied files.
 

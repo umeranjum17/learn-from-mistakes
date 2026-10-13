@@ -54,23 +54,8 @@ export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && 
 
 // The identity rule: a role is the real path of its binary plus its model. An empty model on the same binary is equal.
 export const CLASH = 'the judge resolves to the worker\'s agent and model, so it would judge its own work';
-const WORKER_CLASH = 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
-const clashOf = (name) => (name === 'judge' ? CLASH : WORKER_CLASH);
 export const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
-export const AUTO_ROUTE = 'byokit:opencode-go';
-
-// The agents a list names, in order. auto is OpenCode Go through BYOKit when that route is ready (its packages load
-// and its key is set), then each native agent CLI in auto order.
-async function candidates(list, env) {
-  const out = [];
-  for (const a of list) {
-    if (a !== 'auto') out.push(a);
-    else out.push(...(await byokit.ready(byokit.routeOf(AUTO_ROUTE), env) ? [AUTO_ROUTE] : []), ...Object.keys(RUNNERS).filter((r) => r !== 'acp'));
-  }
-  return [...new Set(out)];
-}
-
 // One agent as a role: its model from agent_config, its binary (a BYOKit route is its own identity), or its problem.
 async function candidate(cfg, runner, agents) {
   const model = agentModel(cfg, runner);
@@ -78,37 +63,33 @@ async function candidate(cfg, runner, agents) {
   if (route) { // in process
     const p = await byokit.check(route);
     if (p) return { runner, model, bin: runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
-    return { runner, model: await byokit.modelOf(route, model), bin: runner, problem: '' };
+    return { runner, model, bin: runner, problem: '' };
   }
   const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));
   if (a.problem) return { runner, model, bin: '', problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
   return { runner, model, bin: a.bin, problem: '' };
 }
 
-// Resolve the worker (agent:) or the judge (judge_agent:): the first agent in its list that is usable and, for the one
-// resolved second, differs from the other role. With only clashing agents left, it keeps the clash, so the caller
-// reports it rather than judging its own work.
+// Resolve the worker (agent:) or the judge (judge_agent:): the first agent in the list the user wrote that is usable
+// and, for the judge, differs from the worker. With only clashing agents left, it keeps the clash, so the caller
+// reports it rather than judging its own work. A role that is not set resolves to nothing: the tool never picks one.
 export async function resolveRole(cfg, name, agents, worker, env = process.env) {
   const list = cfg[KEY[name]];
+  if (!list.length) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
   const installed = (r) => !!agents.find((x) => x.runner === r?.runner.replace(/^acp:.*/, 'acp'))?.usable;
   let first, clash;
-  for (const runner of await candidates(list, env)) {
+  for (const runner of list) {
     const r = await candidate(cfg, runner, agents);
     if (r.problem) { if (!first || (!installed(first) && installed(r))) first = r; } // an installed agent's problem says more
     else if (worker && same(r, worker)) clash ??= r;
     else return r;
   }
-  if (clash) return { ...clash, problem: clashOf(name) };
-  if (list.includes('auto') && !installed(first)) return { runner: 'auto', model: '', bin: '', problem: `no usable agent CLI (install ${INSTALL})` };
+  if (clash) return { ...clash, problem: CLASH };
   return first;
 }
 
-// The pinned role is resolved first, so the auto role takes an agent that differs from it; both auto: the worker first.
+// The worker first, then a judge that differs from it.
 export async function resolveRoles(cfg, agents, env = process.env) {
-  if (cfg.agent.includes('auto') && !cfg.judge_agent.includes('auto')) {
-    const judge = await resolveRole(cfg, 'judge', agents, undefined, env);
-    return { worker: await resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge, env), judge };
-  }
   const worker = await resolveRole(cfg, 'worker', agents, undefined, env);
   return { worker, judge: await resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
 }
@@ -159,8 +140,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (route) model = await byokit.modelOf(route, model);
-  if (route && !model) throw new InputError(`${runner}: BYOKit's catalogue has no cheap model for ${route}`, `set agent_config."${runner}".model in ${fileOf(cfg, `agent_config.${runner}`)}`);
+  if (route && !model) throw new InputError(`${runner}: no model set in agent_config, and a BYOKit route needs one`, `set agent_config."${runner}".model in ${fileOf(cfg, `agent_config.${runner}`)}`);
   if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `set agent_config."${target ? `acp:${target}` : runner}".model in ${fileOf(cfg, `agent_config.${target ? `acp:${target}` : runner}`)} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
@@ -208,20 +188,20 @@ export async function agents(cfg, opts) {
     if (!a.usable) throw new InputError(`${a.runner} is not usable: ${a.problem}`, FIX);
     const p = route && await byokit.check(route);
     if (p) throw new InputError(`${a.runner}: ${p.problem}`, p.fix);
-    if (route) a.model = await byokit.modelOf(route, agentModel(cfg, opts.test));
-    else a.model = agentModel(cfg, opts.test);
+    a.model = agentModel(cfg, opts.test);
     stateDir(cfg);
     const step = opts.test.replace(':', '-');
     const dir = join(cfg.state, 'runs', `test-${step}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const model = opts.model ?? a.model; // doctor --live tests the judge with the judge's model
-    // An empty model lets the agent CLI pick its own, which may be a premium model.
-    if (!model && !cfg.allow_premium) throw new InputError(`${opts.test}: no model set and no cheap default, so the agent CLI would pick its own, which may be a premium model`,
-      `set agent_config."${opts.test}".model in ${fileOf(cfg, `agent_config.${opts.test}`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+    // A BYOKit route needs one always; an empty model lets an agent CLI pick its own, which may be a premium model.
+    if (!model && (route || !cfg.allow_premium)) throw new InputError(`${opts.test}: no model set in agent_config${route ? '' : ', so the agent CLI would pick its own, which may be a premium model'}`,
+      `set agent_config."${opts.test}".model in ${fileOf(cfg, `agent_config.${opts.test}`)}${route ? '' : `, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`}`);
     const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST });
     return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem } };
   }
-  const out = { agents: list };
-  return Object.assign(out, await resolveRoles(cfg, list));
+  // Only the configured agents: the tool never lists others to pick from.
+  const used = new Set([...cfg.agent, ...cfg.judge_agent].map((a) => a.replace(/^acp:.*/, 'acp')));
+  return { agents: list.filter((a) => used.has(a.runner)), ...(await resolveRoles(cfg, list)) };
 }

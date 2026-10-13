@@ -39,7 +39,7 @@ synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with 
 and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
 judge clash (exit 2; live proof in [features/init.md](features/init.md)), `doctor` on that
 project (exit 0) and with its defect log gone (exit 1, a fail with `fix:`; live proof in [features/doctor.md](features/doctor.md)),
-to capture their real stdout/stderr as evidence. Behavior assertions -- help and
+to capture their real stdout/stderr as evidence. The tool never picks an agent or a model: `agent`, `judge_agent` and `agent_config.<agent>.model` are the user's, and with none set `init`, `retro`, `rerun`, `doctor` and `agents` ask (a terminal) or exit 2 with `ask the user which agent to use` and the `init --agent <agent> --model <model> ...` command that saves the answer ([features/init.md](features/init.md)). Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
 canary -- are owned by `test/cli.test.mjs` (runner argv and failures by
