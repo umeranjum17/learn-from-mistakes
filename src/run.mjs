@@ -12,6 +12,7 @@ import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stat
 import { bundle } from './bundle.mjs';
 import { analyse } from './steps/analyse.mjs';
 import { propose } from './steps/propose.mjs';
+import { verify } from './steps/verify.mjs';
 import { check } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
@@ -59,6 +60,8 @@ const STEPS = {
   analyse: (cfg, db, id, log) => analyse(cfg, db, id, runDir(cfg, id), log),
   // The worker proposes fixes for the repeated causes and gives the reason for each follow-up that is not keep.
   propose: (cfg, db, id, log) => propose(cfg, db, id, runDir(cfg, id), collected(db, id), log),
+  // The judge tries to refute each finding and fix against the bundle items it cites: confirmed, weakened or refuted.
+  verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), log),
   // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
   check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
   // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;

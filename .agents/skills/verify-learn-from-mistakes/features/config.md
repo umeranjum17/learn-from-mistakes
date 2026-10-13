@@ -19,7 +19,7 @@ Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journeys: the `retro --foreground ...` journey runs a
 config with every agent and v2 key, a global `agent_path_override` and `agent_args_override`
-(8 completed steps) and a bad global `agent_args_override` (exit 2); `every rejected input ...`
+(9 completed steps) and a bad global `agent_args_override` (exit 2); `every rejected input ...`
 holds a row per bad key (`agent: 3` names `agent`; the retired `worker` role form is an unknown key;
 `agent_path_override` in a project file is global-only); `an unreadable
 source ...` covers a source without `path` and an unregistered type. The helper
@@ -47,7 +47,7 @@ YAML
 lfm retro --foreground && lfm runs && git status --short
 ```
 
-The run is `completed` with 8 steps and collect reads 13 log and 5 gate items.
+The run is `completed` with 9 steps and collect reads 13 log and 5 gate items.
 Then `agent: 3` exits 2 naming `agent`. Repeat in a scratch
 copy of `$SELF/examples`.
 
