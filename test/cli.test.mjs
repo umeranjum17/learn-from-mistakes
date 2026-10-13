@@ -932,6 +932,13 @@ allow_premium: false
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
   assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file'); // the store keeps its runs
+  const holdChange = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  holdChange.exec('BEGIN IMMEDIATE');
+  const busyChange = lfm('change', 'applied', '--proposal', '1:1'); // a store opened outside a run command is busy the same way
+  holdChange.exec('ROLLBACK');
+  holdChange.close();
+  assert.equal(busyChange.status, 2, busyChange.stderr);
+  assert.match(busyChange.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment/m);
 
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
   const corrupt = lfm('status');

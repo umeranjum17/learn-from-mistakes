@@ -266,7 +266,7 @@ try {
   assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: check sources\.log\.path in \S+\.learn-from-mistakes\.yaml, or create it: touch \S+\/docs\/defects\.md\n/m, 'doctor names no fix for the missing log');
   run('init-pinned-clash', process.execPath, [cli, 'init', '--agent', 'claude', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
   run('init-one-agent-two-models', process.execPath, [cli, 'init', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
-  assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /both claude, and agent_config holds one model per agent.*\nnext: learn-from-mistakes-axi init --agent claude --model umer-a --judge-agent <another agent> --judge-model umer-b /, 'the clash does not state the one-model rule');
+  assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /both claude, and agent_config holds one model per agent.*\nnext: learn-from-mistakes-axi init --agent claude --model umer-a --judge-agent <another agent> --judge-model <model> /, 'the clash does not state the one-model rule');
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });
