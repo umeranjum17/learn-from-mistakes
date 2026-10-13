@@ -12,6 +12,7 @@ import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/
 import { init } from '../src/init.mjs';
 import * as byokit from '../src/runners/byokit.mjs';
 import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
+import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -193,9 +194,11 @@ export async function ingest(cfg) {
       ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
+  // The agent reads records.jsonl: a record's text is there only with excerpts on, redacted; with excerpts off it has no text field.
+  const forAgent = ({ text, ...rest }) => (cfg.excerpts === 'on' ? { ...rest, text: redact(text ?? '') } : rest);
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records,
     ...rows.map((r) => ({ id: recordId(r), source: r.source, date: r.at.slice(0, 10), text: r.error })),
-    ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))]));
+    ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))].map(forAgent)));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   return { sources, events, records, rows, prs, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
@@ -244,7 +247,7 @@ function analyse(cfg, files, rerunHint) {
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {
     if (!c.match) continue;
-    for (const row of rows) if (row.cause === cause) {
+    for (const row of rows) if (row.cause === cause && !labels.has(recordId(row))) {
       group(cause).store.rows.push(row);
       if (row.at) group(cause).store.days.add(row.at.slice(0, 10));
     }

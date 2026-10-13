@@ -475,6 +475,19 @@ test('private canary prose never reaches default, --json, --full or stderr', () 
   }
 });
 
+test('a labelled gate row counts once: its label decides the cause, not its error tag', () => {
+  const { p, lfm } = setup();
+  assert.equal(lfm('ingest').status, 0);
+  const none = join(p, 'none-labels.jsonl'), labelled = join(p, 'gate-labels.jsonl');
+  writeFileSync(none, '');
+  writeFileSync(labelled, JSON.stringify({ id: 'gate:step-1', event: true, cause: 'server-memory-kill', why: 'the agent server was killed' }) + '\n');
+  const causeOf = (r, cause) => r.causes.find((c) => c.cause === cause) ?? { log: { incidents: 0 }, store: { rows: 0 } };
+  const before = JSON.parse(lfm('report', '--labels', none, '--json').stdout);
+  const after = JSON.parse(lfm('report', '--labels', labelled, '--json').stdout);
+  assert.equal(causeOf(after, 'agent-exit-wait').store.rows, causeOf(before, 'agent-exit-wait').store.rows - 1);
+  assert.equal(causeOf(after, 'server-memory-kill').log.incidents, causeOf(before, 'server-memory-kill').log.incidents + 1);
+});
+
 test('bad input is counted, never echoed; unresolved refs exit 1', () => {
   const { p, lfm } = setup();
   const long = `- [runner] ${'x'.repeat(20000)}\n`;

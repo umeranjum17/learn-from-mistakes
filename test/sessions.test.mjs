@@ -479,6 +479,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const cited = [...readFileSync(bundlePath, 'utf8').matchAll(/^- \[([^\]]+)\] (log|gate) at /gm)];
   assert.equal(cited.length, records.length);
   for (const [, id, source] of cited) assert.ok(recordIds.has(id), `[${id}] is not a ${source} id of records.jsonl`);
+  for (const [, needle] of PLANTED) assert.ok(!readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').includes(needle), `${needle} in records.jsonl`);
   const label = (id) => {
     writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id, event: false, why: 'a fix note' }) + '\n');
     return lfm('report');
@@ -492,6 +493,9 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   writeFileSync(cfg, `${examples}excerpts: off\n`);
   const off = bundleOf(lfm('retro', '--foreground'));
   assert.doesNotMatch(off.text, /^  > /m);
+  const offRecords = ledger('records.jsonl');
+  assert.ok(offRecords.some((r) => r.source === 'gate') && offRecords.some((r) => r.source === 'log'));
+  assert.ok(offRecords.every((r) => !('text' in r)), 'record text in records.jsonl with excerpts off');
   const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
   for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
   assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));
