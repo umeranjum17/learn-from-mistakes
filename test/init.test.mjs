@@ -430,6 +430,19 @@ test('doctor fails a BYOKit worker on a route that is not a plan route, before a
   assert.equal(checks.some((c) => c.label === 'worker login'), false);
 });
 
+test('doctor --live prints one fail for a judge on a failed BYOKit route, and no live call for it', () => {
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^judge: .*$/m, 'judge: { runner: "byokit:nope", model: "" }'));
+  const r = lfm('doctor', '--live', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const checks = JSON.parse(r.stdout).checks;
+  const judge = checks.filter((c) => c.label === 'judge');
+  assert.deepEqual(judge.map((c) => c.level), ['fail']);
+  assert.match(judge[0].detail, /^byokit:nope is not a BYOKit plan route/);
+  assert.equal(checks.some((c) => c.label === 'judge live'), false);
+});
+
 // A BYOKit plan-key route with no model has no catalogue default, and no agent CLI would pick one for it: the model is a
 // fail with the config path to set, not an agent-CLI warn.
 test('doctor fails a BYOKit worker with no model and no catalogue default, and names the config to set', () => {
