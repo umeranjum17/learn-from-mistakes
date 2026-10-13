@@ -470,15 +470,23 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.match(readFileSync(bundlePath, 'utf8'), /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
 
-  // A collect rerun reads the records again; each record id the bundle cites is one of records.jsonl or rows.jsonl.
+  // A collect rerun reads the records again; each record id the bundle cites is one labels.jsonl takes, and a label names it.
   interrupt('collect', 'metrics', 'bundle', 'report');
   resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
   assert.equal(resumed.status, 0, resumed.stderr);
   const ledger = (file) => readFileSync(join(p, '.lfm', file), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  const recordIds = new Set(ledger('records.jsonl').map((r) => r.id)), rowIds = new Set(ledger('rows.jsonl').map((r) => `${r.source}:${r.id}`));
+  const recordIds = new Set(ledger('records.jsonl').map((r) => r.id));
   const cited = [...readFileSync(bundlePath, 'utf8').matchAll(/^- \[([^\]]+)\] (log|gate) at /gm)];
   assert.equal(cited.length, records.length);
-  for (const [, id, source] of cited) assert.ok((source === 'gate' ? rowIds : recordIds).has(id), `[${id}] is not a ${source} id of the state dir`);
+  for (const [, id, source] of cited) assert.ok(recordIds.has(id), `[${id}] is not a ${source} id of records.jsonl`);
+  const label = (id) => {
+    writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id, event: false, why: 'a fix note' }) + '\n');
+    return lfm('report');
+  };
+  const gateId = cited.find(([, , source]) => source === 'gate')[1];
+  assert.equal(label(gateId).status, 0, `a cited gate id is not accepted by labels.jsonl`);
+  assert.match(label('gate:step-missing').stderr, /unknown record id/);
+  rmSync(join(p, '.lfm', 'labels.jsonl'));
 
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
   writeFileSync(cfg, `${examples}excerpts: off\n`);

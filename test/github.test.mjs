@@ -94,6 +94,10 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.ok(gql[0].includes('owner=umer') && gql[0].includes('name=umer-app') && !gql[0].some((a) => a.startsWith('after=')));
   assert.ok(gql[1].includes('after=second'));
   assert.ok(!r.stdout.includes(SECRET) && !r.stderr.includes(SECRET));
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8'), /^- \[prs:10\] prs at PR #10, /m);
+  writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: false, why: 'a merged PR' }) + '\n');
+  const labelled = lfm({}, 'report');
+  assert.equal(labelled.status, 0, labelled.stderr);
 
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {

@@ -8,7 +8,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { bundle } from './bundle.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
@@ -32,8 +32,8 @@ const STEPS = {
       db.prepare('DELETE FROM records WHERE run_id = ?').run(id);
       for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.cause ?? null, e.ref, e.excerpt);
       for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text, null, r.id);
-      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, null, `${r.source}:${r.id}`);
-      for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data), null);
+      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, null, recordId(r));
+      for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data), recordId(r));
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');

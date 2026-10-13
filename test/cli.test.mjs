@@ -300,7 +300,7 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   assert.equal(causes['shared-cache-lock'].log.records, 4);
   assert.equal(causes['agent-exit-wait'].store.rows, 4); // typed store rows matched, never added to log
   assert.equal(causes['other'].repeated, false);
-  assert.deepEqual(toon.coverage, { labelled: 13, total_records: 13, unlabelled: 0 });
+  assert.deepEqual(toon.coverage, { labelled: 13, total_records: 18, unlabelled: 5 }); // the 5 gate rows are records too
 });
 
 test('generated_at is the report run time and ingested_at is the ingest time', () => {
@@ -833,7 +833,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
   assert.deepEqual(JSON.parse(steps[0].output_json).sources.map((s) => s.items), [13, 5]);
-  assert.deepEqual(JSON.parse(steps[3].output_json).coverage, { labelled: 0, total_records: 13, unlabelled: 13 }); // no labels yet
+  assert.deepEqual(JSON.parse(steps[3].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
   const status = lfm('status', '--json');
   assert.equal(status.status, 0, status.stderr);
   assert.deepEqual(JSON.parse(status.stdout), run);

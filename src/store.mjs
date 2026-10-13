@@ -31,7 +31,7 @@ const MIGRATIONS = [
   // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
   `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,
     before NUMERIC, after NUMERIC, tripwire TEXT, verdict TEXT NOT NULL, PRIMARY KEY (run_id, change_id))`,
-  // The id the labels and proposals take: records.jsonl's for a defect-log record, source:id for a gate row.
+  // The id the labels and proposals take: records.jsonl's for a defect-log record, source:id for a gate row or PR.
   'ALTER TABLE records ADD COLUMN record_id TEXT',
 ];
 

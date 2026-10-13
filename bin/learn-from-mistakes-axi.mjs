@@ -165,6 +165,9 @@ function readInput(file, flag, explicit, rerunHint) {
   return readJsonl(file, { rerunHint });
 }
 
+// The id a gate row or PR takes in records.jsonl and the store's record_id: its source's name and its own id.
+export const recordId = (r) => `${r.source}:${r.id}`;
+
 export const sourceLine = (s, hash = true) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items${hash ? `  sha256 ${s.hash.slice(0, 12)}` : ''}`;
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
@@ -190,7 +193,9 @@ export async function ingest(cfg) {
       ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
-  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
+  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records,
+    ...rows.map((r) => ({ id: recordId(r), source: r.source, date: r.at.slice(0, 10), text: r.error })),
+    ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))]));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   return { sources, events, records, rows, prs, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
@@ -420,7 +425,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
    match: { source: <sessions id>, signal, tool, text_contains } counts session events.
 
 2. Ingest: learn-from-mistakes-axi ingest
-   It prints the state dir. records.jsonl there: one JSON object per bullet (id, source, line, date, text).
+   It prints the state dir. records.jsonl there: one JSON object per record (id, source, date, text; a defect bullet also has its line).
 
 3. Label every record you read into labels.jsonl in the state dir, one line each:
      {"id":"<record id>","event":true,"cause":"<cause id from the config, or other>","why":"<25 words or fewer>"}
