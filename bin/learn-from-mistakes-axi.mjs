@@ -348,7 +348,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (ingest, then report) in a background worker
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, report) in a background worker
                       that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here
   status              print the last saved run and its steps
   runs                list the saved runs, newest first

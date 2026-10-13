@@ -1,7 +1,7 @@
 # Metrics step and windows (`metrics` step, `causes.*.match`)
 
 ## Sub-features
-Every run has a `metrics` step between `collect` and `report` (`src/metrics.mjs`).
+Every run has a `metrics` step between `collect` and `followup` (`src/metrics.mjs`).
 It saves one row per metric and window in the store's `metrics` table
 (`run_id, window, name, value`; `window` is `current` or `previous`; NULL is n/a)
 and the run output (`retro`, `status`) adds `window` (`current_start`,
