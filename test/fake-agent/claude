@@ -18,7 +18,7 @@ if (args[0] === '--version') { console.log(`2.0.0 (fake ${name})`); process.exit
 const stdin = readFileSync(0, 'utf8');
 if (process.env.FAKE_LOG) appendFileSync(join(process.env.FAKE_LOG, `${name}.jsonl`), `${JSON.stringify({ args, cwd: process.cwd(), stdin })}\n`);
 const mode = process.env.FAKE_ANALYSE || 'empty';
-const reply = (result) => (name === 'codex' ? writeFileSync(args[args.indexOf('-o') + 1], result)
+const reply = (result) => (name === 'codex' ? args.includes('-o') && writeFileSync(args[args.indexOf('-o') + 1], result)
   : console.log(JSON.stringify({ type: 'result', is_error: false, result, session_id: 'fake-session', usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } })));
 if (mode === 'hang') setInterval(() => {}, 1000);
 else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
