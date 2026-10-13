@@ -32,7 +32,10 @@ is a ledger problem, so it never gets a row. The verdict is code, the first rule
 6. `fix`: improved, but the tripwire missed.
 
 "The last run" is the change's row in the latest earlier run that measured
-it (a run that failed or was cancelled before `followup` has none). When that
+it whose read time is at least `followup.min_days` before this run's (a run
+that failed or was cancelled before `followup` has none). A rerun over the same
+data is not a second run, so it never gives `delete` or the missed-twice
+`rollback`; the closer run is skipped and the one before it is used. When that
 run fails rule 1 (its numbers, and the sessions and days of its after range
 counted again with this run's events), there is no last run. A change with no
 tripwire is `no-data` each run but can still be deleted.
@@ -74,5 +77,4 @@ The same on a scratch copy of `$SELF/examples`, never the real ledger.
 ## Gotchas
 Session counts come only from a `sessions` source, so a project with none
 gets `no-data` for every change. The rules are this tool's own: the fleet
-sources have no rollback threshold. Two retros on the same day read the same
-data, so they count as two retros in a row.
+sources have no rollback threshold.
