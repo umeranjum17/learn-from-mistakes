@@ -216,7 +216,7 @@ try {
   writeFileSync(stagedConfig, stringify(config));
   // No agent set anywhere (no project config, no global file yet): the tool picks none and says to ask the user.
   run('agents-ask', process.execPath, [cli, 'agents', '--json'], 2);
-  assert.match(readFileSync(join(evidence, 'agents-ask.stderr'), 'utf8'), /^error: ask the user which agent to use: agent and judge_agent are not set in .*\nnext: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>   # with the user's answer\n/m, 'agents picked an agent or did not say to ask');
+  assert.match(readFileSync(join(evidence, 'agents-ask.stderr'), 'utf8'), /^error: ask the user which agent to use: agent and judge_agent are not set in .*\.learn-from-mistakes\.yaml, and the tool never picks one\.[^\n]*\nnext: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>   # with the user's answer\n/m, 'agents picked an agent or did not say to ask');
   // init in a fresh project holding only a defect log, with two fake agent CLIs as the whole PATH; a second init
   // leaves the config byte-identical.
   const fresh = join(scratch, 'fresh'), fakes = join(scratch, 'agents');

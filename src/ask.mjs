@@ -2,11 +2,12 @@
 // asked (a pick list of the supported agents, then the model) and the answer is saved to the config file; any other
 // caller, such as an agent, gets one line that says to ask the user, the choices, and the command that saves the answer.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseDocument } from 'yaml';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { AGENT_NAME, MODEL_RULE, modelOk } from './config.mjs';
+import { AGENT_NAME, MODEL_RULE, modelOk, PROJECT_FILE } from './config.mjs';
+import { CLASH } from './runners/index.mjs';
 
 // The fixed list a terminal picks from (never a PATH scan); a byokit:<route> can be typed as well.
 export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
@@ -22,9 +23,11 @@ export const interactive = () => !!(process.stdin.isTTY && process.stdout.isTTY)
 // The init command that saves the user's answer for the keys that are not set.
 export const saveCommand = (keys, dir) => `learn-from-mistakes-axi init ${keys.map((k) => `${FLAG[k][0]} <agent> ${FLAG[k][1]} <model>`).join(' ')}${dir ? ` --dir ${shq(dir)}` : ''}   # with the user's answer`;
 
-export function askError(cfg, keys, file, dir) {
+const projectFile = (dir) => join(dir ?? resolve('.'), PROJECT_FILE);
+
+export function askError(cfg, keys, dir) {
   const names = named(cfg, keys);
-  return new UsageError(`ask the user which agent to use: ${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model. Then run the command that stopped again`,
+  return new UsageError(`ask the user which agent to use: ${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} not set in ${shq(projectFile(dir))}, and the tool never picks one. Choices: ${LIST}; each with its model. Then run the command that stopped again`,
     saveCommand(keys, dir));
 }
 
@@ -46,6 +49,7 @@ export function save(file, picks) {
 // A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
 // the model of that agent. A role whose agent is set only gets the model question; the agent key is then not written.
 export async function pick(keys, cfg, dir) {
+  if (cfg.agent && cfg.agent === cfg.judge_agent) throw new UsageError(`judge_agent and agent are both ${cfg.agent}: ${CLASH}; set judge_agent to another agent in ${shq(projectFile(dir))}, then run the command that stopped again`, saveCommand(['judge_agent'], dir));
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   const lines = rl[Symbol.asyncIterator](); // buffers answers typed or pasted ahead of their question
   const ask = async (q) => {
@@ -89,7 +93,7 @@ export async function pick(keys, cfg, dir) {
 export async function ensureAgents(cfg, file, dir) {
   const keys = unset(cfg);
   if (!keys.length) return false;
-  if (!interactive()) throw askError(cfg, keys, file, dir);
+  if (!interactive()) throw askError(cfg, keys, dir);
   save(file, await pick(keys, cfg, dir));
   process.stderr.write(`saved: ${named(cfg, keys).join(' and ')} in ${file}\n`);
   return true;

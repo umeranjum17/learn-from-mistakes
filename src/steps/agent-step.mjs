@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { startTime } from '../proc.mjs';
-import { call, chooseFix, detect, KEY, resolveRole } from '../runners/index.mjs';
+import { call, chooseFix, detect, KEY, resolveRoles } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
 
@@ -16,7 +16,7 @@ const iso = () => new Date().toISOString();
 // it broke, never the agent's own text.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
   const key = KEY[role];
-  const r = await resolveRole(cfg, role, detect(cfg));
+  const r = (await resolveRoles(cfg, detect(cfg)))[role];
   const fix = chooseFix(cfg, key, r.runner);
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);

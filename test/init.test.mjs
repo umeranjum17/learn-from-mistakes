@@ -159,6 +159,18 @@ test('in a terminal, a worker agent set globally is asked only its model, and th
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], [undefined, 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
 });
 
+// A worker and judge already set to one agent with no model: the clash is refused before any model is asked, and nothing is saved.
+test('in a terminal, a worker and judge set to one agent are refused before any model is asked', () => {
+  const { tmp, p, env, config, global } = setup(['claude'], 'agent: claude\njudge_agent: claude\n');
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: '', env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /judge_agent and agent are both claude: the judge resolves to the worker's agent and model/);
+  assert.doesNotMatch(r.stdout, /model for claude/);
+  assert.equal(parse(readFileSync(config, 'utf8')).agent_config, undefined);
+  assert.equal(readFileSync(global, 'utf8'), 'agent: claude\njudge_agent: claude\n');
+});
+
 // Review-6: on an existing project file the agent flags are judged against that file, so a global agent never blocks a
 // project override; the global file is left as it was.
 test('an existing project file takes --agent and --model even when the global file sets the agent', () => {
