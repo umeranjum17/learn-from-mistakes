@@ -42,9 +42,8 @@ Real-product proof (outside the repo; lab sessions only, never the captain's):
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/tiny-notes   # a git repo with a synthetic defects.md (two causes, each on 2+ days) and its causes,
              # agent: byokit:opencode-go with agent_config model muse-spark-1.3-contributor,
-             # judge_agent: opencode with agent_config model opencode-go/glm-5.3-flash (another agent and model)
-export OPENCODE_API_KEY=$(node -p 'require(process.argv[1])["opencode-go"].key' ~/.local/share/opencode/auth.json)
-HOME=$LAB XDG_CONFIG_HOME=$LAB/.config XDG_DATA_HOME=$LAB/.local/share lfm agents --test opencode   # the judge answers, tools off
+             # judge_agent: an allowed BYOKit route (another agent and model), with its agent_config model
+HOME=$LAB XDG_CONFIG_HOME=$LAB/.config XDG_DATA_HOME=$LAB/.local/share lfm agents --test byokit:<judge route>   # the judge answers
 HOME=$LAB XDG_CONFIG_HOME=$LAB/.config XDG_DATA_HOME=$LAB/.local/share lfm retro --wait 20m && lfm logs --step verify
 sqlite3 -readonly .lfm/lfm.sqlite 'select cause,verdict,judge_note from findings; select id,cause,verdict,judge_note from proposals'
 sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status from invocations'
@@ -52,9 +51,10 @@ sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status fro
 
 The run completes with 9 steps; one `verify` invocation with role `judge` on
 the second agent; each finding and fix has a verdict and a reason. The lab
-HOME and XDG dirs keep the judge's OpenCode session out of the real store; the
-key stays in the environment. Call `lfm` through the real node binary, not a
-mise shim, when HOME is the lab HOME.
+HOME and XDG dirs keep the judge's session out of the real store; the BYOKit
+route owns its credentials (never read a desktop login into the environment).
+Call `lfm` through the real node binary, not a mise shim, when HOME is the lab
+HOME.
 
 ## Gotchas
 The claim ids `f<n>` and `p<n>` count from 1 within the run; they are not
