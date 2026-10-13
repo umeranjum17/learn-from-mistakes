@@ -44,9 +44,9 @@ plus model. Two kinds of route:
   OPENCODE_API_KEY to your OpenCode Go key`.
 Any other name is refused before a call, with the ready plan routes (the sign-in plans and the plan key routes whose BYOKit readiness is `ready`). As worker or judge it is a `problem:` in `agents` (exit 1, the same list). With no usable agent CLI and BYOKit installed, the `next:` hint names the ready routes; without BYOKit, the install hint. A busy
 provider (BYOKit `overloaded`/`network`, or 429/503/529 text) retries twice. Its
-doctor hook `doctor(route)` (for `doctor`, Slice 9) returns `node` (Node >= 22.18)
-and the sign-in state from `accounts.status`, or whether the key variable is set
-(no paid call); a missing package gives the install command.
+doctor hook `doctor(route)`, which `doctor` calls, returns the route's row (the sign-in
+state from `accounts.status`, or whether the key variable is set; no paid call; a
+missing package gives the install command). The Node floor is `doctor`'s own `node` check.
 `LFM_TEST_BYOKIT_BASE` (tests only) points BYOKit's `apiBase`, or a key route's
 model `baseUrl`, at a stand-in.
 
