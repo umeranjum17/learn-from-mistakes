@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -75,7 +75,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', 'test/fake-agent/claude', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -98,7 +98,14 @@ try {
   const cli = join(repo, 'bin/learn-from-mistakes-axi.mjs');
   const stagedLabels = join(staged, 'labels.jsonl');
   const stagedProposals = join(staged, 'proposals.jsonl');
-  const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged]);
+  // The run's own agent is the repo's fake Claude Code: the drives' PATH holds only it, node for its #! line, and git.
+  const agentBin = join(scratch, 'fake-agent');
+  mkdirSync(agentBin);
+  symlinkSync(join(repo, 'test', 'fake-agent', 'claude'), join(agentBin, 'claude'));
+  symlinkSync(process.execPath, join(agentBin, 'node'));
+  symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(agentBin, 'git'));
+  const lab = { PATH: agentBin };
+  const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
   run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
   drive('ingest', 'ingest');
   drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
@@ -109,7 +116,7 @@ try {
     drive('change-applied', 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--at', '2026-01-02T03:04:05Z',
       '--metric', 'cause_count:server-memory-kill', '--tripwire', '<= 0', '--kind', 'rule',
       '--what', 'Run builds in their own memory group', '--why', 'The memory killer stopped the server three times', '--json');
-    run('change-bad-tripwire', process.execPath, [cli, 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--tripwire', '< x', '--dir', staged], 2);
+    run('change-bad-tripwire', process.execPath, [cli, 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--tripwire', '< x', '--dir', staged], 2, lab);
     drive('changes', 'changes');
     drive('changes-json', 'changes', '--json');
     const [chg] = JSON.parse(readFileSync(join(evidence, 'changes-json.stdout'), 'utf8')).changes;
@@ -125,7 +132,7 @@ try {
   drive('runs', 'runs');
   drive('attach', 'attach'); // the last run has ended: its step lines and states, then the run
   drive('logs', 'logs', '--step', 'collect');
-  run('retro-slow', process.execPath, [cli, 'retro', '--dir', staged], 0, { LFM_TEST_SLOW_STEP: 'report:20000' }); // test-only flag: report sleeps 20 s, so a failed abort leaves no long worker
+  run('retro-slow', process.execPath, [cli, 'retro', '--dir', staged], 0, { ...lab, LFM_TEST_SLOW_STEP: 'report:20000' }); // test-only flag: report sleeps 20 s, so a failed abort leaves no long worker
   drive('abort', 'abort', '--json'); // the worker ends and the run is cancelled
   assert.equal(JSON.parse(readFileSync(join(evidence, 'abort.stdout'), 'utf8')).run.status, 'cancelled', 'abort does not cancel the run');
   drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
@@ -139,7 +146,7 @@ try {
   const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id), 'bundle.md'), 'utf8');
   assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
   writeFileSync(stagedConfig, stringify({ ...config, worker: { runner: 3 } }));
-  run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2);
+  run('config-bad-runner', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
@@ -182,6 +189,20 @@ try {
   assert.equal(createHash('sha256').update(readFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'))).digest('hex'), ocBefore, 'the OpenCode store changed');
   const met = (n) => out.metrics.find((m) => m.name === n)?.met;
   assert.deepEqual([met('tool_error_rate'), met('cause_count:test-fails'), met('first_pass')], ['missed', 'met', 'n/a'], 'targets are not compared');
+  // Analyse: the fake worker names two findings, one citing an item the bundle lacks; then it answers prose twice.
+  run('retro-analyse', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label' });
+  const analysed = JSON.parse(readFileSync(join(evidence, 'retro-analyse.stdout'), 'utf8')).run.id;
+  const rows = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  try {
+    assert.deepEqual(rows.prepare('SELECT cause FROM findings WHERE run_id = ?').all(analysed).map((f) => f.cause), ['umer-fixtures-unset'], 'the finding with a ref to no bundle item is kept');
+    assert.deepEqual({ ...rows.prepare('SELECT step, role, runner, exit_status, tokens_in, tokens_out FROM invocations WHERE run_id = ?').get(analysed) },
+      { step: 'analyse', role: 'worker', runner: 'claude', exit_status: 'ok', tokens_in: 12, tokens_out: 5 }, 'the invocation row is wrong');
+  } finally { rows.close(); }
+  drive('logs-analyse', 'logs', '--step', 'analyse');
+  assert.match(readFileSync(join(evidence, 'logs-analyse.stdout'), 'utf8'), /problem: findings\[1\]: ref 2 names no bundle item/, 'logs do not show the ref problem');
+  run('retro-analyse-prose', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 1, { ...lab, FAKE_ANALYSE: 'prose' });
+  drive('logs-analyse-prose', 'logs', '--step', 'analyse');
+  assert.match(readFileSync(join(evidence, 'logs-analyse-prose.stdout'), 'utf8'), /worker answer 2 is not valid: the answer holds no JSON object/, 'logs do not show the validation error');
   if (!mode) { // follow-up: one more failed test run 5 days ago, and a change 3 days ago between it and the three sessions
     writeFileSync(join(store, 's-verify-old.jsonl'), readFileSync(join(store, 's-verify.jsonl'), 'utf8')
       .replaceAll(at.timestamp, new Date(Date.now() - 5 * 86_400_000).toISOString()).replaceAll('s-verify', 's-verify-old'));
@@ -219,7 +240,7 @@ try {
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
       'src/models.json', 'src/runners/index.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');

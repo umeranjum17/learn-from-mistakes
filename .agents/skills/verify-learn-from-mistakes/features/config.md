@@ -11,7 +11,7 @@ quoted `"<op> <number>"`), `followup` (`min_sessions`, `min_days`), `excerpts`
 `signoff` (`auto|off`), `allow_premium` (boolean). The global file adds
 `runner_path: {<runner>: <bin>}` (a bare name is looked up on absolute PATH entries only) and `runner_args: {<runner>: [..]}`. An unknown key
 or a bad value exits 2 with `error: <file>: <key> must be ...`. The keys are only
-loaded and checked: the sessions and github sources and the bundle step read `excerpts`; the bundle step reads `caps.bundle_chars`, runners read `caps.timeout`, `agents` and `init` resolve `worker`/`judge`; nothing reads `caps.invocations` yet.
+loaded and checked: the sessions and github sources and the bundle step read `excerpts`; the bundle step reads `caps.bundle_chars`, runners read `caps.timeout`, `agents` and `init` resolve `worker`/`judge`; the run's agent calls stop at `caps.invocations` ([analyse.md](analyse.md)).
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys), `read` and `detect` (init); `collect`/`ingest` call the
@@ -27,7 +27,7 @@ Add v2 keys to `.learn-from-mistakes.yaml`, then `learn-from-mistakes-axi retro 
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journeys: the `retro --foreground ...` journey runs a
-config with every v2 key plus a global `runner_path`/`runner_args` (5 completed
+config with every v2 key plus a global `runner_path`/`runner_args` (6 completed
 steps) and a bad global `runner_args` (exit 2); `every rejected input ...` holds a
 row per bad v2 key (`worker: { runner: 3 }` names `worker.runner`); `an unreadable
 source ...` covers a source without `path` and an unregistered type. The helper
@@ -53,7 +53,7 @@ YAML
 lfm retro --foreground && lfm runs && git status --short
 ```
 
-The run is `completed` with 5 steps and collect reads 13 log and 5 gate items.
+The run is `completed` with 6 steps and collect reads 13 log and 5 gate items.
 Then `worker: { runner: 3 }` exits 2 naming `worker.runner`. Repeat in a scratch
 copy of `$SELF/examples`.
 

@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// A fake Claude Code for the run journeys: `--version`, and one answer to the prompt on stdin, as `claude -p
+// --output-format json` gives it. FAKE_ANALYSE picks the answer: empty (the default) names nothing; label labels each
+// defect record in the bundle as FAKE_CAUSE (default other) and names two findings, the second with one ref to no bundle
+// item; prose answers in plain text; hang never answers. FAKE_LOG, when set, is a dir that gets each call's argv, cwd
+// and stdin.
+import { appendFileSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const args = process.argv.slice(2);
+if (args[0] === '--version') { console.log('2.0.0 (fake claude)'); process.exit(0); }
+const stdin = readFileSync(0, 'utf8');
+if (process.env.FAKE_LOG) appendFileSync(join(process.env.FAKE_LOG, 'claude.jsonl'), `${JSON.stringify({ args, cwd: process.cwd(), stdin })}\n`);
+const mode = process.env.FAKE_ANALYSE || 'empty';
+if (mode === 'hang') setInterval(() => {}, 1000);
+else {
+  const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
+  const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
+  const first = bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1];
+  const answer = mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] } : {
+    findings: [{ cause: 'umer-fixtures-unset', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
+      { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
+    labels: records.map((id) => ({ id, event: true, cause: process.env.FAKE_CAUSE || 'other', why: 'The run failed for Umer.' })),
+  });
+  console.log(JSON.stringify({ type: 'result', is_error: false, result: answer, session_id: 'fake-session', usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } }));
+}

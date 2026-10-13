@@ -4,14 +4,15 @@
 // journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
+const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
 const DAY = 86_400_000;
 const ago = (days) => new Date(Date.now() - days * DAY).toISOString();
 
@@ -61,7 +62,13 @@ followup: { min_sessions: 3, min_days: 1 }
 `);
   // A defect log whose first record is 4 days ago: a change 6 days ago has no record on or before its before window's start.
   writeFileSync(join(p, 'defects.md'), `## ${ago(4).slice(0, 10)}\n\n- A defect after the change.\n`);
-  const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: join(tmp, 'home', '.claude'),
+  // PATH holds the fake agent (the analyse step's worker), node for its #! line, and git.
+  const bin = join(tmp, 'bin');
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
+  const env = { ...process.env, PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: join(tmp, 'home', '.claude'),
     CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   const change = (cause, days, ...flags) => {
@@ -102,7 +109,7 @@ function moveRunBack(p, id, days) {
 test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data', () => {
   const { p, lfm, retro } = journey();
   const first = retro();
-  assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
   const row = (change, metric, before, after, tripwire, verdict) => ({ change, metric, before, after, tripwire, verdict });
   assert.deepEqual(first.followups, [
     row('chg-1', 'cause_count:missing-file', 4, 0, '<= 0', 'keep'),

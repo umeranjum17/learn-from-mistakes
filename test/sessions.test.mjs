@@ -5,15 +5,16 @@
 // LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
+const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
 // One planted value per redaction shape, built here so no key-shaped string sits in the repo. [text, what must never show]
 const PLANTED = [
   [`${' '.repeat(3978)}gh${'p_'}${'Y'.repeat(36)}`, 'Y'.repeat(6)], // a key after a long whitespace run, cut inside by the 4000 cap
@@ -72,7 +73,13 @@ function setup() {
 `)}targets: { defects: "<= 1", interrupts: "> 1", "cause_count:fetch-test-fails": "<= 1", "cause_count:missing-file": "= 0", "cause_count:server-memory-kill": "<= 0" }
 `);
   writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(1)}\n\n- [tests] Umer's fetch tests failed.\n- [tests] Again.\n\n## ${day(10)}\n\n- [tests] Once last week.\n`);
-  const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude,
+  // PATH holds the fake agent (the analyse step's worker), node for its #! line, and git.
+  const bin = join(tmp, 'bin');
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
+  const env = { ...process.env, PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude,
     CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   return { tmp, p, tree, claude, env, fill, lfm };
@@ -172,7 +179,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
 
   // A session id the run store recorded as the tool's own agent run is skipped next time; excerpts: off keeps none.
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  db.exec(`CREATE TABLE invocations (id INTEGER PRIMARY KEY, session_id TEXT); INSERT INTO invocations (session_id) VALUES ('s-own')`);
+  db.prepare(`INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at, session_id) VALUES (1, 'analyse', 'worker', 'claude', '', 'lfm-run:1:analyse', '2026-10-01T00:00:00Z', 's-own')`).run();
   db.close();
   writeFileSync(cfg, `${examples}excerpts: off\n`);
   const off = lfm('retro', '--foreground', '--json');
@@ -361,7 +368,7 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
 
   // A session id the run store recorded as the tool's own agent run is skipped next time, for each agent.
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  db.exec(`CREATE TABLE invocations (id INTEGER PRIMARY KEY, session_id TEXT); INSERT INTO invocations (session_id) VALUES ('cx-main'), ('oc-main')`);
+  for (const sid of ['cx-main', 'oc-main']) db.prepare(`INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at, session_id) VALUES (1, 'analyse', 'worker', 'claude', '', 'lfm-run:1:analyse', '2026-10-01T00:00:00Z', ?)`).run(sid);
   db.close();
   const again = lfm('retro', '--foreground', '--json');
   assert.equal(again.status, 0, again.stderr);

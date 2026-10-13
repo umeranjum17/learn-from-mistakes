@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { bundle } from './bundle.mjs';
+import { analyse } from './steps/analyse.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { locked, openStore } from './store.mjs';
@@ -51,9 +52,15 @@ const STEPS = {
     log(`bundle.md: ${out.items} items, ${out.dropped} dropped, ${out.chars} characters`);
     return out;
   },
-  // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
+  // The worker reads the bundle: it names the causes it finds and labels the defect records (the labels and findings tables).
+  analyse: (cfg, db, id, log) => analyse(cfg, db, id, runDir(cfg, id), log),
+  // Counts with the labels the worker wrote in this run, else with labels.jsonl in the state dir; with none, coverage
+  // shows every record unlabelled.
   report: (cfg, db, id, log) => {
-    const { model, problems } = buildReport(cfg, {}, REPORT);
+    const rows = db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id);
+    const runLabels = rows.length ? rows.map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
+      ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
+    const { model, problems } = buildReport(cfg, { runLabels }, REPORT);
     if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
     log(summaryLine(model));
     return model;
@@ -73,12 +80,27 @@ function startTime(pid) {
   } catch { return null; }
 }
 
-// Ends a running run and its running step: interrupted (its owner is gone) or cancelled (a signal).
+// Ends a running run and its running step: interrupted (its owner is gone) or cancelled (a signal). An agent call the
+// run left going is ended too: its process group gets SIGTERM, then SIGKILL after 3 s.
 function stop(db, id, status, why) {
   const step = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status = 'running'`).get(id)?.name ?? 'run';
   const now = iso(Date.now());
+  for (const { child_pgid: g } of db.prepare('SELECT child_pgid FROM invocations WHERE run_id = ? AND completed_at IS NULL AND child_pgid IS NOT NULL').all(id)) {
+    if (!signal(g, 'SIGTERM')) continue;
+    for (let i = 0; i < 30 && signal(g, 0); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a synchronous 100 ms wait
+    signal(g, 'SIGKILL');
+  }
+  db.prepare('UPDATE invocations SET completed_at = ?, exit_status = ? WHERE run_id = ? AND completed_at IS NULL').run(now, status, id);
   db.prepare(`UPDATE steps SET status = ?, completed_at = ? WHERE run_id = ? AND status = 'running'`).run(status, now, id);
   db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(status, `${step}: ${why}`, now, id);
+}
+
+// Sends a signal to a process group; false when the group is gone.
+function signal(pgid, sig) {
+  try { process.kill(-pgid, sig); return true; } catch (e) {
+    if (e.code === 'ESRCH') return false;
+    throw new UsageError(`cannot send ${sig} to the agent's process group ${pgid} (${e.code})`, `kill -- -${pgid}   # as the user that started the run`);
+  }
 }
 
 function reconcile(db) {

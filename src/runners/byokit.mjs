@@ -73,7 +73,9 @@ async function askKey(key, { model, prompt, signal }) {
     const headers = key.provider === 'opencode' ? { 'x-opencode-session': randomUUID() } : {};
     const msg = await accounts.respondKey(MEMBER, { account, model: { ...found, ...(base && { baseUrl: base }) },
       context: { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] }, options: { signal, headers } });
-    return { text: msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('') };
+    const u = msg.usage;
+    return { text: msg.content.filter((c) => c.type === 'text').map((c) => c.text).join(''),
+      ...(u && { tokens_in: u.input + u.cacheRead + u.cacheWrite, tokens_out: u.output }) };
   } finally {
     accounts.stop();
   }
@@ -85,7 +87,7 @@ export async function modelOf(route, configured) {
   return configured || (ROUTES.includes(route) && (await import('@byokit/accounts')).provider(route).models.fast) || '';
 }
 
-// One call. The answer is { text }, or { error } with `transient` for a busy provider or a dropped network; the
+// One call. The answer is { text } (with tokens_in and tokens_out when the provider reports them), or { error } with `transient` for a busy provider or a dropped network; the
 // caller retries those. A call past `timeoutMs` is aborted.
 export async function ask({ route, model, prompt, timeoutMs }) {
   const signal = AbortSignal.timeout(timeoutMs);
