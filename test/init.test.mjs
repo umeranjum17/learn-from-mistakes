@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { parse } from 'yaml';
@@ -161,4 +161,15 @@ test('init refuses a pinned judge on the worker\'s identity, an unknown runner a
   const none = setup([]).lfm('init');
   assert.equal(none.status, 1);
   assert.match(none.stderr, /^error: worker: no usable agent CLI/);
+});
+
+test('init finds the no-mistakes repo of a git worktree of the project, as the source reads it', () => {
+  const { p, nm, env } = setup(['claude']);
+  const git = (...args) => execFileSync('git', ['-C', p, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8' });
+  git('commit', '-q', '--allow-empty', '-m', 'init');
+  const wt = join(dirname(p), 'umer-app-wt');
+  git('worktree', 'add', '-q', wt);
+  const r = spawnSync(process.execPath, [CLI, 'init', '-y', '--no-skill', '--json', '--dir', wt], { encoding: 'utf8', env: { ...env, PATH: `${env.PATH}:${process.env.PATH}` } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
 });

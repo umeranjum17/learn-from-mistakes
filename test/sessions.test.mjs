@@ -441,27 +441,41 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.deepEqual(clusters.map((c) => Number(c[1])), clusters.map((_, i) => i + 1));
   assert.deepEqual(clusters.map((c) => Number(c[2])), clusters.map((c) => Number(c[2])).toSorted((a, b) => b - a));
   assert.match(on.text, /^### \[c1\] Bash test_fail: 2 events, 1 sessions, 1 days, causes: fetch-test-fails$/m); // the failed Reads are in the last window
-  const ids = (re) => [...on.text.matchAll(re)].map((m) => Number(m[1]));
-  const events = ids(/^- \[e(\d+)\] \S+ session s-\w+ at \S+\.jsonl:\d+$/gm), records = ids(/^- \[r(\d+)\] (?:log|gate) at \S+, [\d-]+$/gm);
+  const events = [...on.text.matchAll(/^- \[e(\d+)\] \S+ session s-\w+ at \S+\.jsonl:\d+$/gm)].map((m) => Number(m[1]));
+  const records = [...on.text.matchAll(/^- \[([^\]]+)\] (?:log|gate) at \S+, [\d-]+$/gm)].map((m) => m[1]);
   assert.ok(events.length && records.length === 2 * one.length + 2, on.text); // the planted ones, and the two from yesterday
   assert.equal(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND id IN (${events})`, on.id)[0].n, events.length); // ids are store rows
-  assert.equal(query(p, `SELECT count(*) AS n FROM records WHERE run_id = ? AND cause IS NULL AND id IN (${records})`, on.id)[0].n, records.length);
   const quotes = on.text.match(/^  > .+$/gm);
   assert.ok(quotes.every((q) => q.length <= 304), 'an excerpt over 300 characters');
-  assert.equal(on.text.match(/^- \[r\d+\] .+\n  > .+$/gm).length, records.length, 'a record without its excerpt');
+  assert.equal(on.text.match(/^- \[(?!e\d+\])[^\]]+\] .+\n  > .+$/gm).length, records.length, 'a record without its excerpt');
   assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
   assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
   assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
   assert.ok(!on.text.includes('hunter2rest') && on.text.includes('password=[redacted] token=[redacted] here in the log.'), 'a secret after a placeholder, or a placeholder redacted again');
 
   // The bundle step is interrupted after metrics; the config then changes its target. The resumed bundle shows the target the metrics step stored.
-  const lfmDb = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  lfmDb.exec(`UPDATE runs SET status = 'interrupted' WHERE id = ${on.id}; UPDATE steps SET status = 'interrupted' WHERE run_id = ${on.id} AND name = 'bundle'`);
-  lfmDb.close();
+  const bundlePath = join(p, '.lfm', 'runs', String(on.id), 'bundle.md');
+  const interrupt = (...names) => {
+    const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+    db.exec(`UPDATE runs SET status = 'interrupted' WHERE id = ${on.id}`);
+    for (const name of names) db.prepare(`UPDATE steps SET status = 'interrupted' WHERE run_id = ? AND name = ?`).run(on.id, name);
+    db.close();
+  };
+  interrupt('bundle');
   writeFileSync(cfg, examples.replace('targets: { ', 'targets: { tool_error_rate: "<= 0.1", '));
-  const resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
+  let resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
   assert.equal(resumed.status, 0, resumed.stderr);
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(on.id), 'bundle.md'), 'utf8'), /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
+  assert.match(readFileSync(bundlePath, 'utf8'), /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
+
+  // A collect rerun reads the records again; each record id the bundle cites is one of records.jsonl or rows.jsonl.
+  interrupt('collect', 'metrics', 'bundle', 'report');
+  resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const ledger = (file) => readFileSync(join(p, '.lfm', file), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const recordIds = new Set(ledger('records.jsonl').map((r) => r.id)), rowIds = new Set(ledger('rows.jsonl').map((r) => `${r.source}:${r.id}`));
+  const cited = [...readFileSync(bundlePath, 'utf8').matchAll(/^- \[([^\]]+)\] (log|gate) at /gm)];
+  assert.equal(cited.length, records.length);
+  for (const [, id, source] of cited) assert.ok((source === 'gate' ? rowIds : recordIds).has(id), `[${id}] is not a ${source} id of the state dir`);
 
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
   writeFileSync(cfg, `${examples}excerpts: off\n`);
@@ -470,7 +484,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
   for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
   assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));
-  assert.equal([...off.text.matchAll(/^- \[r\d+\] /gm)].length, records.length);
+  assert.equal([...off.text.matchAll(/^- \[(?!e\d+\])[^\]]+\] /gm)].length, records.length);
   assert.equal([...off.text.matchAll(/^### \[c\d+\] /gm)].length, clusters.length);
 
   // A config in a subdirectory of the checkout counts this repo's gate rows, matched by its checkout, and no other repo's.

@@ -1,7 +1,7 @@
 // The bundle step: the one file the run's own agents read, <state dir>/runs/<id>/bundle.md. It holds the metrics,
 // the follow-ups, the top signal clusters (this window's session events with a failure signal, by tool and signal)
-// and the records no match rule tagged, this window's and the undated ones. Each item has an id and refs (the event and
-// record ids are their store row ids) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
+// and the records no match rule tagged, this window's and the undated ones. Each item has an id and refs (an event's id
+// is its store row id, bundle-local; a record's is the id labels.jsonl takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(). Items that would pass caps.bundle_chars are
 // dropped, and a last line counts them.
 import { writeFileSync } from 'node:fs';
@@ -25,7 +25,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     if (!clusters.has(key)) clusters.set(key, []);
     clusters.get(key).push(e);
   }
-  const records = db.prepare('SELECT id, source, ts, ref, text FROM records WHERE run_id = ? AND cause IS NULL ORDER BY ts DESC, id').all(id)
+  const records = db.prepare('SELECT record_id, source, ts, ref, text FROM records WHERE run_id = ? AND cause IS NULL ORDER BY ts DESC, id').all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
@@ -38,7 +38,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
     ['Unlabelled defect records', 'No record in this window lacks a cause.', records.map((r) =>
-      `- [r${r.id}] ${redact(r.source)} at ${redact(r.ref)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
+      `- [${redact(r.record_id)}] ${redact(r.source)} at ${redact(r.ref)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
   const cap = cfg.caps.bundle_chars, heads = sections.map(([title, empty, list, head = '']) => `\n## ${title}\n\n${list.length ? head : `${empty}\n`}`);

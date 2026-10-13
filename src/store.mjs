@@ -26,6 +26,8 @@ const MIGRATIONS = [
     PRIMARY KEY (run_id, window, name))`,
   // The metric's target ("<op> <number>", NULL with none), kept as it was when the run ran.
   'ALTER TABLE metrics ADD COLUMN target TEXT',
+  // The id the labels and proposals take: records.jsonl's for a defect-log record, source:id for a gate row.
+  'ALTER TABLE records ADD COLUMN record_id TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
