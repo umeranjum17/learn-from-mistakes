@@ -12,8 +12,8 @@ import { call, chooseFix, detect, KEY, resolveRoles } from '../runners/index.mjs
 
 const iso = () => new Date().toISOString();
 
-// Returns the checked JSON object. `check(value)` returns the problems with the answer, each naming a field and the rule
-// it broke, never the agent's own text.
+// Returns the checked JSON object. `check(value, attempt)` returns the problems with the answer, each naming a field and the
+// rule it broke, never the agent's own text.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
   const key = KEY[role];
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
@@ -25,7 +25,7 @@ export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, l
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}\n\n${bundle}`, log);
-    problems = got.value ? check(got.value) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
+    problems = got.value ? check(got.value, attempt) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
     if (!problems.length) return got.value;
     invalid.run(got.row);
     log(`${role} answer ${attempt} is not valid: ${problems.join('; ')}`);

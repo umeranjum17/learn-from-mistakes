@@ -13,6 +13,7 @@ import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import { ensureAgents, saveCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
+import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 
@@ -119,9 +120,22 @@ const storedMetric = (m) => oneLine(m, { allowTab: true }) !== undefined;
 // O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
 // line is the one way to reuse one). Concurrent writers could read the same ledger and
 // repeat an id; a lock file is the upgrade.
-function recordChange(cfg, opts, json) {
+// --proposal <run>:<n> takes the cause, metric and tripwire of that run's kept fix n; --metric and --tripwire override them.
+async function recordChange(cfg, opts, json) {
   const form = FORMS['change-applied'];
-  for (const k of ['cause', 'ref']) if (opts[k] === undefined) throw new UsageError(`change applied needs --${k}`, form);
+  if (opts.proposal !== undefined) {
+    if (opts.cause !== undefined) throw new UsageError('pass --cause or --proposal, not both', form);
+    const [, run, n] = /^([1-9]\d{0,8}):([1-9]\d{0,2})$/.exec(opts.proposal) ?? [];
+    if (!run) throw new UsageError(`--proposal ${shown(opts.proposal)} must be <run>:<n>, a run id and the number of one of its kept fixes`, form);
+    quietSqlite();
+    const db = await openStore(cfg.state, false);
+    const fix = db?.prepare('SELECT cause, metric, tripwire FROM proposals WHERE run_id = ? AND n = ?').get(Number(run), Number(n));
+    db?.close();
+    if (!fix) throw new UsageError(`run ${run} has no kept fix ${n}`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its kept fixes', opts));
+    opts = { ...opts, cause: fix.cause, metric: opts.metric ?? fix.metric, tripwire: opts.tripwire ?? fix.tripwire };
+  }
+  if (opts.cause === undefined) throw new UsageError('change applied needs --cause or --proposal', form);
+  if (opts.ref === undefined) throw new UsageError('change applied needs --ref', form);
   const known = Object.keys(cfg.causes).filter((c) => c !== 'other');
   if (!known.includes(opts.cause)) {
     const list = `known: ${known.join(', ') || `none, add causes to ${PROJECT_FILE}`}`;
@@ -234,42 +248,15 @@ function analyse(cfg, files, rerunHint) {
     else if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) problems.push(`${at}: occurrences must be a positive integer`);
     else labels.set(l.id, l);
   }
-  // A duplicate collapses into the record it repeats; that root is one incident, or `occurrences` of them.
-  const root = (id, seen = new Set()) => {
-    const d = labels.get(id)?.duplicate_of;
-    return !d || seen.has(id) || labels.get(d)?.cause !== labels.get(id).cause || !labels.get(d).event ? id : root(d, seen.add(id));
-  };
-  const groups = Object.create(null);
-  const group = (cause) => (groups[cause] ??= { cause, description: cfg.causes[cause]?.description ?? 'Events no listed cause names.',
-    log: { roots: new Map(), records: [], days: new Set() }, store: { rows: [], days: new Set() } });
-  for (const l of labels.values()) {
-    if (!l.event) continue;
-    const g = group(l.cause).log, r = records.get(l.id), k = root(l.id);
-    g.roots.set(k, labels.get(k).occurrences ?? 1);
-    g.records.push({ ...r, label: l });
-    if (r.date) g.days.add(r.date);
-  }
-  for (const [cause, c] of Object.entries(cfg.causes)) {
-    if (!c.match) continue;
-    for (const row of rows) if (row.cause === cause && !labels.has(recordId(row))) {
-      group(cause).store.rows.push(row);
-      if (row.at) group(cause).store.days.add(row.at.slice(0, 10));
-    }
-  }
-  const { min_incidents: mi, min_days: md } = cfg.repeat;
-  const list = Object.values(groups).map((g) => {
-    const incidents = [...g.log.roots.values()].reduce((a, b) => a + b, 0);
-    const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
-    return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
-  }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
-  const repeatedByCause = new Map(list.map((g) => [g.cause, g.repeated]));
+  const list = repeats(cfg, records, labels, rows);
+  const byCause = new Map(list.map((g) => [g.cause, g]));
   const proposals = readInput(pf, 'proposals', files.proposals, rerunHint).map((p, index) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
     const resolves = (ref) => records.has(ref);
     const missing = refs.filter((ref) => !resolves(ref));
-    const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
+    const bad = typeof p.cause !== 'string' || !byCause.has(p.cause) ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
       : !refs.length ? 'no evidence refs' : missing.length ? `${missing.length} of ${refs.length} refs not found` : !p.change ? 'no change text'
-      : !repeatedByCause.get(p.cause) ? `cause ${shown(p.cause)} did not repeat; propose only for repeated causes`
+      : !byCause.get(p.cause).repeated ? `cause ${shown(p.cause)} did not repeat; propose only for repeated causes`
       : typeof p.target !== 'string' || !p.target.trim() ? 'no target'
       : typeof p.owner !== 'string' || !p.owner.trim() ? 'no owner'
       : index >= 5 ? 'more than five proposals; keep the five strongest' : '';
@@ -365,7 +352,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, report) in a background worker
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, check, report) in a background worker
                       that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
@@ -380,6 +367,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)
   --cause <cause>     (change applied) cause key from the config, never \`other\`
+  --proposal <run>:<n>  (change applied) the run's kept fix n (status --run <run> lists them): its cause, metric and tripwire
   --ref <ref>         (change applied) version id: git sha (7-40 hex) or sha256:<64 hex>
   --metric <metric>   (change applied) the metric that shows whether it worked (default: cause_count:<cause>)
   --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as "<= 0" (default: none); each retro checks it
@@ -388,7 +376,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse or report
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, check or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
@@ -497,7 +485,7 @@ const FORMS = {
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
   count: 'learn-from-mistakes-axi count [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--labels <file>] [--proposals <file>] [--json] [--full]',
-  'change-applied': 'learn-from-mistakes-axi change applied --cause <cause> --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
+  'change-applied': 'learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
   retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
@@ -511,7 +499,7 @@ const FORMS = {
 const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent');
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -581,7 +569,7 @@ async function main() {
     hint(withContext('learn-from-mistakes-axi', 'the report for this project', opts));
     return;
   }
-  if (cmd === 'change-applied') { recordChange(cfg, opts, json); return; }
+  if (cmd === 'change-applied') { await recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);

@@ -44,6 +44,12 @@ const MIGRATIONS = [
   // The causes and hidden problems the analyse step found, each with refs to bundle items. Later steps count and judge them.
   `CREATE TABLE IF NOT EXISTS findings (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), cause TEXT NOT NULL,
     summary TEXT NOT NULL, refs_json TEXT NOT NULL, count INTEGER, days INTEGER, verdict TEXT, judge_note TEXT)`,
+  // The fixes the propose step's worker named, in its order (id), and what the check step made of each: its rank n among
+  // the kept fixes (1 to 5, NULL when not kept) or the rule it broke (problem). And the worker's reason for each follow-up
+  // whose verdict is not keep.
+  `CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), n INTEGER, cause TEXT NOT NULL,
+    target TEXT NOT NULL, owner TEXT NOT NULL, change TEXT NOT NULL, metric TEXT, tripwire TEXT, refs_json TEXT NOT NULL, problem TEXT);
+    ALTER TABLE followups ADD COLUMN reason TEXT`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

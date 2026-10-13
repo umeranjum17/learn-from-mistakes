@@ -5,22 +5,12 @@
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { bundleIds, plain } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/analyse.md', import.meta.url), 'utf8');
 const KEY = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const CONFIDENCE = ['high', 'medium', 'low'];
-
-// The STE100 length rule on one free-text field; '' when it holds.
-function plain(text, where, { words, sentences }) {
-  if (typeof text !== 'string' || !text.trim()) return `${where} must be a non-empty string`;
-  const parts = text.split(/(?<=[.!?])\s+/).filter((s) => s.trim());
-  const long = parts.findIndex((s) => s.trim().split(/\s+/).length > 20);
-  if (long >= 0) return `${where}: sentence ${long + 1} has more than 20 words`;
-  if (words && text.trim().split(/\s+/).length > words) return `${where} has more than ${words} words`;
-  if (sentences && parts.length > sentences) return `${where} has more than ${sentences} sentences`;
-  return '';
-}
 
 function check(cfg, v) {
   const p = [];
@@ -55,7 +45,7 @@ function check(cfg, v) {
 export async function analyse(cfg, db, id, dir, log) {
   db.prepare('DELETE FROM labels WHERE run_id = ?').run(id); // a step run again starts empty
   db.prepare('DELETE FROM findings WHERE run_id = ?').run(id);
-  const ids = new Set([...readFileSync(join(dir, 'bundle.md'), 'utf8').matchAll(/^(?:### |- )\[([^\]\n]+)\]/gm)].map((m) => m[1]));
+  const ids = bundleIds(readFileSync(join(dir, 'bundle.md'), 'utf8'));
   if (!ids.size) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
     return { asked: false, labels: 0, labels_dropped: 0, findings: 0, problems: 0 };

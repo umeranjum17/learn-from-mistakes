@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { parse } from 'yaml';
@@ -330,7 +330,9 @@ test('init finds the no-mistakes repo of a git worktree of the project, as the s
   git('commit', '-q', '--allow-empty', '-m', 'init');
   const wt = join(dirname(p), 'umer-app-wt');
   git('worktree', 'add', '-q', wt);
-  const r = spawnSync(process.execPath, [CLI, 'init', '-y', '--no-skill', '--json', '--dir', wt], { encoding: 'utf8', env: { ...env, PATH: `${env.PATH}:${process.env.PATH}` } });
+  // git only, not the host PATH: a host agent's shim run there writes into the test HOME after it is removed
+  symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(env.PATH, 'git'));
+  const r = spawnSync(process.execPath, [CLI, 'init', '-y', '--no-skill', '--json', '--dir', wt], { encoding: 'utf8', env });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
 });
