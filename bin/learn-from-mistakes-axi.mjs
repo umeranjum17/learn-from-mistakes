@@ -582,7 +582,7 @@ async function main(ctx) {
   if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   if (!opts.labels) quietSqlite();
-  const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts); }); // --labels names the file; else the last retro's labels, if a run has them
+  const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts, cmd); }); // --labels names the file; else the last retro's labels, if a run has them
   if (last && last.latest !== last.run) console.error(`note: run ${last.latest} kept no label and no finding; showing run ${last.run}`);
   const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
@@ -607,10 +607,11 @@ function quietSqlite() {
   process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') for (const f of print) f(w); });
 }
 // A run store sqlite cannot use is one usage line with the file to move, never a stack trace.
-function storeError(e, cfg, opts) {
+function storeError(e, cfg, opts, cmd) {
   if (e.code !== 'ERR_SQLITE_ERROR' || (e.errcode & 0xff) === 5) return e; // main() maps a busy store
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
+  if (![11, 26].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi ${cmd}`, 'after the disk or the file permissions are fixed', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
 async function runCommand(cmd, cfg, opts) {
@@ -619,7 +620,7 @@ async function runCommand(cmd, cfg, opts) {
   try {
     out = await { retro, status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
   } catch (e) {
-    throw storeError(e, cfg, opts);
+    throw storeError(e, cfg, opts, cmd);
   }
   console.log(render(out, opts.json));
   if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
