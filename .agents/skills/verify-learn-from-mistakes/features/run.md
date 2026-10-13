@@ -4,7 +4,7 @@
 `learn-from-mistakes-axi retro` saves a run in the
 run store `<state dir>/lfm.sqlite` (node:sqlite, WAL, a migrations list counted
 by `PRAGMA user_version`): one `runs` row (status, owner pid, times, error) and one `steps` row each for `collect`
-(ingest), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)), `bundle` (see [bundle.md](bundle.md)), `analyse` (see [analyse.md](analyse.md)), `propose` and `check` (see [propose.md](propose.md)) and `report` (the counts with the worker's labels from this run, else with the labels already in the state dir; with
+(ingest), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)), `bundle` (see [bundle.md](bundle.md)), `analyse` (see [analyse.md](analyse.md)), `propose` (see [propose.md](propose.md)), `verify` (the judge, see [verify.md](verify.md)), `check` (see [propose.md](propose.md)) and `report` (the counts with the worker's labels from this run, else with the labels already in the state dir; with
 none, coverage shows every record unlabelled). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
