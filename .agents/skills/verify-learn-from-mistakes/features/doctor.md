@@ -20,11 +20,12 @@ Checks, in order:
   no-mistakes: readable, the count in the window, and the skipped entries). A read
   error is a fail with the source's own fix (a missing defect log: `check sources.<id>.path in
   <the project config's full path>, or create it: touch <path>`). No sources at all: warn.
-- `worker`/`judge`: the role resolves to a usable, offered runner (`resolveRoles`), with
-  version and tools. A role that does not is a fail whose fix names the offered runners when
-  there are any; otherwise the pinned runner's install or `runner_path` fix, a set-model fix
-  when an auto role's model no usable CLI lists, or the install command. A BYOKit route that
-  failed its own check keeps its problem and fix.
+- `agent`/`judge_agent` (the labels `worker`/`judge`): only the configured agents are checked (doctor never offers another one). The role resolves to a usable, offered agent (`resolveRoles`), with
+  version and tools. A role that is not set is a fail (`agent is not set`) whose fix is the init save command
+  (`learn-from-mistakes-axi init --agent <agent> --model <model> ... # with the user's answer`); the command asks first, as `init` does: in a terminal it saves the answer, otherwise it exits 2 with `error: ask the user which agent to use` and the same `next:` before any check.
+  Any other role that does not resolve is a fail whose fix is `install <bin>, or set agent_path_override.<bin> in <global>` when the agent
+  is not installed, else `ask the user which agent and model to use, then set agent and its agent_config model in <file>; the run never picks one` (usable but not offered, or a judge that
+  clashes). `<file>` is the project file when it set the key, else the global file. A BYOKit route that failed its own check keeps its problem and fix.
 - `worker login`/`judge login`: the agent's own status command through `which()`, its
   output never printed: `codex login status` (exit 0), `opencode auth list` (a
   credential or environment variable count above 0), `pi auth check --no-refresh
@@ -32,15 +33,15 @@ Checks, in order:
   with the login command; a probe that does not finish in 20 s is a warn. pi is the one
   exception: a probe that fails for any reason (exit, error, signal, timeout) is checked
   against `~/.pi/agent/auth.json` by existence only: present is a warn with the exit code,
-  absent is a fail with `pi # then /login`. A pi role with no model has no probe and gets the
-  file-presence check below. Claude and Gemini: login file or key variable presence (warn
+  absent is a fail with `pi # then /login`. Claude and Gemini: login file or key variable presence (warn
   when none: it may be in the keychain). The pi case warns the same way.
-- `worker model`/`judge model`: no model and no `models.json` default is a warn (a BYOKit
-  route with no catalogue default is a fail); a premium name (`opus`, `sonnet`, `sol`) is a
-  fail unless `allow_premium: true` (`LFM_MODEL` is named, and `unset LFM_MODEL` is in the fix).
-- `identity`: the worker's and judge's (real binary, model) differ (fail: the judge
-  would judge its own work; fix: another agent CLI or a different judge model).
-- `skill <runner>`: per usable runner with a skills dir, `SKILL.md` under
+- `worker model`/`judge model`: a role with an agent but no `agent_config.<agent>.model` is not checked here: doctor stops
+  before any check with the ask (exit 2, `agent_config.<agent>.model is not set`), as every command does, and an empty model
+  is never acceptable, `allow_premium: true` included. A premium name (`opus`, `sonnet`, `sol`) is a fail unless
+  `allow_premium: true` (its fix names both files).
+- `judge`: a judge on the worker's identity (real binary, model) is a fail with the reason that it would judge its own
+  work; fix: `ask the user which agent and model to use, then set judge_agent and its agent_config model in <file>; the run never picks one`. There is no separate identity line.
+- `skill <runner>`: per configured, usable runner with a skills dir, `SKILL.md` under
   `learn-from-mistakes/` in its global dir (`${CLAUDE_CONFIG_DIR:-~/.claude}/skills`,
   `${CODEX_HOME:-~/.codex}/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`,
   `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills`, `${GEMINI_CLI_HOME:-~}/.gemini/skills`) or the project's `.claude/skills` or
@@ -48,22 +49,21 @@ Checks, in order:
 - `sign-off`: ok when `sign-off` is on PATH or `signoff: off`; otherwise a warn (plain-text fallback).
 - `--live`: `worker live`/`judge live`, one `agents --test` call per resolved role with
   its own model (costs tokens): it must answer and write no file. A role that already has a
-  problem is not called (its own fail stands), and a premium model that `allow_premium` forbids
-  is a warn `skip live <role>`.
+  problem or a failed model check is not called (its own fail stands: one fail, no `skip live` warn).
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi doctor` in a project dir (or `--dir <project>`), after `init`.
 
 ## Driving it with the public CLI
-`test/init.test.mjs` owns the journey: after `init` with fake `claude`, `opencode`,
+`test/init.test.mjs` owns the journey: after `init` with the agents the user chose and fake `claude`, `opencode`,
 `pi` and `gemini` (and `git`) on PATH, a synthetic Claude credential and fakes whose
 login output carries a canary: exit 0 with the config, state, both sources, the worker,
-both logins and identity ok, and the skill for claude and sign-off as warns; then a missing
-defect log, `worker: { runner: pi, model: claude-opus-5-5 }` and `judge: { runner: pi, model: "" }`
-give exactly 3 fails (`source log`, `worker model`, `identity`), each with `fix:`, exit 1
-and `next: ... doctor   # again after the 3 fixes above`; the pi probe argv is
-`auth check --no-refresh --model claude-opus-5-5`; the canary never prints; after the
-fixes, exit 0. The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,
+both logins ok, and the skill for claude and sign-off as warns; then a missing
+defect log, `agent: pi`, `judge_agent: pi` and `agent_config: { pi: { model: <premium model> } }` give
+exactly 3 fails (`source log`, `worker model`, `judge`), each with `fix:`, exit 1
+and `next: ... doctor   # again after the 4 fixes above`; the pi probe argv is
+`auth check --no-refresh --model <premium model>`; the canary never prints; after the
+fixes, exit 0. `doctor` with no agent set exits 2 with the ask, and stops on a BYOKit worker with no model with the ask for its model (exit 2, no call). The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,
 `fix: check sources.log.path ...`) in its fresh init project with fake agents.
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout, `$LAB` a
@@ -72,8 +72,8 @@ lab HOME holding only a link to the lab Claude credential; no agent call, no tok
 ```sh
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 labenv() { HOME=$LAB CLAUDE_CONFIG_DIR=$LAB/.claude CODEX_HOME=$LAB/.codex XDG_CONFIG_HOME=$LAB/.config XDG_DATA_HOME=$LAB/.local/share "$@"; }
-cd $SCR/ky && cp $SELF/examples/defects.md . && labenv lfm init -y --no-skill
-labenv lfm doctor; echo $?            # the lab's real agents, logins and models
+cd $SCR/ky && cp $SELF/examples/defects.md . && labenv lfm init --agent claude --model <the user's model> --judge-agent codex --judge-model <the user's model> --no-skill
+labenv lfm doctor; echo $?            # the two chosen agents, their logins and models
 mv defects.md x.md && labenv lfm doctor; echo $?   # fail source log, fix: check sources.log.path ...; exit 1
 mv x.md defects.md && labenv lfm doctor; echo $?
 ```
