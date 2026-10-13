@@ -61,6 +61,8 @@ export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && 
 // The identity rule: a role is the real path of its binary plus its model. A role with no model is never compared: it is unset.
 export const CLASH = 'agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work';
 export const same = (a, b) => a.bin === b.bin && a.model === b.model;
+const VENDOR = { 'byokit:claude': 'claude', 'byokit:chatgpt': 'codex' }; // a sign-in route is the same model mind as its vendor's agent
+const identity = (r, agents) => (VENDOR[r.runner] ? { ...r, bin: agents.find((x) => x.runner === VENDOR[r.runner])?.bin || VENDOR[r.runner] } : r);
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
 // One agent as a role: its model from agent_config, its binary (a BYOKit route is its own identity), or its problem.
 async function candidate(cfg, runner, agents) {
@@ -83,7 +85,7 @@ export async function resolveRole(cfg, name, agents, worker, env = process.env) 
   const runner = cfg[KEY[name]];
   if (!runner) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
   const r = await candidate(cfg, runner, agents);
-  if (!r.problem && worker && r.model && worker.model && same(r, worker)) return { ...r, problem: CLASH };
+  if (!r.problem && worker && r.model && worker.model && same(identity(r, agents), identity(worker, agents))) return { ...r, problem: CLASH };
   return r;
 }
 

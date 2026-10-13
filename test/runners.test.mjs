@@ -132,6 +132,18 @@ test('agents lists only the configured agents with version, login presence and m
   assert.equal(none.stdout, '');
 });
 
+test('a BYOKit sign-in route is its vendor agent: the same model clashes, another model is allowed', () => {
+  const { lfm, config } = setup();
+  config(`agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: ${MODELS.claude} } }\n`);
+  const clash = lfm({}, 'agents', '--json');
+  assert.equal(clash.status, 1, clash.stderr);
+  assert.match(JSON.parse(clash.stdout).judge.problem, /would judge its own work/);
+  config(`agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: claude-umer-2 } }\n`);
+  const other = lfm({}, 'agents', '--json');
+  assert.equal(other.status, 0, other.stderr);
+  assert.equal(JSON.parse(other.stdout).judge.runner, 'byokit:claude');
+});
+
 test('the judge never resolves to the worker: a clash exits 1 with the fix', () => {
   const { lfm, config, p } = setup();
   config('agent: claude\njudge_agent: claude\n');
