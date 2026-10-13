@@ -15,8 +15,9 @@ const iso = () => new Date().toISOString();
 // Returns the checked JSON object. `check(value)` returns the problems with the answer, each naming a field and the rule
 // it broke, never the agent's own text.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
-  const key = KEY[role], fix = chooseFix(cfg, key);
+  const key = KEY[role];
   const r = await resolveRole(cfg, role, detect(cfg));
+  const fix = chooseFix(cfg, key, r.runner);
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);
   const bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');

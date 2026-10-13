@@ -58,7 +58,7 @@ export async function doctor(dir, opts) {
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
       add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
-        : chooseFix(cfg, KEY[name]));
+        : chooseFix(cfg, KEY[name], r.runner));
       continue;
     }
     const route = byokit.routeOf(r.runner);
@@ -85,7 +85,7 @@ export async function doctor(dir, opts) {
     const { model } = r;
     if (premiumBlocked(cfg, model)) {
       failedModel.add(name);
-      add('fail', `${name} model`, `${model} is a premium model`, `${chooseFix(cfg, KEY[name], `agent_config.${r.runner}.model`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+      add('fail', `${name} model`, `${model} is a premium model`, `${chooseFix(cfg, KEY[name], r.runner)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
     } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.

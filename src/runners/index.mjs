@@ -34,7 +34,11 @@ export const agentModel = (cfg, agent) => cfg.agent_config?.[agent]?.model ?? ''
 // The file to change a key in: the file that set it; a key no file sets goes to the project file, else the global file.
 export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? (cfg.dir ? join(cfg.dir, PROJECT_FILE) : cfg.globalPath));
 // The fix for an agent or its model the user has not set, or that is not ready: the user chooses, and the file and key are named.
-export const chooseFix = (cfg, key, fileKey = key) => `ask the user which agent and model to use, then set ${key} and its agent_config model in ${fileOf(cfg, fileKey)}; the run never picks one`;
+export const chooseFix = (cfg, key, agent) => {
+  const file = fileOf(cfg, key), modelFile = agent && fileOf(cfg, `agent_config.${agent}.model`);
+  const where = !agent || modelFile === file ? `set ${key} and its agent_config model in ${file}` : `set ${key} in ${file} and its agent_config model in ${modelFile}`;
+  return `ask the user which agent and model to use, then ${where}; the run never picks one`;
+};
 
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
@@ -134,11 +138,11 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
   const name = target ? `acp:${target}` : runner;
   const role = cfg.judge_agent === name && cfg.agent !== name ? 'judge_agent' : 'agent';
-  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseFix(cfg, role, `agent_config.${name}.model`));
+  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseFix(cfg, role, name));
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, role, `agent_config.${name}.model`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, role, name)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;

@@ -222,7 +222,14 @@ test('a premium model fix names the file that sets the model, not the file that 
   const { lfm, config, global } = setup(['pi', 'claude'], 'agent_config: { pi: { model: claude-opus-5-5 } }\n');
   writeFileSync(config, `agent: pi\njudge_agent: claude\nagent_config: { pi: { effort: low }, claude: { model: ${MODELS.claude} } }\n`);
   const fix = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model').fix;
-  assert.equal(fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${config}`);
+  assert.equal(fix, `ask the user which agent and model to use, then set agent in ${config} and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${config}`);
+});
+
+test('a premium model in the global file with the agent set in the project names each key in its own file', () => {
+  const { lfm, config, global } = setup(['claude', 'pi'], 'agent_config: { claude: { model: claude-opus-5-5 } }\n');
+  writeFileSync(config, 'agent: claude\njudge_agent: pi\nagent_config: { pi: { model: umer-pi-1 } }\n');
+  const fix = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model').fix;
+  assert.equal(fix, `ask the user which agent and model to use, then set agent in ${config} and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${config}`);
 });
 
 test('agents lists a configured acp target with the model set for that target', () => {
