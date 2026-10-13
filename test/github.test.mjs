@@ -49,7 +49,7 @@ function setup() {
   writeFileSync(join(bin, 'gh'), `#!${process.execPath}\n${FAKE_GH}`);
   writeFileSync(join(bin, 'opencode'), '#!/bin/sh\necho "1.0.0"\n');
   for (const name of ['gh', 'opencode']) chmodSync(join(bin, name), 0o755);
-  symlinkSync(FAKE_AGENT, join(bin, 'claude')); // the analyse step's worker, with node for its #! line
+  for (const name of ['claude', 'codex']) symlinkSync(FAKE_AGENT, join(bin, name)); // the worker and the judge, with node for their #! line
   symlinkSync(process.execPath, join(bin, 'node'));
   // Two pages, newest update first; the second ends with a PR updated before the read range, so no third page is asked for.
   const demo = pr(10, 'feat: add a demo page', { open: 4, merged: 26, body: `Umer's page. Demo value: ${SECRET}` }); // first pass
