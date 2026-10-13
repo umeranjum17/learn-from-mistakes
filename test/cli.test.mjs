@@ -1099,6 +1099,12 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.match(calls().at(-1).stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', b.run.id), [{ exit_status: 'invalid' }, { exit_status: 'invalid' }]);
   assert.deepEqual(query('SELECT count(*) AS n FROM labels WHERE run_id = ?', b.run.id), [{ n: 0 }]);
+  // An empty answer is a bad answer too: sent back once, then the step fails with the same line.
+  const blank = lfm({ FAKE_ANALYSE: 'blank' }, 'retro', '--foreground', '--json');
+  assert.equal(blank.status, 1, blank.stderr);
+  const e = JSON.parse(blank.stdout).run;
+  assert.equal(e.error, "analyse: the worker's answer is not valid after one retry: the answer is empty");
+  assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', e.id), [{ exit_status: 'invalid' }, { exit_status: 'invalid' }]);
   // caps.invocations: the run makes no call past it.
   appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'caps: { invocations: 3 }\n');
   const capped = lfm({ FAKE_ANALYSE: 'prose' }, 'rerun', '--resume', '--run', String(b.run.id), '--wait', '1m', '--json');

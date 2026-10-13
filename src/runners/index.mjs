@@ -148,7 +148,7 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // and the session id and token counts the agent reported (null when it reports none). An empty answer is a failure.
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
-export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn }) {
+export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
@@ -179,7 +179,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
     if (cause && (got.transient || (TRANSIENT.test(cause) && !QUOTA.test(cause))) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
     if (cause) throw new InputError(`${runner}: ${cause}`, fix);
     const text = got.text ?? '';
-    if (!text.trim()) throw new InputError(`${runner}: the answer holds no JSON object: empty`, fix);
+    if (!text.trim() && !empty) throw new InputError(`${runner}: the answer holds no JSON object: empty`, fix);
     return { value: json(text), text, session_id: got.session_id ?? null, tokens_in: got.tokens_in ?? null, tokens_out: got.tokens_out ?? null };
   }
 }

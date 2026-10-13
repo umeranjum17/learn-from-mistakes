@@ -5,8 +5,8 @@
 (`worker` or `judge`) is the agent the user set in the config, resolved by the
 identity rule ([agents.md](agents.md)); the run never picks one. It calls the agent in `.lfm/runs/<id>/` with the step's
 prompt and then `bundle.md` ([bundle.md](bundle.md)), behind the `lfm-run:<id>:<step>`
-marker. It checks the JSON answer with the step's own check. A bad answer goes
-back once with the problems; a second bad answer fails the step (exit 1) with
+marker. It checks the JSON answer with the step's own check. A bad answer (an empty one
+too) goes back once with the problems; a second bad answer fails the step (exit 1) with
 `the worker's answer is not valid after one retry: <problems>`. Each call is one
 `invocations` row: step, role, runner, model, the agent's process group and its start time while it
 runs, `exit_status` (`ok`, `invalid`, `error`, or the run's `cancelled` or

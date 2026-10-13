@@ -427,7 +427,8 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
 Set the agent that labels in the config (worker: { runner: <agent>, model: <model> }); the run never picks one.
 Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m. The tool's own agent labels the records and the
 run prints the report with their counts. You only start it and read the result. With no worker set, the retro stops and
-names the key to set; steps 2-6 are the manual way, without a retro.
+names the key to set; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
+the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>

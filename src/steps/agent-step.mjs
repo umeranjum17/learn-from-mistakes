@@ -24,7 +24,7 @@ export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, l
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}\n\n${bundle}`, log);
-    problems = got.value ? check(got.value) : ['the answer holds no JSON object'];
+    problems = got.value ? check(got.value) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
     if (!problems.length) return got.value;
     invalid.run(got.row);
     log(`${role} answer ${attempt} is not valid: ${problems.join('; ')}`);
@@ -42,7 +42,7 @@ async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, l
   const who = `${role} ${runner}${model ? ` ${model}` : ''}`;
   let got;
   try {
-    got = await call(cfg, { runner, model, dir, runId: id, step, prompt,
+    got = await call(cfg, { runner, model, dir, runId: id, step, prompt, empty: true, // an empty answer is a bad answer: sent back once
       onSpawn: (pgid) => db.prepare('UPDATE invocations SET child_pgid = ?, child_started_at = ? WHERE id = ?').run(pgid, startTime(pgid), row) });
   } catch (e) {
     end.run(iso(), 'error', null, null, null, row);

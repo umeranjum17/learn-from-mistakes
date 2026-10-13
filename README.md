@@ -99,7 +99,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
 
 2. Run `learn-from-mistakes-axi ingest --dir .`. It prints the state dir: `.lfm/` next to `.learn-from-mistakes.yaml`. The tool writes `.lfm/.gitignore` (`*`) whenever it writes state there and finds none, so the state is never committed and you edit no `.gitignore` of your own. An existing `.lfm/.gitignore` is never overwritten: it must contain the line `*` with no line starting with `!`, or the write exits 2 before any state is written. To keep state outside the project instead, set `state_root: <dir>` in `$LFM_HOME/config.yaml` (`LFM_HOME` defaults to `~/.learn-from-mistakes`); the state then goes to `<dir>/<name>`.
 3. Ask your agent to start a retro (`learn-from-mistakes-axi retro --wait 15m`). The tool runs its own agent, the `worker` you set in the config, to label the records; the run never picks one. Your agent only starts it and reads the result. Without a retro, your agent can still follow `learn-from-mistakes-axi guide` and write `labels.jsonl` and `proposals.jsonl` in the state dir by hand.
-4. Run `learn-from-mistakes-axi` for the report. A bare command, or `report`, prints the repeated causes for the project you are in. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
+4. Read the report. A retro prints its run's report, which counts the worker's labels. A bare command, or `report`, prints the repeated causes for the project you are in from `labels.jsonl`, the manual path; it does not count a run's worker labels. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
 
 ## Why
 
