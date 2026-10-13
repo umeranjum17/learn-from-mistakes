@@ -1,5 +1,5 @@
 // End-to-end: runs the real CLI on copies of the synthetic examples (state in the copy's .lfm/) with a throwaway LFM_HOME.
-// The report is the privacy-bounded lfm-report.v1 (identifiers and counts, never prose); lfm-changes.v1
+// The report is the privacy-bounded lfm-report.v1 (identifiers, counts and verdict words, never prose); lfm-changes.v1
 // carries only the owner-written what/why of each applied change.
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
