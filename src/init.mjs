@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { InputError, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { askError, interactive, named, pick, save, unset } from './ask.mjs';
+import { askError, ensureAgents, save, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { CLASH, detect, KEY, resolveRoles } from './runners/index.mjs';
 
@@ -131,12 +131,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   if (Object.keys(chosen).length) save(file, chosen);
   let cfg = loadConfig(dir);
   // A role still not set: a terminal picks it now (unless -y); any other caller is told to ask the user.
-  if (unset(cfg).length && interactive() && !opts.y) {
-    const keys = unset(cfg);
-    save(file, await pick(keys, cfg));
-    process.stderr.write(`saved: ${named(cfg, keys)} in ${file}\n`);
-    cfg = loadConfig(dir);
-  }
+  if (!opts.y && await ensureAgents(cfg, file, opts.dir)) cfg = loadConfig(dir);
   stateDir(cfg);
   const missing = unset(cfg);
   if (missing.length && !opts.y) throw askError(cfg, missing, file, opts.dir);

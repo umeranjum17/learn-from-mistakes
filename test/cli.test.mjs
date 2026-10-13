@@ -248,6 +248,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'), HELP],
     [() => withConfig('agent_config: { gemini: { effort: low } }\n'), 2, bad('agent_config.gemini.effort: gemini has no effort setting; remove it'), HELP],
     [() => withConfig('agent_config: { opencode: { model: muse } }\n'), 2, bad('agent_config.opencode.model must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'), HELP],
+    [() => withConfig('agent_config: { claude: { model: "--yolo" } }\n'), 2, bad('agent_config.claude.model must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'), HELP], // a model is never an argv flag
     [() => withConfig('agent_path_override: { claude: ./claude }\n'), 2, /^error: .*\.learn-from-mistakes\.yaml: agent_path_override is global-only: set it in .*config\.yaml$/m, HELP], // a cloned repo never picks the binary
     [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
     [() => withConfig('targets: { first_pass: 70 }\n'), 2, bad('targets.first_pass must be a quoted "<op> <number>", such as ">= 70"'), HELP],

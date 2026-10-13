@@ -46,7 +46,7 @@ export function pathSource(s, where, dir) {
 const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} must be ${rule}`); };
 // The model rule every path that sets a model obeys: a --model flag, the config file and the terminal pick.
 export const MODEL_RULE = 'a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor';
-export const modelOk = (agent, model) => /^[\w.\/:@+-]{1,200}$/.test(model) && (agent !== 'opencode' || model.includes('/'));
+export const modelOk = (agent, model) => /^[\w.@+][\w.\/:@+-]{0,199}$/.test(model) && (agent !== 'opencode' || model.includes('/'));
 const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a positive integer');
 
 // The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent each, which the user sets: the
