@@ -53,7 +53,7 @@ Without the optional peer it prints findings and \`npm i -g sign-off-axi\`; retr
 The adapter sends each kept fix to \`sign-off-axi post --kind finding --from -\` (the binary on PATH; \`npm i -g sign-off-axi\` installs it), one contract-v1 message per kept fix:
 
 \`\`\`json
-{"contract":1,"kind":"finding","schema":1,"key":"lfm-3-1-7f3a91c2","title":"Repeated cause: missing env var in CI","filer":"learn-from-mistakes","about":"4 incidents over 3 days in 2 sources.","cause":"missing-env","incidents":4,"days":3,"evidence_ids":["rec-7f3a","rec-91be"],"change_kind":"doc","proposal":"Add the env var to the CI setup page.","options":[{"value":"apply","label":"Apply"},{"value":"skip","label":"Skip"}],"recommend_value":"apply"}
+{"contract":1,"kind":"finding","schema":1,"key":"lfm-3-1-7f3a91c2","title":"Repeated cause: missing env var in CI","filer":"learn-from-mistakes","about":"4 incidents over 3 days.","cause":"missing-env","incidents":4,"days":3,"evidence_ids":["rec-7f3a","rec-91be"],"change_kind":"doc","proposal":"Add the env var to the CI setup page.","options":[{"value":"apply","label":"Apply"},{"value":"skip","label":"Skip"}],"recommend_value":"apply"}
 \`\`\`
 
 To wait explicitly: \`sign-off-axi wait --filer learn-from-mistakes --events\` prints:
