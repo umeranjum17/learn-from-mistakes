@@ -180,7 +180,7 @@ causes[1]:
 
 ## For sign-off and other tools
 
-`learn-from-mistakes-axi changes --json` is the machine contract for applied changes, so another tool can join its own results on a change (for example a "Helped? yes/no/unclear" verdict, which this tool does not write yet):
+`learn-from-mistakes-axi changes --json` is the machine contract for applied changes, so another tool can join its own results on a change (for example a "Helped? yes/no/unclear" sign-off, which this tool does not write; its followup verdicts are shown by `status`, not in this export):
 
 ```json
 {
