@@ -315,6 +315,7 @@ function project(a, full) {
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
       // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
       m.store_row_ids = g.store.rows.map(recordId);
+      // A content-hash record id (a defect-log bullet) is left out by the same rule.
       m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.records.has(ref)
         && ['no-mistakes', 'github'].includes(a.cfg.sources[a.records.get(ref).source]?.type)))];
     }
