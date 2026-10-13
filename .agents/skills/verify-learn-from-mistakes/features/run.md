@@ -10,7 +10,10 @@ none, coverage shows every record unlabelled). A detached worker (the hidden
 the run goes on when the terminal or the calling agent ends. `retro` returns at
 once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m) polls until the run
 ends or the time is over; `--foreground` runs the steps in the same process. The run output adds `sources`: each
-source's id, type and item count (and a sessions source's counts, see [sessions.md](sessions.md)), then `window` and `metrics`.
+source's id, type and item count (and a sessions source's counts, see [sessions.md](sessions.md)), then `window` and `metrics`. A completed run adds `result`: `labelled`, `records`, `labels_from` (`run <id>` when the worker's labels were counted, else `labels.jsonl`), `causes` (each cause its labels or match rules counted:
+`repeated`, `incidents`, `days`, store `rows`) and `findings` (each worker finding's `cause`, `count`, `days`, judge `verdict` and STE100 `summary`, one line each),
+then `next: ... report --full`; with no label and no finding, stderr says `result: the worker labelled no record and named no finding`
+and `next:` names `logs --step analyse --run <id>`.
 A failed step fails the run (exit 1, the error saved on the step and the run).
 `status [--run <id>]` prints a run and its steps, `runs` lists the last 10 runs
 newest first. `retro`, `status`, `runs`, `attach`, `logs`, `abort` and `rerun` first reconcile: a running

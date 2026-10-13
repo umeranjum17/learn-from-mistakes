@@ -17,6 +17,7 @@ import { check } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { startTime } from './proc.mjs';
+import { redact } from './redact.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -67,16 +68,26 @@ const STEPS = {
   // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;
   // with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
-    const analysed = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id)?.output_json;
-    const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
-      .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
-        ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
-    const { model, problems } = buildReport(cfg, { runLabels }, REPORT);
+    const { model, problems } = buildReport(cfg, runResult(db, id), REPORT);
     if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
     log(summaryLine(model));
     return model;
   },
 };
+// The labels the worker kept in a run that asked it (as labels.jsonl takes them) and its findings; no labels when it was not asked.
+function runResult(db, id) {
+  const analysed = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id)?.output_json;
+  const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
+    .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
+      ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
+  return { run: id, runLabels, findings: db.prepare(`SELECT cause, summary, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f, summary: redact(f.summary).replace(/\s+/g, ' ').trim() })) };
+}
+// The latest completed run that kept labels or findings: the bare report counts them. Undefined with none, so labels.jsonl counts.
+export async function lastRun(cfg) {
+  const db = await openStore(cfg.state, false);
+  const id = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id;
+  return id == null ? undefined : { ...runResult(db, id), latest: db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id };
+}
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
 const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
 const iso = (ms) => new Date(ms).toISOString();
@@ -332,12 +343,13 @@ export async function runs(cfg) {
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
-// The run, its steps, what each source read once collect is done, the numbers once metrics is done and each
-// applied change's verdict once followup is done, and the kept fixes once check is done: ids, counts and numbers, never
-// content or hashes.
+// The run, its steps, what each source read once collect is done, the numbers once metrics is done, each
+// applied change's verdict once followup is done, the kept fixes once check is done, and once report is done the result:
+// the causes its labels counted and the worker's findings, each with its counts and its redacted STE100 summary on one line.
+// Hashes stay out.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
-  const collect = out('collect'), window = out('metrics');
+  const collect = out('collect'), window = out('metrics'), report = out('report') && JSON.parse(out('report'));
   const metrics = new Map();
   // A metric with a target shows it and whether this window met it; one without has both empty.
   for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
@@ -354,5 +366,8 @@ function show(db, id) {
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
     ...(out('check') && { fixes: db.prepare('SELECT n, cause, metric, tripwire FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(id).map((f) => ({ ...f })) }),
+    ...(report && { result: { labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
+      causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
+      findings: runResult(db, id).findings.map(({ cause, count, days, verdict, summary }) => ({ cause, count, days, verdict, summary })) } }),
   };
 }

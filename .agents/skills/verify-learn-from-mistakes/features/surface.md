@@ -28,7 +28,7 @@ installed bin and keep the transcript (`learn-from-mistakes-axi <bad input>; ech
 configured prints `next: no causes configured: ...`.
 
 ## Gotchas
-The report's default, `--json` and `--full` outputs are one privacy-bounded projection:
-identifiers and counts only (the separate `changes` export carries owner-written `what`/`why`, see [change.md](change.md)). `--full` is not permission to print private evidence.
+The report's `--json` output is one privacy-bounded projection: identifiers, counts and each finding's judge verdict word.
+The default (TOON) and `--full` reports add one `finding:` line per finding with the worker's redacted one-line summary (the separate `changes` export carries owner-written `what`/`why`, see [change.md](change.md)). `--full` is not permission to print private evidence.
 Next hints go to stderr, never inside the JSON/TOON payload, and never carry
 record text. A problem is counted, not echoed: exit 1 with `problems: N`.

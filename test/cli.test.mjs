@@ -1,5 +1,5 @@
 // End-to-end: runs the real CLI on copies of the synthetic examples (state in the copy's .lfm/) with a throwaway LFM_HOME.
-// The report is the privacy-bounded lfm-report.v1 (identifiers and counts, never prose); lfm-changes.v1
+// The report is the privacy-bounded lfm-report.v1 (identifiers, counts and verdict words, never prose); lfm-changes.v1
 // carries only the owner-written what/why of each applied change.
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
@@ -997,6 +997,9 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const first = JSON.parse(waited.stdout);
   assert.equal(first.run.status, 'completed');
   assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  // A run whose worker labelled nothing and found nothing says so in one plain line, with where to see why.
+  assert.deepEqual(first.result, { labelled: 0, records: 18, labels_from: 'labels.jsonl', causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
+  assert.match(waited.stderr, /^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run 1   # why/m);
 
   // Without --wait, retro returns while the worker runs: spawnSync ends only when no process holds its pipes.
   const slowEnv = { ...env, LFM_TEST_SLOW_STEP: 'report' }; // the worker inherits it: report sleeps 60 s
@@ -1065,7 +1068,8 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.deepEqual(order.map(at), order.map(at).toSorted((a, b) => a - b), attached.stdout);
   assert.doesNotMatch(attached.stdout, /sha256/);
   assert.equal(decode(attached.stdout.slice(attached.stdout.indexOf('run:\n'))).run.status, 'completed');
-  assert.match(attached.stderr, /^next: learn-from-mistakes-axi report /m);
+  // The examples' records are all from March: the run says plainly it found nothing, and where to see why.
+  assert.match(attached.stderr, new RegExp(`^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run ${first.id}   # why`, 'm'));
 
   const log = lfm('logs', '--step', 'collect', '--run', String(first.id), '--json');
   assert.equal(log.status, 0, log.stderr);
@@ -1132,9 +1136,9 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const global = join(env.LFM_HOME, 'config.yaml'); // the user set agent: claude and its model there; the run never picks one
   const lines = (id) => stepLines('analyse', id);
 
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--foreground', '--json');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--wait', '1m', '--json');
   assert.equal(r.status, 0, r.stderr);
-  const { run, steps } = JSON.parse(r.stdout);
+  const { run, steps, result } = JSON.parse(r.stdout);
   assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed']]);
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8');
   const records = [...bundle.matchAll(/^- \[([^\]]+)\] log at /gm)].map((m) => m[1]);
@@ -1163,6 +1167,21 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const report = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, run.id)[0].output_json);
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
+  // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
+  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.' };
+  assert.deepEqual(result, { labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
+  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict,summary\}:\n {4}umer-fixtures-unset,1,1,confirmed,The tests fail when UMER_FIXTURES is unset\. No doc names it\.$/m);
+  assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);
+  // The bare report counts the run's labels and names their source; the findings show as counts, their summaries in status only.
+  const bare = lfm({}, 'report', '--json');
+  assert.equal(bare.status, 0, bare.stderr);
+  const bareJson = JSON.parse(bare.stdout);
+  assert.deepEqual([bareJson.labels_from, bareJson.coverage.labelled, bareJson.causes[1].cause, bareJson.causes[1].log.incidents, bareJson.findings], [`run ${run.id}`, 2, 'shared-cache-lock', 2, [{ cause: finding.cause, count: 1, days: 1, verdict: 'confirmed' }]]);
+  assert.doesNotMatch(bare.stdout, /UMER_FIXTURES|failed for Umer/);
+  assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
+  const toon = lfm({}, 'report');
+  assert.equal(toon.status, 0, toon.stderr);
+  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${finding.summary}`), toon.stdout);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');
@@ -1170,6 +1189,9 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const outside = JSON.parse(kept.stdout).run.id;
   assert.deepEqual(lines(outside).slice(-2), ['problem: labels[0] names no defect record in the bundle', 'labels: 0 of 2 records, 1 dropped, findings: 0, problems: 1']);
   assert.equal(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, outside)[0].output_json).coverage.labelled, 0);
+  const shown = lfm({}, 'report');
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.match(shown.stderr, new RegExp(`^note: run ${outside} kept no label and no finding; showing run ${run.id}$`, 'm'));
 
   // Bad JSON twice: the answer goes back once with the validation error, then the step fails with it.
   const bad = lfm({ FAKE_ANALYSE: 'prose' }, 'retro', '--foreground', '--json');
@@ -1244,6 +1266,31 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(JSON.parse(lfm({}, 'status', '--run', String(h.id), '--json').stdout).run.status, 'interrupted');
   await new Promise((ok) => setTimeout(ok, 300));
   assert.equal(decoyExited, false, 'a group that is not the stored agent was signalled');
+
+  // Run labels that name a record the store no longer has: the report exits 1 and the next step is a new retro.
+  const edit = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  edit.prepare(`UPDATE labels SET record_id = record_id || ' gone' WHERE run_id = ?`).run(run.id);
+  edit.close();
+  const stale = lfm({}, 'report');
+  assert.equal(stale.status, 1, stale.stderr);
+  assert.match(stale.stderr, /^problem: /m);
+  assert.match(stale.stderr, /^next: learn-from-mistakes-axi retro --wait   # a new run relabels the records/m);
+  // A store another process holds past busy_timeout is busy: the report says so and never suggests moving it.
+  const locked = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  locked.exec('BEGIN IMMEDIATE');
+  const busy = lfm({}, 'report');
+  locked.exec('ROLLBACK');
+  locked.close();
+  assert.equal(busy.status, 2, busy.stderr);
+  assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy/m);
+  assert.doesNotMatch(busy.stderr, /^next: mv /m);
+  // A store sqlite cannot read is one error line with the file to move, never a stack trace.
+  writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database');
+  const broken = lfm({}, 'report');
+  assert.equal(broken.status, 2, broken.stderr);
+  assert.match(broken.stderr, /^error: .*lfm\.sqlite: not a usable run store/m);
+  assert.match(broken.stderr, /^next: mv .*lfm\.sqlite <elsewhere>/m);
+  assert.doesNotMatch(broken.stderr, /^\s+at /m);
 });
 
 test('propose, verify and check: of six fixes for a repeated cause five are kept, ranked; the judge refutes claim p2; a cause that did not repeat and no tripwire are problems; --proposal copies a fix into the ledger', () => {
