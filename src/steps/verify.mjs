@@ -53,7 +53,7 @@ export async function verify(cfg, db, id, dir, log) {
       .map((f, i) => [`f${i + 1}`, { table: 'findings', id: f.id, text: `finding for cause ${f.cause}. ${f.summary} Refs: ${refs(f.refs_json)}.` }]),
     ...db.prepare('SELECT id, cause, target, owner, change, metric, tripwire, refs_json FROM proposals WHERE run_id = ? ORDER BY id').all(id)
       .map((f, i) => [`p${i + 1}`, { table: 'proposals', id: f.id, text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
-        + `Metric: ${f.metric ?? `cause_count:${f.cause}`}. Tripwire: ${f.tripwire ?? 'none'}. Refs: ${refs(f.refs_json)}.` }]),
+        + `Metric: ${f.metric?.trim() || `cause_count:${f.cause}`}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]),
   ]);
   const none = { asked: false, confirmed: 0, weakened: 0, refuted: 0, unjudged: 0 };
   if (!claims.size) {

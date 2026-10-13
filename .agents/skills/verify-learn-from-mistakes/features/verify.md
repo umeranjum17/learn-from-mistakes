@@ -31,7 +31,7 @@ fake agent as Claude Code (the worker) and as Codex (the judge, `gpt-6-luna`)
 on the whole PATH and `FAKE_REFUTE=p2`: the judge's argv, run-dir cwd, marker,
 method, claim lines and the bundle at the end; the worker never gets the verify
 marker; the `invocations` row (role `judge`, runner `codex`); the finding
-`confirmed` with its note; fix 2 `refuted`, the other 7 `confirmed`; the log
+`confirmed` with its note; claim p2 (the second proposal row) `refuted`, the other 7 `confirmed`; the log
 lines; the next retro with no claim asks no agent. The helper's drives:
 `retro-propose` (`FAKE_REFUTE=p2`: the verdicts and the judge's invocation row)
 and `logs-verify` (`refuted: p2` and the verdict counts).

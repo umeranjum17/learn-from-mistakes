@@ -47,7 +47,7 @@ Set `agent:` and its model (the run never picks one), then
 a fix is made.
 
 ## Driving it with the public CLI
-`test/cli.test.mjs` owns the journey `propose and check: ...`, with the fake
+`test/cli.test.mjs` owns the journey `propose, verify and check: ...`, with the fake
 Claude Code (`FAKE_PROPOSE=eight`) as the whole PATH and `repeat:
 { min_incidents: 2, min_days: 1 }`, `targets: { defects: "<= 0" }`: the propose
 prompt's cause lines and method; 6 fixes that follow the rules give 5 kept, the
