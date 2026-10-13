@@ -50,7 +50,7 @@ function setup() {
     pr(13, 'chore(deps): bump yaml', { merged: 4, bot: true }), // 1 h, a bot: not in first_pass
     pr(18, 'Reverted #3', { merged: 6 }), // reverts #3
     pr(17, 'Fixes #12 retry loop', { merged: 8 }), // escapes #12
-    pr(16, 'fix: keep an empty body', { merged: 11, body: 'Follow-up to #5; see #110.' }), // escapes #5, never #11
+    pr(16, 'fix: keep an empty body', { merged: 11, body: 'Follow-up to #5; see #110, other-org/lib#10 and other/lib#7.' }), // escapes #5, never #11 or other repos' #10, #7
     pr(14, 'Revert "feat: add retries"', { merged: 19, body: 'Reverts umer/umer-app#12' }), // reverts #12
     demo,
   ], 'second'));
@@ -97,6 +97,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
     const rows = Object.fromEntries(db.prepare(`SELECT ref, text, data FROM records WHERE source = 'prs'`).all().map((x) => [x.ref, x]));
     assert.match(rows['PR #10'].text, /^feat: add a demo page\n\nUmer's page\. Demo value: \[redacted\]$/);
     assert.equal(JSON.parse(rows['PR #6'].data).partial, true);
+    assert.equal(JSON.parse(rows['PR #10'].data).escaped, false);
     assert.deepEqual(JSON.parse(rows['PR #11'].data), { bot: false, hours: 10, rework_ci: 1, rework_other: 1, reverted: false, escaped: false,
       partial: false, labels: ['demo'], changes_requested: 0 });
   } finally { db.close(); }

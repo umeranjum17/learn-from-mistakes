@@ -69,7 +69,8 @@ export async function read(source, { dir }, { readFrom = 0, excerpts = true } = 
     after = page.pageInfo.endCursor;
   }
   const merged = [...nodes.values()].filter((n) => Date.parse(n.mergedAt) >= readFrom);
-  const names = (n, number) => new RegExp(`#${number}(?!\\d)`).test(`${n.title}\n${n.body}`);
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const names = (n, number) => new RegExp(`(?:^|[^\\w/.-])(?:${esc(r.owner)}/${esc(r.name)})?#${number}(?!\\d)`, 'i').test(`${n.title}\n${n.body}`);
   const later = (title, n) => merged.some((m) => title.test(m.title) && m.mergedAt > n.mergedAt && names(m, n.number));
   const rows = merged.map((n) => {
     const commits = n.commits.nodes.map((c) => c.commit), opened = Date.parse(n.createdAt);
