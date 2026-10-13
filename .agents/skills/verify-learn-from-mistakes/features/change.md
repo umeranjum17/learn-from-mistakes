@@ -33,7 +33,7 @@ empty `lfm-changes.v1`; changes with and without what/why in separate
 processes; rejected what/why (empty, blank, 201 characters, newline, control
 character, missing value) append nothing and name the rule, never the text;
 the `change applied` echo carries `metric`/`tripwire`/`kind` but never what/why; a corrupt ledger, a
-hand-edited entry with bad what/why, tripwire or kind, or a stored metric that is empty, longer than 200
+hand-edited entry with bad what/why, tripwire, kind or an `at` that is not a time, or a stored metric that is empty, longer than 200
 characters, or has a line break or a control character (a tab is allowed; the ledger never checks it against the config), or a repeated id exits 1 with `file:line`
 and empty stdout; report/change flags are rejected; ids and entries
 are unchanged after a later append (a 200-character what is accepted); TOON
@@ -53,9 +53,9 @@ the upgrade). New ids are the highest `chg-<n>` + 1; a repeated id is a ledger
 problem, so `changes` never exports a duplicate join key. A missing ledger means zero entries; an invalid one exits 1 with
 file:line only. What/why are owner-written text meant to leave the privacy
 bound only through `changes`; the report never prints them. `generated_at` is
-the export time, so compare TOON to JSON without it. The ledger only records
-the metric and tripwire; the follow-up step that measures them and gives a
-verdict comes in a later slice.
+the export time, so compare TOON to JSON without it. Each retro's `followup` step
+measures the metric before and after each change and gives it a verdict (see
+[followup.md](followup.md)).
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 

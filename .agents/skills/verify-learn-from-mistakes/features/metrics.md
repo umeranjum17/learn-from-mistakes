@@ -1,7 +1,7 @@
 # Metrics step and windows (`metrics` step, `causes.*.match`)
 
 ## Sub-features
-Every run has a `metrics` step between `collect` and `report` (`src/metrics.mjs`).
+Every run has a `metrics` step between `collect` and `followup` (`src/metrics.mjs`).
 It saves one row per metric and window in the store's `metrics` table
 (`run_id, window, name, value`; `window` is `current` or `previous`; NULL is n/a)
 and the run output (`retro`, `status`) adds `window` (`current_start`,
@@ -49,7 +49,7 @@ The same file's `a rule tags signal events only` journey adds a `tool: Bash` rul
 that tags the failed Bash result and not the successful one, and a retried quoted
 grep matched by `text_contains` on its plain input; `a gate row takes one cause`
 checks that an overlapping pair gives the first rule in both metrics and report.
-`test/cli.test.mjs` asserts 3 steps per run, that `rerun --resume` keeps the
+`test/cli.test.mjs` asserts 4 steps per run, that `rerun --resume` keeps the
 completed `metrics` step and its numbers, and rejects bad `match` rules and a
 second sessions source (exit 2).
 The helper's `retro-sessions` drive adds a sessions rule and targets over its three
@@ -62,7 +62,7 @@ Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout):
 ```sh
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky && cp $SELF/examples/{defects.md,gate.sqlite,.learn-from-mistakes.yaml} .
-lfm retro --foreground   # 3 completed steps; metrics with n/a where nothing measures
+lfm retro --foreground   # 4 completed steps; metrics with n/a where nothing measures
 sqlite3 -readonly .lfm/lfm.sqlite "select window,name,ifnull(value,'n/a'),target from metrics"
 ```
 

@@ -9,7 +9,8 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
-import { meets, metrics } from './metrics.mjs';
+import { followup } from './followup.mjs';
+import { meets, metrics, rounded } from './metrics.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -40,7 +41,9 @@ const STEPS = {
     return { read_from, current_start, previous_start, sources };
   },
   // The numbers for this window and the last, over what collect saved.
-  metrics: (cfg, db, id) => metrics(cfg, db, id, JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json)),
+  metrics: (cfg, db, id) => metrics(cfg, db, id, collected(db, id)),
+  // Each applied change's metric before and after it, and a verdict: keep, fix, rollback, delete or no-data.
+  followup: (cfg, db, id, log) => followup(cfg, db, id, collected(db, id), log),
   // Counts with the labels already in the state dir; with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, {}, REPORT);
@@ -49,6 +52,7 @@ const STEPS = {
     return model;
   },
 };
+const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
 const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
 const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -296,8 +300,8 @@ export async function runs(cfg) {
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
-// The run, its steps, what each source read once collect is done, and the numbers once metrics is done:
-// counts and numbers, never content or hashes.
+// The run, its steps, what each source read once collect is done, the numbers once metrics is done and each
+// applied change's verdict once followup is done: counts and numbers, never content or hashes.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics');
@@ -306,7 +310,7 @@ function show(db, id) {
   for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
     if (!metrics.has(m.name)) metrics.set(m.name, { name: m.name, current: 'n/a', previous: 'n/a', target: '', met: '' });
     const row = metrics.get(m.name);
-    row[m.window] = m.value === null ? 'n/a' : Math.round(m.value * 1000) / 1000; // the verdict uses the unrounded value
+    row[m.window] = rounded(m.value); // the verdict uses the unrounded value
     if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: !m.target ? '' : m.value === null ? 'n/a' : meets(m.value, m.target) ? 'met' : 'missed' });
   }
   return {
@@ -314,5 +318,7 @@ function show(db, id) {
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),
     ...(collect && { sources: JSON.parse(collect).sources.map(({ hash, ...s }) => s) }),
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
+    ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
+      .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
   };
 }
