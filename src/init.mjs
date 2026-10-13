@@ -33,8 +33,8 @@ const globalText = `# learn-from-mistakes global configuration
 # plan key route such as opencode-go (learn-from-mistakes-axi agents --test byokit:<route> checks one)
 # agent: claude
 
-# Agent that checks the worker's output. Same values as agent; its agent and model must differ from the
-# worker's: the judge never judges its own work.
+# Agent that checks the worker's output. Same values as agent; its agent must differ from the worker's (agent_config
+# holds one model per agent): the judge never judges its own work.
 # judge_agent: codex
 
 # Model and reasoning effort per agent. Effort is one of minimal, low, medium, high, xhigh, max; it maps
@@ -129,7 +129,7 @@ name: ${scalar(basename(dir))}
 # The agent keys come from $LFM_HOME/config.yaml (default ~/.learn-from-mistakes/config.yaml); set one here to
 # override it for this project. The tool never picks an agent: set agent and judge_agent, each with its model.
 # agent: claude   # or codex, opencode, pi, acp:<target>, byokit:<route>
-# judge_agent: codex   # its agent and model must differ from the worker's
+# judge_agent: codex   # its agent must differ from the worker's (one model per agent)
 # agent_config: { <agent>: { model: <model>, effort: low } }
 # agent_timeout: "20m"
 excerpts: ${opts['no-excerpts'] ? 'off' : 'on'}   # on: the worker and judge see redacted record excerpts; off: pointers and counts only
