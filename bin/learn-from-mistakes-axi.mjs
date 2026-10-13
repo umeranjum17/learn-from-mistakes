@@ -2,7 +2,7 @@
 // learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir,
 // <project>/.lfm by default, which the tool git-ignores itself.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
-// labels.jsonl; this file only parses, dedups and counts.
+// labels: a retro's worker, or labels.jsonl; this file only parses, dedups and counts.
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
