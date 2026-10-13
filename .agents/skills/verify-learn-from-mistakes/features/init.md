@@ -21,7 +21,7 @@ the config entries it finds by id (`log`, `reviews`, `gate`, `sessions`, `prs`).
 A new project file gets 4 starter causes, `test-failed`, `command-failed`,
 `tool-misused` and `user-corrected`, each with a description and a `match` on the config's sessions source
 (`test_fail`, `nonzero_exit`, `tool_error`, `correction`; no `match` when there is no sessions source); the output
-lists them with `causes_status: written` (else `kept`). A `causes` key, even `{}`, is kept. A store that
+lists their ids under `causes`. A `causes` key, even `{}`, is kept. A store that
 cannot be read is listed under `skipped` with its cause; init goes on.
 `excerpts: on` is written (`--no-excerpts` writes `off`), and the text output
 ends with one line naming the worker and judge agents that see redacted
