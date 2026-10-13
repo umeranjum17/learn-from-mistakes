@@ -12,14 +12,17 @@ import { AGENT_NAME } from './config.mjs';
 export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
 const LIST = 'claude, codex, opencode, pi, acp:<target> or byokit:<route> (such as byokit:opencode-go)';
 const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--judge-model'] };
-export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k]);
+// A role is unset when its agent is, or when the agent has no model: both are the user's to set.
+export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k] || !cfg.agent_config?.[cfg[k]]?.model);
+// The names of the unset keys as the user reads them: a role's agent, or the model of the agent it already names.
+export const named = (cfg, keys) => keys.map((k) => (cfg[k] ? `agent_config.${cfg[k]}.model` : k)).join(' and ');
 export const interactive = () => !!(process.stdin.isTTY && process.stdout.isTTY);
 
 // The init command that saves the user's answer for the keys that are not set.
 export const saveCommand = (keys, dir) => `learn-from-mistakes-axi init ${keys.map((k) => `${FLAG[k][0]} <agent> ${FLAG[k][1]} <model>`).join(' ')}${dir ? ` --dir ${shq(dir)}` : ''}   # with the user's answer`;
 
-export function askError(keys, file, dir) {
-  return new UsageError(`ask the user which agent to use: ${keys.join(' and ')} ${keys.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model`,
+export function askError(cfg, keys, file, dir) {
+  return new UsageError(`ask the user which agent to use: ${named(cfg, keys)} ${keys.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model`,
     saveCommand(keys, dir));
 }
 
@@ -27,45 +30,49 @@ export function askError(keys, file, dir) {
 export function save(file, picks) {
   const doc = parseDocument(existsSync(file) ? readFileSync(file, 'utf8') : '');
   if (doc.contents === null) doc.contents = doc.createNode({});
-  for (const [key, { agent, model }] of Object.entries(picks)) {
-    doc.set(key, agent);
+  for (const [key, { agent, model, set }] of Object.entries(picks)) {
+    if (set) doc.set(key, agent);
     if (model) doc.setIn(['agent_config', agent, 'model'], model);
   }
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, doc.toString());
 }
 
-// A terminal picks each unset role and its model; the judge must be another agent than the worker.
+// A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
+// the model of that agent. A role whose agent is set only gets the model question; the agent key is then not written.
 export async function pick(keys, cfg) {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   const lines = rl[Symbol.asyncIterator](); // buffers answers typed or pasted ahead of their question
   const ask = async (q) => {
     process.stderr.write(q);
     const { value, done } = await lines.next();
-    if (done) throw new UsageError(`no answer given: ${keys.join(' and ')} not saved`, saveCommand(keys));
+    if (done) throw new UsageError(`no answer given: ${named(cfg, keys)} not saved`, saveCommand(keys));
     return value.trim();
   };
   const picks = {};
   try {
     for (const key of keys) {
-      const role = key === 'agent' ? 'worker (agent)' : 'judge (judge_agent)';
-      process.stderr.write(`Which agent runs the ${role}?\n${CHOICES.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type acp:<target> or byokit:<route>\n`);
-      const worker = picks.agent?.agent ?? cfg.agent;
-      let agent, model;
-      for (;;) {
-        const a = await ask('agent: ');
-        agent = CHOICES[Number(a) - 1] ?? a;
-        if (!AGENT_NAME.test(agent)) process.stderr.write(`${a || '(empty)'} is not one of the choices\n`);
-        // agent_config holds one model per agent, so a judge on the worker's agent would judge its own work.
-        else if (key === 'judge_agent' && agent === worker) process.stderr.write(`the judge must be another agent than the worker (${worker})\n`);
-        else break;
+      let agent = cfg[key];
+      if (!agent) {
+        const role = key === 'agent' ? 'worker (agent)' : 'judge (judge_agent)';
+        process.stderr.write(`Which agent runs the ${role}?\n${CHOICES.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type acp:<target> or byokit:<route>\n`);
+        const worker = picks.agent?.agent ?? cfg.agent;
+        for (;;) {
+          const a = await ask('agent: ');
+          agent = CHOICES[Number(a) - 1] ?? a;
+          if (!AGENT_NAME.test(agent)) process.stderr.write(`${a || '(empty)'} is not one of the choices\n`);
+          // agent_config holds one model per agent, so a judge on the worker's agent would judge its own work.
+          else if (key === 'judge_agent' && agent === worker) process.stderr.write(`the judge must be another agent than the worker (${worker})\n`);
+          else break;
+        }
       }
+      let model;
       for (;;) {
         model = await ask(`model for ${agent}: `);
         if (model) break;
         process.stderr.write('a model is needed\n');
       }
-      picks[key] = { agent, model };
+      picks[key] = { agent, model, set: !cfg[key] };
     }
   } finally { rl.close(); }
   return picks;
@@ -75,8 +82,8 @@ export async function pick(keys, cfg) {
 export async function ensureAgents(cfg, file, dir) {
   const keys = unset(cfg);
   if (!keys.length) return false;
-  if (!interactive()) throw askError(keys, file, dir);
+  if (!interactive()) throw askError(cfg, keys, file, dir);
   save(file, await pick(keys, cfg));
-  process.stderr.write(`saved: ${keys.join(' and ')} in ${file}\n`);
+  process.stderr.write(`saved: ${named(cfg, keys)} in ${file}\n`);
   return true;
 }

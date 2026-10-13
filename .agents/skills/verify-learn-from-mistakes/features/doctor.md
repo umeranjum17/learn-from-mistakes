@@ -33,13 +33,12 @@ Checks, in order:
   with the login command; a probe that does not finish in 20 s is a warn. pi is the one
   exception: a probe that fails for any reason (exit, error, signal, timeout) is checked
   against `~/.pi/agent/auth.json` by existence only: present is a warn with the exit code,
-  absent is a fail with `pi # then /login`. A pi role with no model has no probe and gets the
-  file-presence check below. Claude and Gemini: login file or key variable presence (warn
+  absent is a fail with `pi # then /login`. Claude and Gemini: login file or key variable presence (warn
   when none: it may be in the keychain). The pi case warns the same way.
-- `worker model`/`judge model`: no model is a fail (`none set for <agent>: the agent CLI would pick its own, which may be a premium model`; fix
-  `set agent_config."<agent>".model in <file>, or set allow_premium: true in <file>`), only a warn with `allow_premium: true`; a
-  premium name (`opus`, `sonnet`, `sol`) is a fail unless `allow_premium: true` (its fix names both files); a BYOKit
-  route with no model is always a fail, `none set for byokit:<route>: a BYOKit route needs one`, with the `agent_config` fix.
+- `worker model`/`judge model`: a role with an agent but no `agent_config.<agent>.model` is not checked here: doctor stops
+  before any check with the ask (exit 2, `agent_config.<agent>.model is not set`), as every command does, and an empty model
+  is never acceptable, `allow_premium: true` included. A premium name (`opus`, `sonnet`, `sol`) is a fail unless
+  `allow_premium: true` (its fix names both files).
 - `judge`: a judge on the worker's identity (real binary, model) is a fail with the reason that it would judge its own
   work; fix: `set judge_agent in <file> to another agent the user chooses`. There is no separate identity line.
 - `skill <runner>`: per configured, usable runner with a skills dir, `SKILL.md` under
@@ -64,7 +63,7 @@ defect log, `agent: pi`, `judge_agent: pi` and `agent_config: { pi: { model: cla
 exactly 3 fails (`source log`, `worker model`, `judge`), each with `fix:`, exit 1
 and `next: ... doctor   # again after the 4 fixes above`; the pi probe argv is
 `auth check --no-refresh --model claude-opus-5-5`; the canary never prints; after the
-fixes, exit 0. `doctor` with no agent set exits 2 with the ask, and fails a BYOKit worker with no model. The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,
+fixes, exit 0. `doctor` with no agent set exits 2 with the ask, and stops on a BYOKit worker with no model with the ask for its model (exit 2, no call). The helper drives `doctor` (exit 0) and `doctor-missing-log` (exit 1,
 `fix: check sources.log.path ...`) in its fresh init project with fake agents.
 
 Real-product proof (outside the repo; `$SCR` scratch, `$SELF` this checkout, `$LAB` a

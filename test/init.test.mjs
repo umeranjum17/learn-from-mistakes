@@ -131,6 +131,50 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['claude', 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
 });
 
+// The global file names the worker's agent; the terminal is asked only its model, and the agent key is not copied into the project.
+test('in a terminal, a worker agent set globally is asked only its model, and the judge is asked both', () => {
+  const { tmp, p, env, config, global } = setup(['claude', 'opencode'], 'agent: claude\n');
+  const answers = [MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.doesNotMatch(r.stdout, /Which agent runs the worker/);
+  assert.match(r.stdout, /model for claude: /);
+  assert.match(r.stdout, /saved: agent_config\.claude\.model and judge_agent in /);
+  assert.equal(readFileSync(global, 'utf8'), 'agent: claude\n');
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], [undefined, 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
+});
+
+// Review-6: on an existing project file the agent flags are judged against that file, so a global agent never blocks a
+// project override; the global file is left as it was.
+test('an existing project file takes --agent and --model even when the global file sets the agent', () => {
+  const { p, lfm, config, global } = setup(['claude', 'opencode'], `agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
+  writeFileSync(config, 'sources: {}\n');
+  const globalBytes = readFileSync(global);
+  const r = lfm('init', '-y', '--json', '--agent', 'opencode', '--model', MODELS.opencode);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).ignored, []);
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.agent_config], ['opencode', { opencode: { model: MODELS.opencode } }]);
+  assert.deepEqual(readFileSync(global), globalBytes);
+  const again = JSON.parse(lfm('init', '-y', '--json', '--agent', 'claude', '--model', MODELS.claude).stdout);
+  assert.deepEqual(again.ignored, ['--agent', '--model']); // a key the project file already sets is reported, not rewritten
+  assert.equal(parse(readFileSync(config, 'utf8')).agent, 'opencode');
+});
+
+// Not a terminal: init, retro, doctor and agents each stop with the ask line that names the model still to set.
+test('with an agent set but no model, init, retro, doctor and agents stop with the ask that names agent_config.<agent>.model', () => {
+  const { p, lfm } = setup(['claude', 'opencode'], 'agent: claude\njudge_agent: opencode\n');
+  const ask = /^error: ask the user which agent to use: agent_config\.claude\.model and agent_config\.opencode\.model are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one/m;
+  for (const cmd of [['init'], ['retro', '--foreground'], ['doctor'], ['agents']]) {
+    const stop = lfm(...cmd);
+    assert.equal(stop.status, 2, `${cmd[0]}: ${stop.stderr}`);
+    assert.match(stop.stderr, ask);
+    assert.equal(stop.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
+  }
+});
+
 test('a judge on the worker\'s agent and model is reported by init and fails agents, never a silent fallback', () => {
   const { lfm, config } = setup(['claude']);
   writeFileSync(config, `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
@@ -161,7 +205,7 @@ test('an empty or relative PATH entry never runs an agent CLI from the project d
 
 test('an existing config whose agent is not installed says to install it or choose another', () => {
   const { lfm, config } = setup([]);
-  writeFileSync(config, 'agent: claude\njudge_agent: codex\nsources: {}\n');
+  writeFileSync(config, `agent: claude\njudge_agent: codex\nsources: {}\nagent_config: { claude: { model: ${MODELS.claude} }, codex: { model: ${MODELS.codex} } }\n`);
   const r = lfm('init');
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `install claude, or set agent in ${config} to another agent the user chooses`);
@@ -169,7 +213,7 @@ test('an existing config whose agent is not installed says to install it or choo
 
 test('an unusable judge is not named as seeing excerpts', () => {
   const { lfm, config } = setup(['claude']);
-  writeFileSync(config, 'agent: claude\njudge_agent: codex\n');
+  writeFileSync(config, `agent: claude\njudge_agent: codex\nagent_config: { claude: { model: ${MODELS.claude} }, codex: { model: ${MODELS.codex} } }\n`);
   const r = lfm('init');
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^excerpts on: the worker \(claude\) and the judge \(codex, not usable\) see redacted record excerpts/m);
@@ -192,13 +236,13 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
   }
-  writeFileSync(config, 'agent: claude\njudge_agent: opencode\nsources: {}\n'); // a set key is never rewritten: the flags that would change it are reported
+  writeFileSync(config, `agent: claude\njudge_agent: opencode\nsources: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`); // a set key is never rewritten: the flags that would change it are reported
   const pinned = lfm('init', '--agent', 'opencode', '--judge-agent', 'claude', '--json');
   assert.equal(pinned.status, 0, pinned.stderr);
   const { status, ignored } = JSON.parse(pinned.stdout);
   assert.deepEqual([status, ignored], ['already set up', ['--agent', '--judge-agent']]);
   assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m);
-  assert.equal(readFileSync(config, 'utf8'), 'agent: claude\njudge_agent: opencode\nsources: {}\n');
+  assert.equal(readFileSync(config, 'utf8'), `agent: claude\njudge_agent: opencode\nsources: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`);
   const missing = spawnSync(process.execPath, [CLI, 'init', '--dir', join(config, 'nope')], { encoding: 'utf8', env: { PATH: '' } });
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /^error: .*nope: not a directory\nnext: /);
@@ -361,7 +405,7 @@ test('doctor names the pinned runner\'s own problem, not a premium fix, when tha
 test('doctor checks a BYOKit worker route by its sign-in and names the sign-in fix', () => {
   const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  keys('agent: "byokit:chatgpt"\njudge_agent: claude\n');
+  keys(`agent: "byokit:chatgpt"\njudge_agent: claude\nagent_config: { "byokit:chatgpt": { model: gpt-6-luna }, claude: { model: ${MODELS.claude} } }\n`);
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker login');
@@ -373,7 +417,7 @@ test('doctor checks a BYOKit worker route by its sign-in and names the sign-in f
 test('doctor fails a BYOKit worker on a route that is not a plan route, before any sign-in check', () => {
   const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  keys('agent: "byokit:nope"\njudge_agent: claude\n');
+  keys(`agent: "byokit:nope"\njudge_agent: claude\nagent_config: { "byokit:nope": { model: gpt-6-luna }, claude: { model: ${MODELS.claude} } }\n`);
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
   const checks = JSON.parse(r.stdout).checks;
@@ -387,7 +431,7 @@ test('doctor fails a BYOKit worker on a route that is not a plan route, before a
 test('doctor --live prints one fail for a judge on a failed BYOKit route, and no live call for it', () => {
   const { lfm, config, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  keys('agent: claude\njudge_agent: "byokit:nope"\n');
+  keys(`agent: claude\njudge_agent: "byokit:nope"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:nope": { model: gpt-6-luna } }\n`);
   const r = lfm('doctor', '--live', '--json');
   assert.equal(r.status, 1, r.stderr);
   const checks = JSON.parse(r.stdout).checks;
@@ -399,16 +443,14 @@ test('doctor --live prints one fail for a judge on a failed BYOKit route, and no
 
 // A BYOKit route with no model in agent_config has none to call, and the tool never picks one: the model is a fail
 // with the key to set, not an agent-CLI warn, and --live makes no call that would fail a second time.
-test('doctor fails a BYOKit worker with no model set, names the key to set, and --live adds no second fail', () => {
-  const { lfm, keys, global } = setup(['claude']);
+test('doctor asks for the model of a BYOKit worker that has none, and makes no call', () => {
+  const { lfm, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   keys(`agent: "byokit:zai-coding-cn"\njudge_agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
   const r = lfm('doctor', '--live', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  const checks = JSON.parse(r.stdout).checks;
-  const line = checks.find((c) => c.label === 'worker model');
-  assert.deepEqual([line.level, line.detail, line.fix], ['fail', 'none set for byokit:zai-coding-cn: a BYOKit route needs one', `set agent_config."byokit:zai-coding-cn".model in ${global}`]);
-  assert.equal(checks.some((c) => c.label === 'worker live'), false);
+  assert.equal(r.status, 2, r.stdout);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /^error: ask the user which agent to use: agent_config\.byokit:zai-coding-cn\.model is not set in /m);
 });
 
 // Two BYOKit roles on one route read one agent_config entry, so they call the same model: the judge would judge its own work.
@@ -433,7 +475,7 @@ for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (e
       writeFileSync(join(env.HOME, '.pi', 'agent', 'auth.json'), '{"placeholder": true}\n');
     }
     assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-    keys('agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 } }\n');
+    keys(`agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 }, claude: { model: ${MODELS.claude} } }\n`);
     const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker login');
     assert.equal(line.level, level);
     assert.equal(line.detail, detail);

@@ -78,6 +78,7 @@ function agentKeys(cfg, g, file) {
     check(c.effort === undefined || EFFORTS.includes(c.effort), `${where}.effort`, EFFORTS.join(', '));
     cfg.agent_config[a] = { ...cfg.agent_config[a], ...c };
     cfg.from[`agent_config.${a}`] = file;
+    if (c.model !== undefined) cfg.from[`agent_config.${a}.model`] = file;
   }
   if (g.agent_timeout !== undefined) {
     check(typeof g.agent_timeout === 'string' && /^[1-9]\d*[smh]$/.test(g.agent_timeout), `${file}: agent_timeout`, 'a duration such as 90s, 20m or 1h');

@@ -880,7 +880,7 @@ signoff: auto
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
