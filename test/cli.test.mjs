@@ -1314,15 +1314,14 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(stale.status, 1, stale.stderr);
   assert.match(stale.stderr, /^problem: /m);
   assert.match(stale.stderr, /^next: learn-from-mistakes-axi retro --wait   # a new run relabels the records/m);
-  // A store another process holds past busy_timeout is busy: the report says so and never suggests moving it.
+  // The report only reads: a store whose write lock another process holds gives the same report, never a move of it.
   const locked = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
   locked.exec('BEGIN IMMEDIATE');
   const busy = lfm({}, 'report');
   locked.exec('ROLLBACK');
   locked.close();
-  assert.equal(busy.status, 2, busy.stderr);
-  assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy/m);
-  assert.doesNotMatch(busy.stderr, /^next: mv /m);
+  assert.equal(busy.status, 1, busy.stderr);
+  assert.equal(busy.stderr, stale.stderr);
   // A store sqlite cannot read is one error line with the file to move, never a stack trace.
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database');
   const broken = lfm({}, 'report');
