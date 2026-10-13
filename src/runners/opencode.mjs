@@ -13,14 +13,18 @@ export const command = ({ model, dir, prompt, marker, extra }) => ({
   args: ['run', ...(model ? ['-m', model] : []), '--format', 'json', '--dir', dir, '-f', prompt, ...extra, '--', `${marker} Follow the instructions in the attached file.`],
   env: { OPENCODE_PERMISSION: '{"*":"deny"}' },
 });
-// JSON lines; the answer is the last text part, an error event carries the agent's own cause.
+// JSON lines; the answer is the last text part, an error event carries the agent's own cause. Each step_finish part
+// counts its step's tokens (input with the cached ones, output with reasoning).
 export function answer(out) {
-  let text, error;
+  let text, error, session_id, tokens;
   for (const line of out.split('\n')) {
     let e;
     try { e = JSON.parse(line); } catch { continue; }
+    session_id ??= e?.sessionID;
     if (e?.type === 'text') text = e.part?.text;
     if (e?.type === 'error') error ??= e.error?.data?.message || e.error?.name || 'unknown error';
+    const t = e?.type === 'step_finish' && e.part?.tokens;
+    if (t) tokens = { tokens_in: (tokens?.tokens_in ?? 0) + (t.input ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0), tokens_out: (tokens?.tokens_out ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) };
   }
-  return error ? { error } : { text };
+  return error ? { error } : { text, session_id, ...tokens };
 }

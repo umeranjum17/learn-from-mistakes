@@ -18,5 +18,7 @@ export function answer(out) {
     try { const e = JSON.parse(line); if (e?.type === 'message_end' && e.message?.role === 'assistant') m = e.message; } catch { /* not an event */ }
   }
   if (m?.stopReason === 'error') return { error: String(m.errorMessage || 'error with no message') };
-  return { text: m?.content?.filter((c) => c.type === 'text').map((c) => c.text).join('') };
+  const u = m?.usage;
+  return { text: m?.content?.filter((c) => c.type === 'text').map((c) => c.text).join(''),
+    ...(u && { tokens_in: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), tokens_out: u.output }) };
 }

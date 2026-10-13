@@ -27,14 +27,14 @@ folders before writing. It creates mode-0700 evidence and an isolated temporary
 HOME/XDG/TMPDIR, runs the existing `npm test` journeys, then the public CLI on copies
 of `examples`. Originals are hashed before and after; scratch is removed even
 when a CLI check fails. No model, network, pipeline, or release is started by the
-default journey. It also drives the bare command and `report`/`--json`/`--full`,
+default journey: the run's agent is the fake in `test/fake-agent/claude`. It also drives the bare command and `report`/`--json`/`--full`,
 and (synthetic only) `change applied --metric --tripwire --kind --what --why` plus the `changes` export
 (and a rejected `--tripwire "< x"`, exit 2),
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
 every config v2 key (`retro-v2`) and a rejected `worker: { runner: 3 }` (exit 2),
 then a detached `retro --wait 1m` run, `attach` and `logs --step collect` on it,
 an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well, a sessions source over one
-synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule and targets (`retro-sessions`: its metrics, `cause_count`, met/missed/n/a and its bundle cluster with the excerpt; `retro-v2` checks the `excerpts: off` bundle has none), then one more failed test run 5 days back and a change 3 days back (`change-followup`, `retro-followup`: the change's verdict is `rollback`, 1 before and 3 after, and the change with no match rule is `no-data`; rules in [features/followup.md](features/followup.md)), `agents --json` on the host PATH
+synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule and targets (`retro-sessions`: its metrics, `cause_count`, met/missed/n/a and its bundle cluster with the excerpt; `retro-v2` checks the `excerpts: off` bundle has none), then the `analyse` step with the repo's fake Claude Code as the only agent on PATH (`retro-analyse`: the kept finding and the invocation row, `logs-analyse`: a ref to no bundle item is a problem; `retro-analyse-prose`: bad JSON twice exits 1 and `logs-analyse-prose` shows the validation error; rules in [features/analyse.md](features/analyse.md)), then one more failed test run 5 days back and a change 3 days back (`change-followup`, `retro-followup`: the change's verdict is `rollback`, 1 before and 3 after, and the change with no match rule is `no-data`; rules in [features/followup.md](features/followup.md)), `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
 and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
 judge clash (exit 2; live proof in [features/init.md](features/init.md)), `doctor` on that
@@ -65,7 +65,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0 (`config-bad-runner`, `change-bad-tripwire` and `init-pinned-clash` must be 2, `doctor-missing-log` 1), all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-runner`, `change-bad-tripwire` and `init-pinned-clash` must be 2, `doctor-missing-log` and `retro-analyse-prose` 1), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 

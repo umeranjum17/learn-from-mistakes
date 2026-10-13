@@ -2,7 +2,7 @@
 // learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir,
 // <project>/.lfm by default, which the tool git-ignores itself.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from an agent's
-// labels.jsonl; this file only parses, dedups and counts.
+// labels: a retro's worker, or labels.jsonl; this file only parses, dedups and counts.
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -221,10 +221,11 @@ function analyse(cfg, files, rerunHint) {
   problems.push(...ledgerProblems);
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
-  // Problem lines name file:line and the rule broken, never a record id (a hash of private
-  // text) or a ref; a cause is echoed only through `shown`.
-  for (const l of readInput(lf, 'labels', files.labels, rerunHint)) {
-    const at = `${basename(lf)}:${l._line}`;
+  // Problem lines name file:line and the rule broken, not the record's text or ref; a cause is
+  // echoed only through `shown`.
+  // A run whose worker labelled the records counts with its labels (files.runLabels) instead of labels.jsonl.
+  for (const l of files.runLabels ?? readInput(lf, 'labels', files.labels, rerunHint)) {
+    const at = files.runLabels ? `the run's label ${l._line}` : `${basename(lf)}:${l._line}`;
     if (!records.has(l.id)) problems.push(`${at}: unknown record id (its record text changed or it was never ingested)`);
     else if (labels.has(l.id)) problems.push(`${at}: second label for the record labelled at line ${labels.get(l.id)._line}`);
     else if (typeof l.event !== 'boolean' || typeof l.why !== 'string' || !l.why.trim()) problems.push(`${at}: needs event (true/false) and why`);
@@ -364,7 +365,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, report) in a background worker
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, report) in a background worker
                       that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
@@ -387,7 +388,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle or report
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
@@ -422,6 +423,12 @@ AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
 Model: do this work on ${lfmModel() ? `${lfmModel()} (LFM_MODEL)` : 'the cheap default of the agent CLI that runs it'}. learn-from-mistakes-axi agents
 lists each agent CLI's default. Never take Opus, Sonnet or Sol as the default. LFM_MODEL or worker.model overrides it; with
 worker.runner auto, the model must be one an agent CLI lists as its default, else set worker.runner to the CLI that runs it.
+
+Set the agent that labels in the config (worker: { runner: <agent>, model: <model> }); the run never picks one.
+Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m. The tool's own agent labels the records and the
+run prints the report with their counts. You only start it and read the result. With no worker set, the retro stops and
+names the key to set; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
+the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>

@@ -14,6 +14,8 @@ metadata:
 
 learn-from-mistakes-axi counts the causes a project's coding agents keep repeating. You read each record of past work (a markdown defect log, failed no-mistakes pipeline steps, and this repo's Claude Code, Codex and OpenCode sessions) and judge what went wrong; the CLI merges duplicates, counts each cause per source, flags the repeated ones and checks that every recommended change cites real records.
 
+You start a retro (`npx -y learn-from-mistakes-axi retro --wait 15m`); the tool runs its own agent, the worker set in its config (such as Go Muse through BYOKit), to label the records; the run never picks one. You only start it and read the result. With no worker set, the retro stops and names the key to set.
+
 ## Current guidance lives in the CLI
 
 Do not follow a procedure from this file - installed copies go stale. Get the current one from the CLI:

@@ -144,10 +144,11 @@ function json(text) {
 
 const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.at(-1)];
 
-// Calls one runner in `dir` and returns the JSON object it answered (with `text`, a plain-text answer as { reply }).
+// Calls one runner in `dir`. Returns its answer's text, the JSON object in it (`value`, undefined when there is none),
+// and the session id and token counts the agent reported (null when it reports none). An empty answer is a failure.
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
-export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, text }) {
+export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
@@ -177,10 +178,9 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
     const cause = got.error || (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');
     if (cause && (got.transient || (TRANSIENT.test(cause) && !QUOTA.test(cause))) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
     if (cause) throw new InputError(`${runner}: ${cause}`, fix);
-    const obj = json(got.text ?? '');
-    if (!obj && text && got.text?.trim()) return { reply: got.text.trim() };
-    if (!obj) throw new InputError(`${runner}: the answer holds no JSON object: ${tail(got.text ?? '') || 'empty'}`, fix);
-    return obj;
+    const text = got.text ?? '';
+    if (!text.trim() && !empty) throw new InputError(`${runner}: the answer holds no JSON object: empty`, fix);
+    return { value: json(text), text, session_id: got.session_id ?? null, tokens_in: got.tokens_in ?? null, tokens_out: got.tokens_out ?? null };
   }
 }
 
@@ -207,8 +207,8 @@ export async function agents(cfg, opts) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const model = opts.model ?? a.model; // doctor --live tests the judge with the judge's model
-    const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST, text: true });
-    return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String(got.reply ?? '').slice(0, 200), offered: !a.problem } };
+    const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST });
+    return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem } };
   }
   const out = { agents: list };
   if (cfg.worker) {

@@ -33,9 +33,8 @@ off). A user message is one event over its non-synthetic text and file parts, so
 Refs are `file:line` for Codex and `db:<db file>:<table>:<rowid>` for OpenCode.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
 first user message starting `lfm-run:`, or a session id in the store's
-`invocations` table. Nothing in this step writes those signals yet (the run loop
-that starts agents and creates the table comes later), so the synthetic fixtures
-are the only proof of the skip. `collect` writes one `events` row per session start, user
+`invocations` table. The run's own agent calls ([analyse.md](analyse.md)) write
+the marker and the table; the synthetic fixtures prove the skip. `collect` writes one `events` row per session start, user
 message, tool call, tool result, correction and interrupt, with `signal`
 `tool_error`, `nonzero_exit`, `test_fail`, `retry`, `correction` or
 `interrupt`, a `file:line` ref and an excerpt of at most 300 characters: whitespace is
@@ -65,7 +64,7 @@ and 1 retry, a subagent file read, and the other project, a sibling dir with the
 repo's name as a prefix, a `.lfm/` cwd, a marker session and an old file
 skipped, and an unreadable file under the other project (not as root) is counted
 in `skipped` while the retro completes; every planted key shape is redacted and never reaches `.lfm/` or any
-output; an `invocations` session id (table created by hand in the fixture) is skipped; `excerpts: off` stores
+output; an `invocations` session id (a row in the store's `invocations` table) is skipped; `excerpts: off` stores
 none; a sessions-only config with no sessions completes; a parent file older
 than the read range is read through its newer subagent file. The planted keys
 cover a key after a long whitespace run, quoted values with spaces, JSON-escaped

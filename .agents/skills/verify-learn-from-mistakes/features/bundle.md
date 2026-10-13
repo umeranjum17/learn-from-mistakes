@@ -17,7 +17,8 @@ With `excerpts: on` each event and record has a `  > ` excerpt of at most 300
 characters; with `excerpts: off` there is none, only pointers and counts.
 With `excerpts: on`, redact() removes secret-shaped values only; plain record text stays in the bundle by design, so the canary guarantee for prose is `excerpts: off`.
 `redact()` from `src/redact.mjs` runs on every string the step writes, from every
-source (session excerpts, defect bullets, gate errors, refs, ids). Items that
+source (session excerpts, defect bullets, gate errors, refs), but not on a record id:
+the id is printed raw, as the store keeps it, so the worker can cite it. Items that
 would pass `caps.bundle_chars` (at least 1000; smaller exits 2) are dropped and a
 last `Dropped <n> items ...` line counts them. Within a section, the first item
 that does not fit drops it and every later item of that section, so the clusters
@@ -43,7 +44,7 @@ causes' metrics fill it before the later headings, and 999 exits 2; a sweep of
 caps from 1000 to 4000 keeps the cluster numbers a gapless prefix. A config in a
 subdirectory of the checkout, with the repo row matched by its checkout path,
 reads this repo's gate rows and not the other repo's.
-`test/cli.test.mjs` asserts 5 steps per run, the example's bundle sections, the
+`test/cli.test.mjs` asserts 6 steps per run, the example's bundle sections, the
 `bundle:` attach line, and that a store with no `repos` table exits 2.
 The helper's `retro-v2` drive (`excerpts: off`) checks the bundle has no
 excerpt line, and `retro-sessions` (`excerpts: on`) checks the failed test run

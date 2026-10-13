@@ -12,6 +12,7 @@ import { after, test } from 'node:test';
 import { parse } from 'yaml';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
+const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
 const SECRET = `gh${'p_'}${'Z'.repeat(36)}`; // built here, so no key-shaped string sits in the repo
 const FAKE_GH = `
 const fs = require('node:fs'), path = require('node:path'), args = process.argv.slice(2);
@@ -21,7 +22,8 @@ if (args[0] === 'auth') { console.log('github.com: Logged in to github.com accou
 const after = args.find((a) => a.startsWith('after='))?.slice(6) ?? 'first';
 process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_PAGES, after + '.json')));
 `;
-const ago = (hours) => new Date(Date.now() - hours * 3_600_000).toISOString();
+const NOW = Date.now(); // one clock for every page, so a PR's open and merge times differ by whole hours
+const ago = (hours) => new Date(NOW - hours * 3_600_000).toISOString();
 // A PR merged `merged` hours ago after `open` hours open; commits are [hours ago, check state] pairs.
 // A commit is [hours ago, check state, parents]; parents defaults to 1 (a merge commit has 2).
 function pr(number, title, { open = 1, merged, body = '', bot = false, commits, total } = {}) {
@@ -43,8 +45,10 @@ function setup() {
   execFileSync('git', ['-C', p, 'remote', 'add', 'origin', 'git@github.com:umer/umer-app.git']);
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   writeFileSync(join(bin, 'gh'), `#!${process.execPath}\n${FAKE_GH}`);
-  for (const name of ['claude', 'opencode']) writeFileSync(join(bin, name), '#!/bin/sh\necho "1.0.0"\n');
-  for (const name of ['gh', 'claude', 'opencode']) chmodSync(join(bin, name), 0o755);
+  writeFileSync(join(bin, 'opencode'), '#!/bin/sh\necho "1.0.0"\n');
+  for (const name of ['gh', 'opencode']) chmodSync(join(bin, name), 0o755);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude')); // the analyse step's worker, with node for its #! line
+  symlinkSync(process.execPath, join(bin, 'node'));
   // Two pages, newest update first; the second ends with a PR updated before the read range, so no third page is asked for.
   const demo = pr(10, 'feat: add a demo page', { open: 4, merged: 26, body: `Umer's page. Demo value: ${SECRET}` }); // first pass
   writeFileSync(join(pages, 'first.json'), page([
@@ -109,8 +113,19 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
       partial: false, labels: ['demo'], changes_requested: 0 });
   } finally { db.close(); }
 
-  // excerpts: off keeps the numbers and stores no PR title or body.
   const cfg = join(p, '.learn-from-mistakes.yaml');
+  // A record id is printed as the store keeps it, even when its source id holds a key word, so the worker's labels name it.
+  const plain = readFileSync(cfg, 'utf8');
+  writeFileSync(cfg, plain.replace(/^(\s+)prs:/m, '$1gh-token-prs:'));
+  const keyed = lfm({ FAKE_ANALYSE: 'label' }, 'retro', '--foreground', '--json');
+  assert.equal(keyed.status, 0, keyed.stderr);
+  const keyedRun = JSON.parse(keyed.stdout).run.id;
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(keyedRun), 'bundle.md'), 'utf8'), /^- \[gh-token-prs:10\] gh-token-prs at PR #10, /m);
+  const kdb = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  try { assert.ok(kdb.prepare('SELECT record_id FROM labels WHERE run_id = ?').all(keyedRun).some((l) => l.record_id === 'gh-token-prs:10')); } finally { kdb.close(); }
+  writeFileSync(cfg, plain);
+
+  // excerpts: off keeps the numbers and stores no PR title or body.
   writeFileSync(cfg, readFileSync(cfg, 'utf8').replace(/^excerpts: on\b/m, 'excerpts: off'));
   const off = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(off.status, 0, off.stderr);

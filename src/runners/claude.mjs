@@ -9,9 +9,12 @@ export const command = ({ model, extra }) => ({
   args: ['-p', '--output-format', 'json', ...(model ? ['--model', model] : []), '--tools', '', '--no-session-persistence', '--strict-mcp-config', ...extra],
   stdin: true,
 });
-// One JSON result object; on a failure (exit 1) it still holds the agent's own error in `result`.
+// One JSON result object; on a failure (exit 1) it still holds the agent's own error in `result`. Input tokens count the
+// cached ones too.
 export function answer(out) {
   let r;
   try { r = JSON.parse(out); } catch { return {}; }
-  return r?.is_error ? { error: String(r.result || 'is_error with no message') } : { text: r?.result };
+  if (r?.is_error) return { error: String(r.result || 'is_error with no message') };
+  const u = r?.usage;
+  return { text: r?.result, session_id: r?.session_id, ...(u && { tokens_in: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), tokens_out: u.output_tokens }) };
 }
