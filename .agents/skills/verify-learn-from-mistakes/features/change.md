@@ -33,7 +33,7 @@ empty `lfm-changes.v1`; changes with and without what/why in separate
 processes; rejected what/why (empty, blank, 201 characters, newline, control
 character, missing value) append nothing and name the rule, never the text;
 the `change applied` echo carries `metric`/`tripwire`/`kind` but never what/why; a corrupt ledger, a
-hand-edited entry with bad what/why, tripwire or kind, or a stored metric that is empty, longer than 200
+hand-edited entry with bad what/why, tripwire, kind or an `at` that is not a time, or a stored metric that is empty, longer than 200
 characters, or has a line break or a control character (a tab is allowed; the ledger never checks it against the config), or a repeated id exits 1 with `file:line`
 and empty stdout; report/change flags are rejected; ids and entries
 are unchanged after a later append (a 200-character what is accepted); TOON

@@ -14,7 +14,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const DAY = 86_400_000;
 const ago = (days) => new Date(Date.now() - days * DAY).toISOString();
 
-test('each applied change gets before and after numbers and a verdict; the second retro deletes a flat rule and rolls back a second miss', () => {
+test('each applied change gets before and after numbers and a verdict; the second retro deletes a flat rule, with or without a tripwire, and rolls back a second miss', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-followup-'));
   after(() => rmSync(tmp, { recursive: true }));
   const p = join(tmp, 'p'), store = join(tmp, 'home', '.claude', 'projects', '-p');
@@ -67,6 +67,7 @@ followup: { min_sessions: 3, min_days: 1 }
   change('no-rule', 3, '--tripwire', '<= 0'); // chg-6: no number for its metric: no-data
   change('missing-file', 3); // chg-7: no tripwire to check: no-data
   change('missing-file', 15, '--tripwire', '<= 0', '--kind', 'rule'); // chg-8: 2 -> 4 from the old session: rollback
+  change('bad-glob', 3, '--kind', 'rule'); // chg-9: flat, no tripwire: no-data, then delete
 
   const retro = () => {
     const r = lfm('retro', '--foreground', '--json');
@@ -85,10 +86,11 @@ followup: { min_sessions: 3, min_days: 1 }
     row('chg-6', 'cause_count:no-rule', 'n/a', 'n/a', '<= 0', 'no-data'),
     row('chg-7', 'cause_count:missing-file', 4, 0, '', 'no-data'),
     row('chg-8', 'cause_count:missing-file', 2, 4, '<= 0', 'rollback'),
+    row('chg-9', 'cause_count:bad-glob', 2, 2, '', 'no-data'),
   ]);
   const second = retro();
   assert.deepEqual(second.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'delete'],
-    ['chg-4', 'rollback'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback']]);
+    ['chg-4', 'rollback'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'delete']]);
   assert.deepEqual(decode(lfm('status', '--run', String(first.run.id)).stdout).followups, first.followups); // each run keeps its own verdicts
 
   // The store keeps the unrounded numbers, NULL for n/a and for no tripwire; the follow-up step logs one line per change.

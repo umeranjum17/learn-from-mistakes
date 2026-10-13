@@ -7,6 +7,9 @@ import { RULE, SOURCES } from './config.mjs';
 // The rows whose time is in the window: from its start, and before its end when it has one.
 export const inWindow = (rows, { start, end = Infinity }) => rows.filter((r) => { const t = Date.parse(r.ts); return t >= start && t < end; });
 
+// A number as printed: rounded to 3 decimals, n/a for null. Stored numbers and verdicts stay unrounded.
+export const rounded = (v) => (v === null ? 'n/a' : Math.round(v * 1000) / 1000);
+
 // Whether a value meets a rule ("<op> <number>", a target or a tripwire): 1 met, 0 missed, null (n/a) when the value is n/a.
 export function meets(value, rule) {
   if (value === null) return null;

@@ -12,7 +12,8 @@ change still has its before number. The step saves one row per change in
 unrounded numbers, NULL for n/a and for no tripwire) and the run output
 (`retro`, `status`) adds `followups[]{change,metric,before,after,tripwire,verdict}`
 (numbers rounded to 3 decimals, `n/a`, `''` for no tripwire). Its log has one
-line per change. The verdict is code, the first rule that fits:
+line per change, rounded the same way. A ledger line whose `at` is not a time
+is a ledger problem, so it never gets a row. The verdict is code, the first rule that fits:
 
 1. `no-data`: fewer than `followup.min_sessions` sessions (with an event at or
    after `at`) or fewer than `followup.min_days` days from `at` to the run, or
@@ -26,8 +27,11 @@ line per change. The verdict is code, the first rule that fits:
    also missed in the last run.
 6. `fix`: improved, but the tripwire missed.
 
-"The last run" is the change's row in the latest earlier run; a `no-data`
-row there breaks the chain.
+"The last run" is the change's row in the latest earlier run that measured
+it (a run that failed or was cancelled before `followup` has none). When that
+run fails rule 1 (its numbers, and the sessions and days of its after range
+counted again with this run's events), there is no last run. A change with no
+tripwire is `no-data` each run but can still be deleted.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi change applied --cause <c> --ref <sha> --tripwire "<= 0" [--kind rule]`,
@@ -38,10 +42,10 @@ then `learn-from-mistakes-axi retro --foreground` (or `status`) lists each chang
 5, 2 and 0.5 days back and eight changes give, on the first retro, `keep`
 (4 -> 0), `rollback` (4 -> 5), `rollback` for a flat rule change (2 -> 2),
 `fix` (4 -> 2 against `<= 1`), `no-data` for one session after the change, for a
-cause with no match rule (n/a) and for no tripwire, and `rollback` for a change
+cause with no match rule (n/a), for no tripwire and for a flat rule change with no tripwire, and `rollback` for a change
 15 days back whose before number comes from a session older than both windows
-(read only through `read_from`). The second retro gives `delete` for the flat
-rule change and `rollback` for the fixed one; `status --run <first>` still shows
+(read only through `read_from`). The second retro gives `delete` for both flat
+rule changes and `rollback` for the fixed one; `status --run <first>` still shows
 the first verdicts; the store keeps NULL for n/a and no tripwire.
 `test/cli.test.mjs` asserts 4 steps per run and that `rerun --resume` keeps the
 completed `followup` step. The helper's `change-followup` and `retro-followup`
