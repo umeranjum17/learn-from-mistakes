@@ -230,7 +230,19 @@ test('doctor fails a worker pinned to a runner that is not offered, and asks for
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.match(fails[0].detail, /^gemini is not offered: /);
-  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+  assert.equal(fails[0].fix, `set worker.runner in ${config} to another agent CLI`);
+});
+
+test('doctor names an unconfirmed pinned worker\'s reason and a set-runner fix, not a second CLI, when the judge takes the only other CLI', () => {
+  const { lfm, config } = setup(['claude', 'gemini']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }').replace(/^judge: .*$/m, 'judge: { runner: auto, model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.match(fails[0].detail, /^gemini is not offered: /);
+  assert.equal(fails[0].fix, `set worker.runner in ${config} to another agent CLI`);
 });
 
 test('doctor names a usable runner that does not clash with the other role in a pinned-role fix', () => {
@@ -311,7 +323,7 @@ test('doctor offers no runner whose model, as the pinned role would use it, clas
   assert.equal(r.status, 1, r.stderr);
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+  assert.equal(fails[0].fix, `set worker.runner in ${config} to another agent CLI`);
 });
 
 test('doctor offers no runner whose premium model allow_premium forbids, so the fix does not make a new fail', () => {
