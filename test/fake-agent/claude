@@ -17,10 +17,11 @@ else {
   const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
   const first = bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1];
-  const answer = mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] } : {
-    findings: [{ cause: 'umer-fixtures-unset', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
-      { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
-    labels: records.map((id) => ({ id, event: true, cause: process.env.FAKE_CAUSE || 'other', why: 'The run failed for Umer.' })),
-  });
+  const answer = mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] }
+    : mode === 'outside' ? { findings: [], labels: [{ id: 'nowhere-9', event: true, cause: 'other', why: 'The run failed for Umer.' }] } : {
+      findings: [{ cause: 'umer-fixtures-unset', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
+        { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
+      labels: records.map((id) => ({ id, event: true, cause: process.env.FAKE_CAUSE || 'other', why: 'The run failed for Umer.', duplicate_of: null, occurrences: null, confidence: null })),
+    });
   console.log(JSON.stringify({ type: 'result', is_error: false, result: answer, session_id: 'fake-session', usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } }));
 }

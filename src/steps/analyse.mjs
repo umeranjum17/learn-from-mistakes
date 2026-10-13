@@ -44,9 +44,9 @@ function check(cfg, v) {
     if (typeof l.event !== 'boolean') p.push(`${at}.event must be true or false`);
     if (l.event && !(typeof l.cause === 'string' && (Object.hasOwn(cfg.causes, l.cause) || l.cause === 'other'))) p.push(`${at}.cause must be a listed cause or other`);
     p.push(plain(l.why, `${at}.why`, { words: 25 }));
-    if (l.duplicate_of !== undefined && typeof l.duplicate_of !== 'string') p.push(`${at}.duplicate_of must be a record id`);
-    if (l.occurrences !== undefined && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) p.push(`${at}.occurrences must be a positive integer`);
-    if (l.confidence !== undefined && !CONFIDENCE.includes(l.confidence)) p.push(`${at}.confidence must be high, medium or low`);
+    if (l.duplicate_of != null && typeof l.duplicate_of !== 'string') p.push(`${at}.duplicate_of must be a record id`);
+    if (l.occurrences != null && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) p.push(`${at}.occurrences must be a positive integer`);
+    if (l.confidence != null && !CONFIDENCE.includes(l.confidence)) p.push(`${at}.confidence must be high, medium or low`);
   });
   return p.filter(Boolean);
 }
@@ -57,7 +57,7 @@ export async function analyse(cfg, db, id, dir, log) {
   const ids = new Set([...readFileSync(join(dir, 'bundle.md'), 'utf8').matchAll(/^(?:### |- )\[([^\]\n]+)\]/gm)].map((m) => m[1]));
   if (!ids.size) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
-    return { labels: 0, findings: 0, problems: 0 };
+    return { asked: false, labels: 0, findings: 0, problems: 0 };
   }
   const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
@@ -69,7 +69,7 @@ export async function analyse(cfg, db, id, dir, log) {
     return bad < 0;
   });
   const labels = v.labels.filter((l, i) => {
-    const bad = !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of !== undefined && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
+    const bad = !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of != null && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
     if (bad) problems.push(`labels[${i}] ${bad}`);
     return !bad;
   });
@@ -86,5 +86,5 @@ export async function analyse(cfg, db, id, dir, log) {
   }
   for (const p of problems) log(`problem: ${p}`);
   log(`labels: ${labels.length} of ${records.size} records, findings: ${findings.length}, problems: ${problems.length}`);
-  return { labels: labels.length, findings: findings.length, problems: problems.length };
+  return { asked: true, labels: labels.length, findings: findings.length, problems: problems.length };
 }

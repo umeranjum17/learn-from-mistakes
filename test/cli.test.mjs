@@ -1072,12 +1072,19 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
     ['analyse', 'worker', 'claude', MODELS.claude[0], `lfm-run:${run.id}:analyse`, 'ok', 'fake-session', 12, 5]);
   assert.deepEqual(lines(run.id), [`worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`, 'problem: findings[1]: ref 2 names no bundle item',
     'labels: 2 of 2 records, findings: 1, problems: 1']);
-  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, run.id)[0].output_json), { labels: 2, findings: 1, problems: 1 });
+  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, run.id)[0].output_json), { asked: true, labels: 2, findings: 1, problems: 1 });
   // The report step counts with the worker's labels: no hand-written labels.jsonl is needed.
   assert.ok(!existsSync(join(p, '.lfm', 'labels.jsonl')));
   const report = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, run.id)[0].output_json);
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
+  // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
+  writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
+  const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');
+  assert.equal(kept.status, 0, kept.stderr);
+  const outside = JSON.parse(kept.stdout).run.id;
+  assert.deepEqual(lines(outside).slice(-2), ['problem: labels[0] names no defect record in the bundle', 'labels: 0 of 2 records, findings: 0, problems: 1']);
+  assert.equal(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, outside)[0].output_json).coverage.labelled, 0);
 
   // Bad JSON twice: the answer goes back once with the validation error, then the step fails with it.
   const bad = lfm({ FAKE_ANALYSE: 'prose' }, 'retro', '--foreground', '--json');
@@ -1089,7 +1096,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
   assert.deepEqual(lines(b.run.id).slice(1), ['worker answer 1 is not valid: the answer holds no JSON object', `worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`,
     'worker answer 2 is not valid: the answer holds no JSON object', `error: ${why}`]);
-  assert.match(calls()[2].stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);
+  assert.match(calls().at(-1).stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', b.run.id), [{ exit_status: 'invalid' }, { exit_status: 'invalid' }]);
   assert.deepEqual(query('SELECT count(*) AS n FROM labels WHERE run_id = ?', b.run.id), [{ n: 0 }]);
   // caps.invocations: the run makes no call past it.

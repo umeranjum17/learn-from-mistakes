@@ -55,12 +55,13 @@ const STEPS = {
   },
   // The worker reads the bundle: it names the causes it finds and labels the defect records (the labels and findings tables).
   analyse: (cfg, db, id, log) => analyse(cfg, db, id, runDir(cfg, id), log),
-  // Counts with the labels the worker wrote in this run, else with labels.jsonl in the state dir; with none, coverage
-  // shows every record unlabelled.
+  // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;
+  // with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
-    const rows = db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id);
-    const runLabels = rows.length ? rows.map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
-      ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
+    const { asked } = JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id).output_json);
+    const runLabels = asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
+      .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
+        ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
     const { model, problems } = buildReport(cfg, { runLabels }, REPORT);
     if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
     log(summaryLine(model));

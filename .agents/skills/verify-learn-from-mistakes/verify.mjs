@@ -194,7 +194,7 @@ try {
   const analysed = JSON.parse(readFileSync(join(evidence, 'retro-analyse.stdout'), 'utf8')).run.id;
   const rows = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
-    assert.deepEqual(rows.prepare('SELECT cause FROM findings WHERE run_id = ?').all(analysed).map((f) => f.cause), ['umer-fixtures-unset'], 'the finding with a ref to no bundle item is kept');
+    assert.deepEqual(rows.prepare('SELECT cause FROM findings WHERE run_id = ?').all(analysed).map((f) => f.cause), ['umer-fixtures-unset'], 'the finding with a ref to no bundle item is not kept');
     assert.deepEqual({ ...rows.prepare('SELECT step, role, runner, exit_status, tokens_in, tokens_out FROM invocations WHERE run_id = ?').get(analysed) },
       { step: 'analyse', role: 'worker', runner: 'claude', exit_status: 'ok', tokens_in: 12, tokens_out: 5 }, 'the invocation row is wrong');
   } finally { rows.close(); }
