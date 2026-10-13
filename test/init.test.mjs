@@ -283,7 +283,7 @@ test('doctor warns on a sessions source whose agent has no store, and names that
   const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source sessions');
   assert.equal(line.level, 'warn');
   assert.equal(line.detail, `sessions: no session store at ${join(env.HOME, '.codex', 'state_5.sqlite')}`);
-  assert.equal(line.fix, 'export CODEX_HOME=<dir>   # if a store is somewhere else');
+  assert.equal(line.fix, `export CODEX_HOME=<dir>   # if a store is somewhere else, or drop it from sources.sessions.agents in ${config}`);
 });
 
 test('doctor names an absent store of an auto agent as information, and warns on one a config lists', () => {
@@ -300,7 +300,7 @@ test('doctor names an absent store of an auto agent as information, and warns on
   const listed = sessions();
   assert.equal(listed.level, 'warn');
   assert.match(listed.detail, /; codex store not found at .*state_5\.sqlite \(CODEX_HOME\)$/);
-  assert.equal(listed.fix, 'export CODEX_HOME=<dir>   # if a store is somewhere else');
+  assert.equal(listed.fix, `export CODEX_HOME=<dir>   # if a store is somewhere else, or drop it from sources.sessions.agents in ${config}`);
 });
 
 test('doctor offers no runner whose model, as the pinned role would use it, clashes with the other role', () => {

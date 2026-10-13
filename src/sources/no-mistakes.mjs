@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource } from '../config.mjs';
 import { redact } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
@@ -51,8 +51,8 @@ export async function doctor(source, entry, ctx) {
 // Its identity is the sha256 of the rows read, so it follows content, not file time. A row takes the first cause
 // whose match rule names this source and whose error_contains is in its error; the error is kept redacted.
 // node:sqlite is loaded here, and only here, so runs that never read a store never warn about it.
-export async function read(source, { path, dir }, { causes = {} } = {}) {
-  const fix = `remove the ${source} source or point its path at your no-mistakes state.sqlite`;
+export async function read(source, { path, dir }, { causes = {}, project } = {}) {
+  const fix = `set sources.${source}.path in ${shq(project)} to your no-mistakes state.sqlite, or remove that source`;
   if (!existsSync(path)) throw new UsageError(`source ${source}: no such file`, fix);
   let db;
   try {

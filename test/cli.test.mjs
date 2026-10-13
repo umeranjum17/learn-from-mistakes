@@ -582,7 +582,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);
   assert.match(store.stderr, /^error: source gate: no such file$/m);
-  assert.match(store.stderr, /^next: remove the gate source or point its path at your no-mistakes state\.sqlite$/m);
+  assert.ok(store.stderr.includes(`next: set sources.gate.path in ${join(p, '.learn-from-mistakes.yaml')} to your no-mistakes state.sqlite, or remove that source`), store.stderr);
   const flat = new DatabaseSync(join(p, 'flat.sqlite')); // no repos table: its rows cannot be told from other repos' rows
   flat.exec(`CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT); CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT, step_name TEXT, status TEXT, error TEXT, started_at INTEGER, completed_at INTEGER)`);
   flat.close();
