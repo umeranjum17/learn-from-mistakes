@@ -17,6 +17,7 @@ import { check } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { startTime } from './proc.mjs';
+import { redact } from './redact.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -79,7 +80,7 @@ function runResult(db, id) {
   const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
     .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
-  return { run: id, runLabels, findings: db.prepare('SELECT cause, summary, count, days FROM findings WHERE run_id = ? ORDER BY id').all(id).map((f) => ({ ...f })) };
+  return { run: id, runLabels, findings: db.prepare('SELECT cause, summary, count, days FROM findings WHERE run_id = ? ORDER BY id').all(id).map((f) => ({ ...f, summary: redact(f.summary).replace(/\s+/g, ' ').trim() })) };
 }
 // The latest completed run that kept labels or findings: the bare report counts them. Undefined with none, so labels.jsonl counts.
 export async function lastRun(cfg) {
@@ -344,8 +345,8 @@ export async function runs(cfg) {
 
 // The run, its steps, what each source read once collect is done, the numbers once metrics is done, each
 // applied change's verdict once followup is done, the kept fixes once check is done, and once report is done the result:
-// the causes its labels counted and the worker's findings, each with its counts and its own STE100 summary on one line.
-// Never record text or hashes.
+// the causes its labels counted and the worker's findings, each with its counts and its redacted STE100 summary on one line.
+// Hashes stay out.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics'), report = out('report') && JSON.parse(out('report'));

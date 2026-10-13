@@ -276,8 +276,9 @@ export function buildReport(cfg, files, rerunHint, full) {
   return { model: project(a, full), problems: a.problems };
 }
 
-// The one shape every machine and default output may carry: identifiers and counts only.
+// The one shape every machine and default output may carry: identifiers and counts only; `--json` prints nothing else.
 // Record text, label `why`, proposal `change`, cause descriptions, source paths and branches never enter it.
+// The default output also prints each run finding's redacted one-line summary, which is not part of this shape.
 // `full` adds allow-listed non-content evidence ids; it is not permission to print private evidence.
 function project(a, full) {
   const byCause = new Map();
