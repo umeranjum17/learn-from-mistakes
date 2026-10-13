@@ -36,9 +36,10 @@ exits 2 when no run is running (3 before the first run), and its `next:` names
 `rerun --resume --run <id>`. A plain `rerun [--run <id>]` starts a new run with the
 current config; `--run <id>` names the run it follows, and it prints `rerun: started run <new> from run <id>`;
 `retro` while a run is running exits 2 and names it, with `next: ... attach --run <id>`.
-`retro --wait` hands the run to the worker and polls its status inside the write lock. A store another process holds past
+`retro --wait` hands the run to the worker and polls its status inside the write lock. `status`, `runs`, `attach` and `logs`
+only read, and take the write lock only when a running run has lost its worker, so they work while another process writes. A write to a store another process holds past
 `busy_timeout` (5 s) exits 2 with `<store> is busy` and `next: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it`;
-the store keeps its runs (only a store that is not a run store gets the `mv` hint). The helper's `status-busy` holds the lock and checks this.
+the store keeps its runs (only a store that is not a run store gets the `mv` hint). The helper holds the lock and checks both (`status-busy`, `retro-busy`).
 The store commands silence only node:sqlite's `ExperimentalWarning` (Node 22),
 and the worker starts with `--disable-warning=ExperimentalWarning`.
 

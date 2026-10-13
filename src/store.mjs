@@ -61,7 +61,8 @@ export async function openStore(state, create) {
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(file);
   db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL');
-  locked(db, () => { // read the version under the write lock, so two first opens never apply an entry twice
+  // A current store needs no write lock to open; else re-read the version under it, so two first opens never apply an entry twice.
+  if (db.prepare('PRAGMA user_version').get().user_version < MIGRATIONS.length) locked(db, () => {
     for (let i = db.prepare('PRAGMA user_version').get().user_version; i < MIGRATIONS.length; i++) db.exec(`${MIGRATIONS[i]}; PRAGMA user_version = ${i + 1}`);
   });
   return db;

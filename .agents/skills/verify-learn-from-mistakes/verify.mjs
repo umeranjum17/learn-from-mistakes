@@ -234,10 +234,11 @@ try {
   }
   const hold = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite')); // a busy store: another process holds its write lock
   hold.exec('BEGIN IMMEDIATE');
-  run('status-busy', process.execPath, [cli, 'status', '--dir', staged], 2, lab);
+  run('status-busy', process.execPath, [cli, 'status', '--dir', staged], 0, lab); // a read does not wait for the lock
+  run('retro-busy', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
   hold.exec('ROLLBACK');
   hold.close();
-  assert.match(readFileSync(join(evidence, 'status-busy.stderr'), 'utf8'), /is busy: .*\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it/, 'a busy store does not say to wait');
+  assert.match(readFileSync(join(evidence, 'retro-busy.stderr'), 'utf8'), /is busy: .*\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it/, 'a busy store does not say to wait');
   drive('status-after-busy', 'status'); // the store and its run history are kept
   writeFileSync(stagedConfig, stringify(config));
   // No agent set anywhere (no project config, no global file yet): the tool picks none and says to ask the user.

@@ -106,11 +106,16 @@ function signal(pgid, sig) {
   }
 }
 
+const lost = (r) => { const started = r.pid && startTime(r.pid); return !started || started !== r.pid_started_at; };
+const runningRuns = (db) => db.prepare(`SELECT id, pid, pid_started_at FROM runs WHERE status = 'running'`).all();
+
 function reconcile(db) {
-  for (const r of db.prepare(`SELECT id, pid, pid_started_at FROM runs WHERE status = 'running'`).all()) {
-    const started = r.pid && startTime(r.pid);
-    if (!started || started !== r.pid_started_at) stop(db, r.id, 'interrupted', 'the worker stopped before the step ended');
-  }
+  for (const r of runningRuns(db)) if (lost(r)) stop(db, r.id, 'interrupted', 'the worker stopped before the step ended');
+}
+
+// Read commands read first and take the write lock only when a running run has lost its worker; reconcile re-checks inside it.
+function reconcileRead(db) {
+  if (db && runningRuns(db).some(lost)) locked(db, () => reconcile(db));
 }
 
 function blockRunning(db, opts) {
@@ -237,7 +242,7 @@ function pick(cfg, db, opts) {
 
 export async function status(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (db) locked(db, () => reconcile(db));
+  reconcileRead(db);
   return show(db, pick(cfg, db, opts));
 }
 
@@ -248,7 +253,7 @@ export async function attach(cfg, opts) {
   const id = pick(cfg, db, opts);
   const seen = {}; // step name -> the status and the count of log lines already printed
   for (;;) {
-    locked(db, () => reconcile(db));
+    reconcileRead(db);
     const ended = db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status !== 'running'; // read before the steps: none of their lines is missed
     for (const s of db.prepare('SELECT name, status FROM steps WHERE run_id = ? ORDER BY ord').all(id)) {
       const was = seen[s.name] ??= { status: 'pending', lines: 0 };
@@ -291,7 +296,7 @@ function logLines(cfg, id, name) {
 
 export async function logs(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (db) locked(db, () => reconcile(db));
+  reconcileRead(db);
   const id = pick(cfg, db, opts);
   const step = db.prepare('SELECT name, status FROM steps WHERE run_id = ? AND name = ?').get(id, opts.step);
   if (!step) {
@@ -306,7 +311,7 @@ export async function logs(cfg, opts) {
 // too. A worker inside a long synchronous step reads the signal only after it, so after 3 s it gets SIGKILL.
 export async function abort(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  if (db) locked(db, () => reconcile(db));
+  reconcileRead(db);
   const id = opts.run || !db ? pick(cfg, db, opts) : db.prepare(`SELECT id FROM runs WHERE status = 'running'`).get()?.id;
   if (id == null) throw new UsageError('no run is running', withContext('learn-from-mistakes-axi runs', 'the saved runs', opts));
   const r = db.prepare('SELECT status, pid, pid_started_at FROM runs WHERE id = ?').get(id);
@@ -328,7 +333,7 @@ export async function abort(cfg, opts) {
 
 export async function runs(cfg) {
   const db = await openStore(cfg.state, false);
-  if (db) locked(db, () => reconcile(db));
+  reconcileRead(db);
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
