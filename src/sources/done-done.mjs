@@ -4,7 +4,8 @@
 // counts that a fail) is one record: its day, the step, a short reason (redacted) and the run file as its ref; a run with
 // no failed step is one record for the step its reason names (setup: an error before the first step). Passed, cancelled
 // and unfinished runs are not records. A run whose updated (else created) time, else its file's mtime, is before the
-// read's start is skipped unread; any other run file in a schema this version does not read stops the read with the fix.
+// read's start has its schema and steps unchecked and is skipped; any other run file in a schema this version does not
+// read stops the read with the fix.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -46,7 +47,7 @@ export function read(source, { apps, path }, { readFrom = 0, project }) {
       }
       let run;
       try { run = JSON.parse(text); } catch { run = undefined; }
-      const at = [run?.updated, run?.created].map((t) => (typeof t === 'string' ? Date.parse(t) : NaN)).find((t) => !Number.isNaN(t)) ?? statSync(file).mtimeMs;
+      const at = [run?.updated, run?.created].map((t) => (typeof t === 'string' ? Date.parse(t) : NaN)).find((t) => !Number.isNaN(t)) ?? statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? 0;
       if (at < readFrom) continue;
       if (run === undefined) throw bad('not JSON');
       if (run?.schema !== SCHEMA) {

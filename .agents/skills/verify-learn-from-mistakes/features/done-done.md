@@ -15,7 +15,7 @@ step's own first finding, else `<step>: failed (exit <n>)`. A run with no failed
 journey, or `setup:` before the first step) is one record for the step its reason names. Passed,
 cancelled, unfinished (`pending`, `running`, `awaiting_approval`) and maintain runs are not records; a
 folder with no `run.json` (the judge cache) is skipped. A run before the read's start (its `updated`, else
-`created`, else the file's mtime) is skipped unread, so an old run in a newer schema never stops anything.
+`created`, else the file's mtime) is skipped without its schema or steps being checked, so an old run in a newer schema never stops anything.
 A `run.json` in the read range whose schema is not 2 stops `ingest` and `retro` with exit 2, `error: source <id>: <file> is done-done run schema <n>; this
 version reads schema 2` and `next: update learn-from-mistakes-axi to read it, or remove
 sources.<id> ...`; a non-JSON one or bad `steps` exits 2 with `next: done-done status --run <id>`, an
