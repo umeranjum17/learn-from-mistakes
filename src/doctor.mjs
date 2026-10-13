@@ -87,10 +87,7 @@ export async function doctor(dir, opts) {
     }
     const { model } = r;
     const setModel = `set agent_config."${r.runner}".model in ${fileOf(cfg, `agent_config.${r.runner}`)}`;
-    if (!model && route) { failedModel.add(name); add('fail', `${name} model`, `none set for ${r.runner}: a BYOKit route needs one`, setModel); }
-    else if (!model && cfg.allow_premium) add('warn', `${name} model`, `none set for ${r.runner}: the agent CLI picks its own (allow_premium)`, setModel);
-    else if (!model) { failedModel.add(name); add('fail', `${name} model`, `none set for ${r.runner}: the agent CLI would pick its own, which may be a premium model`, `${setModel}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`); }
-    else if (premiumBlocked(cfg, model)) {
+    if (premiumBlocked(cfg, model)) {
       failedModel.add(name);
       add('fail', `${name} model`, `${model} is a premium model`, `${setModel} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
     } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);

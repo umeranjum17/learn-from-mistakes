@@ -67,7 +67,7 @@ async function candidate(cfg, runner, agents) {
   }
   const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));
   if (a.problem) return { runner, model, bin: '', problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
-  return { runner, model, bin: runner.startsWith('acp:') ? runner : a.bin, problem: '' }; // an ACP target is its own identity
+  return { runner, model, bin: a.bin, problem: '' };
 }
 
 // Resolve the worker (agent:) or the judge (judge_agent:): the one agent the user set. When it is not ready, its own
@@ -132,7 +132,6 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (route && !model) throw new InputError(`${runner}: no model set in agent_config, and a BYOKit route needs one`, `set agent_config."${runner}".model in ${fileOf(cfg, `agent_config.${runner}`)}`);
   if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `set agent_config."${target ? `acp:${target}` : runner}".model in ${fileOf(cfg, `agent_config.${target ? `acp:${target}` : runner}`)} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));

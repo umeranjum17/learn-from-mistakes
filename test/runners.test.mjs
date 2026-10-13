@@ -116,7 +116,7 @@ test('agents lists only the configured agents with version, login presence and m
   const toon = decode(own.stdout);
   assert.deepEqual([toon.worker.runner, toon.worker.model], ['claude', MODELS.claude]);
   assert.deepEqual([toon.judge.runner, toon.judge.model], ['codex', 'umer-cheap-1']);
-  config('agent: gemini\n'); // one agent that does not resolve: its own problem, and the fix names the file that set it
+  config('agent: gemini\nagent_config: { gemini: { model: umer-gem-1 } }\n'); // one agent that does not resolve: its own problem, and the fix names the file that set it
   const bad = lfm({}, 'agents');
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /^problem: worker: gemini is not offered: /m);
@@ -148,7 +148,7 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
 
 test('a runner whose tool-off mode is not confirmed is never worker or judge, and says why', () => {
   const { lfm, config } = setup();
-  config('agent: gemini\njudge_agent: acp:fake-agent\n');
+  config('agent: gemini\njudge_agent: acp:fake-agent\nagent_config: { gemini: { model: umer-gem-1 }, "acp:fake-agent": { model: umer-acp-1 } }\n');
   const r = lfm({}, 'agents', '--json');
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^problem: worker: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode/m);
@@ -213,10 +213,9 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   assert.match(noModel.stderr, /^error: pi: no model set in agent_config, so the agent CLI would pick its own, which may be a premium model$/m);
   assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `set agent_config."pi".model in ${join(env.LFM_HOME, 'config.yaml')}, or set allow_premium: true in ${join(env.LFM_HOME, 'config.yaml')}`);
   config('agent: pi\njudge_agent: claude\n');
-  const live = JSON.parse(lfm({}, 'doctor', '--live', '--json').stdout).checks;
-  assert.deepEqual(live.find((c) => c.label === 'worker model'), { level: 'fail', label: 'worker model', detail: live.find((c) => c.label === 'worker model').detail,
-    fix: noModel.stderr.match(/^next: (.*)$/m)[1] });
-  assert.equal(live.find((c) => c.label === 'worker live'), undefined);
+  const asked = lfm({}, 'doctor', '--live');
+  assert.equal(asked.status, 2, asked.stderr);
+  assert.match(asked.stderr, /^error: ask the user which agent to use: agent_config\.pi\.model is not set in /m);
   assert.equal(calls('pi').length, 0);
   config('agent: pi\nallow_premium: true\n');
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);
@@ -224,7 +223,7 @@ test('a premium or unset model that allow_premium forbids is never called: docto
 
 test('the skill row looks where the agent CLI reads skills: its login check\'s config dir, not the home default', () => {
   const { lfm, tmp, config } = setup();
-  config('agent: pi\njudge_agent: claude\n');
+  config('agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   const r = lfm({ PI_CODING_AGENT_DIR: join(tmp, 'pi-agent') }, 'doctor', '--json');
   const row = JSON.parse(r.stdout).checks.find((c) => c.label === 'skill pi');
   assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'learn-from-mistakes')}`);
@@ -458,7 +457,7 @@ test('byokit: a role that is not installed says to install it or choose another;
   assert.match(none.stderr, /^problem: worker: claude is not usable: claude is not on PATH$/m);
   assert.match(none.stderr, /^next: install claude, or set agent in .*config\.yaml to another agent the user chooses$/m);
   const yaml = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}agent: "byokit:grok"\n`);
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}agent: "byokit:grok"\nagent_config: { "byokit:grok": { model: umer-cheap-1 } }\n`);
   const r = await lfm('agents');
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^problem: worker: byokit:grok is not a BYOKit plan route: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
@@ -466,7 +465,7 @@ test('byokit: a role that is not installed says to install it or choose another;
 
 test('byokit: a route the user set with BYOKit not installed gives BYOKit\'s own fix', () => {
   const { tmp, p, env, config } = setup();
-  config('agent: "byokit:opencode-go"\n');
+  config('agent: "byokit:opencode-go"\nagent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n');
   const app = join(tmp, 'app'); // the CLI tree with every dependency but BYOKit's packages
   mkdirSync(join(app, 'node_modules'), { recursive: true });
   for (const d of ['bin', 'src']) cpSync(new URL(`../${d}`, import.meta.url).pathname, join(app, d), { recursive: true });

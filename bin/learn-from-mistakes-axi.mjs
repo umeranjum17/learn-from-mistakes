@@ -420,7 +420,7 @@ const guideText = () => `learn-from-mistakes-axi guide: you judge each record, t
 AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
 
 Model: the tool's own agents are the user's choice: agent: and judge_agent: in $LFM_HOME/config.yaml or the project's
-.learn-from-mistakes.yaml, each with agent_config.<agent>.model. The tool never picks one. When one is not set, a command
+.learn-from-mistakes.yaml, each with agent_config.<agent>.model. The tool never picks one. When one is not set, or has no model, a command
 that needs it stops with "ask the user which agent to use": ask the user, never choose for them, then run the init
 command it prints with their answer. Never take Opus, Sonnet or Sol as the default.
 

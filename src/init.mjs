@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { InputError, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { askError, interactive, pick, save, unset } from './ask.mjs';
+import { askError, interactive, named, pick, save, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { CLASH, detect, KEY, resolveRoles } from './runners/index.mjs';
 
@@ -31,8 +31,8 @@ const globalText = `# learn-from-mistakes global configuration
 
 # Model and reasoning effort per agent. Effort is one of minimal, low, medium, high, xhigh, max; it maps
 # to --effort for claude, -c model_reasoning_effort for codex, --variant for opencode and --thinking for
-# pi; gemini, acp:<target> and byokit:<route> take no effort. An agent with no model here is refused unless
-# allow_premium is true, because its CLI would pick its own, which may be a premium one.
+# pi; gemini, acp:<target> and byokit:<route> take no effort. An agent with no model here is asked for one: the
+# tool never lets its CLI pick its own model.
 # agent_config:
 #   claude:
 #     model: claude-haiku-5-5
@@ -82,20 +82,25 @@ export async function init(dir, opts) {
       if (entry) found[ID[type] ?? type] = entry;
     } catch (e) { skipped.push(`${type}: ${e.message}`); }
   }
-  // The roles the flags choose: on a new project config, each one given; on one that exists, only a role not set yet.
+  // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
+  // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override.
   const before = written ? loadGlobal() : loadConfig(dir), agents = detect(before);
+  const here = (k) => before.from[k] === file;
   const chosen = {}, ignored = [];
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
-    if (written || !before[key]) chosen[key] = { agent: opts[flag], model: opts[model] };
-    else ignored.push(`--${flag}`, ...(opts[model] ? [`--${model}`] : []));
+    const agent = opts[flag], takeAgent = written || !here(key);
+    const takeModel = !!opts[model] && (takeAgent || (before[key] === agent && !here(`agent_config.${agent}.model`)));
+    if (takeAgent || takeModel) chosen[key] = { agent, model: takeModel ? opts[model] : undefined, set: takeAgent };
+    if (!takeAgent) ignored.push(`--${flag}`);
+    if (opts[model] && !takeModel) ignored.push(`--${model}`);
   }
   if (!written && opts['no-excerpts']) ignored.push('--no-excerpts');
   // A chosen role that is not usable, or a chosen judge on the worker's identity, is refused before any file is written.
   if (Object.keys(chosen).length) {
     const want = { ...before, agent_config: structuredClone(before.agent_config) };
     for (const [key, c] of Object.entries(chosen)) {
-      want[key] = c.agent;
+      if (c.set) want[key] = c.agent;
       if (c.model) want.agent_config[c.agent] = { ...want.agent_config[c.agent], model: c.model };
     }
     const { worker, judge } = await resolveRoles(want, agents);
@@ -129,14 +134,14 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   if (unset(cfg).length && interactive() && !opts.y) {
     const keys = unset(cfg);
     save(file, await pick(keys, cfg));
-    process.stderr.write(`saved: ${keys.join(' and ')} in ${file}\n`);
+    process.stderr.write(`saved: ${named(cfg, keys)} in ${file}\n`);
     cfg = loadConfig(dir);
   }
   stateDir(cfg);
   const missing = unset(cfg);
-  if (missing.length && !opts.y) throw askError(missing, file, opts.dir);
+  if (missing.length && !opts.y) throw askError(cfg, missing, file, opts.dir);
   const { worker, judge } = await resolveRoles(cfg, agents);
-  const gaps = [...(missing.length ? [`agents: ${askError(missing, file).message}`] : []),
+  const gaps = [...(missing.length ? [`agents: ${askError(cfg, missing, file).message}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
