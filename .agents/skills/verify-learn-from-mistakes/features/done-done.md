@@ -10,7 +10,7 @@ status is `failed`, or `completed` with result `fail`, `inconclusive` or `overri
 gate; done-done counts it a fail), is one record:
 id `<source>:<app>/<run-id>/<step>`, `step`, `ref` the run file, `date` the step's end day (else the
 run's last update) and `text` `verify <result>: <reason>` after `excerpt()` (redacted, at most 300
-characters; none with `excerpts: off`). The reason is the run's when it names that step, else the
+characters; kept out of `records.jsonl` and the bundle with `excerpts: off`, as for markdown-log). The reason is the run's when it names that step, else the
 step's own first finding, else `<step>: failed (exit <n>)`. A run with no failed step (a timed-out
 journey, or `setup:` before the first step) is one record for the step its reason names. Passed,
 cancelled, unfinished (`pending`, `running`, `awaiting_approval`) and maintain runs are not records; a
