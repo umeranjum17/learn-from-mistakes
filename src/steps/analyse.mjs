@@ -30,7 +30,7 @@ function check(cfg, v) {
   v.findings.forEach((f, i) => {
     const at = `findings[${i}]`;
     if (!f || typeof f !== 'object') return p.push(`${at} must be an object`);
-    if (typeof f.cause !== 'string' || !KEY.test(f.cause)) p.push(`${at}.cause must be a cause key: lowercase letters, digits and dashes`);
+    if (typeof f.cause !== 'string' || !(Object.hasOwn(cfg.causes, f.cause) || KEY.test(f.cause))) p.push(`${at}.cause must be a configured cause key or a new key: lowercase letters, digits and dashes`);
     p.push(plain(f.summary, `${at}.summary`, { sentences: 3 }));
     if (!Array.isArray(f.refs) || !f.refs.length || !f.refs.every((r) => typeof r === 'string')) p.push(`${at}.refs must be a non-empty list of bundle ids`);
   });
