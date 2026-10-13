@@ -14,7 +14,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const MODELS = { claude: 'claude-haiku-5-5', codex: 'gpt-6-luna', opencode: 'opencode-go/muse-spark-1.3-contributor' };
 // The agents the user chose, in the global file: the tool never picks one.
 const CHOSEN = (agent, judge) => `agent: ${agent}\njudge_agent: ${judge}\nagent_config: ${JSON.stringify(Object.fromEntries(Object.entries(MODELS).map(([a, model]) => [a, { model }])))}\n`;
-const ASK = /^agents: ask the user which agent to use: agent and judge_agent are not set in .*\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi, acp:<target> or byokit:<route>/;
+const ASK = /^agents: ask the user which agent to use: agent and judge_agent are not set in .*\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi or byokit:<route>/;
 
 function setup(agents, chosen) {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-init-'));
@@ -119,27 +119,31 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
 // A terminal (stdin and stdout are TTYs, here a pseudo-terminal from util-linux script) is asked: a pick list of the
 // supported agents, then the model; a judge on the worker's agent is asked again. The answer is saved.
 test('in a terminal, init asks for each agent and model and saves the answer', () => {
-  const { tmp, p, env, config } = setup(['claude', 'opencode']);
-  const answers = ['1', MODELS.claude, '1', '3', MODELS.opencode].join('\n') + '\n';
+  const { tmp, p, env, config, lfm } = setup(['claude', 'opencode']);
+  // the worker and judge are picked by number; the judge is claude first, refused as the worker's agent; its first model is a bare id, refused and asked again, then picked by number
+  const answers = ['1', '1', '1', '3', 'muse-spark-1.3-contributor', '1'].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /Which agent runs the worker \(agent\)\?\r?\n {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode/);
   assert.match(r.stdout, /the judge must be another agent than the worker \(claude\)/);
+  assert.match(r.stdout, /Models for claude:\r?\n {2}1\) claude-haiku-5-5/);
+  assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id such as claude-haiku-5-5/);
   assert.match(r.stdout, /saved: agent and judge_agent in /);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['claude', 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
+  assert.equal(lfm('agents', '--json').status, 0); // the saved config loads
 });
 
 // The global file names the worker's agent; the terminal is asked only its model, and the agent key is not copied into the project.
 test('in a terminal, a worker agent set globally is asked only its model, and the judge is asked both', () => {
   const { tmp, p, env, config, global } = setup(['claude', 'opencode'], 'agent: claude\n');
-  const answers = [MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
+  const answers = ['1', '3', '1'].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.doesNotMatch(r.stdout, /Which agent runs the worker/);
-  assert.match(r.stdout, /model for claude: /);
+  assert.match(r.stdout, /Models for claude:\r?\n {2}1\) claude-haiku-5-5/);
   assert.match(r.stdout, /saved: agent_config\.claude\.model and judge_agent in /);
   assert.equal(readFileSync(global, 'utf8'), 'agent: claude\n');
   const yaml = parse(readFileSync(config, 'utf8'));
@@ -173,6 +177,26 @@ test('with an agent set but no model, init, retro, doctor and agents stop with t
     assert.match(stop.stderr, ask);
     assert.equal(stop.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
   }
+});
+
+// The worker is checked against a judge that is already set, so a terminal pick never makes both roles one agent.
+test('in a terminal, a worker pick equal to the set judge is refused and asked again', () => {
+  const { tmp, p, env, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
+  const answers = ['1', '2', '1', '1'].join('\n') + '\n'; // claude refused as the worker; codex, its model, then claude's model
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /the worker must be another agent than the judge \(claude\)/);
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['codex', undefined, { codex: { model: MODELS.codex }, claude: { model: MODELS.claude } }]);
+});
+
+test('init refuses a worker chosen as the set judge\'s agent and model, and writes nothing', () => {
+  const { p, lfm, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
+  const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^error: judge: the judge resolves to the worker's agent and model, so it would judge its own work$/m);
+  assert.equal(existsSync(config), false);
 });
 
 test('a judge on the worker\'s agent and model is reported by init and fails agents, never a silent fallback', () => {
@@ -225,7 +249,7 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
     [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, 'error: judge: the judge resolves to the worker\'s agent and model, so it would judge its own work'],
     [['--agent', 'umer'], 2, 'error: --agent "umer" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'],
     [['--model', MODELS.claude], 2, 'error: --model needs --agent'],
-    [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'],
+    [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'],
     [['--judge-agent', 'codex', '--judge-model', MODELS.codex], 1, 'error: judge: codex is not usable: codex is not on PATH'],
     [['--judge-agent', 'gemini'], 1, 'error: judge: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode (agents --test gemini runs the write test)'],
   ]) {

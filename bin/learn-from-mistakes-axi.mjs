@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
-import { isMetric, loadConfig, loadGlobal, METRIC_RULE, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
+import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
@@ -566,8 +566,7 @@ async function main() {
   for (const [m, a] of [['model', 'agent'], ['judge-model', 'judge-agent']]) {
     if (opts[m] === undefined) continue;
     if (!opts[a]) throw new UsageError(`--${m} needs --${a}`, form);
-    if (!/^[\w.\/:@+-]{1,200}$/.test(opts[m])) throw new UsageError(`--${m} ${shown(opts[m])} must be a model id such as claude-haiku-5-5`, form);
-    if (opts[a] === 'opencode' && !opts[m].includes('/')) throw new UsageError(`--${m} ${shown(opts[m])} must be provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor`, form);
+    if (!modelOk(opts[a], opts[m])) throw new UsageError(`--${m} ${shown(opts[m])} must be ${MODEL_RULE}`, form);
   }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
   if (cmd === 'init') { await initCommand(opts); return; }

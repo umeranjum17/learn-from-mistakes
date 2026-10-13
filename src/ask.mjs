@@ -6,11 +6,12 @@ import { dirname } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseDocument } from 'yaml';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { AGENT_NAME } from './config.mjs';
+import { AGENT_NAME, MODEL_RULE, modelOk } from './config.mjs';
+import KNOWN from './models.json' with { type: 'json' };
 
-// The fixed list a terminal picks from (never a PATH scan); any other acp:<target> or byokit:<route> can be typed.
+// The fixed list a terminal picks from (never a PATH scan); a byokit:<route> can be typed as well.
 export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
-const LIST = 'claude, codex, opencode, pi, acp:<target> or byokit:<route> (such as byokit:opencode-go)';
+const LIST = 'claude, codex, opencode, pi or byokit:<route> (such as byokit:opencode-go)';
 const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--judge-model'] };
 // A role is unset when its agent is, or when the agent has no model: both are the user's to set.
 export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k] || !cfg.agent_config?.[cfg[k]]?.model);
@@ -54,23 +55,28 @@ export async function pick(keys, cfg) {
     for (const key of keys) {
       let agent = cfg[key];
       if (!agent) {
-        const role = key === 'agent' ? 'worker (agent)' : 'judge (judge_agent)';
-        process.stderr.write(`Which agent runs the ${role}?\n${CHOICES.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type acp:<target> or byokit:<route>\n`);
-        const worker = picks.agent?.agent ?? cfg.agent;
+        const [role, other, otherRole] = key === 'agent'
+          ? ['worker (agent)', cfg.judge_agent, 'judge']
+          : ['judge (judge_agent)', picks.agent?.agent ?? cfg.agent, 'worker'];
+        process.stderr.write(`Which agent runs the ${role}?\n${CHOICES.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type byokit:<route>\n`);
         for (;;) {
           const a = await ask('agent: ');
           agent = CHOICES[Number(a) - 1] ?? a;
           if (!AGENT_NAME.test(agent)) process.stderr.write(`${a || '(empty)'} is not one of the choices\n`);
-          // agent_config holds one model per agent, so a judge on the worker's agent would judge its own work.
-          else if (key === 'judge_agent' && agent === worker) process.stderr.write(`the judge must be another agent than the worker (${worker})\n`);
+          // agent_config holds one model per agent, so two roles on one agent would judge their own work.
+          else if (agent === other) process.stderr.write(`the ${key === 'agent' ? 'worker' : 'judge'} must be another agent than the ${otherRole} (${other})\n`);
           else break;
         }
       }
+      const known = KNOWN[agent.split(':')[0]] ?? [];
+      if (known.length) process.stderr.write(`Models for ${agent}:\n${known.map((m, i) => `  ${i + 1}) ${m}`).join('\n')}\n`);
       let model;
       for (;;) {
-        model = await ask(`model for ${agent}: `);
-        if (model) break;
-        process.stderr.write('a model is needed\n');
+        const typed = await ask(`model for ${agent}${known.length ? ' (a number, or a model id)' : ''}: `);
+        model = known.length && /^\d+$/.test(typed) ? known[Number(typed) - 1] : typed;
+        if (!model) process.stderr.write(typed ? `${typed} is not one of the models listed\n` : 'a model is needed\n');
+        else if (!modelOk(agent, model)) process.stderr.write(`${model} is not ${MODEL_RULE}\n`);
+        else break;
       }
       picks[key] = { agent, model, set: !cfg[key] };
     }
