@@ -280,7 +280,7 @@ try {
       run('packed-changes', installed, ['changes', '--json', '--dir', staged]);
       assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-changes.stdout'), 'utf8')).schema, 'lfm-changes.v1', 'packed bin does not drive the export');
     }
-    run('packed-retro', installed, ['retro', '--wait', '1m', '--json', '--dir', staged]); // the installed bin spawns its own worker
+    run('packed-retro', installed, ['retro', '--wait', '1m', '--json', '--dir', staged], 0, lab); // the installed bin spawns its own worker; the ledger's follow-ups ask the fake agent
     const packedRun = JSON.parse(readFileSync(join(evidence, 'packed-retro.stdout'), 'utf8'));
     assert.ok(packedRun.run.status === 'completed' && packedRun.steps.every((s) => s.status === 'completed'), 'packed bin does not complete a detached run');
     // The same e2e journeys (the ledger and lfm-changes.v1 export included), driven through the installed bin.
