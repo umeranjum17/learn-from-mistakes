@@ -276,7 +276,7 @@ export function buildReport(cfg, files, rerunHint, full) {
   return { model: project(a, full), problems: a.problems };
 }
 
-// The one shape every machine and default output may carry: identifiers and counts only; `--json` prints nothing else.
+// The one shape every machine and default output may carry: identifiers, counts and each finding's judge verdict word; `--json` prints nothing else.
 // Record text, label `why`, proposal `change`, cause descriptions, source paths and branches never enter it.
 // The default output also prints each run finding's redacted one-line summary, which is not part of this shape.
 // `full` adds allow-listed non-content evidence ids; it is not permission to print private evidence.
@@ -394,7 +394,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
-the report --json output is privacy-bounded: identifiers and counts only; the default and --full reports also print one redacted \`finding:\` summary line per finding, never record text, label/proposal prose or change what/why;
+the report --json output is privacy-bounded: identifiers, counts and each finding's judge verdict word (confirmed, weakened, refuted or not judged); the default and --full reports also print one redacted \`finding:\` summary line per finding, never record text, label/proposal prose or change what/why;
 \`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
@@ -460,7 +460,7 @@ labels (labels_from: run <id>); labels.jsonl only when no run has labels, or --l
    Prefer a check, a script or a deleted rule over more prose. Every ref must be a record id or source:row id.
 
 6. Report: learn-from-mistakes-axi report   (exit 1: fix the counted label/proposal problems and rerun)
-   The --json output holds ids and counts only; the default and --full output also print one redacted finding summary line per finding. Tell the user each repeated cause with its description, its counts
+   The --json output holds ids, counts and each finding's verdict word; the default and --full output also print one redacted finding summary line per finding. Tell the user each repeated cause with its description, its counts
    and your proposals from proposals.jsonl.
 
 7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
