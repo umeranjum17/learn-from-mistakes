@@ -606,6 +606,7 @@ async function runCommand(cmd, cfg, opts) {
   } catch (e) {
     if (e.code !== 'ERR_SQLITE_ERROR' || e.errcode === 5) throw e;
     if (e.message.includes('UNIQUE constraint failed: runs.status')) throw new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
+    if (![11, 26].includes(e.errcode)) throw new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi ${cmd}`, 'after the disk or the file permissions are fixed', opts));
     throw new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
   }
   console.log(render(out, opts.json));

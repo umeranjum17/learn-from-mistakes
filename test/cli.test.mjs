@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -891,6 +891,19 @@ test('empty input exits 3 with a next command', () => {
   assert.ok(!r.stderr.includes(p), 'the empty-input hint must not echo an input path value');
 });
 
+test('the defects metric counts the defect log, not reviews.md', () => {
+  const { p, lfm } = setup();
+  execFileSync('git', ['-C', p, 'init', '-q']);
+  const day = new Date().toISOString().slice(0, 10);
+  writeFileSync(join(p, 'defects.md'), `## ${day}\n- one\n- two\n- three\n`);
+  writeFileSync(join(p, 'reviews.md'), `- ${day} umer: first review\n- ${day} umer: second review\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n  reviews: { type: markdown-log, path: reviews.md }\ncauses: { flaky: { description: d } }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(decode(r.stdout).run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^\| defects \| 3 \|/m);
+});
+
 test('retro --foreground saves a run and its steps in .lfm/; status and runs show it', () => {
   const { p, lfm } = setup();
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
@@ -996,6 +1009,15 @@ allow_premium: false
   holdChange.close();
   assert.equal(busyChange.status, 2, busyChange.stderr);
   assert.match(busyChange.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment/m);
+
+  chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
+  chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
+  const readonly = lfm('status');
+  chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o644);
+  chmodSync(join(p, '.lfm'), 0o755);
+  assert.equal(readonly.status, 2, readonly.stderr);
+  assert.doesNotMatch(readonly.stderr, /^next: mv /m);
+  assert.match(readonly.stderr, /^next: learn-from-mistakes-axi status   # after the disk or the file permissions are fixed/m);
 
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
   const corrupt = lfm('status');
