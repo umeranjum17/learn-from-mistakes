@@ -35,7 +35,7 @@ Then, in agents that expose skills as slash commands (Claude Code, for example),
 Or just ask in plain words - "what keeps going wrong in this project? the log is defects.md", or "Start a retro and show me the report." - and the agent loads the skill on its own when it recognizes the task.
 It writes `.learn-from-mistakes.yaml` if the project has none and starts a retro. The tool runs its own agent to label the records: the worker, the `agent` you set with its `agent_config` model (`agent: <agent>` with `agent_config: { <agent>: { model: <model> } }`). Set your agents in the config; the run never picks one. Your agent only starts the retro and reads the result: the repeated causes with counts.
 A retro whose `agent` or `judge_agent`, or its model, is not set stops before it starts with the ask line (exit 2); one whose worker is not ready stops at `analyse` (exit 1): ask the user which agent and model to use, then set the key it names in the config file it names.
-The report itself carries only ids and counts; the recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
+The report's `--json` output carries only ids and counts. The default and `--full` reports also print one redacted `finding:` summary line per finding of the counted run. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
 
 `-g` installs the skill for all projects (`~/.claude/skills/`, for example); drop it to install into the current project only.
 
