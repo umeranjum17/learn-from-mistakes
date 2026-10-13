@@ -54,7 +54,7 @@ export async function doctor(dir, opts) {
   const failedModel = new Set(); // a role whose model check failed gets no --live call
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
-    if (r.problem === CLASH) { add('fail', name, r.problem, chooseFix(cfg, 'judge_agent')); continue; } // the judge would judge its own work
+    if (r.problem === CLASH) { add('fail', name, r.problem, chooseFix(cfg, 'judge_agent', cfg.judge_agent)); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
       add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`

@@ -12,7 +12,7 @@ import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import { askError, ensureAgents, interactive, saveCommand } from '../src/ask.mjs';
-import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
+import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
@@ -502,7 +502,7 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent');
+const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
@@ -570,6 +570,12 @@ async function main(ctx) {
   ctx.state = cfg.state;
   // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
   if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
+  // The judge is never the worker: a judge on the worker's agent and model, or one that is not ready, stops the run before it starts.
+  if (['retro', 'rerun'].includes(cmd)) {
+    const { judge } = await resolveRoles(cfg, detect(cfg));
+    if (judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
+    if (judge.problem) throw new InputError(`judge: ${judge.problem}`, roleFix(cfg, 'judge_agent', judge));
+  }
   if (cmd === 'ingest') {
     for (const s of (await ingest(cfg)).sources) console.log(sourceLine(s));
     console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);
@@ -586,7 +592,7 @@ async function main(ctx) {
   if (last && last.latest !== last.run) console.error(`note: run ${last.latest} kept no label and no finding; showing run ${last.run}`);
   const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
-  if (!json) console.log([summaryLine(model), ...(last?.findings ?? []).map((f) => `finding: ${f.cause} (${f.count}/${f.days} days, ${f.verdict}): ${f.summary}`)].join('\n'));
+  if (!json) console.log([summaryLine(model), ...(last?.findings ?? []).map((f) => `finding: ${f.cause} (${f.count ?? 0}/${f.days ?? 0} days, ${f.verdict}): ${f.summary}`)].join('\n'));
   if (problems.length) {
     for (const p of problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
     if (problems.length > PROBLEM_LINES) console.error(`problem: ... and ${problems.length - PROBLEM_LINES} more`);
