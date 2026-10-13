@@ -48,7 +48,7 @@ export function detect(cfg) {
 
 // The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
 const configuredModel = (cfg, name, env = process.env) => (name === 'worker' ? (env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
-const lists = (runner, model) => !!MODELS[runner]?.includes(model);
+export const lists = (runner, model) => !!MODELS[runner]?.includes(model);
 export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
@@ -65,7 +65,6 @@ export const CLASH = 'the judge resolves to the worker\'s agent and model, so it
 const WORKER_CLASH = 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
 const clashOf = (name) => (name === 'judge' ? CLASH : WORKER_CLASH);
 export const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
-export const problemText = (r) => (r.fix ? `${r.problem}: ${r.fix}` : r.problem);
 
 // Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
 // that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
@@ -75,7 +74,7 @@ export async function resolveRole(cfg, name, agents, worker, env = process.env) 
   const route = byokit.routeOf(want.runner);
   if (route) { // in process: its identity is the route itself
     const p = await byokit.check(route);
-    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: '', problem: p.problem, fix: p.fix };
+    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: '', problem: `${p.problem}: ${p.fix}`, fix: p.fix };
     const r = { runner: want.runner, model: await byokit.modelOf(route, configuredModel(cfg, name, env)), bin: want.runner, problem: '' };
     return worker && same(r, worker) ? { ...r, problem: clashOf(name) } : r;
   }

@@ -310,10 +310,10 @@ test('doctor offers no runner whose premium model allow_premium forbids, so the 
   writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "claude-opus-5-5" }'));
   const fails = JSON.parse(lfm('doctor', '--json').stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `set allow_premium: true in ${config}, or use a cheap model`);
+  assert.match(fails[0].fix, /^install a second agent CLI \(/);
 });
 
-test('doctor fails an auto worker on a premium model no agent lists, and names allow_premium in the config', () => {
+test('doctor fails an auto worker on a model no installed CLI lists, names a listed model, and that fix makes exit 0', () => {
   const { lfm, config } = setup(['claude', 'codex']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: auto, model: "claude-opus-5-5" }'));
@@ -321,7 +321,23 @@ test('doctor fails an auto worker on a premium model no agent lists, and names a
   assert.equal(r.status, 1, r.stderr);
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.equal(fails[0].fix, `set allow_premium: true in ${config}, or use a cheap model`);
+  assert.equal(fails[0].fix, `set worker.model in ${config} to ${MODELS.claude[0]}`);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, `worker: { runner: auto, model: "${MODELS.claude[0]}" }`));
+  const fixed = lfm('doctor', '--json');
+  assert.equal(fixed.status, 0, fixed.stdout);
+});
+
+test('doctor names the pinned runner\'s own problem, not a premium fix, when that runner is not on PATH', () => {
+  const { lfm, config, env } = setup(['claude', 'codex']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: claude, model: "claude-opus-5-5" }'));
+  rmSync(join(env.PATH, 'claude'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.equal(fails[0].detail, 'claude is not usable: claude is not on PATH');
+  assert.doesNotMatch(fails[0].fix, /allow_premium/);
 });
 
 test('doctor offers only a runner that lists the pinned worker model, never one that would run it with a model it does not list', () => {
@@ -378,7 +394,7 @@ test('doctor fails a BYOKit worker on a route that is not a plan route, before a
   const checks = JSON.parse(r.stdout).checks;
   const role = checks.find((c) => c.label === 'worker');
   assert.equal(role.level, 'fail');
-  assert.match(role.detail, /^byokit:nope is not a BYOKit plan route$/);
+  assert.match(role.detail, /^byokit:nope is not a BYOKit plan route/);
   assert.match(role.fix, /^use one of: byokit:/);
   assert.equal(checks.some((c) => c.label === 'worker login'), false);
 });
