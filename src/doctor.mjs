@@ -63,7 +63,7 @@ export async function doctor(dir, opts) {
       }).map((x) => x.runner);
       add('fail', name, r.problem, r.fix ?? (offered.length
         ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
-        : `install a second agent CLI (${INSTALL}), or set runner_path in $LFM_HOME/config.yaml`));
+        : `install a second agent CLI (${INSTALL}), or set runner_path in ${shq(globalFile())}`));
       continue;
     }
     const route = byokit.routeOf(r.runner);

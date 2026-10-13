@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { sep } from 'node:path';
-import { UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { mapping } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
@@ -93,9 +93,9 @@ export const detect = () => (Object.values(READERS).some((r) => existsSync(r.roo
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {
   const missing = entry.agents.filter((a) => !existsSync(READERS[a].root()));
+  const storeFix = `${missing.map((a) => `export ${READERS[a].STORE_VAR}=<dir>`).join('; ')}   # if a store is somewhere else, or drop it from sources.${source}.agents in ${shq(ctx.project)}`;
   if (missing.length === entry.agents.length) {
-    return { level: 'warn', detail: `no session store at ${missing.map((a) => READERS[a].root()).join(', ')}`,
-      fix: `${missing.map((a) => `export ${READERS[a].STORE_VAR}=<dir>`).join('; ')}   # if a store is somewhere else` };
+    return { level: 'warn', detail: `no session store at ${missing.map((a) => READERS[a].root()).join(', ')}`, fix: storeFix };
   }
   try {
     const got = await read(source, entry, { ...ctx, excerpts: false });
@@ -104,6 +104,6 @@ export async function doctor(source, entry, ctx) {
     // With agents: auto an absent store is normal (that agent is not used here); a listed agent's absent store is a warn.
     const gone = missing.map((a) => `${a} store not found at ${READERS[a].root()} (${READERS[a].STORE_VAR})`).join('; ');
     if (entry.auto) return { level: 'ok', detail: `${counts}; ${gone}` };
-    return { level: 'warn', detail: `${counts}; ${gone}`, fix: `${missing.map((a) => `export ${READERS[a].STORE_VAR}=<dir>`).join('; ')}   # if a store is somewhere else` };
+    return { level: 'warn', detail: `${counts}; ${gone}`, fix: storeFix };
   } catch (e) { return { level: 'fail', detail: e.message, fix: e.next }; }
 }
