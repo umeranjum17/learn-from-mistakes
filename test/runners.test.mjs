@@ -31,7 +31,7 @@ else {
   if (mode === 'grandchild') spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();
   const text = mode === 'prose' ? 'I cannot create x.txt: my tools are off.' : JSON.stringify({ reply: 'hello from ' + name });
   if (name === 'claude') console.log(JSON.stringify({ type: 'result', is_error: mode === 'error' || mode === 'empty-error', result: mode === 'empty-error' ? undefined : mode === 'error' ? "The model's tool call could not be parsed" : text }));
-  if (name === 'codex') { if (mode !== 'stale') fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
+  if (name === 'codex') { if (mode !== 'stale' && args.includes('-o')) fs.writeFileSync(args[args.indexOf('-o') + 1], 'Done:\\n\`\`\`json\\n' + text + '\\n\`\`\`\\n'); console.log('tokens used: 10'); }
   if (name === 'opencode') console.log(JSON.stringify({ type: 'text', part: { text: 'thinking' } }) + '\\n' + JSON.stringify({ type: 'text', part: { text } }));
   if (name === 'pi') console.log(JSON.stringify({ type: 'session' }) + '\\n' + JSON.stringify({ type: 'message_end', message: mode === 'error'
     ? { role: 'assistant', content: [], stopReason: 'error', errorMessage: '400: Model is unavailable.' }
