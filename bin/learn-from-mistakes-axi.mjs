@@ -424,7 +424,7 @@ the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
      sources:
        log: { type: markdown-log, path: defects.md }   # each top-level "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## YYYY-MM-DD" heading
        # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
-       # proof: { type: done-done, apps: [<app>] }   # optional: done-done's failed, inconclusive or overridden verify run steps, read-only from ~/.done-done (or $DONE_DONE_HOME; path: sets it)
+       # proof: { type: done-done, apps: [<app>] }   # optional: done-done's failed verify run steps, read-only
      causes:
        <cause-id>:
          description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
