@@ -1205,3 +1205,21 @@ test('a pending step of a reused run id shows no lines from the earlier run', ()
   assert.deepEqual([report.status, report.lines, report.log.length], ['pending', '0 total', 0]);
   assert.equal(lfm('attach').status, 0);
 });
+
+test('the CLI, its guide and the shipped skill say the user sets the agents: no auto, no default model, and the ask re-runs the command', () => {
+  const { lfm, raw, env } = setup();
+  rmSync(join(env.LFM_HOME, 'config.yaml'));
+  const ask = lfm('retro', '--foreground');
+  assert.equal(ask.status, 2, ask.stderr);
+  assert.match(ask.stderr, /^error: ask the user which agent to use: /m);
+  assert.match(ask.stderr, /Then run the command that stopped again/);
+  const check = spawnSync(process.execPath, [new URL('../scripts/build-skill.mjs', import.meta.url).pathname, '--check'], { encoding: 'utf8' });
+  assert.equal(check.status, 0, check.stderr);
+  const skill = readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8');
+  for (const text of [raw('--help').stdout, raw('guide').stdout, skill]) {
+    assert.doesNotMatch(text, /\bauto\b/);
+    assert.doesNotMatch(text, /default model|cheap model|cheap default|as the default/);
+  }
+  assert.match(raw('guide').stdout, /ask the user which agent to use[\s\S]*run the stopped command again/);
+  assert.match(skill, /ask the user which agent to use[\s\S]*run the stopped command again/);
+});

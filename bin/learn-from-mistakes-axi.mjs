@@ -423,7 +423,7 @@ AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
 Model: the tool's own agents are the user's choice: agent: and judge_agent: in $LFM_HOME/config.yaml or the project's
 .learn-from-mistakes.yaml, each with agent_config.<agent>.model. The tool never picks one. When one is not set, or has no model, a command
 that needs it stops with "ask the user which agent to use": ask the user, never choose for them, then run the init
-command it prints with their answer. Never take Opus, Sonnet or Sol as the default.
+command it prints with their answer, then run the stopped command again.
 
 The worker that labels is the agent: the user set. Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m.
 The tool's own agent labels the records and the run prints the report with their counts. You only start it and read the

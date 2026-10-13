@@ -23,7 +23,7 @@ export const interactive = () => !!(process.stdin.isTTY && process.stdout.isTTY)
 export const saveCommand = (keys, dir) => `learn-from-mistakes-axi init ${keys.map((k) => `${FLAG[k][0]} <agent> ${FLAG[k][1]} <model>`).join(' ')}${dir ? ` --dir ${shq(dir)}` : ''}   # with the user's answer`;
 
 export function askError(cfg, keys, file, dir) {
-  return new UsageError(`ask the user which agent to use: ${named(cfg, keys)} ${keys.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model`,
+  return new UsageError(`ask the user which agent to use: ${named(cfg, keys)} ${keys.length > 1 ? 'are' : 'is'} not set in ${shq(file)}, and the tool never picks one. Choices: ${LIST}; each with its model. Then run the command that stopped again`,
     saveCommand(keys, dir));
 }
 

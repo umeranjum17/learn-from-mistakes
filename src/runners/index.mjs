@@ -14,7 +14,6 @@ import * as byokit from './byokit.mjs';
 
 export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // acp runs as acp:<target>
 const FIX = 'learn-from-mistakes-axi agents   # check the agent CLI is usable and logged in';
-export const INSTALL = 'claude, codex, opencode, pi or gemini';
 const TRANSIENT = /\b(429|503|529)\b|overloaded|rate_limit|ECONNRESET/i;
 const QUOTA = /quota|usage_limit|usage limit|session limit|credit balance/i;
 const tail = (text) => text.replace(/\x1b\[[0-9;]*m/g, '').trim().split('\n').slice(-3).join(' ').slice(-300);
