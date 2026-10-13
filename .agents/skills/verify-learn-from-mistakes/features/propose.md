@@ -12,7 +12,7 @@ and change each, a metric and a tripwire, refs to bundle ids; a reason for each
 listed follow-up, and never a verdict. The answer is `proposals` (cause, target,
 owner, change of at most 3 sentences, metric, tripwire, refs) and `reasons`
 (change id, reason of at most 25 words, one for each listed follow-up). A shape
-or STE100 problem goes back once. The fixes land in the store's `proposals`
+or STE100 problem goes back once; on the second answer each proposal or reason that breaks a rule is dropped and logged as `dropped: ...`, and the valid ones are kept (only a top level that is not a `proposals` and `reasons` list fails the step). The fixes land in the store's `proposals`
 table in the worker's order, the reasons in `followups.reason`. The step logs
 `fixes: <n> proposed, reasons: <r> of <f> follow-ups`. With no finding and no
 follow-up to explain it asks no agent (`nothing to propose: ...`).
@@ -55,7 +55,8 @@ one with metric `defects` (missing its target) ranked first and the sixth by
 rank a problem; a fix for a cause that did not repeat and one with no tripwire
 are problems; the finding's count and days; `--proposal <run>:1` copies the
 cause, metric and tripwire into the ledger, `--proposal <run>:6` exits 2; the
-next retro asks the reason for the change's `no-data` follow-up and saves it.
+next retro asks the reason for the change's `no-data` follow-up and saves it;
+`FAKE_PROPOSE=long` answers a four-sentence change every time, so it is sent back once, dropped on the second answer, and the valid fix is kept.
 The helper's drives: `retro-propose` (`FAKE_PROPOSE=eight` for the gate's
 repeated `agent-exit-wait`: 5 kept fixes, a reason for each follow-up),
 `logs-check` (the 3 problem lines) and `change-proposal` (the ledger entry).

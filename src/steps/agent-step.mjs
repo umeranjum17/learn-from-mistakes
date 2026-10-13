@@ -25,7 +25,7 @@ export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, l
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}\n\n${bundle}`, log);
-    problems = got.value ? check(got.value, attempt) :[got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
+    problems = got.value ? check(got.value, attempt) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
     if (!problems.length) return got.value;
     invalid.run(got.row);
     log(`${role} answer ${attempt} is not valid: ${problems.join('; ')}`);
