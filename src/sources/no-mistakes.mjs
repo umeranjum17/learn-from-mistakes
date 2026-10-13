@@ -32,7 +32,7 @@ export async function detect(dir) {
     db = new DatabaseSync(path, { readOnly: true });
     const row = db.prepare('SELECT 1 FROM repos WHERE working_path IN (SELECT value FROM json_each(?)) OR upstream_url = ? LIMIT 1')
       .get(JSON.stringify(roots(checkout(dir))), git('remote', 'get-url', 'origin') || null);
-    if (row) return { type: 'no-mistakes', path: home ? path : '~/.no-mistakes/state.sqlite' };
+    if (row) return { gate: { type: 'no-mistakes', path: home ? path : '~/.no-mistakes/state.sqlite' } };
   } catch (e) {
     throw new Error(`${path}: not a readable no-mistakes store (${e.message})`);
   } finally { db?.close(); }

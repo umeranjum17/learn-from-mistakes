@@ -45,7 +45,7 @@ export function detect(dir) {
   const bin = which('gh');
   if (!bin) throw new Error('origin is on GitHub, but gh is not on PATH: install the GitHub CLI, then gh auth login');
   if (gh(bin, r, ['auth', 'status']).status !== 0) throw new Error(`origin is on GitHub, but gh is not logged in to ${r.host}: gh auth login`);
-  return { type: 'github' };
+  return { prs: { type: 'github' } };
 }
 
 export async function read(source, { dir }, { readFrom = 0, excerpts = true, project = PROJECT_FILE } = {}) {
