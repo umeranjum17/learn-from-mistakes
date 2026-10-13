@@ -8,15 +8,15 @@ Enterprise host is passed to gh as `--hostname`). It runs the user's own `gh`, f
 absolute PATH entry: one `gh api graphql` query (`src/sources/github.mjs`), newest update
 first, 50 PRs a page, and it stops at the first page whose last PR was updated before the
 read range; a PR met on two pages counts once. Each PR is one `records` row: `ts` its merge time, `ref` `PR #N`,
-`text` its title and body after `redact()` (empty with `excerpts: off`), and `data` (JSON, a column added by this slice)
+`text` its title and body after `redact()` (empty with `excerpts: off`), and `data` (JSON, the `records` table's `data` column)
 with `bot`, `hours`, `rework_ci`, `rework_other`, `reverted`, `escaped`,
 `partial` (over 100 commits: the first 100 are read), `labels` and `changes_requested`.
 A commit authored after the PR opened is rework: CI rework when the commit before it had a
 failing or erroring check rollup, else other rework. A commit with more than one parent (a base-branch
 merge, such as GitHub's "Update branch") is not rework, and the commit before is the nearest earlier single-parent commit. A later merged PR whose title starts with
-`Revert`, `Reverts` or `Reverted` and names `#N` (title or body; `#110` never names `#11`)
-reverts PR N; a later merged PR whose title starts with `fix`, `fixes` or `fixed` (so `fix:`
-and `fix(scope):` too, never `Fixture`) and names `#N` is an escape from it.
+`Revert`, `Reverts` or `Reverted` and names `#N` (title or body) reverts PR N; a later merged PR whose title starts with `fix`, `fixes` or `fixed` (so `fix:`
+and `fix(scope):` too, never `Fixture`) and names `#N` is an escape from it. A name is a bare `#N` or
+this repo's `owner/name#N`: `#110` never names `#11`, and another repo's `#N` (`other-org/lib#5`) never names PR N.
 Its numbers over the PRs merged in each window ([metrics.md](metrics.md)): `merged`;
 `first_pass` (100 × people's merged PRs with no rework, not reverted, not escaped ÷ people's
 merged PRs; bots are left out); `p50_hours_to_merge` and `p90_hours_to_merge` (nearest rank,
@@ -27,7 +27,7 @@ passes; with `gh` missing or logged out it lists the source under `skipped` with
 A missing `gh`, a logged-out `gh`, a failed query or a non-GitHub origin fail the source
 with a usage error whose `next:` starts with `remove sources.<id> from .learn-from-mistakes.yaml`;
 the origin URL is never printed (it can hold a token). A second github source is rejected. `doctor()` returns the PR count in
-the window and the partial ones (the `doctor` command arrives in its own slice).
+the window and the partial ones (no `doctor` command calls it yet).
 
 ## How to get to it (user POV)
 In a clone of a GitHub repo with `gh auth login` done: `learn-from-mistakes-axi init`, or add
