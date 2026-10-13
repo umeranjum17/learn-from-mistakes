@@ -28,10 +28,10 @@ step counts with these labels instead of `labels.jsonl` (kept for a run with non
 `problem: ...` and that finding or label is not kept; it is not sent back.
 The step logs `labels: <n> of <m> records, <d> dropped, findings: <f>, problems: <p>`.
 A bundle with no cluster, event or record id asks no agent
-(`nothing to analyse: ...`), so the example journeys make no agent call. A worker (`agent`) that is not set, or has no `agent_config` model, stops the retro before it starts with the ask line (exit 2); one that does not resolve fails the step (exit 1) with one fix line naming the config file and `agent`: the run never picks an agent.
+(`nothing to analyse: ...`), so the example journeys make no agent call. A worker that is not set (`runner: auto`) or does not resolve fails the step (exit 1) with one fix line naming the config file and `worker.runner`: the run never picks an agent.
 
 ## How to get to it (user POV)
-Set `agent:` and its `agent_config` model in `.learn-from-mistakes.yaml` (the run never picks one), then
+Set `worker:` in `.learn-from-mistakes.yaml` (the run never picks one), then
 `learn-from-mistakes-axi retro --wait 15m` and `logs --step analyse`.
 
 ## Driving it with the public CLI
@@ -56,9 +56,9 @@ Real-product proof (outside the repo; lab sessions only, never the captain's):
 ```sh
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky   # a test command that fails unless UMER_FIXTURES=1, a cause matching it,
-             # agent: "byokit:opencode-go", judge_agent: claude, agent_config: { "byokit:opencode-go": { model: <model> },
-             # claude: { model: <model> } } (or agent: opencode with model <provider>/<model>)
-for ask in ...; do opencode run -m <provider>/<model> "$ask, and run the tests"; done
+             # worker: { runner: "byokit:opencode-go", model: muse-spark-1.3-contributor } (or runner: opencode,
+             # model: opencode-go/muse-spark-1.3-contributor for the OpenCode CLI)
+for ask in ...; do opencode run -m opencode-go/muse-spark-1.3-contributor "$ask, and run the tests"; done
 OPENCODE_API_KEY=$(node -p 'require(process.argv[1])["opencode-go"].key' ~/.local/share/opencode/auth.json) \
   lfm retro --wait 15m && lfm logs --step analyse
 sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status,tokens_in,tokens_out from invocations'
