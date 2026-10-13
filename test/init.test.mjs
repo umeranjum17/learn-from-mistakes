@@ -120,14 +120,13 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
 // supported agents, then the model; a judge on the worker's agent is asked again. The answer is saved.
 test('in a terminal, init asks for each agent and model and saves the answer', () => {
   const { tmp, p, env, config, lfm } = setup(['claude', 'opencode']);
-  // the worker and judge are picked by number; the judge is claude first, refused as the worker's agent; its first model is a bare id, refused and asked again, then picked by number
-  const answers = ['1', '1', '1', '3', 'muse-spark-1.3-contributor', '1'].join('\n') + '\n';
+  // the worker and judge are picked by number; the judge is claude first, refused as the worker's agent; its first model is a bare id, refused and asked again, then typed
+  const answers = ['1', MODELS.claude, '1', '3', 'muse-spark-1.3-contributor', MODELS.opencode].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /Which agent runs the worker \(agent\)\?\r?\n {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode/);
   assert.match(r.stdout, /the judge must be another agent than the worker \(claude\)/);
-  assert.match(r.stdout, /Models for claude:\r?\n {2}1\) claude-haiku-5-5/);
   assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id such as claude-haiku-5-5/);
   assert.match(r.stdout, /saved: agent and judge_agent in /);
   const yaml = parse(readFileSync(config, 'utf8'));
@@ -138,12 +137,11 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
 // The global file names the worker's agent; the terminal is asked only its model, and the agent key is not copied into the project.
 test('in a terminal, a worker agent set globally is asked only its model, and the judge is asked both', () => {
   const { tmp, p, env, config, global } = setup(['claude', 'opencode'], 'agent: claude\n');
-  const answers = ['1', '3', '1'].join('\n') + '\n';
+  const answers = [MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.doesNotMatch(r.stdout, /Which agent runs the worker/);
-  assert.match(r.stdout, /Models for claude:\r?\n {2}1\) claude-haiku-5-5/);
   assert.match(r.stdout, /saved: agent_config\.claude\.model and judge_agent in /);
   assert.equal(readFileSync(global, 'utf8'), 'agent: claude\n');
   const yaml = parse(readFileSync(config, 'utf8'));
@@ -192,7 +190,7 @@ test('init --model keeps the model the project file sets for that agent, and lis
 // The worker is checked against a judge that is already set, so a terminal pick never makes both roles one agent.
 test('in a terminal, a worker pick equal to the set judge is refused and asked again', () => {
   const { tmp, p, env, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
-  const answers = ['1', '2', '1', '1'].join('\n') + '\n'; // claude refused as the worker; codex, its model, then claude's model
+  const answers = ['1', '2', MODELS.codex, MODELS.claude].join('\n') + '\n'; // claude refused as the worker; codex, its model, then claude's model
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
@@ -215,7 +213,7 @@ test('a judge on the worker\'s agent and model is reported by init and fails age
   const r = lfm('init', '--json');
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).gaps[0], 'judge: the judge resolves to the worker\'s agent and model, so it would judge its own work');
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `set judge_agent in ${config} to another agent the user chooses`);
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${config}; the run never picks one`);
   const agents = lfm('agents'); // the clash fails every later check of the config
   assert.equal(agents.status, 1);
   assert.match(agents.stderr, /^problem: judge: the judge resolves to the worker's agent/m);
@@ -242,7 +240,7 @@ test('an existing config whose agent is not installed says to install it or choo
   writeFileSync(config, `agent: claude\njudge_agent: codex\nsources: {}\nagent_config: { claude: { model: ${MODELS.claude} }, codex: { model: ${MODELS.codex} } }\n`);
   const r = lfm('init');
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `install claude, or set agent in ${config} to another agent the user chooses`);
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `install claude, or ask the user which agent and model to use, then set agent and its agent_config model in ${config}; the run never picks one`);
 });
 
 test('an unusable judge is not named as seeing excerpts', () => {
@@ -327,11 +325,11 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
   // each fix names the file the key came from: agent_config.pi from the project file, allow_premium from neither (the global file)
-  assert.equal(fails[1].fix, `set agent_config."pi".model in ${config} to a cheap model, or set allow_premium: true in ${global}`);
+  assert.equal(fails[1].fix, `ask the user which model to use, then set agent_config."pi".model in ${config}, or set allow_premium: true in ${global}`);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
-  assert.match(text.stdout, /^fail judge +the judge resolves to the worker's agent and model, so it would judge its own work\n {5}fix: set judge_agent in /m);
+  assert.match(text.stdout, /^fail judge +the judge resolves to the worker's agent and model, so it would judge its own work\n {5}fix: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
   assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
 
   writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
@@ -350,7 +348,7 @@ test('doctor fails a worker set to a runner that is not offered, and asks for an
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.match(fails[0].detail, /^gemini is not offered: /);
-  assert.equal(fails[0].fix, `set agent in ${config} to another agent the user chooses`);
+  assert.equal(fails[0].fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${config}; the run never picks one`);
 });
 
 test('doctor names the config file in its fix when that file is not a mapping', () => {
@@ -553,7 +551,7 @@ test('init refuses a model that starts with a dash, at --model and --judge-model
 // The terminal refuses a typed model that starts with a dash, names the rule and asks the model again.
 test('in a terminal, a typed model that starts with a dash is refused and asked again', () => {
   const { tmp, p, env, config } = setup(['claude', 'opencode']);
-  const answers = ['1', '--yolo', '1', '3', '1'].join('\n') + '\n';
+  const answers = ['1', '--yolo', MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);

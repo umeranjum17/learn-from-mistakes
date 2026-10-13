@@ -66,7 +66,7 @@ const GLOBAL_ONLY = ['state_root', 'agent_path_override', 'agent_args_override',
 function agentKeys(cfg, g, file) {
   for (const k of ['agent', 'judge_agent']) {
     if (g[k] === undefined) continue;
-    if (Array.isArray(g[k])) throw new UsageError(`${file}: ${k} must be one agent, not a list`, `set ${k} in ${file} to one agent, such as ${k}: claude`);
+    if (Array.isArray(g[k])) throw new UsageError(`${file}: ${k} must be one agent, not a list`, `ask the user which one agent to use, then set ${k} in ${file} to it; the run never picks one`);
     check(NAME.test(g[k]), `${file}: ${k}`, AGENT_RULE);
     cfg[k] = g[k];
     cfg.from[k] = file;

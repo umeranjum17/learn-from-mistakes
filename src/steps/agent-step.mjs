@@ -8,14 +8,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { startTime } from '../proc.mjs';
-import { call, detect, fileOf, KEY, resolveRole } from '../runners/index.mjs';
+import { call, chooseAgentFix, detect, KEY, resolveRole } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
 
 // Returns the checked JSON object. `check(value)` returns the problems with the answer, each naming a field and the rule
 // it broke, never the agent's own text.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
-  const key = KEY[role], fix = `set ${key} and its agent_config model in ${fileOf(cfg, key)} to an agent you have; the run never picks one`;
+  const key = KEY[role], fix = chooseAgentFix(cfg, key);
   const r = await resolveRole(cfg, role, detect(cfg));
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);

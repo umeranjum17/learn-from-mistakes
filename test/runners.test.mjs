@@ -93,14 +93,14 @@ test('agents lists only the configured agents with version, login presence and m
   assert.equal(row.usable, false);
   assert.equal(row.login, 'not found (it may be in the system keychain)');
   assert.match(row.problem, /--version failed: No version is set for shim: opencode/);
-  assert.match(broken.stderr, /^next: install opencode, or set agent in .*\/p\/\.learn-from-mistakes\.yaml to another agent the user chooses$/m);
+  assert.match(broken.stderr, /^next: install opencode, or ask the user which agent and model to use, then set agent and its agent_config model in .*\/p\/\.learn-from-mistakes\.yaml; the run never picks one$/m);
 
   // agent takes one agent: a list is refused with the fix line that names the global file.
   global('agent: [gemini, codex]\njudge_agent: claude\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
   const list = lfm({}, 'agents');
   assert.equal(list.status, 2, list.stderr);
   assert.match(list.stderr, /^error: .*config\.yaml: agent must be one agent, not a list$/m);
-  assert.equal(list.stderr.match(/^next: (.*)$/m)[1], `set agent in ${join(tmp, 'lfm-home', 'config.yaml')} to one agent, such as agent: claude`);
+  assert.equal(list.stderr.match(/^next: (.*)$/m)[1], `ask the user which one agent to use, then set agent in ${join(tmp, 'lfm-home', 'config.yaml')} to it; the run never picks one`);
   // A set agent that is not ready is the worker's problem: no other agent is tried, though claude is usable.
   global('agent: codex\njudge_agent: claude\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
   config('');
@@ -109,7 +109,7 @@ test('agents lists only the configured agents with version, login presence and m
   const nr = JSON.parse(notReady.stdout);
   assert.deepEqual([nr.worker.runner, nr.worker.bin], ['codex', '']);
   assert.match(nr.worker.problem, /^codex is not usable: --version failed: No version is set for shim: codex/);
-  assert.match(notReady.stderr, /^next: install codex, or set agent in .*\/config\.yaml to another agent the user chooses$/m);
+  assert.match(notReady.stderr, /^next: install codex, or ask the user which agent and model to use, then set agent and its agent_config model in .*\/config\.yaml; the run never picks one$/m);
   global('agent: claude\njudge_agent: codex\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
   const own = lfm({}, 'agents');
   assert.equal(own.status, 0, own.stderr);
@@ -120,7 +120,7 @@ test('agents lists only the configured agents with version, login presence and m
   const bad = lfm({}, 'agents');
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /^problem: worker: gemini is not offered: /m);
-  assert.match(bad.stderr, /^next: set agent in .*\/p\/\.learn-from-mistakes\.yaml to another agent the user chooses$/m);
+  assert.match(bad.stderr, /^next: ask the user which agent and model to use, then set agent and its agent_config model in .*\/p\/\.learn-from-mistakes\.yaml; the run never picks one$/m);
 
   // With none set, the tool picks nothing: a caller that is not a terminal is told to ask the user, with the save command.
   global('');
@@ -139,7 +139,7 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   assert.equal(r.status, 1, r.stderr);
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
   assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `set judge_agent in ${join(p, '.learn-from-mistakes.yaml')} to another agent the user chooses`);
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
   config('agent: claude\njudge_agent: codex\n'); // another agent as the judge resolves
   const two = lfm({}, 'agents', '--json');
   assert.equal(two.status, 0, two.stderr);
@@ -211,7 +211,7 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   const noModel = lfm({}, 'agents', '--test', 'pi');
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
-  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `set agent_config."pi".model in ${join(env.LFM_HOME, 'config.yaml')}`);
+  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which model to use, then set agent_config."pi".model in ${join(env.LFM_HOME, 'config.yaml')}`);
   config('agent: pi\njudge_agent: claude\n');
   const asked = lfm({}, 'doctor', '--live');
   assert.equal(asked.status, 2, asked.stderr);
@@ -400,7 +400,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   const noModel = await run({ ZAI_CODING_CN_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:zai-coding-cn'); // no default model: never a guessed one
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: byokit:zai-coding-cn: no model set in agent_config$/m);
-  assert.match(noModel.stderr, /^next: set agent_config\."byokit:zai-coding-cn"\.model in /m);
+  assert.match(noModel.stderr, /^next: ask the user which model to use, then set agent_config\."byokit:zai-coding-cn"\.model in /m);
   writeFileSync(yaml, `${base}agent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n`);
 
   assert.deepEqual((await hook({}))[0], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
@@ -442,7 +442,7 @@ test('byokit: a name that is not a plan route, a route with no model set and a m
   const claude = await lfm('agents', '--test', 'byokit:claude'); // never a model the user did not set
   assert.equal(claude.status, 1);
   assert.match(claude.stderr, /^error: byokit:claude: no model set in agent_config$/m);
-  assert.match(claude.stderr, /^next: set agent_config\."byokit:claude"\.model in /m);
+  assert.match(claude.stderr, /^next: ask the user which model to use, then set agent_config\."byokit:claude"\.model in /m);
   const bad = await lfm('agents', '--test', 'byokit:../x');
   assert.equal(bad.status, 2);
 
@@ -458,7 +458,7 @@ test('byokit: a role that is not installed says to install it or choose another;
   const none = await node({ ...env, PATH: join(tmp, 'empty') }, CLI, 'agents', '--dir', p); // no agent CLI on PATH
   assert.equal(none.status, 1, none.stderr);
   assert.match(none.stderr, /^problem: worker: claude is not usable: claude is not on PATH$/m);
-  assert.match(none.stderr, /^next: install claude, or set agent in .*config\.yaml to another agent the user chooses$/m);
+  assert.match(none.stderr, /^next: install claude, or ask the user which agent and model to use, then set agent and its agent_config model in .*config\.yaml; the run never picks one$/m);
   const yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}agent: "byokit:grok"\nagent_config: { "byokit:grok": { model: umer-cheap-1 } }\n`);
   const r = await lfm('agents');
@@ -487,5 +487,5 @@ test('byokit: a judge whose agent CLI is not installed is told to install it or 
   assert.equal(r.status, 1, r.stderr);
   assert.doesNotMatch(r.stderr, /problem: worker/);
   assert.match(r.stderr, /^problem: judge: codex is not usable: codex is not on PATH$/m);
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `install codex, or set judge_agent in ${join(env.LFM_HOME, 'config.yaml')} to another agent the user chooses`);
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `install codex, or ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(env.LFM_HOME, 'config.yaml')}; the run never picks one`);
 });

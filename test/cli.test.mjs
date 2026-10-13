@@ -17,7 +17,7 @@ const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: {
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
 const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
-const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
+const MODELS = { claude: ['claude-haiku-5-5'] };
 // git never looks above the temp dir, so a project that is not a git checkout is not read as part of the repo the
 // temp dir happens to sit in (the gate source matches this project's checkout).
 process.env.GIT_CEILING_DIRECTORIES = realpathSync(tmpdir());
@@ -242,7 +242,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
-    [() => withConfig('agent: [codex, claude]\n'), 2, bad('agent must be one agent, not a list'), /^next: set agent in \S+\.learn-from-mistakes\.yaml to one agent, such as agent: claude$/m],
+    [() => withConfig('agent: [codex, claude]\n'), 2, bad('agent must be one agent, not a list'), /^next: ask the user which one agent to use, then set agent in \S+\.learn-from-mistakes\.yaml to it; the run never picks one$/m],
     [() => withConfig('agent: 3\n'), 2, bad('agent must be claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
     [() => withConfig('worker: { runner: claude }\n'), 2, bad('unknown key worker'), HELP], // the old role keys are gone, with no alias
     [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'), HELP],
@@ -1154,7 +1154,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
-  const fix = `set agent and its agent_config model in ${global} to an agent you have; the run never picks one`;
+  const fix = `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one`;
   const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
   assert.equal(missing.status, 1, missing.stderr);
   assert.match(JSON.parse(missing.stdout).run.error, new RegExp(`^analyse: worker: .+; ${fix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));

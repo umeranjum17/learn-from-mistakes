@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, CLASH, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
+import { agents, binName, CLASH, chooseAgentFix, chooseModelFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
 import { saveCommand } from './ask.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
@@ -55,13 +55,12 @@ export async function doctor(dir, opts) {
   const failedModel = new Set(); // a role whose model check failed gets no --live call
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
-    const at = fileOf(cfg, KEY[name]);
-    if (r.problem === CLASH) { add('fail', name, r.problem, `set judge_agent in ${at} to another agent the user chooses`); continue; } // the judge would judge its own work
+    if (r.problem === CLASH) { add('fail', name, r.problem, chooseAgentFix(cfg, 'judge_agent')); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.runner) { add('fail', name, r.problem, saveCommand([KEY[name]], opts.dir)); continue; } // not set: the user chooses
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
       add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
-        : `set ${KEY[name]} in ${at} to another agent the user chooses`);
+        : chooseAgentFix(cfg, KEY[name]));
       continue;
     }
     const route = byokit.routeOf(r.runner);
@@ -86,10 +85,9 @@ export async function doctor(dir, opts) {
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
     const { model } = r;
-    const setModel = `set agent_config."${r.runner}".model in ${fileOf(cfg, `agent_config.${r.runner}`)}`;
     if (premiumBlocked(cfg, model)) {
       failedModel.add(name);
-      add('fail', `${name} model`, `${model} is a premium model`, `${setModel} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+      add('fail', `${name} model`, `${model} is a premium model`, `${chooseModelFix(cfg, r.runner)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
     } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.

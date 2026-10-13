@@ -7,7 +7,6 @@ import { createInterface } from 'node:readline/promises';
 import { parseDocument } from 'yaml';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { AGENT_NAME, MODEL_RULE, modelOk } from './config.mjs';
-import KNOWN from './models.json' with { type: 'json' };
 
 // The fixed list a terminal picks from (never a PATH scan); a byokit:<route> can be typed as well.
 export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
@@ -71,13 +70,10 @@ export async function pick(keys, cfg) {
           else break;
         }
       }
-      const known = KNOWN[agent.split(':')[0]] ?? [];
-      if (known.length) process.stderr.write(`Models for ${agent}:\n${known.map((m, i) => `  ${i + 1}) ${m}`).join('\n')}\n`);
       let model;
       for (;;) {
-        const typed = await ask(`model for ${agent}${known.length ? ' (a number, or a model id)' : ''}: `);
-        model = known.length && /^\d+$/.test(typed) ? known[Number(typed) - 1] : typed;
-        if (!model) process.stderr.write(typed ? `${typed} is not one of the models listed\n` : 'a model is needed\n');
+        model = await ask(`model for ${agent}: `);
+        if (!model) process.stderr.write('a model is needed\n');
         else if (!modelOk(agent, model)) process.stderr.write(`${model} is not ${MODEL_RULE}\n`);
         else break;
       }
