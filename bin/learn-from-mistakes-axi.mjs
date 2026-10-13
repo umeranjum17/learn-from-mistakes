@@ -391,7 +391,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
      name: <project>
      sources:
        log: { type: markdown-log, path: defects.md }   # each top-level "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## YYYY-MM-DD" heading
-       # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, failed steps read-only
+       # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
      causes:
        <cause-id>:
          description: "<the mechanism, one sentence>"   # quote it: commas and colons are fine inside quotes
