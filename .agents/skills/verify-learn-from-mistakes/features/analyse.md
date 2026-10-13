@@ -29,7 +29,7 @@ step counts with these labels instead of `labels.jsonl` (kept for a run with non
 `problem: ...` and that finding or label is not kept; it is not sent back.
 The step logs `labels: <n> of <m> records, findings: <f>, problems: <p>`.
 A bundle with no cluster, event or record id asks no agent
-(`nothing to analyse: ...`), so the example journeys make no agent call.
+(`nothing to analyse: ...`), so the example journeys make no agent call. With no agent ready (no usable CLI, or a clashing role), the step completes with zero counts and a `no agent ready: ...` warning, shown in the run output and the report step's output, and `labels.jsonl` still counts.
 
 ## How to get to it (user POV)
 Set `worker:` in `.learn-from-mistakes.yaml` (or let `auto` pick), then

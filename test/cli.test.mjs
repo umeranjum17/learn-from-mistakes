@@ -1113,6 +1113,23 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.deepEqual([k.run.status, k.run.error], ['interrupted', 'analyse: the worker stopped before the step ended']);
   assert.throws(() => process.kill(-pgid, 0), { code: 'ESRCH' }, 'the agent outlived the run');
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', h.id), [{ exit_status: 'interrupted' }]);
+
+  // No agent CLI on PATH: analyse completes with no labels and the warning shows in the run and the report; labels.jsonl still counts.
+  const nobin = join(p, '..', 'nobin');
+  mkdirSync(nobin);
+  symlinkSync(process.execPath, join(nobin, 'node'));
+  symlinkSync(join(bin, 'git'), join(nobin, 'git'));
+  writeFileSync(join(p, '.lfm', 'labels.jsonl'), `${JSON.stringify({ id: query('SELECT record_id FROM records WHERE run_id = ? ORDER BY record_id', run.id)[0].record_id, event: true, cause: 'shared-cache-lock', why: 'The run failed for Umer.' })}\n`);
+  const none = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
+  assert.equal(none.status, 0, none.stderr);
+  const n = JSON.parse(none.stdout);
+  assert.deepEqual(n.steps.map((s) => [s.name, s.status]).slice(4), [['analyse', 'completed'], ['report', 'completed']]);
+  assert.match(n.warning, /^no agent ready: no usable agent CLI \(install /);
+  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, n.run.id)[0].output_json), { labels: 0, findings: 0, problems: 0, warning: n.warning });
+  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', n.run.id)[0].n, 0);
+  const noneReport = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, n.run.id)[0].output_json);
+  assert.equal(noneReport.warning, n.warning);
+  assert.equal(noneReport.coverage.labelled, 1);
 });
 
 test('a run id reused after the store is removed starts its step logs empty', () => {

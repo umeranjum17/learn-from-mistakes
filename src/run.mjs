@@ -63,10 +63,13 @@ const STEPS = {
     const { model, problems } = buildReport(cfg, { runLabels }, REPORT);
     if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
     log(summaryLine(model));
-    return model;
+    const warning = noAgent(db, id);
+    return { ...model, ...(warning && { warning }) };
   },
 };
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
+// The analyse step's warning when no agent was ready to label the records; undefined otherwise.
+const noAgent = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id)?.output_json ?? '{}').warning;
 const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
 const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -333,7 +336,7 @@ export async function runs(cfg) {
 // applied change's verdict once followup is done: counts and numbers, never content or hashes.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
-  const collect = out('collect'), window = out('metrics');
+  const collect = out('collect'), window = out('metrics'), warning = noAgent(db, id);
   const metrics = new Map();
   // A metric with a target shows it and whether this window met it; one without has both empty.
   for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
@@ -347,6 +350,7 @@ function show(db, id) {
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),
     ...(collect && { sources: JSON.parse(collect).sources.map(({ hash, ...s }) => s) }),
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
+    ...(warning && { warning }),
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
   };

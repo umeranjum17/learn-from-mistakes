@@ -10,18 +10,19 @@ import { call, detect, resolveRoles } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
 
-// Returns the checked JSON object. `check(value)` returns the problems with the answer, each naming a field and the rule
-// it broke, never the agent's own text.
+// Returns `{ value }` with the checked JSON object, or `{ problem }` when the role resolves to no usable agent (no agent is
+// called). `check(value)` returns the problems with the answer, each naming a field and the rule it broke, never the
+// agent's own text.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
-  if (r.problem) throw new InputError(`${role}: ${r.problem}`);
+  if (r.problem) return { problem: r.problem };
   const bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');
   const invalid = db.prepare(`UPDATE invocations SET exit_status = 'invalid' WHERE id = ?`);
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}\n\n${bundle}`, log);
     problems = got.value ? check(got.value) : ['the answer holds no JSON object'];
-    if (!problems.length) return got.value;
+    if (!problems.length) return { value: got.value };
     invalid.run(got.row);
     log(`${role} answer ${attempt} is not valid: ${problems.join('; ')}`);
     ask = `${prompt}\n\nYour last answer was not valid: ${problems.join('; ')}. Answer again with one JSON object that fixes this.`;

@@ -61,7 +61,13 @@ export async function analyse(cfg, db, id, dir, log) {
   }
   const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
-  const v = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', causes), check: (x) => check(cfg, x), log });
+  const got = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x) => check(cfg, x), log });
+  if (got.problem) {
+    const warning = `no agent ready: ${got.problem}; run learn-from-mistakes-axi agents to see the agent CLIs found and the worker they resolve to; records stay unlabelled until an agent is ready or you label by hand`;
+    log(warning);
+    return { labels: 0, findings: 0, problems: 0, warning };
+  }
+  const v = got.value;
   const problems = [];
   const findings = v.findings.filter((f, i) => {
     const bad = f.refs.findIndex((r) => !ids.has(r));
