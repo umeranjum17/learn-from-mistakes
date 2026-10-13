@@ -1447,6 +1447,10 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   reply([board[0].key, 'apply']);
   assert.match(lfm(peerEnv, 'signoff', 'answers').stdout, new RegExp(`saved: ${board[0].key} apply`));
   assert.equal(stored(1), 'apply');
+  const unkept = query('SELECT s.proposal_id, s.message FROM signoff s JOIN proposals p ON p.id = s.proposal_id WHERE s.answer IS NULL')[0], unkeptKey = JSON.parse(unkept.message).key;
+  const writeDb = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); writeDb.prepare('UPDATE proposals SET n = NULL WHERE id = ?').run(unkept.proposal_id); writeDb.close(); reply([unkeptKey, 'apply']);
+  assert.match(lfm(peerEnv, 'signoff', 'answers').stderr, new RegExp(`${unkeptKey} is for a fix that is no longer kept`));
+  assert.equal(query('SELECT answer FROM signoff WHERE proposal_id = ?', unkept.proposal_id)[0].answer, null);
   rmSync(join(signDir, 'board.json'));
   const none = lfm(peerEnv, 'signoff', 'answers');
   assert.equal(none.status, 0, none.stderr);

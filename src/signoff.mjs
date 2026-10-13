@@ -77,9 +77,10 @@ export async function signoff(action, cfg, opts) {
         catch { throw new UsageError('sign-off-axi wait: invalid JSON', HELP); }
         if (!answers || Array.isArray(answers) || typeof answers !== 'object') throw new UsageError('sign-off-axi wait: expected a map by key', HELP);
       }
-      const updates = db.prepare('SELECT proposal_id, message FROM signoff').all().flatMap((r) => {
+      const updates = db.prepare('SELECT s.proposal_id, s.message, p.n FROM signoff s JOIN proposals p ON p.id = s.proposal_id').all().flatMap((r) => {
         const key = JSON.parse(r.message).key, a = answers[key];
         if (!a) return [];
+        if (r.n === null) { console.error(`sign-off-axi wait: ${key} is for a fix that is no longer kept; skipped`); return []; }
         if (!['apply', 'skip'].includes(a.answer)) { console.error(`sign-off-axi wait: ${key} answer is not apply or skip; skipped`); return []; }
         return [{ id: r.proposal_id, key, answer: a.answer }];
       });
