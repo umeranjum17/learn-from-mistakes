@@ -190,7 +190,12 @@ async function start(cfg, db, id, opts) {
   // worker's own writes never meet a half-done one.
   locked(db, () => db.prepare('UPDATE runs SET pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ? AND pid = ?').run(child.pid, startTime(child.pid), iso(Date.now()), id, process.pid));
   for (const end = Date.now() + (opts.wait ?? 0); Date.now() < end; await sleep(250)) {
-    if (locked(db, () => { reconcile(db); return db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status; }) !== 'running') break;
+    let status;
+    try { status = locked(db, () => { reconcile(db); return db.prepare('SELECT status FROM runs WHERE id = ?').get(id).status; }); } catch (e) {
+      if ((e.errcode & 0xff) !== 5 || Date.now() >= end) throw e; // a busy poll waits for the next one until the wait is over
+      continue;
+    }
+    if (status !== 'running') break;
   }
   return show(db, id);
 }

@@ -1423,7 +1423,9 @@ test('a run id reused after the store is removed starts its step logs empty', ()
 
 test('a pending step of a reused run id shows no lines from the earlier run', () => {
   const { p, lfm, env } = setup();
-  assert.equal(JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout).run.status, 'completed');
+  const first = lfm('retro', '--wait', '1m', '--json');
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).run.status, 'completed');
   for (const f of ['lfm.sqlite', 'lfm.sqlite-wal', 'lfm.sqlite-shm']) rmSync(join(p, '.lfm', f), { force: true });
   const started = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'collect:3000' } });
   assert.equal(started.status, 0, started.stderr);
@@ -1432,6 +1434,28 @@ test('a pending step of a reused run id shows no lines from the earlier run', ()
   const report = JSON.parse(lfm('logs', '--step', 'report', '--run', '1', '--json').stdout);
   assert.deepEqual([report.status, report.lines, report.log.length], ['pending', '0 total', 0]);
   assert.equal(lfm('attach').status, 0);
+});
+
+test('a retro --wait poll that meets a write lock held past busy_timeout waits for the next poll and prints the run', async () => {
+  const { p, env } = setup();
+  const child = spawn(process.execPath, [CLI, 'retro', '--wait', '1m', '--json', '--dir', p], { env: { ...env, LFM_TEST_SLOW_STEP: 'collect:9000' } });
+  let out = '', err = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  const closed = new Promise((r) => child.once('close', r));
+  const file = join(p, '.lfm', 'lfm.sqlite');
+  const collecting = () => { // false while the store is being made
+    try { const db = new DatabaseSync(file, { readOnly: true }); try { return db.prepare(`SELECT status FROM steps WHERE name = 'collect'`).get()?.status === 'running'; } finally { db.close(); } } catch { return false; }
+  };
+  for (let i = 0; i < 100 && !collecting(); i++) await new Promise((r) => setTimeout(r, 200));
+  const hold = new DatabaseSync(file); // the worker sleeps in collect, so only the --wait poll meets the lock
+  hold.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE');
+  await new Promise((r) => setTimeout(r, 6500));
+  hold.exec('ROLLBACK');
+  hold.close();
+  const code = await closed;
+  assert.equal(code, 0, err);
+  assert.equal(JSON.parse(out).run.status, 'completed');
 });
 
 test('the CLI, its guide and the shipped skill say the user sets the agents: no auto, no default model, and the ask re-runs the command', () => {
