@@ -12,7 +12,7 @@ first, `[c<n>]` with events, sessions, days and the causes the rules tagged,
 then the 3 latest `[e<n>]` events (`n` is the event's store row id, for reference only, not a label id) with time, session id and
 `file:line`) and unlabelled defect records (this window's and undated records
 no `match` rule tagged, `[<record id>]` with source, ref and date). A record id is
-the source and item: a defect-log record's records.jsonl id, a gate row's `<source>:<step id>`, a PR's `<source>:<number>` (`prs:10`). labels.jsonl accepts only records.jsonl ids today, so a gate row or PR id is not labellable yet.
+the source and item: a defect-log record's records.jsonl id, a gate row's `<source>:<step id>`, a PR's `<source>:<number>` (`prs:10`). Each is a records.jsonl id, so labels.jsonl takes it.
 With `excerpts: on` each event and record has a `  > ` excerpt of at most 300
 characters; with `excerpts: off` there is none, only pointers and counts.
 With `excerpts: on`, redact() removes secret-shaped values only; plain record text stays in the bundle by design, so the canary guarantee for prose is `excerpts: off`.

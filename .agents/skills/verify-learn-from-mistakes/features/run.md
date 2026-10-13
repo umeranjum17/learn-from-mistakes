@@ -22,7 +22,7 @@ that another worker owns. `rerun --resume [--run <id>]` runs an
 interrupted, cancelled or failed run from its first step that is not completed;
 completed steps keep their times and output. SIGTERM or SIGINT to the worker
 ends the run as `cancelled`. Each step writes its lines (collect: one per source;
-report: the `repeated:` summary; a failed step: `error: <why>`) to
+bundle: the item, dropped and character counts; report: the `repeated:` summary; a failed step: `error: <why>`) to
 `.lfm/runs/<id>/<step>.log`, new for each attempt. `attach [--run <id>]` polls
 every second and prints `<step>: running`, `<step>: <log line>` and
 `<step>: <end state>` as they come, then the run as `status` prints it; it exits
