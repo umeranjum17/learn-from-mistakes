@@ -134,6 +134,17 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   assert.equal(lfm('agents', '--json').status, 0); // the saved config loads
 });
 
+// Ctrl-D at the first pick: nothing is saved, and the printed command that saves the answer keeps the project dir.
+test('in a terminal, ending the pick early prints the save command with --dir', () => {
+  const { tmp, p, env, config } = setup(['claude', 'opencode']);
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: '\x04', env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /no answer given: agent and judge_agent not saved/);
+  assert.match(r.stdout, new RegExp(`next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`));
+  assert.equal(parse(readFileSync(config, 'utf8')).agent, undefined);
+});
+
 // The global file names the worker's agent; the terminal is asked only its model, and the agent key is not copied into the project.
 test('in a terminal, a worker agent set globally is asked only its model, and the judge is asked both', () => {
   const { tmp, p, env, config, global } = setup(['claude', 'opencode'], 'agent: claude\n');

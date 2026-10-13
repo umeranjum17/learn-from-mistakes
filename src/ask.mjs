@@ -43,13 +43,13 @@ export function save(file, picks) {
 
 // A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
 // the model of that agent. A role whose agent is set only gets the model question; the agent key is then not written.
-export async function pick(keys, cfg) {
+export async function pick(keys, cfg, dir) {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   const lines = rl[Symbol.asyncIterator](); // buffers answers typed or pasted ahead of their question
   const ask = async (q) => {
     process.stderr.write(q);
     const { value, done } = await lines.next();
-    if (done) throw new UsageError(`no answer given: ${named(cfg, keys)} not saved`, saveCommand(keys));
+    if (done) throw new UsageError(`no answer given: ${named(cfg, keys)} not saved`, saveCommand(keys, dir));
     return value.trim();
   };
   const picks = {};
@@ -88,7 +88,7 @@ export async function ensureAgents(cfg, file, dir) {
   const keys = unset(cfg);
   if (!keys.length) return false;
   if (!interactive()) throw askError(cfg, keys, file, dir);
-  save(file, await pick(keys, cfg));
+  save(file, await pick(keys, cfg, dir));
   process.stderr.write(`saved: ${named(cfg, keys)} in ${file}\n`);
   return true;
 }
