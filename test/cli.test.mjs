@@ -644,7 +644,11 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   const doctor = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source dd');
   assert.match(doctor.detail, /^done-done: 4 failed or inconclusive verify steps, 4 in the window; no runs for nottes in /);
   assert.match(doctor.fix, /^ls .*# done-done's app names; set sources\.dd\.apps in /);
-  const retro = lfm('retro', '--foreground');
+  const bin = join(p, '..', 'dd-bin'); // the retro's agent is the fake one, never the host's claude login
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  const retro = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
   assert.equal(retro.status, 0, retro.stderr);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   assert.deepEqual(db.prepare('SELECT record_id, ref FROM records ORDER BY record_id').all().map((r) => ({ ...r })),
