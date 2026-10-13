@@ -40,9 +40,10 @@ never gets the verify marker; the `invocations` row (role `judge`, runner
 row) `refuted` and a check problem, claim p3 `weakened` and kept fix 5; the log
 lines; the next retro with no claim asks no agent. The journey `propose: ...`
 refutes `f1`: its `count` and `days` stay empty. The journey `retro and rerun
-stop ...` sets the judge to `claude` and to `acp:claude` on the worker's model:
-exit 2, `judge: ...` and the fix line, no store. The helper's drives:
-`retro-judge-clash` (`acp:claude`: exit 2), `retro-propose` (`FAKE_REFUTE=p2`,
+stop ...` sets the judge to `claude` on the worker's model: exit 2, `judge: ...`
+and the fix line, no store; `acp:claude`, not ready, exits 1 with its own problem
+(`acp:claude is not usable: acpx is not on PATH`) and fix line, no store. The
+helper's drives: `retro-judge-clash` (`claude`: exit 2), `retro-propose` (`FAKE_REFUTE=p2`,
 `FAKE_WEAKEN=p3`: the verdicts, the kept fixes with theirs and the judge's
 invocation row) and `logs-verify` (`refuted: p2`, `weakened: p3`, the counts).
 
