@@ -118,7 +118,7 @@ name: ${scalar(basename(dir))}
 # The agent keys come from $LFM_HOME/config.yaml (default ~/.learn-from-mistakes/config.yaml); set one here to
 # override it for this project. The tool never picks an agent: set agent and judge_agent, each with its model.
 # agent: claude   # or codex, opencode, pi, acp:<target>, byokit:<route>
-# judge_agent: codex   # its agent and model must differ from the worker's
+# judge_agent: codex   # not the same agent and model as the worker's
 # agent_config: { <agent>: { model: <model>, effort: low } }
 # agent_timeout: "20m"
 excerpts: ${opts['no-excerpts'] ? 'off' : 'on'}   # on: the worker and judge see redacted record excerpts; off: pointers and counts only

@@ -496,7 +496,7 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent');
+const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];

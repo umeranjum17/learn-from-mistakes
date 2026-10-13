@@ -4,8 +4,8 @@
 `src/steps/verify.mjs` and its prompt `src/prompts/verify.md` are the `verify`
 step, after `propose` and before `check`. It runs through the agent-step harness
 ([analyse.md](analyse.md)) on the judge: `judge_agent` with its `agent_config`
-model, never the worker (a judge on the worker's identity fails the step with
-the fix line). The prompt lists each finding of `analyse` as `f<n>` and each fix
+model, never the worker (a judge on the worker's identity stops `retro` and
+`rerun` before the run starts, with the fix line). The prompt lists each finding of `analyse` as `f<n>` and each fix
 of `propose` as `p<n>` (table order), with its cause, text and refs; then the
 bundle. The method: the worker's claims are not evidence; check each claim
 against the bundle items it cites; answer `confirmed`, `weakened` or `refuted`

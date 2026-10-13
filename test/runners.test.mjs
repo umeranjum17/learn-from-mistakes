@@ -139,7 +139,8 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   assert.equal(r.status, 1, r.stderr);
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
   assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
+  const project = join(p, '.learn-from-mistakes.yaml').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.match(r.stderr, new RegExp(`^next: ask the user which agent and model to use, then set judge_agent in ${project} and its agent_config model in \\S+config\\.yaml; the run never picks one$`, 'm'));
   config('agent: claude\njudge_agent: codex\n'); // another agent as the judge resolves
   const two = lfm({}, 'agents', '--json');
   assert.equal(two.status, 0, two.stderr);
