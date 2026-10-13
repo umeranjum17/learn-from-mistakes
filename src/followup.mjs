@@ -9,9 +9,10 @@
 //   no-data   the change has no tripwire, so there is nothing to check
 //   rollback  the tripwire missed and the metric did not improve, or the tripwire missed in the last retro too
 //   fix       the metric improved but the tripwire missed
-// "The last retro" is this change's row in the latest earlier run that measured it (a run that failed or was cancelled
-// before its followup step has none). When that row fails the first no-data rule, counted again over that run's after
-// range with this run's events, there is no last retro.
+// "The last retro" is this change's row in the latest earlier run that measured it whose read time is at least
+// followup.min_days before this run's, so a rerun over the same data is not a second retro (a run that failed or was
+// cancelled before its followup step has none). When that row fails the first no-data rule, counted again over that
+// run's after range with this run's events, there is no last retro.
 import { join } from 'node:path';
 import { measure, readLedger } from '../bin/learn-from-mistakes-axi.mjs';
 import { RULE, SOURCES } from './config.mjs';
@@ -54,7 +55,7 @@ export function followup(cfg, db, id, window, log) {
   const { events, records } = rowsOf(db, id);
   const { min_sessions, min_days } = cfg.followup;
   const last = db.prepare(`SELECT f.before, f.after, f.tripwire, s.output_json FROM followups f JOIN steps s ON s.run_id = f.run_id AND s.name = 'collect'
-    WHERE f.change_id = ? AND f.run_id < ? ORDER BY f.run_id DESC LIMIT 1`);
+    WHERE f.change_id = ? AND f.run_id < ? ORDER BY f.run_id DESC`);
   const add = db.prepare('INSERT INTO followups (run_id, change_id, metric, before, after, tripwire, verdict) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const rows = readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => { // a bad ledger line is skipped: it gets no row
     const { metric, tripwire, kind } = measure(c), at = Date.parse(c.at);
@@ -67,8 +68,9 @@ export function followup(cfg, db, id, window, log) {
       && new Set(inWindow(events, { start: at, end: upTo }).map((e) => e.session_id)).size >= min_sessions;
     const row = { change_id: c.id, metric, before, after: value({ start: at }), tripwire: tripwire || null };
     row.enough = enough(row, end, Infinity);
-    const prev = last.get(c.id, id), prevEnd = prev && readAt(JSON.parse(prev.output_json));
-    return { ...row, verdict: verdict(row, kind, prev && enough(prev, prevEnd, prevEnd) ? prev : undefined) };
+    const prev = last.all(c.id, id).map((p) => ({ ...p, readTime: readAt(JSON.parse(p.output_json)) }))
+      .find((p) => end - p.readTime >= min_days * DAY);
+    return { ...row, verdict: verdict(row, kind, prev && enough(prev, prev.readTime, prev.readTime) ? prev : undefined) };
   });
   db.exec('BEGIN');
   try {

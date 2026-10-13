@@ -1,6 +1,7 @@
 // End-to-end: a retro's followup step gives each applied change its metric before and after the change, from
 // synthetic Claude Code sessions, and a verdict by the rules in src/followup.mjs; a second retro applies the
-// rules that need two retros in a row. LFM_CLI points the same journey at an installed bin (the verify skill's --package proof).
+// rules that need two retros in a row, and a rerun over the same data does not count as one. LFM_CLI points the same
+// journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
@@ -14,7 +15,8 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const DAY = 86_400_000;
 const ago = (days) => new Date(Date.now() - days * DAY).toISOString();
 
-test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data', () => {
+// A project with synthetic sessions, a defect log and eleven applied changes; returns its dir and the CLI runner.
+function journey() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-followup-'));
   after(() => rmSync(tmp, { recursive: true }));
   const p = join(tmp, 'p'), store = join(tmp, 'home', '.claude', 'projects', '-p');
@@ -83,6 +85,22 @@ followup: { min_sessions: 3, min_days: 1 }
     assert.equal(r.status, 0, r.stderr);
     return JSON.parse(r.stdout);
   };
+  return { p, lfm, retro };
+}
+
+// Moves a run's collect window back in time, as if that run had read `days` earlier.
+function moveRunBack(p, id, days) {
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  const back = (iso) => new Date(Date.parse(iso) - days * DAY).toISOString();
+  const { output_json } = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id);
+  const out = JSON.parse(output_json);
+  db.prepare(`UPDATE steps SET output_json = ? WHERE run_id = ? AND name = 'collect'`)
+    .run(JSON.stringify({ ...out, current_start: back(out.current_start), previous_start: back(out.previous_start) }), id);
+  db.close();
+}
+
+test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data', () => {
+  const { p, lfm, retro } = journey();
   const first = retro();
   assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['report', 'completed']]);
   const row = (change, metric, before, after, tripwire, verdict) => ({ change, metric, before, after, tripwire, verdict });
@@ -99,6 +117,8 @@ followup: { min_sessions: 3, min_days: 1 }
     row('chg-10', 'cause_count:bad-write', 4, 4, '<= 4', 'keep'),
     row('chg-11', 'defects', 'n/a', 1, '<= 0', 'no-data'),
   ]);
+  // The first run becomes an earlier retro: it read 2 days back, more than min_days before the second one.
+  moveRunBack(p, first.run.id, 2);
   const second = retro();
   assert.deepEqual(second.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'delete'],
     ['chg-4', 'rollback'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'delete'],
@@ -113,4 +133,13 @@ followup: { min_sessions: 3, min_days: 1 }
     { change_id: 'chg-7', before: 4, after: 0, tripwire: null, verdict: 'no-data' }]);
   const log = JSON.parse(lfm('logs', '--step', 'followup', '--json').stdout);
   assert.deepEqual(log.log.slice(0, 2).map((l) => l.line), ['chg-1 cause_count:missing-file: 4 before, 0 after, keep', 'chg-2 cause_count:bad-search: 4 before, 5 after, rollback']);
+});
+
+test('two retros within a minute: no delete, and no missed-twice rollback', () => {
+  const { retro } = journey();
+  retro();
+  const again = retro();
+  assert.deepEqual(again.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'rollback'],
+    ['chg-4', 'fix'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'no-data'],
+    ['chg-10', 'keep'], ['chg-11', 'no-data']]);
 });
