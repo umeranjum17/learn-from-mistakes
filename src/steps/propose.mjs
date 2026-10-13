@@ -20,6 +20,7 @@ function proposalProblems(f, i) {
   if (!f || typeof f !== 'object') return [`${at} must be an object`];
   const p = [];
   for (const k of ['cause', 'target', 'owner']) if (!str(f[k])) p.push(`${at}.${k} must be a string`);
+  if (!['doc', 'rule', 'code'].includes(f.kind)) p.push(`${at}.kind must be doc, rule or code`);
   p.push(plain(f.change, `${at}.change`, { sentences: 3 }));
   for (const k of ['metric', 'tripwire']) if (f[k] != null && !str(f[k])) p.push(`${at}.${k} must be a string`);
   if (!Array.isArray(f.refs) || !f.refs.every(str)) p.push(`${at}.refs must be a list of bundle ids`);
@@ -67,6 +68,7 @@ function check(v, changes, attempt) {
 }
 
 export async function propose(cfg, db, id, dir, window, log) {
+  db.prepare('DELETE FROM signoff WHERE proposal_id IN (SELECT id FROM proposals WHERE run_id = ?)').run(id);
   db.prepare('DELETE FROM proposals WHERE run_id = ?').run(id); // a step run again starts empty
   db.prepare('UPDATE followups SET reason = NULL WHERE run_id = ?').run(id);
   const findings = db.prepare('SELECT cause, summary, refs_json FROM findings WHERE run_id = ? ORDER BY id').all(id);
@@ -86,11 +88,11 @@ export async function propose(cfg, db, id, dir, window, log) {
   const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt), log });
   const { proposals, reasons, bad } = sift(answer, changes);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
-  const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const reason = db.prepare('UPDATE followups SET reason = ? WHERE run_id = ? AND change_id = ?');
   db.exec('BEGIN');
   try {
-    for (const f of proposals) add.run(id, f.cause, f.target, f.owner, f.change.trim(), f.metric ?? null, f.tripwire ?? null, JSON.stringify(f.refs));
+    for (const f of proposals) add.run(id, f.cause, f.target, f.owner, f.change.trim(), f.metric ?? null, f.tripwire ?? null, JSON.stringify(f.refs), f.kind);
     for (const r of reasons) reason.run(r.reason.trim(), id, r.change);
     db.exec('COMMIT');
   } catch (e) {

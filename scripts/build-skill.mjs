@@ -45,6 +45,28 @@ The tool's own agents are \`agent:\` and \`judge_agent:\` in ~/.learn-from-mista
 When a command prints "ask the user which agent to use", ask the user which agent and model to use for each role named, never choose one yourself, then run the \`${npx} init ...\` command it printed with the user's answer, then run the stopped command again.
 The CLI makes no network or model calls itself; only its runs, \`${npx} agents --test\` and \`${npx} doctor --live\` start your own agent CLI or a BYOKit route.
 
+## Optional finding handoff
+
+Only when the user asks, run \`${npx} signoff post [--run <id>]\` (latest completed run by default).
+Without the optional peer it prints findings and \`npm i -g sign-off-axi\`; retro never posts automatically.
+\`${npx} signoff answers\` runs \`sign-off-axi wait --filer learn-from-mistakes --timeout 1 --json\`: it takes each answer to posted findings once and stores Apply/Skip against proposals (a later answer replaces the stored one), never applies a change; with no new answers it says so and exits 0, and any other value is skipped with a warning naming the key.
+The adapter sends each kept fix to \`sign-off-axi post --kind finding --from -\` (the binary on PATH; \`npm i -g sign-off-axi\` installs it), one contract-v1 message per kept fix:
+
+\`\`\`json
+{"contract":1,"kind":"finding","schema":1,"key":"lfm-3-1-7f3a91c2","title":"Repeated cause: missing env var in CI","filer":"learn-from-mistakes","about":"4 incidents over 3 days.","cause":"missing-env","incidents":4,"days":3,"evidence_ids":["rec-7f3a","rec-91be"],"change_kind":"doc","proposal":"Add the env var to the CI setup page.","options":[{"value":"apply","label":"Apply"},{"value":"skip","label":"Skip"}],"recommend_value":"apply"}
+\`\`\`
+
+To wait explicitly: \`sign-off-axi wait --filer learn-from-mistakes --events\` prints:
+
+\`\`\`json
+{"event":"answer","contract":1,"kind":"finding","schema":1,"key":"lfm-3-1-7f3a91c2","title":"Repeated cause: missing env var in CI","answer":"apply","label":"Apply","close":"done","at":"2026-10-13T08:00:00Z","filer":"learn-from-mistakes"}
+\`\`\`
+
+A refused message is not saved: exit 2, VALIDATION_ERROR and a help line naming the fix.
+Posting again sends the same message, so rerun retro to produce a valid finding first; never edit the board file by hand.
+Check \`sign-off-axi --help\` for installed support (the contract lands in parts), never guess flags.
+Record text stays out: about has counts only, evidence_ids names records, and proposal is the change, not a quote.
+
 ## Request
 
 $ARGUMENTS
