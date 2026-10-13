@@ -126,7 +126,7 @@ export async function doctor(dir, opts) {
   // --live: one call per role that asks the agent to write a file; it must answer and write nothing.
   if (opts.live) for (const name of ['worker', 'judge']) {
     const r = roles[name];
-    if (!r.bin) continue;
+    if (!r.bin || r.problem) continue;
     if (premiumBlocked(cfg, r.model)) { add('warn', `${name} live`, `skip live ${name}: premium model needs allow_premium`); continue; }
     try {
       const { test } = await agents(cfg, { test: r.runner, model: r.model });
