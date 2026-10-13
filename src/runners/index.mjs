@@ -133,11 +133,12 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
   const name = target ? `acp:${target}` : runner;
-  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseFix(cfg, 'agent', `agent_config.${name}.model`));
+  const role = cfg.judge_agent === name && cfg.agent !== name ? 'judge_agent' : 'agent';
+  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseFix(cfg, role, `agent_config.${name}.model`));
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, 'agent', `agent_config.${name}.model`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, role, `agent_config.${name}.model`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;

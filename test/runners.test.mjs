@@ -194,6 +194,15 @@ agent_config: { claude: { model: ${MODELS.claude}, effort: low }, codex: { model
   assert.deepEqual(readdirSync(join(p, '.lfm')).sort(), ['.gitignore', 'runs']);
 });
 
+test('an unset model of a judge_agent is named as judge_agent in the fix, never as agent', () => {
+  const { p, lfm, config } = setup();
+  config('judge_agent: pi\n');
+  const t = lfm({}, 'agents', '--test', 'pi');
+  assert.equal(t.status, 1);
+  assert.match(t.stderr, /^error: pi: no model set in agent_config$/m);
+  assert.equal(t.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
+});
+
 test('a premium or unset model that allow_premium forbids is never called: doctor --live shows its one fail, agents --test refuses it', () => {
   const { p, lfm, calls, config, env } = setup();
   config('agent: claude\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
