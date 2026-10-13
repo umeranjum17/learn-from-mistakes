@@ -81,7 +81,7 @@ function runResult(db, id) {
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
   return { run: id, runLabels, findings: db.prepare('SELECT cause, summary, count, days FROM findings WHERE run_id = ? ORDER BY id').all(id).map((f) => ({ ...f })) };
 }
-// The latest completed run with labels: the bare report counts them. Undefined with none, so labels.jsonl counts.
+// The latest completed run that kept labels or findings: the bare report counts them. Undefined with none, so labels.jsonl counts.
 export async function lastRun(cfg) {
   const db = await openStore(cfg.state, false);
   const id = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id;
