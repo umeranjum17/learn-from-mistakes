@@ -18,11 +18,12 @@ Checks, in order:
   ok detail under `agents: auto`, a warn when the agent is listed; no store at all is a warn; markdown-log and
   no-mistakes: readable, the count in the window, and the skipped entries). A read
   error is a fail with the source's own fix (a missing defect log: `check sources.<id>.path in
-  .learn-from-mistakes.yaml, or create it: touch <path>`). No sources at all: warn.
+  <the project config's full path>, or create it: touch <path>`). No sources at all: warn.
 - `worker`/`judge`: the role resolves to a usable, offered runner (`resolveRoles`), with
-  version and tools; a role pinned to a not-offered runner (gemini, acp) or to a runner with
-  no usable binary is a fail, its fix naming the offered runners; no offered runner at all
-  is a fail with the install command.
+  version and tools. A role that does not is a fail whose fix names the offered runners when
+  there are any; otherwise the pinned runner's install or `runner_path` fix, a set-model fix
+  when an auto role's model no usable CLI lists, or the install command. A BYOKit route that
+  failed its own check keeps its problem and fix.
 - `worker login`/`judge login`: the agent's own status command through `which()`, its
   output never printed: `codex login status` (exit 0), `opencode auth list` (a
   credential or environment variable count above 0), `pi auth check --no-refresh
@@ -45,7 +46,9 @@ Checks, in order:
   `.agents/skills` (warn; fix: copy the packaged `SKILL.md` there).
 - `sign-off`: `sign-off` on PATH, or `signoff: off` (warn: plain-text fallback).
 - `--live`: `worker live`/`judge live`, one `agents --test` call per resolved role with
-  its own model (costs tokens): it must answer and write no file.
+  its own model (costs tokens): it must answer and write no file. A role that already has a
+  problem is not called (its own fail stands), and a premium model that `allow_premium` forbids
+  is a warn `skip live <role>`.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi doctor` in a project dir (or `--dir <project>`), after `init`.
