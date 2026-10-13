@@ -320,7 +320,29 @@ test('doctor offers no runner whose premium model allow_premium forbids, so the 
   writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "claude-opus-5-5" }'));
   const fails = JSON.parse(lfm('doctor', '--json').stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+  assert.equal(fails[0].fix, `set allow_premium: true in ${config}, or use a cheap model`);
+});
+
+test('doctor fails an auto worker on a premium model no agent lists, and names allow_premium in the config', () => {
+  const { lfm, config } = setup(['claude', 'codex']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: auto, model: "claude-opus-5-5" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.equal(fails[0].fix, `set allow_premium: true in ${config}, or use a cheap model`);
+});
+
+test('doctor offers only a runner that lists the pinned worker model, never one that would run it with a model it does not list', () => {
+  const { lfm, config } = setup(['claude', 'codex', 'gemini']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "gpt-6-luna" }').replace(/^judge: .*$/m, 'judge: { runner: claude, model: "" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.equal(fails[0].fix, `set worker.runner in ${config} to codex`);
 });
 
 test('doctor says to unset LFM_MODEL when the premium model comes from it', () => {
