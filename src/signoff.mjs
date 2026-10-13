@@ -70,21 +70,24 @@ export async function signoff(action, cfg, opts) {
       }
       if (!rows.length) console.log('No kept fixes.');
     } else if (bin) {
-      let answers = {};
-      const out = peer(bin, WAIT, cfg, undefined, true);
-      if (out !== null) {
-        try { answers = JSON.parse(out); }
-        catch { throw new UsageError('sign-off-axi wait: invalid JSON', HELP); }
-        if (!answers || Array.isArray(answers) || typeof answers !== 'object') throw new UsageError('sign-off-axi wait: expected a map by key', HELP);
-      }
-      const updates = db.prepare('SELECT s.proposal_id, s.message, p.n FROM signoff s JOIN proposals p ON p.id = s.proposal_id').all().flatMap((r) => {
-        const key = JSON.parse(r.message).key, a = answers[key];
-        if (!a) return [];
-        if (r.n === null) { console.error(`sign-off-axi wait: ${key} is for a fix that is no longer kept; skipped`); return []; }
-        if (!['apply', 'skip'].includes(a.answer)) { console.error(`sign-off-axi wait: ${key} answer is not apply or skip; skipped`); return []; }
-        return [{ id: r.proposal_id, key, answer: a.answer }];
+      const updates = locked(db, () => {
+        let answers = {};
+        const out = peer(bin, WAIT, cfg, undefined, true);
+        if (out !== null) {
+          try { answers = JSON.parse(out); }
+          catch { throw new UsageError('sign-off-axi wait: invalid JSON', HELP); }
+          if (!answers || Array.isArray(answers) || typeof answers !== 'object') throw new UsageError('sign-off-axi wait: expected a map by key', HELP);
+        }
+        const rows = db.prepare('SELECT s.proposal_id, s.message, p.n FROM signoff s JOIN proposals p ON p.id = s.proposal_id').all().flatMap((r) => {
+          const key = JSON.parse(r.message).key, a = answers[key];
+          if (!a) return [];
+          if (r.n === null) { console.error(`sign-off-axi wait: ${key} is for a fix that is no longer kept; skipped`); return []; }
+          if (!['apply', 'skip'].includes(a.answer)) { console.error(`sign-off-axi wait: ${key} answer is not apply or skip; skipped`); return []; }
+          return [{ id: r.proposal_id, key, answer: a.answer }];
+        });
+        for (const r of rows) db.prepare('UPDATE signoff SET answer = ? WHERE proposal_id = ?').run(r.answer, r.id);
+        return rows;
       });
-      locked(db, () => { for (const r of updates) db.prepare('UPDATE signoff SET answer = ? WHERE proposal_id = ?').run(r.answer, r.id); });
       for (const r of updates) console.log(`saved: ${r.key} ${r.answer}`);
       if (!updates.length) console.log('No new answers for posted findings.');
     } else console.log('No answers read: sign-off-axi is not installed.');
