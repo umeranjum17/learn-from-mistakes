@@ -79,7 +79,7 @@ export function readLedger(file) {
     try { e = JSON.parse(line); } catch { problems.push(`${file}:${i + 1}: not valid JSON`); return; }
     const ok = e && typeof e === 'object' && !Array.isArray(e) && e.v === 1
       && typeof e.id === 'string' && e.id && typeof e.cause === 'string' && e.cause
-      && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && e.at
+      && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && !Number.isNaN(Date.parse(e.at))
       && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)))
       && (e.metric === undefined || (typeof e.metric === 'string' && storedMetric(e.metric)))
       && (e.tripwire === undefined || (typeof e.tripwire === 'string' && RULE.test(e.tripwire))) && (e.kind === undefined || KINDS.includes(e.kind));
@@ -178,7 +178,7 @@ export async function ingest(cfg) {
   db?.close();
   // This window and the last, and far enough back to have before-numbers for every applied change.
   const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
-  const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w).filter(Number.isFinite));
+  const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
   const records = [], rows = [], events = [], prs = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes });
