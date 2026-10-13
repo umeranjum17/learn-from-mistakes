@@ -54,15 +54,17 @@ export async function doctor(dir, opts) {
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     if (!r.bin) {
-      // Offered only where the role would not resolve to the other role's binary and model: that is the clash it names.
+      // Offered only where the role would not resolve to the other role's binary and model, and where its runner lists the
+      // role's model: that is the clash it names.
       const other = roles[name === 'worker' ? 'judge' : 'worker'];
       const offered = list.filter((x) => {
-        if (!x.usable || x.problem) return false;
+        if (!x.usable || x.problem || (r.model && !MODELS[x.runner]?.includes(r.model))) return false;
         const model = roleModel({ ...cfg, [name]: { ...cfg[name], runner: x.runner } }, name, x.runner);
         return !premiumBlocked(cfg, model) && !same({ bin: x.bin, model }, other);
       }).map((x) => x.runner);
-      add('fail', name, r.problem, r.fix ?? (offered.length
-        ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
+      const premium = premiumBlocked(cfg, r.model);
+      add('fail', name, r.problem, r.fix ?? (premium ? `set allow_premium: true in ${file}, or use a cheap model`
+        : offered.length ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
         : `install a second agent CLI (${INSTALL}), or set runner_path in ${shq(globalFile())}`));
       continue;
     }
