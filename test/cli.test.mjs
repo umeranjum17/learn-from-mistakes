@@ -1071,8 +1071,8 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.deepEqual([inv.step, inv.role, inv.runner, inv.model, inv.marker, inv.exit_status, inv.session_id, inv.tokens_in, inv.tokens_out],
     ['analyse', 'worker', 'claude', MODELS.claude[0], `lfm-run:${run.id}:analyse`, 'ok', 'fake-session', 12, 5]);
   assert.deepEqual(lines(run.id), [`worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`, 'problem: findings[1]: ref 2 names no bundle item',
-    'labels: 2 of 2 records, findings: 1, problems: 1']);
-  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, run.id)[0].output_json), { asked: true, labels: 2, findings: 1, problems: 1 });
+    'labels: 2 of 2 records, 0 dropped, findings: 1, problems: 1']);
+  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, run.id)[0].output_json), { asked: true, labels: 2, labels_dropped: 0, findings: 1, problems: 1 });
   // The report step counts with the worker's labels: no hand-written labels.jsonl is needed.
   assert.ok(!existsSync(join(p, '.lfm', 'labels.jsonl')));
   const report = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, run.id)[0].output_json);
@@ -1083,7 +1083,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');
   assert.equal(kept.status, 0, kept.stderr);
   const outside = JSON.parse(kept.stdout).run.id;
-  assert.deepEqual(lines(outside).slice(-2), ['problem: labels[0] names no defect record in the bundle', 'labels: 0 of 2 records, findings: 0, problems: 1']);
+  assert.deepEqual(lines(outside).slice(-2), ['problem: labels[0] names no defect record in the bundle', 'labels: 0 of 2 records, 1 dropped, findings: 0, problems: 1']);
   assert.equal(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, outside)[0].output_json).coverage.labelled, 0);
 
   // Bad JSON twice: the answer goes back once with the validation error, then the step fails with it.

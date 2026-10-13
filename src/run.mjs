@@ -58,8 +58,8 @@ const STEPS = {
   // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;
   // with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
-    const { asked } = JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id).output_json);
-    const runLabels = asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
+    const analysed = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id)?.output_json;
+    const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
       .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
         ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
     const { model, problems } = buildReport(cfg, { runLabels }, REPORT);

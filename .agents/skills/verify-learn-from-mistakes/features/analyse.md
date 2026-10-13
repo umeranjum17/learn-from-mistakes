@@ -26,7 +26,7 @@ They land in the store's `findings` and `labels` tables, and the run's `report`
 step counts with these labels instead of `labels.jsonl` (kept for a run with none). A ref, label id or
 `duplicate_of` that names no bundle item is a problem: it is logged as
 `problem: ...` and that finding or label is not kept; it is not sent back.
-The step logs `labels: <n> of <m> records, findings: <f>, problems: <p>`.
+The step logs `labels: <n> of <m> records, <d> dropped, findings: <f>, problems: <p>`.
 A bundle with no cluster, event or record id asks no agent
 (`nothing to analyse: ...`), so the example journeys make no agent call. A worker that is not set (`runner: auto`) or does not resolve fails the step (exit 1) with one fix line naming the config file and `worker.runner`: the run never picks an agent.
 

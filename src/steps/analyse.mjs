@@ -42,6 +42,7 @@ function check(cfg, v) {
     if (seen.has(l.id)) p.push(`${at} is a second label for one record`);
     seen.add(l.id);
     if (typeof l.event !== 'boolean') p.push(`${at}.event must be true or false`);
+    if (l.cause != null && typeof l.cause !== 'string') p.push(`${at}.cause must be a string`);
     if (l.event && !(typeof l.cause === 'string' && (Object.hasOwn(cfg.causes, l.cause) || l.cause === 'other'))) p.push(`${at}.cause must be a listed cause or other`);
     p.push(plain(l.why, `${at}.why`, { words: 25 }));
     if (l.duplicate_of != null && typeof l.duplicate_of !== 'string') p.push(`${at}.duplicate_of must be a record id`);
@@ -57,7 +58,7 @@ export async function analyse(cfg, db, id, dir, log) {
   const ids = new Set([...readFileSync(join(dir, 'bundle.md'), 'utf8').matchAll(/^(?:### |- )\[([^\]\n]+)\]/gm)].map((m) => m[1]));
   if (!ids.size) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
-    return { asked: false, labels: 0, findings: 0, problems: 0 };
+    return { asked: false, labels: 0, labels_dropped: 0, findings: 0, problems: 0 };
   }
   const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
@@ -84,7 +85,8 @@ export async function analyse(cfg, db, id, dir, log) {
     db.exec('ROLLBACK');
     throw e;
   }
+  const dropped = v.labels.length - labels.length;
   for (const p of problems) log(`problem: ${p}`);
-  log(`labels: ${labels.length} of ${records.size} records, findings: ${findings.length}, problems: ${problems.length}`);
-  return { asked: true, labels: labels.length, findings: findings.length, problems: problems.length };
+  log(`labels: ${labels.length} of ${records.size} records, ${dropped} dropped, findings: ${findings.length}, problems: ${problems.length}`);
+  return { asked: true, labels: labels.length, labels_dropped: dropped, findings: findings.length, problems: problems.length };
 }
