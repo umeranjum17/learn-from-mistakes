@@ -17,7 +17,7 @@ Each source type gives its numbers through its `metrics(rows, window)` over the
 rows of all its sources (its `metricRows`, `events` or `records`), and names them in `metricNames`: the sessions type
 `tool_error_rate`, `corrections_per_session`, `interrupts`, `retries` (its
 `events`); the markdown-log type `defects` (its records dated in the window, summed
-over every defect log, from the new `records` table, which also holds failed gate
+over every defect log except the `reviews` one, from the new `records` table, which also holds failed gate
 rows). A type with no source in the config gives its names n/a.
 `cause_count:<cause>` counts the events and records tagged with that cause in
 the window. `collect` tags them through `causes.<c>.match`: a no-mistakes source

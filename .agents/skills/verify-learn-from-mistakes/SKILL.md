@@ -36,8 +36,9 @@ then a detached `retro --wait 1m` run, `attach` and `logs --step collect` on it,
 an `abort` of a slow run (`cancelled`) and a plain `rerun --wait 1m` as well, a sessions source over one
 synthetic Claude Code, Codex and OpenCode session each in the scratch HOME with a sessions `match` rule and targets (`retro-sessions`: its metrics, `cause_count`, met/missed/n/a and its bundle cluster with the excerpt; `retro-v2` checks the `excerpts: off` bundle has none), then the `analyse` step with the repo's fake Claude Code as the only agent on PATH (`retro-analyse`: `retro --wait` shows the kept finding and the counted causes in `result`, and the invocation row; `report-run`: the bare report counts the run's labels, `logs-analyse`: a ref to no bundle item is a problem; `retro-analyse-prose`: bad JSON twice exits 1 and `logs-analyse-prose` shows the validation error; rules in [features/analyse.md](features/analyse.md)), then one more failed test run 5 days back and a change 3 days back (`change-followup`, `retro-followup`: the change's verdict is `rollback`, 1 before and 3 after, and the change with no match rule is `no-data`; rules in [features/followup.md](features/followup.md)), then the `propose` and `check` steps (`retro-propose`: eight fake fixes for the gate's repeated cause give 5 kept fixes and a reason for each follow-up, `logs-check`: the 3 problem lines, `change-proposal`: `--proposal` copies the fix into the ledger; rules in [features/propose.md](features/propose.md)), the `verify` step with the fake agent as Codex the judge (`retro-propose` with `FAKE_REFUTE=p2`: claim p2 (the second proposal row) `refuted`, `logs-verify`: the verdict lines; rules in [features/verify.md](features/verify.md)), `agents --json` on the host PATH
 (no live call; live `--test` proofs are in [features/agents.md](features/agents.md)),
-and `init` twice in a fresh project with two fake agents (same bytes) plus a pinned
-judge clash (exit 2; live proof in [features/init.md](features/init.md)), `doctor` on that
+a busy store (`status-busy` reads it, exit 0; `retro-busy` exits 2 with `next: ... status`; history kept),
+and `init` twice in a fresh project with two fake agents (same bytes; `reviews.md` and the starter causes written) plus a pinned
+judge clash and one agent with two models (exit 2; live proof in [features/init.md](features/init.md)), `doctor` on that
 project (exit 0) and with its defect log gone (exit 1, a fail with `fix:`; live proof in [features/doctor.md](features/doctor.md)),
 to capture their real stdout/stderr as evidence. The tool never picks an agent or a model: `agent`, `judge_agent` and `agent_config.<agent>.model` are the user's, and with none set `init`, `retro`, `rerun`, `doctor` and `agents` ask (a terminal) or exit 2 with `ask the user which agent to use` and the `init --agent <agent> --model <model> ...` command that saves the answer ([features/init.md](features/init.md)). Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
@@ -65,7 +66,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0 (`config-bad-agent`, `change-bad-tripwire` and `init-pinned-clash` must be 2, `doctor-missing-log` and `retro-analyse-prose` 1), all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-agent`, `change-bad-tripwire`, `retro-busy`, `init-pinned-clash` and `init-one-agent-two-models` must be 2, `doctor-missing-log` and `retro-analyse-prose` 1), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 

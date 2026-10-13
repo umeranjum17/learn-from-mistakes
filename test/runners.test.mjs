@@ -138,7 +138,7 @@ test('the judge never resolves to the worker: a clash exits 1 with the fix', () 
   const r = lfm({}, 'agents', '--json');
   assert.equal(r.status, 1, r.stderr);
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
-  assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
+  assert.match(r.stderr, /^problem: judge: agent_config holds one model per agent/m);
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
   config('agent: claude\njudge_agent: codex\n'); // another agent as the judge resolves
   const two = lfm({}, 'agents', '--json');

@@ -11,7 +11,7 @@ import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PRO
 import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
-import { ensureAgents, saveCommand } from '../src/ask.mjs';
+import { askError, ensureAgents, interactive, saveCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
@@ -386,7 +386,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
   --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never picked by the tool
   --model <model>     (init) save agent_config.<agent>.model for that agent
-  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent and model must differ from the worker's
+  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
   --no-skill, -y      (init) init installs no skill; -y asks nothing, even in a terminal
@@ -510,7 +510,7 @@ const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--n
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
-async function main() {
+async function main(ctx) {
   const argv = process.argv.slice(2);
   if (argv.includes('-h') || argv.includes('--help')) { console.log(HELP); return; }
   if (argv.includes('-v') || argv.includes('--version')) { console.log(VERSION); return; }
@@ -527,6 +527,7 @@ async function main() {
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
+  ctx.opts = opts;
   for (let i = 0; i < argv.length;) {
     const flag = argv[i];
     if (!flag.startsWith('-')) throw new UsageError(`unexpected argument ${shown(flag)}`, next);
@@ -566,6 +567,7 @@ async function main() {
   if (cmd === 'init') { await initCommand(opts); return; }
   if (cmd === 'doctor') { await doctorCommand(opts); return; }
   let cfg = loadConfig(opts.dir ?? resolve('.'));
+  ctx.state = cfg.state;
   // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
   if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
@@ -580,7 +582,7 @@ async function main() {
   if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   if (!opts.labels) quietSqlite();
-  const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts); }); // --labels names the file; else the last retro's labels, if a run has them
+  const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts, cmd); }); // --labels names the file; else the last retro's labels, if a run has them
   if (last && last.latest !== last.run) console.error(`note: run ${last.latest} kept no label and no finding; showing run ${last.run}`);
   const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
@@ -605,12 +607,11 @@ function quietSqlite() {
   process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') for (const f of print) f(w); });
 }
 // A run store sqlite cannot use is one usage line with the file to move, never a stack trace.
-function storeError(e, cfg, opts) {
-  if (e.code !== 'ERR_SQLITE_ERROR') return e;
+function storeError(e, cfg, opts, cmd) {
+  if (e.code !== 'ERR_SQLITE_ERROR' || (e.errcode & 0xff) === 5) return e; // main() maps a busy store
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
-  // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
-  if ((e.errcode & 0xff) === 5) return new UsageError(`${file} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', opts));
+  if ([8, 10, 13, 14].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi ${cmd}`, 'after the disk or the file permissions are fixed', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
 async function runCommand(cmd, cfg, opts) {
@@ -619,7 +620,7 @@ async function runCommand(cmd, cfg, opts) {
   try {
     out = await { retro, status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
   } catch (e) {
-    throw storeError(e, cfg, opts);
+    throw storeError(e, cfg, opts, cmd);
   }
   console.log(render(out, opts.json));
   if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
@@ -684,15 +685,22 @@ async function doctorCommand(opts) {
 // one line on who sees record excerpts. A gap does not fail it: the config is written, and the hint names the fix.
 async function initCommand(opts) {
   quietSqlite();
-  const out = await init(opts.dir ?? resolve('.'), opts);
+  const dir = opts.dir ?? resolve('.');
+  let out = await init(dir, opts);
   console.log(render(out, opts.json));
   if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
   const seen = [['worker', out.workerBin, out.worker], ['judge', out.judgeBin, out.judge]].map(([name, bin, r]) => `the ${name} (${bin ? r.runner : r.runner ? `${r.runner}, not usable` : 'not set'})`).join(' and ');
   if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: ${seen} see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
-  const cfg = loadConfig(opts.dir ?? resolve('.'));
+  if (!opts.y && out.missing.length && interactive() && await ensureAgents(loadConfig(dir), join(dir, PROJECT_FILE), opts.dir)) out = await init(dir, opts);
+  const cfg = loadConfig(dir);
   const problem = (name) => out.gaps.find((g) => g.startsWith(`${name}: `))?.slice(name.length + 2);
-  if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
+  if (out.missing.length && !opts.y) { // after what it wrote: the ask stops init, as it stops every command
+    const e = askError(cfg, out.missing, opts.dir);
+    console.error(`error: ${e.message}`);
+    hint(e.next);
+    process.exitCode = e.code;
+  } else if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
   else if (problem('worker')) hint(roleFix(cfg, 'agent', { runner: out.worker.runner, problem: problem('worker') }));
   else if (problem('judge')) hint(problem('judge') === CLASH ? JUDGE_FIX(cfg) : roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
@@ -700,7 +708,11 @@ async function initCommand(opts) {
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { await main(); } catch (e) {
+  const ctx = {};
+  try { await main(ctx); } catch (raw) {
+    // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
+    const busy = raw.code === 'ERR_SQLITE_ERROR' && (raw.errcode & 0xff) === 5 && ctx.state !== undefined;
+    const e = busy ? new UsageError(`${join(ctx.state, 'lfm.sqlite')} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', ctx.opts)) : raw;
     if (!(e instanceof UsageError)) throw e;
     console.error(`error: ${e.message}`);
     hint(e.next);

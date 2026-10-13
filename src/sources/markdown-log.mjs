@@ -7,10 +7,12 @@ import { pathSource } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 
 export const validate = pathSource;
-// init: the first defect log at a usual place.
+const REVIEWS = 'reviews';
+// init: the first defect log at a usual place, as log, and a review log, as reviews.
 export function detect(dir) {
-  const path = ['defects.md', 'docs/defects.md', 'DEFECTS.md'].find((f) => statSync(join(dir, f), { throwIfNoEntry: false })?.isFile());
-  return path && { type: 'markdown-log', path };
+  const at = (...paths) => paths.find((f) => statSync(join(dir, f), { throwIfNoEntry: false })?.isFile());
+  const found = Object.entries({ log: at('defects.md', 'docs/defects.md', 'DEFECTS.md', 'data/defects.md'), [REVIEWS]: at('reviews.md') }).filter(([, path]) => path);
+  return Object.fromEntries(found.map(([id, path]) => [id, { type: 'markdown-log', path }]));
 }
 
 // Each record's id comes from its text, so it survives line moves.
@@ -40,7 +42,10 @@ export function doctor(source, entry, { readFrom, project }) {
   return { level: 'ok', detail: `${records.length} records, ${inWin} in the window, ${undated} skipped (no date)` };
 }
 
-// defects: the records dated in the window, over every markdown-log source; n/a when no record has a date.
+// defects: the records dated in the window, over the defect logs (not reviews); n/a when no defect record has a date.
 export const metricNames = ['defects'];
 export const metricRows = 'records';
-export const metrics = (rows, window) => ({ defects: rows.some((r) => r.ts) ? inWindow(rows, window).length : null });
+export const metrics = (rows, window) => {
+  const defects = rows.filter((r) => r.source !== REVIEWS);
+  return { defects: defects.some((r) => r.ts) ? inWindow(defects, window).length : null };
+};

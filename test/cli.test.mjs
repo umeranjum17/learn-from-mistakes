@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -891,6 +891,24 @@ test('empty input exits 3 with a next command', () => {
   assert.ok(!r.stderr.includes(p), 'the empty-input hint must not echo an input path value');
 });
 
+test('the defects metric counts the defect log, not reviews.md', () => {
+  const { p, env } = setup();
+  execFileSync('git', ['-C', p, 'init', '-q']);
+  const day = new Date().toISOString().slice(0, 10);
+  writeFileSync(join(p, 'defects.md'), `## ${day}\n- one\n- two\n- three\n`);
+  writeFileSync(join(p, 'reviews.md'), `- ${day} umer: first review\n- ${day} umer: second review\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n  reviews: { type: markdown-log, path: reviews.md }\ncauses: { flaky: { description: d } }\n');
+  // PATH holds only the fake agent, so the analyse step never calls a real, logged-in claude.
+  const bin = join(p, '..', 'bin');
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  const r = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
+  assert.equal(r.status, 0, r.stderr);
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(decode(r.stdout).run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^\| defects \| 3 \|/m);
+});
+
 test('retro --foreground saves a run and its steps in .lfm/; status and runs show it', () => {
   const { p, lfm } = setup();
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
@@ -980,6 +998,27 @@ allow_premium: false
   const noStore = lfm('retro', '--foreground', '--json');
   assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file');
   assert.ok(!noStore.stdout.includes(p) && !noStore.stderr.includes(p), 'a source path must not reach machine output');
+
+  const hold = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); // another process holds the write lock past busy_timeout
+  hold.exec('BEGIN IMMEDIATE');
+  const read = lfm('status', '--json'); // a read command takes the write lock only when a running run has lost its worker
+  const busy = lfm('retro', '--foreground');
+  hold.exec('ROLLBACK');
+  hold.close();
+  assert.equal(read.status, 0, read.stderr);
+  assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file');
+  assert.equal(busy.status, 2, busy.stderr);
+  assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
+  assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file'); // the store keeps its runs
+
+  chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
+  chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
+  const readonly = lfm('status');
+  chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o644);
+  chmodSync(join(p, '.lfm'), 0o755);
+  assert.equal(readonly.status, 2, readonly.stderr);
+  assert.doesNotMatch(readonly.stderr, /^next: mv /m);
+  assert.match(readonly.stderr, /^next: learn-from-mistakes-axi status   # after the disk or the file permissions are fixed/m);
 
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
   const corrupt = lfm('status');
@@ -1275,15 +1314,14 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(stale.status, 1, stale.stderr);
   assert.match(stale.stderr, /^problem: /m);
   assert.match(stale.stderr, /^next: learn-from-mistakes-axi retro --wait   # a new run relabels the records/m);
-  // A store another process holds past busy_timeout is busy: the report says so and never suggests moving it.
+  // The report only reads: a store whose write lock another process holds gives the same report, never a move of it.
   const locked = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
   locked.exec('BEGIN IMMEDIATE');
   const busy = lfm({}, 'report');
   locked.exec('ROLLBACK');
   locked.close();
-  assert.equal(busy.status, 2, busy.stderr);
-  assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy/m);
-  assert.doesNotMatch(busy.stderr, /^next: mv /m);
+  assert.equal(busy.status, 1, busy.stderr);
+  assert.equal(busy.stderr, stale.stderr);
   // A store sqlite cannot read is one error line with the file to move, never a stack trace.
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database');
   const broken = lfm({}, 'report');
@@ -1384,7 +1422,9 @@ test('a run id reused after the store is removed starts its step logs empty', ()
 
 test('a pending step of a reused run id shows no lines from the earlier run', () => {
   const { p, lfm, env } = setup();
-  assert.equal(JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout).run.status, 'completed');
+  const first = lfm('retro', '--wait', '1m', '--json');
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).run.status, 'completed');
   for (const f of ['lfm.sqlite', 'lfm.sqlite-wal', 'lfm.sqlite-shm']) rmSync(join(p, '.lfm', f), { force: true });
   const started = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'collect:3000' } });
   assert.equal(started.status, 0, started.stderr);
@@ -1393,6 +1433,28 @@ test('a pending step of a reused run id shows no lines from the earlier run', ()
   const report = JSON.parse(lfm('logs', '--step', 'report', '--run', '1', '--json').stdout);
   assert.deepEqual([report.status, report.lines, report.log.length], ['pending', '0 total', 0]);
   assert.equal(lfm('attach').status, 0);
+});
+
+test('a retro --wait poll that meets a write lock held past busy_timeout waits for the next poll and prints the run', async () => {
+  const { p, env } = setup();
+  const child = spawn(process.execPath, [CLI, 'retro', '--wait', '1m', '--json', '--dir', p], { env: { ...env, LFM_TEST_SLOW_STEP: 'collect:9000' } });
+  let out = '', err = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  const closed = new Promise((r) => child.once('close', r));
+  const file = join(p, '.lfm', 'lfm.sqlite');
+  const collecting = () => { // false while the store is being made
+    try { const db = new DatabaseSync(file, { readOnly: true }); try { return db.prepare(`SELECT status FROM steps WHERE name = 'collect'`).get()?.status === 'running'; } finally { db.close(); } } catch { return false; }
+  };
+  for (let i = 0; i < 100 && !collecting(); i++) await new Promise((r) => setTimeout(r, 200));
+  const hold = new DatabaseSync(file); // the worker sleeps in collect, so only the --wait poll meets the lock
+  hold.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE');
+  await new Promise((r) => setTimeout(r, 6500));
+  hold.exec('ROLLBACK');
+  hold.close();
+  const code = await closed;
+  assert.equal(code, 0, err);
+  assert.equal(JSON.parse(out).run.status, 'completed');
 });
 
 test('the CLI, its guide and the shipped skill say the user sets the agents: no auto, no default model, and the ask re-runs the command', () => {
