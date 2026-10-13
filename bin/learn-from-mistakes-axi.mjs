@@ -382,7 +382,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
   --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never picked by the tool
   --model <model>     (init) save agent_config.<agent>.model for that agent
-  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent and model must differ from the worker's
+  --judge-agent <agent>  (init) save judge_agent: <agent>; not the same agent and model as the worker's
   --judge-model <model>  (init) save agent_config.<judge agent>.model
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
   --no-skill, -y      (init) init installs no skill; -y asks nothing, even in a terminal
