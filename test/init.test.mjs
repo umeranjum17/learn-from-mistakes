@@ -197,7 +197,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'identity']);
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
-  assert.match(fails[1].fix, /allow_premium: true$/);
+  assert.ok(fails[1].fix.endsWith(`allow_premium: true in ${config}`), fails[1].fix);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
@@ -211,7 +211,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.equal(fixed.out.fails, 0);
 });
 
-test('doctor fails a worker pinned to a runner that is not offered, and asks for a second agent CLI when no other runner is left', () => {
+test('doctor fails a worker pinned to a runner that is not offered, and asks to set it to another agent CLI', () => {
   const { lfm, config } = setup(['claude', 'gemini']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "" }'));
@@ -261,6 +261,15 @@ test('init prints a BYOKit worker problem with the route list in its error', () 
   const r = lfm('init', '-y', '--no-skill', '--worker', 'byokit:nope');
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /worker: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
+});
+
+test('init refuses a judge on a BYOKit route that is not a plan route, with the --worker and --judge hint and exit 2', () => {
+  const { lfm, config } = setup(['claude']);
+  const r = lfm('init', '-y', '--no-skill', '--worker', 'claude', '--judge', 'byokit:nope');
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /judge: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
+  assert.match(r.stderr, /^next: learn-from-mistakes-axi init --worker <runner> --judge byokit:nope/m);
+  assert.equal(existsSync(config), false);
 });
 
 test('doctor run from another directory names the full project file in each fix', () => {
