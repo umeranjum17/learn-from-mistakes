@@ -510,7 +510,7 @@ const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--n
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
-async function main() {
+async function main(ctx) {
   const argv = process.argv.slice(2);
   if (argv.includes('-h') || argv.includes('--help')) { console.log(HELP); return; }
   if (argv.includes('-v') || argv.includes('--version')) { console.log(VERSION); return; }
@@ -527,6 +527,7 @@ async function main() {
   const name = cmd.replace('-', ' '), form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
+  ctx.opts = opts;
   for (let i = 0; i < argv.length;) {
     const flag = argv[i];
     if (!flag.startsWith('-')) throw new UsageError(`unexpected argument ${shown(flag)}`, next);
@@ -566,6 +567,7 @@ async function main() {
   if (cmd === 'init') { await initCommand(opts); return; }
   if (cmd === 'doctor') { await doctorCommand(opts); return; }
   let cfg = loadConfig(opts.dir ?? resolve('.'));
+  ctx.state = cfg.state;
   // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
   if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
@@ -606,11 +608,9 @@ function quietSqlite() {
 }
 // A run store sqlite cannot use is one usage line with the file to move, never a stack trace.
 function storeError(e, cfg, opts) {
-  if (e.code !== 'ERR_SQLITE_ERROR') return e;
+  if (e.code !== 'ERR_SQLITE_ERROR' || (e.errcode & 0xff) === 5) return e; // main() maps a busy store
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
-  // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
-  if ((e.errcode & 0xff) === 5) return new UsageError(`${file} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
 async function runCommand(cmd, cfg, opts) {
@@ -705,7 +705,11 @@ async function initCommand(opts) {
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { await main(); } catch (e) {
+  const ctx = {};
+  try { await main(ctx); } catch (raw) {
+    // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
+    const busy = raw.code === 'ERR_SQLITE_ERROR' && raw.errcode === 5 && ctx.state !== undefined;
+    const e = busy ? new UsageError(`${join(ctx.state, 'lfm.sqlite')} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', ctx.opts)) : raw;
     if (!(e instanceof UsageError)) throw e;
     console.error(`error: ${e.message}`);
     hint(e.next);
