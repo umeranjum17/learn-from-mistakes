@@ -613,7 +613,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.doesNotMatch(dir.stderr, /\n\s+at /);
 });
 
-test('a done-done source: each failed step of a failed or inconclusive verify run is a record; a passed run is not; an unknown schema stops with the fix', () => {
+test('a done-done source: each failed step of a failed, inconclusive or overridden verify run is a record; a passed run is not; an unknown schema or bad steps stop with the fix', () => {
   const { p, lfm, env } = setup();
   env.DONE_DONE_HOME = join(p, 'dd-home'); // done-done's own default when the source sets no path
   const run = (id, run) => {
@@ -625,6 +625,8 @@ test('a done-done source: each failed step of a failed or inconclusive verify ru
   run('r2', { result: 'inconclusive', reason: 'drive: journey timed out after 30m', steps: steps() }); // no failed step: the step its reason names
   run('r3', { result: 'pass', steps: steps() });
   run('r4', { status: 'running', steps: steps('drive') }); // not finished
+  run('r6', { result: 'overridden', reason: 'gate: Umer chose approve: the shot is right', steps: [{ name: 'judge', status: 'failed', exit: 1, findings: [{ level: 'fail', why: 'shot.png: judge says wrong screen' }] }, { name: 'gate', status: 'completed' }] });
+  run('r7', { status: 'failed', reason: 'setup: .done-done.yaml: bad key', steps: steps().map((x) => ({ ...x, status: 'skipped' })) }); // failed before its first step
   mkdirSync(join(env.DONE_DONE_HOME, 'runs', 'notes', 'judge')); // done-done's judge cache: no run.json
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes, nottes] }\n');
   const ingest = lfm('ingest');
@@ -633,15 +635,17 @@ test('a done-done source: each failed step of a failed or inconclusive verify ru
   const file = (id) => join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json');
   assert.deepEqual(records, [
     { id: 'dd:notes/r1/check', source: 'dd', step: 'check', ref: file('r1'), date: '2026-03-03', text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
-    { id: 'dd:notes/r2/drive', source: 'dd', step: 'drive', ref: file('r2'), date: '2026-03-04', text: 'verify inconclusive: drive: journey timed out after 30m' }]);
+    { id: 'dd:notes/r2/drive', source: 'dd', step: 'drive', ref: file('r2'), date: '2026-03-04', text: 'verify inconclusive: drive: journey timed out after 30m' },
+    { id: 'dd:notes/r6/judge', source: 'dd', step: 'judge', ref: file('r6'), date: '2026-03-04', text: 'verify overridden: judge: shot.png: judge says wrong screen' },
+    { id: 'dd:notes/r7/setup', source: 'dd', step: 'setup', ref: file('r7'), date: '2026-03-04', text: 'verify failed: setup: .done-done.yaml: bad key' }]);
   const doctor = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source dd');
-  assert.match(doctor.detail, /^done-done: 2 failed verify steps, 0 in the window; no runs for nottes in /);
+  assert.match(doctor.detail, /^done-done: 4 failed or inconclusive verify steps, 0 in the window; no runs for nottes in /);
   assert.match(doctor.fix, /^ls .*# done-done's app names; set sources\.dd\.apps in /);
   const retro = lfm('retro', '--foreground');
   assert.equal(retro.status, 0, retro.stderr);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   assert.deepEqual(db.prepare('SELECT record_id, ref FROM records ORDER BY record_id').all().map((r) => ({ ...r })),
-    [{ record_id: 'dd:notes/r1/check', ref: file('r1') }, { record_id: 'dd:notes/r2/drive', ref: file('r2') }]);
+    ['r1/check', 'r2/drive', 'r6/judge', 'r7/setup'].map((r) => ({ record_id: `dd:notes/${r}`, ref: file(r.split('/')[0]) })));
   db.close();
 
   run('r5', { schema: 3, result: 'fail', steps: steps('check') }); // a newer done-done: never skipped, never a crash
@@ -651,6 +655,10 @@ test('a done-done source: each failed step of a failed or inconclusive verify ru
   assert.ok(newer.stderr.includes(`error: source dd: ${file('r5')} is done-done run schema 3; this version reads schema 2\n`), newer.stderr);
   assert.match(newer.stderr, /^next: update learn-from-mistakes-axi to read it, or remove sources\.dd from /m);
   assert.doesNotMatch(newer.stderr, /\n\s+at /);
+  run('r5', { result: 'fail', steps: [null] });
+  const broken = lfm('ingest');
+  assert.equal(broken.status, 2, broken.stderr);
+  assert.ok(broken.stderr.includes(`error: source dd: ${file('r5')} is not done-done run state (steps)\nnext: done-done status --run r5   # in the notes repo`), broken.stderr);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [../x] }\n');
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.dd\.apps must be a list of done-done app names$/m);
 });
