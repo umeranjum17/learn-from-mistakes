@@ -33,7 +33,10 @@ export function save(file, picks) {
   if (doc.contents === null) doc.contents = doc.createNode({});
   for (const [key, { agent, model, set }] of Object.entries(picks)) {
     if (set) doc.set(key, agent);
-    if (model) doc.setIn(['agent_config', agent, 'model'], model);
+    if (model) {
+      if (!doc.get('agent_config')) doc.set('agent_config', doc.createNode({}));
+      doc.setIn(['agent_config', agent, 'model'], model);
+    }
   }
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, doc.toString());

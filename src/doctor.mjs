@@ -1,4 +1,4 @@
-// doctor: one check per line, ok, warn or fail, and the fix for each one that is not ok. Its checks only read; --live is
+// doctor: one check per line, ok, warn or fail, and the fix for each one that is not ok. Its checks only read, except that in a terminal it asks for an unset agent or model and saves the answer (ensureAgents); --live is
 // the exception: one agent call per role (it costs tokens) that writes its run dir under the state dir. Login checks read
 // a status and never print it, so no credential text reaches the output; they never refresh a token.
 import { spawnSync } from 'node:child_process';

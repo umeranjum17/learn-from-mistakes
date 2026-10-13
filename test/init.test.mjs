@@ -516,3 +516,49 @@ for (const [authJson, level, detail] of [[true, 'warn', 'pi auth check failed (e
     assert.equal(line.fix, level === 'fail' ? 'pi   # then /login' : undefined);
   });
 }
+
+// A project config whose agent_config is present but null takes the agent and model that init saves, and the saved config loads.
+test('init saves into a project config whose agent_config is null, and the result loads', () => {
+  const { lfm, config } = setup(['claude']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  appendFileSync(config, 'agent_config:\n');
+  const r = lfm('init', '-y', '--no-skill', '--agent', 'claude', '--model', MODELS.claude);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /Expected YAML|TypeError/);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).agent_config, { claude: { model: MODELS.claude } });
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0, 'the saved config loads');
+});
+
+// The judge's model is not set, so there is no identity to clash on: init reports the judge model as unset.
+test('init does not refuse a judge with no model as a clash, and asks for its model', () => {
+  const { lfm } = setup(['claude', 'codex'], 'judge_agent: codex\n');
+  const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^error: ask the user which agent to use: agent_config\.codex\.model is not set in /m);
+  assert.doesNotMatch(r.stderr, /would judge its own work/);
+});
+
+test('init refuses a model that starts with a dash, at --model and --judge-model, and writes nothing', () => {
+  const { lfm, config, env } = setup(['claude', 'opencode']);
+  for (const args of [['--agent', 'claude', '--model', '--yolo'], ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', '-x']]) {
+    const r = lfm('init', ...args);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /^error: --(judge-)?model .* must be a model id such as claude-haiku-5-5/m);
+    assert.match(r.stderr, /^next: /m);
+    assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
+    assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
+  }
+});
+
+// The terminal refuses a typed model that starts with a dash, names the rule and asks the model again.
+test('in a terminal, a typed model that starts with a dash is refused and asked again', () => {
+  const { tmp, p, env, config } = setup(['claude', 'opencode']);
+  const answers = ['1', '--yolo', '1', '3', '1'].join('\n') + '\n';
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /--yolo is not a model id such as claude-haiku-5-5/);
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.equal(yaml.agent_config.claude.model, MODELS.claude);
+  assert.ok(!JSON.stringify(yaml).includes('--yolo'));
+});
