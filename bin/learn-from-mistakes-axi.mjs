@@ -99,7 +99,7 @@ function cleanLedger(file, opts) {
 const REF_RE = /^(?:[0-9a-f]{7,40}|sha256:[0-9a-f]{64})$/;
 const KINDS = ['doc', 'rule', 'code']; // what the change edited; the first is the default
 // The ledger fields that show whether a change worked, with the defaults for a line that has none.
-const measure = (e) => ({ metric: e.metric ?? `cause_count:${e.cause}`, tripwire: e.tripwire ?? '', kind: e.kind ?? KINDS[0] });
+export const measure = (e) => ({ metric: e.metric ?? `cause_count:${e.cause}`, tripwire: e.tripwire ?? '', kind: e.kind ?? KINDS[0] });
 const UNPRINTABLE = /[\p{Cc}\u2028\u2029]/u;
 // A value the user typed, safe to echo: quoted, or a placeholder when long or not printable.
 const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
@@ -366,13 +366,13 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|guide|ingest|count|report|c
   --cause <cause>     (change applied) cause key from the config, never \`other\`
   --ref <ref>         (change applied) version id: git sha (7-40 hex) or sha256:<64 hex>
   --metric <metric>   (change applied) the metric that shows whether it worked (default: cause_count:<cause>)
-  --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as "<= 0" (default: none)
+  --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as "<= 0" (default: none); each retro checks it
   --kind <kind>       (change applied) what the change edited: doc, rule or code (default: doc)
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect or report
+  --step <name>       (logs) the step: collect, metrics, followup or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
   --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)
@@ -445,9 +445,10 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
    and your proposals from proposals.jsonl.
 
 7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
-     --metric <metric> --tripwire "<op> <number>" --kind doc|rule|code   # optional: recorded with the change; a later retro step checks it
+     --metric <metric> --tripwire "<op> <number>" --kind doc|rule|code   # optional: each retro compares the metric before and after the change with the tripwire
      --what "<what changed>" --why "<why>"   # optional, one line each; never record text or label prose
    learn-from-mistakes-axi changes lists them (lfm-changes.v1); the report shows only counts and dates.
+   Each retro gives each change a verdict: keep, fix, rollback, delete or no-data (learn-from-mistakes-axi status).
 
 next: learn-from-mistakes-axi ingest   # after step 1`;
 

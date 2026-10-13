@@ -28,6 +28,9 @@ const MIGRATIONS = [
   'ALTER TABLE metrics ADD COLUMN target TEXT',
   // A record's facts its source's metrics count, as JSON (a PR's merge time, rework and reverts); NULL for other records.
   'ALTER TABLE records ADD COLUMN data TEXT',
+  // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
+  `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,
+    before NUMERIC, after NUMERIC, tripwire TEXT, verdict TEXT NOT NULL, PRIMARY KEY (run_id, change_id))`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
