@@ -39,6 +39,8 @@ function setup(agents, chosen) {
   return { tmp, p, nm, lfm, config, env, keys, global: join(env.LFM_HOME, 'config.yaml') };
 }
 
+// The starter causes init writes, each with the session signal its match rule tags.
+const STARTER = [['test-failed', 'test_fail'], ['command-failed', 'nonzero_exit'], ['tool-misused', 'tool_error'], ['user-corrected', 'correction']];
 const PICK = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode];
 
 test('init writes the global agent config and a working project config once: the agents the user chose, the sources found, a git-ignored .lfm', () => {
@@ -54,7 +56,9 @@ test('init writes the global agent config and a working project config once: the
   assert.deepEqual(parse(readFileSync(config, 'utf8')), { name: 'umer-app', excerpts: 'on',
     sources: { log: { type: 'markdown-log', path: 'docs/defects.md' }, gate: { type: 'no-mistakes', path: join(nm, 'state.sqlite') },
       sessions: { type: 'sessions', agents: ['auto'] } },
-    agent: 'claude', judge_agent: 'opencode', agent_config: { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } } }); // exactly what was chosen
+    agent: 'claude', judge_agent: 'opencode', agent_config: { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }, // exactly what was chosen
+    causes: Object.fromEntries(STARTER.map(([id, signal]) => [id, { description: parse(readFileSync(config, 'utf8')).causes[id].description, match: { source: 'sessions', signal } }])) });
+  assert.deepEqual([out.causes, out.causes_status], [STARTER.map(([id]) => id), 'written']);
   assert.equal(readFileSync(join(p, '.lfm', '.gitignore'), 'utf8'), '*\n');
   assert.equal(execFileSync('git', ['-C', p, 'status', '--short'], { encoding: 'utf8' }), '?? .learn-from-mistakes.yaml\n?? docs/\n');
   const text = lfm('init');
@@ -70,18 +74,28 @@ test('init writes the global agent config and a working project config once: the
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
 
-  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten; its gaps are listed
+  writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten, but for the starter causes it lacks; its gaps are listed
   const gaps = JSON.parse(lfm('init', '-y', '--json').stdout).gaps;
   assert.match(gaps[0], ASK);
   assert.deepEqual(gaps.slice(1), ['sources: markdown-log found at docs/defects.md, not configured (add it as log)',
     'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)',
     'sources: sessions found, not configured (add it as sessions)']);
-  assert.equal(readFileSync(config, 'utf8'), 'sources: {}\n');
+  const kept = parse(readFileSync(config, 'utf8')); // no sessions source configured: the causes have no match rule
+  assert.deepEqual([kept.sources, Object.keys(kept.causes), kept.causes['test-failed'].match], [{}, STARTER.map(([id]) => id), undefined]);
+  const own = readFileSync(config, 'utf8');
+  assert.equal(JSON.parse(lfm('init', '-y', '--json').stdout).causes_status, 'kept'); // a file with causes keeps its own
+  assert.equal(readFileSync(config, 'utf8'), own);
   rmSync(config);
-  const plain = lfm('init', '--no-excerpts'); // a plain init with no agent set writes the files, then asks the user
+  mkdirSync(join(p, 'data'));
+  copyFileSync(join(p, 'docs', 'defects.md'), join(p, 'data', 'defects.md'));
+  rmSync(join(p, 'docs'), { recursive: true });
+  writeFileSync(join(p, 'reviews.md'), '- 2026-10-12 umer: a synthetic review finding\n');
+  const plain = lfm('init', '--no-excerpts'); // a plain init with no agent set prints what it wrote, then asks the user
   assert.equal(plain.status, 2, plain.stderr);
+  assert.match(plain.stdout, /^status: written\n[^]*^causes\[4\]: test-failed,command-failed,tool-misused,user-corrected\ncauses_status: written$/m);
   assert.match(plain.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set/m);
-  assert.equal(parse(readFileSync(config, 'utf8')).excerpts, 'off');
+  const { excerpts, sources: { log, reviews } } = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([excerpts, log.path, reviews.path], ['off', 'data/defects.md', 'reviews.md']);
 });
 
 test('with no agent chosen, init writes none and says to ask the user; a run and doctor stop with the same ask', () => {
@@ -226,7 +240,8 @@ test('init refuses a worker chosen as the set judge\'s agent and model, and writ
   const { p, lfm, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
   const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, /^error: judge: the judge resolves to the worker's agent and model, so it would judge its own work$/m);
+  assert.match(r.stderr, /^error: judge: the worker and the judge are both claude, and agent_config holds one model per agent, so the judge would judge its own work$/m);
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model ${MODELS.claude} --judge-agent <another agent> --judge-model <model> --dir ${p}   # ask the user which other agent runs the judge`);
   assert.equal(existsSync(config), false);
 });
 
@@ -296,9 +311,9 @@ test('an unusable judge is not named as seeing excerpts', () => {
 });
 
 test('init refuses a judge on the worker\'s identity, an unknown or unusable agent and a bad model, and writes nothing', () => {
-  const { lfm, config, env } = setup(['claude', 'opencode', 'gemini']);
-  for (const [args, code, error] of [
-    [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, 'error: judge: the judge resolves to the worker\'s agent and model, so it would judge its own work'],
+  const { p, lfm, config, env } = setup(['claude', 'opencode', 'gemini']);
+  for (const [args, code, error] of [ // one agent in both roles, even with two models: agent_config holds one model per agent
+    [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, 'error: judge: the worker and the judge are both claude, and agent_config holds one model per agent, so the judge would judge its own work'],
     [['--agent', 'umer'], 2, 'error: --agent "umer" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'],
     [['--model', MODELS.claude], 2, 'error: --model needs --agent'],
     [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'],
@@ -311,14 +326,15 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
+    if (args[5] === 'claude') assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model ${MODELS.claude} --judge-agent <another agent> --judge-model claude-umer-2 --dir ${p}   # ask the user which other agent runs the judge`);
   }
-  writeFileSync(config, `agent: claude\njudge_agent: opencode\nsources: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`); // a set key is never rewritten: the flags that would change it are reported
+  writeFileSync(config, `agent: claude\njudge_agent: opencode\nsources: {}\ncauses: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`); // a set key is never rewritten: the flags that would change it are reported
   const pinned = lfm('init', '--agent', 'opencode', '--judge-agent', 'claude', '--json');
   assert.equal(pinned.status, 0, pinned.stderr);
   const { status, ignored } = JSON.parse(pinned.stdout);
   assert.deepEqual([status, ignored], ['already set up', ['--agent', '--judge-agent']]);
   assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m);
-  assert.equal(readFileSync(config, 'utf8'), `agent: claude\njudge_agent: opencode\nsources: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`);
+  assert.equal(readFileSync(config, 'utf8'), `agent: claude\njudge_agent: opencode\nsources: {}\ncauses: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`);
   const missing = spawnSync(process.execPath, [CLI, 'init', '--dir', join(config, 'nope')], { encoding: 'utf8', env: { PATH: '' } });
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /^error: .*nope: not a directory\nnext: /);
@@ -359,6 +375,10 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.deepEqual(['config', 'state', 'source log', 'source gate', 'worker', 'worker login', 'judge login'].map((l) => level(ok.out, l)), Array(7).fill('ok'));
   assert.equal(ok.out.checks.find((c) => c.label === 'judge login').detail, 'opencode auth list: logged in');
   assert.deepEqual(['skill claude', 'sign-off'].map((l) => level(ok.out, l)), ['warn', 'warn']);
+  assert.deepEqual(ok.out.checks.find((c) => c.label === 'sign-off'), { level: 'warn', label: 'sign-off', detail: 'sign-off-axi is not on PATH: questions go in report.txt (plain-text fallback)',
+    fix: `npm i -g sign-off-axi   # or set signoff: off in ${config} to keep questions in report.txt` });
+  fake('sign-off-axi', ''); // sign-off installs sign-off-axi
+  assert.equal(doctor().out.checks.find((c) => c.label === 'sign-off').detail, join(env.PATH, 'sign-off-axi'));
   assert.match(lfm('doctor').stderr, /^next: learn-from-mistakes-axi retro --wait 8m/m);
 
   const yaml = readFileSync(config, 'utf8');

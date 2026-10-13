@@ -87,7 +87,7 @@ export function metrics(events, window) {
 }
 
 // init: a sessions source when any agent store exists here.
-export const detect = () => (Object.values(READERS).some((r) => existsSync(r.root())) ? { type: 'sessions', agents: ['auto'] } : undefined);
+export const detect = () => (Object.values(READERS).some((r) => existsSync(r.root())) ? { sessions: { type: 'sessions', agents: ['auto'] } } : undefined);
 
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {

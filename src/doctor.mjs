@@ -95,9 +95,10 @@ export async function doctor(dir, opts) {
     const at = [home, join(dir, '.claude', 'skills', 'learn-from-mistakes'), join(dir, '.agents', 'skills', 'learn-from-mistakes')].find((d) => existsSync(join(d, 'SKILL.md')));
     add(at ? 'ok' : 'warn', `skill ${a.runner}`, at ? join(at, 'SKILL.md') : `not installed in ${home}`, `mkdir -p ${shq(home)} && cp ${shq(SKILL)} ${shq(`${home}/`)}`);
   }
-  const signoff = cfg.signoff !== 'off' && which('sign-off');
+  const signoff = cfg.signoff !== 'off' && which('sign-off-axi');
   add(cfg.signoff === 'off' || signoff ? 'ok' : 'warn', 'sign-off', cfg.signoff === 'off' ? 'off: questions go in report.txt'
-    : signoff || 'sign-off is not on PATH: questions go in report.txt (plain-text fallback)');
+    : signoff || 'sign-off-axi is not on PATH: questions go in report.txt (plain-text fallback)',
+  `npm i -g sign-off-axi   # or set signoff: off in ${file} to keep questions in report.txt`);
 
   // --live: one call per role that asks the agent to write a file; it must answer and write nothing.
   if (opts.live) for (const name of ['worker', 'judge']) {

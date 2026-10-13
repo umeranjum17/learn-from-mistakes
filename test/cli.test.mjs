@@ -981,6 +981,15 @@ allow_premium: false
   assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file');
   assert.ok(!noStore.stdout.includes(p) && !noStore.stderr.includes(p), 'a source path must not reach machine output');
 
+  const hold = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); // another process holds the write lock past busy_timeout
+  hold.exec('BEGIN IMMEDIATE');
+  const busy = lfm('status');
+  hold.exec('ROLLBACK');
+  hold.close();
+  assert.equal(busy.status, 2, busy.stderr);
+  assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
+  assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file'); // the store keeps its runs
+
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
   const corrupt = lfm('status');
   assert.equal(corrupt.status, 2, corrupt.stderr);

@@ -46,7 +46,8 @@ Checks, in order:
   `${CODEX_HOME:-~/.codex}/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`,
   `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills`, `${GEMINI_CLI_HOME:-~}/.gemini/skills`) or the project's `.claude/skills` or
   `.agents/skills` (warn; fix: copy the packaged `SKILL.md` there).
-- `sign-off`: ok when `sign-off` is on PATH or `signoff: off`; otherwise a warn (plain-text fallback).
+- `sign-off`: ok when `sign-off-axi` (the binary sign-off installs) is on PATH or `signoff: off`; otherwise a warn (plain-text fallback) with
+  `fix: npm i -g sign-off-axi   # or set signoff: off in <file> to keep questions in report.txt`. The helper's `doctor` asserts it.
 - `--live`: `worker live`/`judge live`, one `agents --test` call per resolved role with
   its own model (costs tokens): it must answer and write no file. A role that already has a
   problem or a failed model check is not called (its own fail stands: one fail, no `skip live` warn).
