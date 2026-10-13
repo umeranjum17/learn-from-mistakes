@@ -616,11 +616,13 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
 test('a done-done source: each failed step of a failed, inconclusive or overridden verify run is a record; a passed run is not; an unknown schema or bad steps stop with the fix', () => {
   const { p, lfm, env } = setup();
   env.DONE_DONE_HOME = join(p, 'dd-home'); // done-done's own default when the source sets no path
+  const ago = (days) => new Date(Date.now() - days * 86_400_000).toISOString(); // inside the 7d window, unlike a fixed date
+  const UPDATED = ago(2), ENDED = ago(3);
   const run = (id, run) => {
     mkdirSync(join(env.DONE_DONE_HOME, 'runs', 'notes', id), { recursive: true });
-    writeFileSync(join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json'), JSON.stringify({ schema: 2, run_id: id, kind: 'verify', app: 'notes', status: 'completed', updated: '2026-03-04T10:00:00Z', ...run }));
+    writeFileSync(join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json'), JSON.stringify({ schema: 2, run_id: id, kind: 'verify', app: 'notes', status: 'completed', updated: UPDATED, ...run }));
   };
-  const steps = (failed) => ['resolve', 'drive', 'check', 'report'].map((name) => ({ name, status: name === failed ? 'failed' : 'completed', ...(name === failed && { exit: 1, ended: '2026-03-03T09:00:00Z' }) }));
+  const steps = (failed) => ['resolve', 'drive', 'check', 'report'].map((name) => ({ name, status: name === failed ? 'failed' : 'completed', ...(name === failed && { exit: 1, ended: ENDED }) }));
   run('r1', { result: 'fail', reason: 'check: shot.png: judge says wrong screen; token=ghp_aaaaaaaaaaaaaaaaaaaaaaaa', steps: steps('check') });
   run('r2', { result: 'inconclusive', reason: 'drive: journey timed out after 30m', steps: steps() }); // no failed step: the step its reason names
   run('r3', { result: 'pass', steps: steps() });
@@ -628,18 +630,19 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   run('r6', { result: 'overridden', reason: 'gate: Umer chose approve: the shot is right', steps: [{ name: 'judge', status: 'failed', exit: 1, findings: [{ level: 'fail', why: 'shot.png: judge says wrong screen' }] }, { name: 'gate', status: 'completed' }] });
   run('r7', { status: 'failed', reason: 'setup: .done-done.yaml: bad key', steps: steps().map((x) => ({ ...x, status: 'skipped' })) }); // failed before its first step
   mkdirSync(join(env.DONE_DONE_HOME, 'runs', 'notes', 'judge')); // done-done's judge cache: no run.json
+  run('old', { schema: 3, updated: ago(60), result: 'fail', steps: steps('check') }); // a newer schema, before the window: skipped unread
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes, nottes] }\n');
   const ingest = lfm('ingest');
   assert.equal(ingest.status, 0, ingest.stderr);
   const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const file = (id) => join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json');
   assert.deepEqual(records, [
-    { id: 'dd:notes/r1/check', source: 'dd', step: 'check', ref: file('r1'), date: '2026-03-03', text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
-    { id: 'dd:notes/r2/drive', source: 'dd', step: 'drive', ref: file('r2'), date: '2026-03-04', text: 'verify inconclusive: drive: journey timed out after 30m' },
-    { id: 'dd:notes/r6/judge', source: 'dd', step: 'judge', ref: file('r6'), date: '2026-03-04', text: 'verify overridden: judge: shot.png: judge says wrong screen' },
-    { id: 'dd:notes/r7/setup', source: 'dd', step: 'setup', ref: file('r7'), date: '2026-03-04', text: 'verify failed: setup: .done-done.yaml: bad key' }]);
+    { id: 'dd:notes/r1/check', source: 'dd', step: 'check', ref: file('r1'), date: ENDED.slice(0, 10), text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
+    { id: 'dd:notes/r2/drive', source: 'dd', step: 'drive', ref: file('r2'), date: UPDATED.slice(0, 10), text: 'verify inconclusive: drive: journey timed out after 30m' },
+    { id: 'dd:notes/r6/judge', source: 'dd', step: 'judge', ref: file('r6'), date: UPDATED.slice(0, 10), text: 'verify overridden: judge: shot.png: judge says wrong screen' },
+    { id: 'dd:notes/r7/setup', source: 'dd', step: 'setup', ref: file('r7'), date: UPDATED.slice(0, 10), text: 'verify failed: setup: .done-done.yaml: bad key' }]);
   const doctor = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source dd');
-  assert.match(doctor.detail, /^done-done: 4 failed or inconclusive verify steps, 0 in the window; no runs for nottes in /);
+  assert.match(doctor.detail, /^done-done: 4 failed or inconclusive verify steps, 4 in the window; no runs for nottes in /);
   assert.match(doctor.fix, /^ls .*# done-done's app names; set sources\.dd\.apps in /);
   const retro = lfm('retro', '--foreground');
   assert.equal(retro.status, 0, retro.stderr);

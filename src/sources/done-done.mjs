@@ -3,10 +3,10 @@
 // documents it). Each failed step of a verify run that failed, was inconclusive or was overridden at its gate (done-done
 // counts that a fail) is one record: its day, the step, a short reason (redacted) and the run file as its ref; a run with
 // no failed step is one record for the step its reason names (setup: an error before the first step). Passed, cancelled
-// and unfinished runs are not records. A run file in a schema this version does not read stops the read with the fix;
-// it is never skipped.
+// and unfinished runs are not records. A run whose updated (else created) time, else its file's mtime, is before the
+// read's start is skipped unread; any other run file in a schema this version does not read stops the read with the fix.
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
@@ -26,7 +26,7 @@ export function validate(s, where, dir) {
 }
 
 // Returns the records, and the apps with no runs folder (doctor warns: a typo in an app name reads nothing).
-export function read(source, { apps, path }, { project }) {
+export function read(source, { apps, path }, { readFrom = 0, project }) {
   const records = [], missing = [];
   for (const app of apps) {
     const root = join(path, 'runs', app);
@@ -39,12 +39,16 @@ export function read(source, { apps, path }, { project }) {
       const file = join(root, id, 'run.json');
       const bad = (why) => new UsageError(`source ${source}: ${file} is not done-done run state (${why})`,
         `done-done status --run ${id}   # in the ${app} repo: done-done's own read of that run; or remove sources.${source} from ${shq(project)}`);
-      let run;
-      try { run = JSON.parse(readFileSync(file, 'utf8')); } catch (e) {
+      let text;
+      try { text = readFileSync(file, 'utf8'); } catch (e) {
         if (['ENOENT', 'ENOTDIR'].includes(e.code)) continue; // not a run folder, such as the judge cache
-        if (e.code) throw new UsageError(`source ${source}: cannot read ${file} (${e.code})`, `chmod -R u+r ${shq(root)}   # the tool only reads it`);
-        throw bad('not JSON');
+        throw new UsageError(`source ${source}: cannot read ${file} (${e.code})`, `chmod -R u+r ${shq(root)}   # the tool only reads it`);
       }
+      let run;
+      try { run = JSON.parse(text); } catch { run = undefined; }
+      const at = [run?.updated, run?.created].map((t) => (typeof t === 'string' ? Date.parse(t) : NaN)).find((t) => !Number.isNaN(t)) ?? statSync(file).mtimeMs;
+      if (at < readFrom) continue;
+      if (run === undefined) throw bad('not JSON');
       if (run?.schema !== SCHEMA) {
         throw new UsageError(`source ${source}: ${file} is done-done run schema ${String(JSON.stringify(run?.schema)).slice(0, 20)}; this version reads schema ${SCHEMA}`,
           `update learn-from-mistakes-axi to read it, or remove sources.${source} from ${shq(project)}`);
@@ -56,8 +60,11 @@ export function read(source, { apps, path }, { project }) {
       for (const s of failed.length ? failed : [run.steps.find((x) => x.name === named) ?? { name: named }]) {
         // The run's reason when it names this step, else the step's own first finding, else its exit.
         const found = Array.isArray(s.findings) ? s.findings[0]?.why ?? s.findings[0]?.what : undefined;
-        const why = reason.startsWith(`${s.name}:`) ? reason : typeof found === 'string' ? `${s.name}: ${found}`
-          : failed.length ? `${s.name}: failed${s.exit === undefined ? '' : ` (exit ${s.exit})`}` : reason || `${s.name}: no reason saved`;
+        let why;
+        if (reason.startsWith(`${s.name}:`)) why = reason;
+        else if (typeof found === 'string') why = `${s.name}: ${found}`;
+        else if (failed.length) why = `${s.name}: failed${s.exit === undefined ? '' : ` (exit ${s.exit})`}`;
+        else why = reason || `${s.name}: no reason saved`;
         records.push({ id: `${source}:${app}/${id}/${s.name}`, source, step: s.name, ref: file,
           date: String(s.ended ?? run.updated ?? '').slice(0, 10), text: excerpt(`verify ${run.result ?? 'failed'}: ${why}`) });
       }
@@ -68,7 +75,7 @@ export function read(source, { apps, path }, { project }) {
 
 // doctor: readable, the failed steps in the window, and the apps with no runs (a warn with the fix).
 export function doctor(source, entry, { readFrom, project }) {
-  const { records, missing } = read(source, entry, { project });
+  const { records, missing } = read(source, entry, { readFrom, project });
   const detail = `${records.length} failed or inconclusive verify steps, ${records.filter((r) => Date.parse(r.date) >= readFrom).length} in the window`;
   if (!missing.length) return { level: 'ok', detail };
   return { level: 'warn', detail: `${detail}; no runs for ${missing.join(', ')} in ${join(entry.path, 'runs')}`,
