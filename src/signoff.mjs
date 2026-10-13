@@ -1,12 +1,14 @@
 // Explicit, optional contract-v1 handoff. Freeze the first message so retrying a run keeps the same key and bytes.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { clusters } from './bundle.mjs';
 import { counts } from './check.mjs';
+import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 import { locked, openStore } from './store.mjs';
 
-const HELP = 'npx -y sign-off-axi --help   # read the refusal help; never edit the board file';
+const HELP = 'sign-off-axi --help   # read the refusal help; never edit the board file';
 const AGAIN = 'learn-from-mistakes-axi retro --wait 15m   # rerun retro to produce valid findings';
 const keyId = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(s);
 function peer(bin, args, cfg, input) {
@@ -35,16 +37,18 @@ function messages(cfg, db, opts) {
     if (!['doc', 'rule', 'code'].includes(f.kind) || !/^[a-z0-9-]{1,64}$/.test(f.cause)) throw new UsageError(`proposal ${run.id}:${f.n}: missing or invalid kind or cause`, AGAIN);
     const saved = db.prepare('SELECT message FROM signoff WHERE proposal_id = ?').get(f.id);
     if (saved) return { id: f.id, message: JSON.parse(saved.message) };
-    if (!f.change.trim() || [...f.change].length > 500 || /[\p{Cc}\p{Cf}]/u.test(f.change.replaceAll('\n', ''))) throw new UsageError(`proposal ${run.id}:${f.n}: change must be 1-500 characters with no control characters except newline`, AGAIN);
+    const proposal = redact(f.change);
+    if (!proposal.trim() || [...proposal].length > 500 || /[\p{Cc}\p{Cf}]/u.test(proposal.replaceAll('\n', ''))) throw new UsageError(`proposal ${run.id}:${f.n}: change must be 1-500 characters with no control characters except newline`, AGAIN);
     const refs = JSON.parse(f.refs_json).flatMap((ref) => /^c\d+$/.test(ref) ? (groups[Number(ref.slice(1)) - 1]?.[1] ?? []).map((e) => `e${e.id}`) : [ref]);
     const ids = refs.map((ref) => recordIds.get(ref) ?? (eventIds.has(ref) ? ref : undefined));
     if (ids.some((ref) => !ref)) throw new UsageError(`proposal ${run.id}:${f.n}: evidence does not name records`, AGAIN);
     const c = causes.get(f.cause);
-    const message = { contract: 1, kind: 'finding', schema: 1, key: `lfm-${run.id}-${f.n}`,
+    const body = { contract: 1, kind: 'finding', schema: 1,
       title: `Repeated cause: ${f.cause}`, filer: 'learn-from-mistakes', about: `${c.count} incidents over ${c.days} days.`,
       cause: f.cause, incidents: c.count, days: c.days, evidence_ids: [...new Set(ids)].slice(0, 50), change_kind: f.kind,
-      proposal: f.change, options: [{ value: 'apply', label: 'Apply' }, { value: 'skip', label: 'Skip' }], recommend_value: 'apply' };
-    return { id: f.id, message };
+      proposal, options: [{ value: 'apply', label: 'Apply' }, { value: 'skip', label: 'Skip' }], recommend_value: 'apply' };
+    const key = `lfm-${run.id}-${f.n}-${createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 8)}`;
+    return { id: f.id, message: { ...body, key } };
   });
 }
 
@@ -54,14 +58,13 @@ export async function signoff(action, cfg, opts) {
   try {
     const bin = which('sign-off-axi');
     if (action === 'post') {
-      const rows = locked(db, () => {
-        const rows = messages(cfg, db, opts); // validate every fix before sending any
-        if (bin) for (const r of rows) db.prepare('INSERT OR IGNORE INTO signoff (proposal_id, message) VALUES (?, ?)').run(r.id, JSON.stringify(r.message));
-        return rows;
-      });
-      for (const { message: m } of rows) {
-        if (bin) { peer(bin, ['post', '--kind', 'finding', '--from', '-'], cfg, JSON.stringify(m)); console.log(`posted: ${m.key}`); }
-        else console.log(`${m.title}\n${m.about}\n${m.change_kind}: ${m.proposal}\nApply or Skip\n`);
+      const rows = messages(cfg, db, opts); // validate every fix before sending any
+      for (const { id, message: m } of rows) {
+        if (bin) {
+          peer(bin, ['post', '--kind', 'finding', '--from', '-'], cfg, JSON.stringify(m));
+          db.prepare('INSERT OR IGNORE INTO signoff (proposal_id, message) VALUES (?, ?)').run(id, JSON.stringify(m)); // freeze only what the board accepted
+          console.log(`posted: ${m.key}`);
+        } else console.log(`${m.title}\n${m.about}\n${m.change_kind}: ${m.proposal}\nApply or Skip\n`);
       }
       if (!rows.length) console.log('No kept fixes.');
     } else if (bin) {
@@ -72,11 +75,12 @@ export async function signoff(action, cfg, opts) {
       const updates = db.prepare('SELECT proposal_id, message FROM signoff').all().flatMap((r) => {
         const key = JSON.parse(r.message).key, a = answers[key];
         if (!a) return [];
-        if (!['apply', 'skip'].includes(a.answer)) throw new UsageError(`sign-off-axi answers: ${key} must be apply or skip`, HELP);
+        if (a.answer === '') return [{ id: r.proposal_id, key, answer: null }];
+        if (!['apply', 'skip'].includes(a.answer)) { console.error(`sign-off-axi answers: ${key} answer is not apply or skip; skipped`); return []; }
         return [{ id: r.proposal_id, key, answer: a.answer }];
       });
       locked(db, () => { for (const r of updates) db.prepare('UPDATE signoff SET answer = ? WHERE proposal_id = ?').run(r.answer, r.id); });
-      for (const r of updates) console.log(`saved: ${r.key} ${r.answer}`);
+      for (const r of updates) console.log(`saved: ${r.key} ${r.answer ?? 'cleared'}`);
       if (!updates.length) console.log('No answers for posted findings.');
     } else console.log('No answers read: sign-off-axi is not installed.');
     if (!bin) console.log('npm i -g sign-off-axi');
