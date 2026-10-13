@@ -38,7 +38,7 @@ The CLI makes no network or model calls itself; only its runs, `npx -y learn-fro
 
 Only when the user asks, run `npx -y learn-from-mistakes-axi signoff post [--run <id>]` (latest completed run by default).
 Without the optional peer it prints findings and `npm i -g sign-off-axi`; retro never posts automatically.
-`npx -y learn-from-mistakes-axi signoff answers` runs `sign-off-axi wait --filer learn-from-mistakes --timeout 1 --json`: it takes each answer to this run's posted findings once and stores Apply/Skip against proposals (a later answer replaces the stored one), never applies a change; with no new answers it says so and exits 0, and any other value is skipped with a warning naming the key.
+`npx -y learn-from-mistakes-axi signoff answers` runs `sign-off-axi wait --filer learn-from-mistakes --timeout 1 --json`: it takes each answer to posted findings once and stores Apply/Skip against proposals (a later answer replaces the stored one), never applies a change; with no new answers it says so and exits 0, and any other value is skipped with a warning naming the key.
 The adapter sends each kept fix to `sign-off-axi post --kind finding --from -` (the binary on PATH; `npm i -g sign-off-axi` installs it), one contract-v1 message per kept fix:
 
 ```json
