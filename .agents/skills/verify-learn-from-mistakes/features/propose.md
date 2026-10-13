@@ -7,8 +7,8 @@
 incidents and days and whether it repeated, the findings `analyse` kept, and
 each applied change whose follow-up verdict is not `keep`; then the bundle.
 The method: at most 5 fixes, only for a repeated cause, strongest first, "prefer
-a check, a script or a deleted rule over more prose", one cause, target, owner
-and change each, a metric and a tripwire, refs to bundle ids; a reason for each
+a check, a script or a deleted rule over more prose", one cause, kind (doc, rule or
+code), target, owner and change each, a metric and a tripwire, refs to bundle ids; a reason for each
 listed follow-up, and never a verdict. The answer is `proposals` (cause, target,
 owner, change of at most 3 sentences, metric, tripwire, refs) and `reasons`
 (change id, reason of at most 25 words, one for each listed follow-up). A shape
