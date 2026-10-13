@@ -58,7 +58,7 @@ export async function doctor(dir, opts) {
     if (!r.bin) {
       // Offered only where the role would not resolve to the other role's binary and model: that is the clash it names.
       const other = roles[name === 'worker' ? 'judge' : 'worker'];
-      const offered = list.filter((x) => x.usable && !x.problem && !same({ bin: x.bin, model: roleModel(cfg, name, x.runner) }, other)).map((x) => x.runner);
+      const offered = list.filter((x) => x.usable && !x.problem && !same({ bin: x.bin, model: roleModel({ ...cfg, [name]: { ...cfg[name], runner: x.runner } }, name, x.runner) }, other)).map((x) => x.runner);
       add('fail', name, r.problem, r.fix ?? (offered.length
         ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
         : `install a second agent CLI (${INSTALL}), or set runner_path in $LFM_HOME/config.yaml`));
@@ -92,7 +92,7 @@ export async function doctor(dir, opts) {
     else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${file}`);
     else if (PREMIUM.test(model) && !cfg.allow_premium) {
       add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
-        `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
+        fromEnv ? 'unset LFM_MODEL, or set allow_premium: true' : `set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true`);
     } else add('ok', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The identity rule: the judge never checks its own work.

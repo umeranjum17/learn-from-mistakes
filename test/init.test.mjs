@@ -283,6 +283,44 @@ test('doctor warns on a sessions source whose agent has no store, and names that
   assert.equal(line.fix, 'export CODEX_HOME=<dir>   # if a store is somewhere else');
 });
 
+test('doctor names an absent store of an auto agent as information, and warns on one a config lists', () => {
+  const { lfm, config, env } = setup(['claude', 'opencode']);
+  mkdirSync(join(env.HOME, '.local', 'share', 'opencode'), { recursive: true });
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  const sessions = () => JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source sessions');
+  const auto = sessions();
+  assert.equal(auto.level, 'ok');
+  assert.match(auto.detail, new RegExp(`; codex store not found at ${join(env.HOME, '.codex', 'state_5.sqlite').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(CODEX_HOME\\)$`));
+  assert.equal(auto.fix, undefined);
+  const yaml = readFileSync(config, 'utf8');
+  writeFileSync(config, yaml.replace(/(sessions:[\s\S]*?agents:)\s*(\[[^\]]*\]|(\n\s+- .*)+)/, '$1 [claude, codex]'));
+  const listed = sessions();
+  assert.equal(listed.level, 'warn');
+  assert.match(listed.detail, /; codex store not found at .*state_5\.sqlite \(CODEX_HOME\)$/);
+  assert.equal(listed.fix, 'export CODEX_HOME=<dir>   # if a store is somewhere else');
+});
+
+test('doctor offers no runner whose model, as the pinned role would use it, clashes with the other role', () => {
+  const { lfm, config } = setup(['claude', 'gemini']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "umer-x" }').replace(/^judge: .*$/m, 'judge: { runner: claude, model: "umer-x" }'));
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+});
+
+test('doctor says to unset LFM_MODEL when the premium model comes from it', () => {
+  const { lfm, config } = setup(['claude', 'codex'], { LFM_MODEL: 'claude-opus-5-5' });
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: claude, model: "" }'));
+  const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model');
+  assert.equal(line.level, 'fail');
+  assert.equal(line.detail, 'claude-opus-5-5 (LFM_MODEL) is a premium model');
+  assert.equal(line.fix, 'unset LFM_MODEL, or set allow_premium: true');
+});
+
 // A worker on a BYOKit route is checked by BYOKit's own sign-in, not as an agent CLI: a route with no sign-in is a fail
 // with the sign-in fix, and doctor runs to the end instead of failing on the missing agent CLI row.
 test('doctor checks a BYOKit worker route by its sign-in and names the sign-in fix', () => {
