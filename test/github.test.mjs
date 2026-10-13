@@ -166,7 +166,7 @@ test('a missing or logged-out gh and a non-GitHub origin fail the source with th
   const out = lfm({ FAKE_GH: 'logged-out' }, 'ingest');
   assert.equal(out.status, 2, out.stderr);
   assert.match(out.stderr, /^error: source prs: gh is not logged in to github\.com$/m);
-  assert.match(out.stderr, /^next: remove sources\.prs from \.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/m);
+  assert.match(out.stderr, /^next: remove sources\.prs from .*\/umer-app\/\.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/m);
 
   rmSync(join(bin, 'gh'));
   const missing = lfm({}, 'ingest');

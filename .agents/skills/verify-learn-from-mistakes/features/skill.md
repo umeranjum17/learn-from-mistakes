@@ -27,7 +27,7 @@ or type `/learn-from-mistakes what keeps going wrong here?`.
 3. Agent session: a fresh git project holding only a synthetic 30-60 line
    `defects.md`; install the skill there with `npx -y skills add
    umeranjum17/learn-from-mistakes#<branch> --skill learn-from-mistakes -a
-   <claude-code|codex|opencode> -y`; start the agent session on the cheap default model of the agent CLI that runs it (`agents` lists each one), never Opus, Sonnet or Sol as the default (LFM_MODEL names your own model instead; with worker auto it must be a listed default); start the agent with
+   <claude-code|codex|opencode> -y`; start the agent session on the cheap default model of the agent CLI that runs it (`agents` lists each one), never Opus, Sonnet or Sol as the default (`agent_config.<agent>.model` in the global file names your own model instead; with `agent: auto` it must be a listed default); start the agent with
    `npm_config_registry=http://127.0.0.1:4873/`, a scratch `npm_config_cache`
    and `LFM_HOME`, under `script -q --log-timing` in a tmux pane. Send the
    plain ask; in a second fresh project send `/learn-from-mistakes ...`.

@@ -231,17 +231,21 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('attach', '--wait', '1m'), 2, 'attach does not take --wait', /^next: learn-from-mistakes-axi attach \[--run <id>\]/m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
-    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
-    [() => raw('agents', '--test', 'acp:../..'), 2, '--test "acp:../.." must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m], // a target never leaves runs/
-    [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
-    [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'acp:../..'), 2, '--test "acp:../.." must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m], // a target never leaves runs/
+    [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
-    [() => withConfig('worker: { runner: 3 }\n'), 2, bad('worker.runner must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
-    [() => withConfig('judge: { runner: claude, model: 5 }\n'), 2, bad('judge.model must be a string'), HELP],
+    [() => withConfig('agent: [codex, 3]\n'), 2, bad('agent must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>, or a list of them'), HELP],
+    [() => withConfig('worker: { runner: claude }\n'), 2, bad('unknown key worker'), HELP], // the old role keys are gone, with no alias
+    [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a non-empty string'), HELP],
+    [() => withConfig('agent_config: { gemini: { effort: low } }\n'), 2, bad('agent_config.gemini.effort: gemini has no effort setting; remove it'), HELP],
+    [() => withConfig('agent_config: { opencode: { model: muse } }\n'), 2, bad('agent_config.opencode.model must be provider/model, such as opencode-go/muse-spark-1.3-contributor'), HELP],
+    [() => withConfig('agent_path_override: { claude: ./claude }\n'), 2, /^error: .*\.learn-from-mistakes\.yaml: agent_path_override is global-only: set it in .*config\.yaml$/m, HELP], // a cloned repo never picks the binary
     [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
     [() => withConfig('targets: { first_pass: 70 }\n'), 2, bad('targets.first_pass must be a quoted "<op> <number>", such as ">= 70"'), HELP],
     [() => withConfig('targets: { speed: ">= 1" }\n'), 2, /^error: .*: targets: speed must be a metric \(merged, first_pass, .*, or cause_count:<cause>\)$/m, HELP],
-    [() => withConfig('caps: { timeout: 20 }\n'), 2, bad('caps.timeout must be a duration such as 90s, 20m or 1h'), HELP],
+    [() => withConfig('agent_timeout: 20\n'), 2, bad('agent_timeout must be a duration such as 90s, 20m or 1h'), HELP],
     [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
     [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
@@ -855,26 +859,28 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.deepEqual(decode(lfm('runs').stdout), { runs: [run.run] });
   assert.doesNotMatch(git('status', '--porcelain', '--untracked-files=all'), /\.lfm/);
 
-  // A v2 config with every key, and a global config with the runner keys, loads and runs the same steps.
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}worker: { runner: auto, model: "" }
-judge: { runner: "acp:gemini", model: cheap-model }
+  // A project config with every key, and a global config with the agent keys, loads and runs the same steps.
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}agent: auto
+judge_agent: [acp:gemini, auto]
+agent_config: { "acp:gemini": { model: cheap-model }, claude: { effort: low } }
+agent_timeout: 20m
 window: 30d
 targets: { first_pass: ">= 70", p90_hours_to_merge: "<= 8", escaped: "<= 0", "cause_count:server-memory-kill": "<= 1" }
 followup: { min_sessions: 3, min_days: 2 }
 excerpts: off
-caps: { invocations: 12, bundle_chars: 60000, timeout: 20m }
+caps: { invocations: 12, bundle_chars: 60000 }
 signoff: auto
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_path: { claude: ~/bin/claude }\nrunner_args: { codex: [--profile, cheap] }\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: [claude, codex]\njudge_agent: auto\nagent_config: { codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_args: { codex: --profile }\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent_args_override: { codex: --profile }\n');
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
-  assert.match(badGlobal.stderr, /^error: .*config\.yaml: runner_args\.codex must be a list of strings$/m);
+  assert.match(badGlobal.stderr, /^error: .*config\.yaml: agent_args_override\.codex must be a list of strings$/m);
   rmSync(join(p, '..', 'home', 'config.yaml'));
 
   writeFileSync(join(p, 'defects.md'), ''); // a failed step fails the run with exit 1 and saves the error

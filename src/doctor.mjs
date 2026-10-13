@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, detect, INSTALL, lists, MODELS, PREMIUM, premiumBlocked, resolveRoles, roleModel, RUNNERS, same, which } from './runners/index.mjs';
+import { agentModel, agents, binName, detect, fileOf, INSTALL, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -51,27 +51,19 @@ export async function doctor(dir, opts) {
 
   const list = detect(cfg);
   const roles = await resolveRoles(cfg, list);
+  const failedModel = new Set(); // a role whose model check failed gets no --live call
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
-    const fromEnv = name === 'worker' && !!r.model && r.model === (process.env.LFM_MODEL ?? '').trim();
+    const at = fileOf(cfg, KEY[name]);
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) {
-      // Offered only where the role would not resolve to the other role's binary and model, and where its runner lists the
-      // role's model: that is the clash it names.
+      // Offered only where the role would not resolve to the other role's binary and model: that is the clash it names.
       const other = roles[name === 'worker' ? 'judge' : 'worker'];
-      const offered = list.filter((x) => {
-        if (!x.usable || x.problem || (r.model && !lists(x.runner, r.model))) return false;
-        const model = roleModel({ ...cfg, [name]: { ...cfg[name], runner: x.runner } }, name, x.runner);
-        return !premiumBlocked(cfg, model) && !same({ bin: x.bin, model }, other);
-      }).map((x) => x.runner);
-      // An auto role takes only the models a usable CLI lists, so a model none lists is replaced by one that CLI lists.
-      const cheap = list.find((x) => x.usable && !x.problem && MODELS[x.runner]?.length);
-      add('fail', name, r.problem, (offered.length
-        ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
-        : a && !a.usable ? `install ${binName(cfg, key)}, or set runner_path in ${shq(globalFile())}`
-        : a?.problem ? `set ${name}.runner in ${file} to another agent CLI`
-        : cfg[name].runner === 'auto' && r.model && cheap ? `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${file} to ${MODELS[cheap.runner][0]}`
-        : `install ${list.some((x) => x.usable) ? 'another' : 'an'} agent CLI (${INSTALL}), or set runner_path in ${shq(globalFile())}`));
+      const offered = list.filter((x) => x.usable && !x.problem && !premiumBlocked(cfg, agentModel(cfg, x.runner)) && !same({ bin: x.bin, model: agentModel(cfg, x.runner) }, other)).map((x) => x.runner);
+      add('fail', name, r.problem, offered.length ? `set ${KEY[name]} in ${at} to ${offered.join(' or ')}`
+        : a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
+        : a?.problem ? `set ${KEY[name]} in ${at} to another agent`
+        : `install ${list.some((x) => x.usable) ? 'another' : 'an'} agent CLI (${INSTALL}), or set agent_path_override in ${shq(cfg.globalPath)}`);
       continue;
     }
     const route = byokit.routeOf(r.runner);
@@ -96,13 +88,13 @@ export async function doctor(dir, opts) {
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
     const { model } = r;
-    const cheap = route ? await byokit.modelOf(route, '') : MODELS[key]?.[0];
-    if (!model && route) add('fail', `${name} model`, `BYOKit has no default model for ${route}`, `set ${name}.model in ${file}`);
-    else if (!model) add('warn', `${name} model`, `none set, and ${r.runner} has no default in models.json: the agent CLI picks its own, which may be a premium model`, `set ${name}.model in ${file}`);
+    const setModel = `set agent_config."${r.runner}".model in ${fileOf(cfg, `agent_config.${r.runner}`)}`;
+    if (!model && route) { failedModel.add(name); add('fail', `${name} model`, `BYOKit has no default model for ${route}`, setModel); }
+    else if (!model) add('warn', `${name} model`, `none set for ${r.runner}: the agent CLI picks its own, which may be a premium model`, setModel);
     else if (premiumBlocked(cfg, model)) {
-      add('fail', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''} is a premium model`,
-        fromEnv ? 'unset LFM_MODEL, or set allow_premium: true' : `set ${name}.model in ${file} to a cheap model${cheap ? ` such as ${cheap}` : ''}, or set allow_premium: true in ${file}`);
-    } else add('ok', `${name} model`, `${model}${fromEnv ? ' (LFM_MODEL)' : ''}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
+      failedModel.add(name);
+      add('fail', `${name} model`, `${model} is a premium model`, `${setModel} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+    } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The identity rule: the judge never checks its own work.
   const checked = (r) => r.bin && !r.fix;
@@ -110,7 +102,7 @@ export async function doctor(dir, opts) {
     const clash = same(roles.worker, roles.judge);
     const id = (r) => `${r.runner}${r.model ? ` ${r.model}` : ''}`;
     add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker (${id(roles.worker)}) and the judge (${id(roles.judge)}) resolve to the same agent and model, so the judge would judge its own work`
-      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge.runner and judge.model in ${file} to another agent CLI or a different model, or install a second agent CLI`);
+      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge_agent in ${fileOf(cfg, 'judge_agent')} to another agent, or install a second agent CLI`);
   }
 
   // The skill in each usable agent CLI's own skills dir, or in the project.
@@ -126,8 +118,7 @@ export async function doctor(dir, opts) {
   // --live: one call per role that asks the agent to write a file; it must answer and write nothing.
   if (opts.live) for (const name of ['worker', 'judge']) {
     const r = roles[name];
-    if (!r.bin || r.problem) continue;
-    if (premiumBlocked(cfg, r.model)) { add('warn', `${name} live`, `skip live ${name}: premium model needs allow_premium`); continue; }
+    if (!r.bin || r.problem || failedModel.has(name)) continue; // its fail line above already names the fix
     try {
       const { test } = await agents(cfg, { test: r.runner, model: r.model });
       add('ok', `${name} live`, `${r.runner} answered and wrote no file: ${JSON.stringify(test.reply.slice(0, 80))}`);
