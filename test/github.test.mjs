@@ -23,12 +23,14 @@ process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_PAGES, after + '
 `;
 const ago = (hours) => new Date(Date.now() - hours * 3_600_000).toISOString();
 // A PR merged `merged` hours ago after `open` hours open; commits are [hours ago, check state] pairs.
+// A commit is [hours ago, check state, parents]; parents defaults to 1 (a merge commit has 2).
 function pr(number, title, { open = 1, merged, body = '', bot = false, commits, total } = {}) {
   commits ??= [[merged + open + 1, 'SUCCESS']]; // one commit, before the PR opened
   return { number, title, body, author: { __typename: bot ? 'Bot' : 'User', login: bot ? 'dependabot' : 'umer' },
     createdAt: ago(merged + open), updatedAt: ago(merged), mergedAt: ago(merged),
     labels: { nodes: [{ name: 'demo' }] }, reviews: { nodes: [{ state: 'APPROVED' }] },
-    commits: { totalCount: total ?? commits.length, nodes: commits.map(([h, state]) => ({ commit: { authoredDate: ago(h), statusCheckRollup: { state } } })) } };
+    commits: { totalCount: total ?? commits.length, nodes: commits.map(([h, state, parents = 1]) => ({ commit: { authoredDate: ago(h),
+      parents: { totalCount: parents }, statusCheckRollup: { state } } })) } };
 }
 const page = (nodes, next) => JSON.stringify({ data: { repository: { pullRequests: { pageInfo: { hasNextPage: true, endCursor: next }, nodes } } } });
 
@@ -46,6 +48,7 @@ function setup() {
   // Two pages, newest update first; the second ends with a PR updated before the read range, so no third page is asked for.
   const demo = pr(10, 'feat: add a demo page', { open: 4, merged: 26, body: `Umer's page. Demo value: ${SECRET}` }); // first pass
   writeFileSync(join(pages, 'first.json'), page([
+    pr(20, 'feat: sync with main', { open: 5, merged: 2, commits: [[8, 'SUCCESS'], [4, 'FAILURE', 2]] }), // a base-branch merge after open: not rework
     pr(19, 'Fixture update', { merged: 3, body: 'New pages for #10.' }), // not a fix: no escape from #10
     pr(13, 'chore(deps): bump yaml', { merged: 4, bot: true }), // 1 h, a bot: not in first_pass
     pr(18, 'Reverted #3', { merged: 6 }), // reverts #3
@@ -79,10 +82,10 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   const r = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const run = JSON.parse(r.stdout);
-  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 12 }]); // 12 PRs merged in the range; #2 is older
+  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 13 }]); // 13 PRs merged in the range; #2 is older
   const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
   assert.deepEqual(numbers, {
-    merged: [9, 3], first_pass: [75, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [10, 10],
+    merged: [10, 3], first_pass: [77.8, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [5, 10],
     rework_ci: [1, 0], rework_other: [1, 0], reverted: [1, 1], escaped: [1, 1],
   });
   const gql = calls().slice(1);
@@ -111,8 +114,21 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   const db2 = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
     const texts = db2.prepare(`SELECT text FROM records WHERE source = 'prs' AND run_id = (SELECT max(id) FROM runs)`).all().map((x) => x.text);
-    assert.deepEqual([texts.length, texts.filter(Boolean)], [12, []]);
+    assert.deepEqual([texts.length, texts.filter(Boolean)], [13, []]);
   } finally { db2.close(); }
+});
+
+test('a window with no merged PR: merged is 0, the ratios and the sums are n/a', () => {
+  const { tmp, p, lfm } = setup();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
+  writeFileSync(join(tmp, 'pages', 'first.json'), page([pr(2, 'feat: old work', { merged: 400 })], 'second'));
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const run = JSON.parse(r.stdout);
+  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 0 }]);
+  const names = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped'];
+  const current = Object.fromEntries(run.metrics.filter((m) => names.includes(m.name)).map((m) => [m.name, m.current]));
+  assert.deepEqual(current, { merged: 0, first_pass: 'n/a', p50_hours_to_merge: 'n/a', p90_hours_to_merge: 'n/a', rework_ci: 'n/a', rework_other: 'n/a', reverted: 'n/a', escaped: 'n/a' });
 });
 
 test('a missing or logged-out gh and a non-GitHub origin fail the source with the fix, never the origin URL', () => {

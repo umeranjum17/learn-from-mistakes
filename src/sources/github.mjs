@@ -18,7 +18,7 @@ const QUERY = `query($owner: String!, $name: String!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes { number title body author { __typename login } createdAt updatedAt mergedAt
         labels(first: 20) { nodes { name } } reviews(first: 50) { nodes { state } }
-        commits(first: 100) { totalCount nodes { commit { authoredDate statusCheckRollup { state } } } } }
+        commits(first: 100) { totalCount nodes { commit { authoredDate parents { totalCount } statusCheckRollup { state } } } } }
     }
   }
 }`;
@@ -75,7 +75,8 @@ export async function read(source, { dir }, { readFrom = 0, excerpts = true } = 
   const rows = merged.map((n) => {
     const commits = n.commits.nodes.map((c) => c.commit), opened = Date.parse(n.createdAt);
     // A commit after the PR opened is rework; it is CI rework when the commit before it had failing checks.
-    const rework = commits.map((c, i) => Date.parse(c.authoredDate) > opened && (['FAILURE', 'ERROR'].includes(commits[i - 1]?.statusCheckRollup?.state) ? 'ci' : 'other'));
+    const own = commits.filter((c) => c.parents.totalCount < 2);
+    const rework = own.map((c, i) => Date.parse(c.authoredDate) > opened && (['FAILURE', 'ERROR'].includes(own[i - 1]?.statusCheckRollup?.state) ? 'ci' : 'other'));
     return { source, ts: n.mergedAt, ref: `PR #${n.number}`, text: excerpts ? redact(`${n.title}\n\n${n.body ?? ''}`.trim()) : '', data: {
       bot: n.author?.__typename === 'Bot', hours: (Date.parse(n.mergedAt) - opened) / 3_600_000,
       rework_ci: rework.filter((x) => x === 'ci').length, rework_other: rework.filter((x) => x === 'other').length,
@@ -101,7 +102,7 @@ export function metrics(rows, window) {
   const people = prs.filter((d) => !d.bot), hours = prs.map((d) => d.hours).sort((a, b) => a - b);
   const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places;
   const rank = (p) => (hours.length ? round(hours[Math.ceil(p * hours.length) - 1], 2) : null);
-  const sum = (f) => prs.reduce((n, d) => n + Number(f(d)), 0);
+  const sum = (f) => (prs.length ? prs.reduce((n, d) => n + Number(f(d)), 0) : null);
   const first = people.filter((d) => !d.rework_ci && !d.rework_other && !d.reverted && !d.escaped).length;
   return {
     merged: prs.length, first_pass: people.length ? round((100 * first) / people.length, 1) : null,
