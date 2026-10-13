@@ -1,0 +1,17 @@
+#!/usr/bin/env node
+// Synthetic peer: records the public argv/stdin boundary, never opens a real board.
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const dir = process.env.FAKE_SIGNOFF_DIR, args = process.argv.slice(2), stdin = readFileSync(0, 'utf8');
+appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, stdin }) + '\n');
+if (process.env.FAKE_SIGNOFF_REFUSE) {
+  console.error('error: "stdin: proposal is refused"\ncode: VALIDATION_ERROR\nhelp[1]: "Fix proposal"'); process.exit(2);
+}
+if (args[0] === 'answers') console.log(readFileSync(join(dir, 'answers.json'), 'utf8'));
+else {
+  const file = join(dir, 'board.json'), board = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
+  const item = JSON.parse(stdin), old = board.find((r) => r.key === item.key);
+  if (old && JSON.stringify(old) !== JSON.stringify(item)) { console.error('code: CONFLICT\nhelp[1]: "Post it under a new key"'); process.exit(2); }
+  if (!old) { board.push(item); writeFileSync(file, JSON.stringify(board)); }
+  console.log('ok');
+}

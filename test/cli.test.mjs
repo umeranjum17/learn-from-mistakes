@@ -1378,6 +1378,72 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(fixes, [1, 2, 3, 4, 5].map((n) => ({ n, cause: 'shared-cache-lock', metric: n === 1 ? 'defects' : 'cause_count:shared-cache-lock', tripwire: '<= 0', verdict: n === 5 ? 'weakened' : 'confirmed' })));
   assert.deepEqual(query('SELECT cause, count, days FROM findings WHERE run_id = ?', run.id), [{ cause: 'umer-fixtures-unset', count: 1, days: 1 }]);
 
+  // Explicit sign-off handoff: absent peer prints findings, a peer gets only contract-v1 fields.
+  assert.deepEqual(query('SELECT DISTINCT kind FROM proposals WHERE run_id = ?', run.id), [{ kind: 'code' }]);
+  const fallback = lfm({}, 'signoff', 'post');
+  assert.equal(fallback.status, 0, fallback.stderr);
+  assert.match(fallback.stdout, /Repeated cause: shared-cache-lock[\s\S]*2 incidents over 1 days\.[\s\S]*npm i -g sign-off-axi/);
+  assert.ok(!fallback.stdout.includes('UMER_FIXTURES'));
+  const signDir = join(p, '..', 'signoff'); mkdirSync(signDir);
+  const signBin = join(p, '..', 'bin', 'sign-off-axi');
+  symlinkSync(new URL('./fake-agent/sign-off-axi', import.meta.url).pathname, signBin);
+  const peerEnv = { FAKE_SIGNOFF_DIR: signDir };
+  const edit = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); try { db.prepare(sql).run(...args); } finally { db.close(); } };
+  edit('UPDATE proposals SET kind = NULL WHERE run_id = ? AND n = 1', run.id);
+  const noKind = lfm(peerEnv, 'signoff', 'post');
+  assert.equal(noKind.status, 2); assert.match(noKind.stderr, /next: learn-from-mistakes-axi retro/);
+  edit("UPDATE proposals SET kind = CASE n WHEN 1 THEN 'doc' WHEN 2 THEN 'rule' ELSE 'code' END WHERE run_id = ?", run.id);
+  edit("UPDATE proposals SET change = ? WHERE run_id = ? AND n = 1", "x".repeat(501), run.id);
+  assert.equal(lfm(peerEnv, 'signoff', 'post').status, 2);
+  edit("UPDATE proposals SET change = ? WHERE run_id = ? AND n = 1", "Give each worker its own cache directory.", run.id);
+  const extraRefs = Array.from({ length: 60 }, (_, k) => `lab:${k}`);
+  for (const ref of extraRefs) edit("INSERT INTO records (run_id, source, ref, text, record_id) VALUES (?, 'lab', 'synthetic', 'PRIVATE-CANARY-Umer', ?)", run.id, ref);
+  edit("UPDATE proposals SET refs_json = ? WHERE run_id = ? AND n = 1", JSON.stringify(extraRefs), run.id);
+  const post = lfm(peerEnv, 'signoff', 'post', '--run', String(run.id));
+  assert.equal(post.status, 0, post.stderr);
+  const boardFile = join(signDir, 'board.json'), firstBoard = readFileSync(boardFile, 'utf8'), board = JSON.parse(firstBoard);
+  assert.equal(board.length, 5);
+  assert.equal(board[0].evidence_ids.length, 50);
+  for (const ref of board[0].evidence_ids) assert.match(ref, /^rec-\d+$/);
+  for (const m of board) {
+    assert.deepEqual(Object.keys(m).sort(), ['contract', 'kind', 'schema', 'key', 'title', 'filer', 'about', 'cause', 'incidents', 'days', 'evidence_ids', 'change_kind', 'proposal', 'options', 'recommend_value'].sort());
+    assert.deepEqual([m.contract, m.kind, m.schema, m.filer, m.change_kind, m.recommend_value], [1, 'finding', 1, 'learn-from-mistakes', ['doc', 'rule', 'code', 'code', 'code'][board.indexOf(m)], 'apply']);
+    for (const [field, max] of [['title', 160], ['about', 500], ['proposal', 500]]) {
+      assert.ok(m[field].trim() && [...m[field]].length <= max && !/[\p{Cc}\p{Cf}]/u.test(m[field].replaceAll('\n', '')));
+    }
+    assert.match(m.key, /^[A-Za-z0-9._-]{1,128}$/); assert.match(m.cause, /^[a-z0-9-]{1,64}$/);
+    assert.deepEqual([m.incidents, m.days, m.about], [2, 1, '2 incidents over 1 days.']);
+    for (const n of [m.incidents, m.days]) assert.ok(Number.isSafeInteger(n) && n >= 0);
+    assert.ok(m.evidence_ids.length <= 50 && new Set(m.evidence_ids).size === m.evidence_ids.length);
+    for (const ref of m.evidence_ids) assert.match(ref, /^[A-Za-z0-9._-]{1,128}$/);
+    assert.deepEqual(m.options, [{ value: 'apply', label: 'Apply' }, { value: 'skip', label: 'Skip' }]);
+    for (const { text } of query('SELECT text FROM records WHERE run_id = ?', run.id)) if (text) assert.ok(!JSON.stringify(m).includes(text));
+  }
+  // Frozen messages survive config/source changes; posting twice is a board no-op.
+  edit("UPDATE records SET text = 'PRIVATE-CANARY-Umer' WHERE run_id = ?", run.id);
+  assert.equal(lfm(peerEnv, 'signoff', 'post').status, 0);
+  assert.equal(readFileSync(boardFile, 'utf8'), firstBoard);
+  const refused = lfm({ ...peerEnv, FAKE_SIGNOFF_REFUSE: '1' }, 'signoff', 'post');
+  assert.equal(refused.status, 2); assert.match(refused.stderr, /VALIDATION_ERROR[\s\S]*help\[1\][\s\S]*next:/);
+  const postCalls = readFileSync(join(signDir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(postCalls.length, 11, 'a refusal stops before the second finding');
+  for (const c of postCalls) assert.deepEqual(c.args, ['post', '--kind', 'finding', '--from', '-']);
+  assert.deepEqual(postCalls.slice(0, 5).map((c) => c.stdin), postCalls.slice(5, 10).map((c) => c.stdin));
+  writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [board[0].key]: { answer: 'apply' }, [board[1].key]: { answer: 'skip' }, 'another-filer': { answer: 'yes' } }));
+  assert.equal(lfm(peerEnv, 'signoff', 'answers').status, 0);
+  assert.deepEqual(query('SELECT answer FROM signoff ORDER BY proposal_id').map((r) => r.answer).filter(Boolean).sort(), ['apply', 'skip']);
+  writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [board[0].key]: { answer: 'skip' }, [board[1].key]: { answer: 'yes' } }));
+  assert.equal(lfm(peerEnv, 'signoff', 'answers').status, 2);
+  assert.equal(query('SELECT answer FROM signoff WHERE proposal_id = (SELECT id FROM proposals WHERE run_id = ? AND n = 1)', run.id)[0].answer, 'apply');
+  assert.ok(!existsSync(join(p, '.lfm', 'changes.jsonl')), 'reading answers must not apply a change');
+  assert.equal(query('SELECT count(*) AS n FROM signoff').at(0).n, 5);
+  writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [board[0].key]: { answer: 'skip' } }));
+  assert.match(lfm(peerEnv, 'signoff', 'answers').stdout, new RegExp(`saved: ${board[0].key} skip`));
+  assert.deepEqual(JSON.parse(readFileSync(join(signDir, 'calls.jsonl'), 'utf8').trim().split('\n').at(-1)).args, ['answers', '--json']);
+  rmSync(signBin);
+  assert.equal(lfm({}, 'signoff', 'answers').status, 0);
+  assert.equal(lfm({}, 'signoff', 'post', '--run', '999').status, 2);
+
   // --proposal copies the kept fix's cause, metric and tripwire into the ledger; a fix that was not kept has no number.
   const applied = lfm({}, 'change', 'applied', '--proposal', `${run.id}:1`, '--ref', 'abc1234', '--json');
   assert.equal(applied.status, 0, applied.stderr);
@@ -1448,6 +1514,11 @@ test('propose: a rule-breaking fix is sent back once, then dropped on the second
   assert.equal(lines('propose', run.id).at(-1), 'fixes: 1 proposed, reasons: 0 of 0 follow-ups');
   assert.deepEqual(query('SELECT verdict, count, days FROM findings WHERE run_id = ?', run.id), [{ verdict: 'refuted', count: null, days: null }]);
   assert.match(lfm({}, 'report').stdout, /^finding: umer-fixtures-unset \(0\/0 days, refuted\): /m);
+  const badKind = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_KIND: 'guess' }, 'retro', '--foreground', '--json');
+  assert.equal(badKind.status, 0, badKind.stderr);
+  const badId = JSON.parse(badKind.stdout).run.id;
+  assert.match(calls().at(-1).stdin, /Your last answer was not valid: proposals\[0\]\.kind must be doc, rule or code/);
+  assert.equal(query('SELECT count(*) AS n FROM proposals WHERE run_id = ?', badId)[0].n, 0);
 });
 
 test('a run id reused after the store is removed starts its step logs empty', () => {

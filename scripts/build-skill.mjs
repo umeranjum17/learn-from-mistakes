@@ -45,6 +45,28 @@ The tool's own agents are \`agent:\` and \`judge_agent:\` in ~/.learn-from-mista
 When a command prints "ask the user which agent to use", ask the user which agent and model to use for each role named, never choose one yourself, then run the \`${npx} init ...\` command it printed with the user's answer, then run the stopped command again.
 The CLI makes no network or model calls itself; only its runs, \`${npx} agents --test\` and \`${npx} doctor --live\` start your own agent CLI or a BYOKit route.
 
+## Optional finding handoff
+
+Only when the user asks, run \`${npx} signoff post [--run <id>]\` (latest completed run by default).
+Without the optional peer it prints findings and \`npm i -g sign-off-axi\`; retro never posts automatically.
+\`${npx} signoff answers\` reads the current answer map without waiting and stores Apply/Skip against proposals, never applies changes.
+The adapter sends \`npx -y sign-off-axi post --kind finding --from -\`, one contract-v1 message per kept fix:
+
+\`\`\`json
+{"contract":1,"kind":"finding","schema":1,"key":"lfm-missing-env","title":"Repeated cause: missing env var in CI","filer":"learn-from-mistakes","about":"4 incidents over 3 days in 2 sources.","cause":"missing-env","incidents":4,"days":3,"evidence_ids":["rec-7f3a","rec-91be"],"change_kind":"doc","proposal":"Add the env var to the CI setup page.","options":[{"value":"apply","label":"Apply"},{"value":"skip","label":"Skip"}],"recommend_value":"apply"}
+\`\`\`
+
+To wait explicitly: \`npx -y sign-off-axi wait --filer learn-from-mistakes --events\` prints:
+
+\`\`\`json
+{"event":"answer","contract":1,"kind":"finding","schema":1,"key":"lfm-missing-env","title":"Repeated cause: missing env var in CI","answer":"apply","label":"Apply","close":"done","at":"2026-10-13T08:00:00Z","filer":"learn-from-mistakes"}
+\`\`\`
+
+A refused message writes nothing: exit 2, VALIDATION_ERROR and a help line naming the fix.
+Read the help line, fix the producer input and post again; never edit the board file by hand.
+Check \`npx -y sign-off-axi --help\` for installed support (the contract lands in parts), never guess flags.
+Record text stays out: about has counts only, evidence_ids names records, and proposal is the change, not a quote.
+
 ## Request
 
 $ARGUMENTS

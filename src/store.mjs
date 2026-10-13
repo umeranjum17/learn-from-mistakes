@@ -52,6 +52,8 @@ const MIGRATIONS = [
     ALTER TABLE followups ADD COLUMN reason TEXT`,
   // The verify step's judge verdict on each fix (confirmed, weakened or refuted; NULL when not judged) and its reason.
   'ALTER TABLE proposals ADD COLUMN verdict TEXT; ALTER TABLE proposals ADD COLUMN judge_note TEXT',
+  `ALTER TABLE proposals ADD COLUMN kind TEXT;
+    CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
