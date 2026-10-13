@@ -56,7 +56,11 @@ export async function doctor(dir, opts) {
     if (!r.bin) {
       // Offered only where the role would not resolve to the other role's binary and model: that is the clash it names.
       const other = roles[name === 'worker' ? 'judge' : 'worker'];
-      const offered = list.filter((x) => x.usable && !x.problem && !same({ bin: x.bin, model: roleModel({ ...cfg, [name]: { ...cfg[name], runner: x.runner } }, name, x.runner) }, other)).map((x) => x.runner);
+      const offered = list.filter((x) => {
+        if (!x.usable || x.problem) return false;
+        const model = roleModel({ ...cfg, [name]: { ...cfg[name], runner: x.runner } }, name, x.runner);
+        return !premiumBlocked(cfg, model) && !same({ bin: x.bin, model }, other);
+      }).map((x) => x.runner);
       add('fail', name, r.problem, r.fix ?? (offered.length
         ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
         : `install a second agent CLI (${INSTALL}), or set runner_path in $LFM_HOME/config.yaml`));

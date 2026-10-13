@@ -304,6 +304,15 @@ test('doctor offers no runner whose model, as the pinned role would use it, clas
   assert.match(fails[0].fix, /^install a second agent CLI \(/);
 });
 
+test('doctor offers no runner whose premium model allow_premium forbids, so the fix does not make a new fail', () => {
+  const { lfm, config } = setup(['claude', 'codex']);
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "claude-opus-5-5" }'));
+  const fails = JSON.parse(lfm('doctor', '--json').stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(fails.map((c) => c.label), ['worker']);
+  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+});
+
 test('doctor says to unset LFM_MODEL when the premium model comes from it', () => {
   const { lfm, config } = setup(['claude', 'codex'], { LFM_MODEL: 'claude-opus-5-5' });
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
