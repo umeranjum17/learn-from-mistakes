@@ -59,7 +59,7 @@ export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
 // The identity rule: a role is the real path of its binary plus its model. A role with no model is never compared: it is unset.
-export const CLASH = 'the judge resolves to the worker\'s agent and model, so it would judge its own work';
+export const CLASH = 'agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work';
 export const same = (a, b) => a.bin === b.bin && a.model === b.model;
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
 // One agent as a role: its model from agent_config, its binary (a BYOKit route is its own identity), or its problem.

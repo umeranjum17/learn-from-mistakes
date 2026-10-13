@@ -180,7 +180,7 @@ test('in a terminal, a worker and judge set to one agent are refused before any 
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: '', env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, /judge_agent and agent are both claude: the judge resolves to the worker's agent and model/);
+  assert.match(r.stdout, /judge_agent and agent are both claude: agent_config holds one model per agent/);
   assert.doesNotMatch(r.stdout, /model for claude/);
   assert.equal(parse(readFileSync(config, 'utf8')).agent_config, undefined);
   assert.equal(readFileSync(global, 'utf8'), 'agent: claude\njudge_agent: claude\n');
@@ -272,11 +272,11 @@ test('a judge on the worker\'s agent and model is reported by init and fails age
   writeFileSync(config, `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
   const r = lfm('init', '--json');
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).gaps[0], 'judge: the judge resolves to the worker\'s agent and model, so it would judge its own work');
+  assert.equal(JSON.parse(r.stdout).gaps[0], 'judge: agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work');
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${config}; the run never picks one`);
   const agents = lfm('agents'); // the clash fails every later check of the config
   assert.equal(agents.status, 1);
-  assert.match(agents.stderr, /^problem: judge: the judge resolves to the worker's agent/m);
+  assert.match(agents.stderr, /^problem: judge: agent_config holds one model per agent/m);
 });
 
 test('an empty or relative PATH entry never runs an agent CLI from the project dir', () => {
@@ -396,7 +396,7 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
-  assert.match(text.stdout, /^fail judge +the judge resolves to the worker's agent and model, so it would judge its own work\n {5}fix: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
+  assert.match(text.stdout, /^fail judge +agent_config holds one model per agent, so a judge on the worker's agent gets the worker's model and would judge its own work\n {5}fix: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
   assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
 
   writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
@@ -559,7 +559,7 @@ test('doctor fails a judge that resolves to the worker\'s BYOKit route and model
   keys('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\nagent_config: { "byokit:chatgpt": { model: gpt-6-luna } }\n');
   const clash = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'judge');
   assert.equal(clash.level, 'fail');
-  assert.equal(clash.detail, 'the judge resolves to the worker\'s agent and model, so it would judge its own work');
+  assert.equal(clash.detail, 'agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work');
 });
 
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
