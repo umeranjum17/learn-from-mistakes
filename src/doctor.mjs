@@ -67,6 +67,7 @@ export async function doctor(dir, opts) {
       const cheap = list.find((x) => x.usable && !x.problem && MODELS[x.runner]?.length);
       add('fail', name, r.problem, r.fix ?? (offered.length
         ? `set ${name}.runner in ${file} to ${offered.join(' or ')}`
+        : a && !a.usable ? `install ${binName(cfg, key)}, or set runner_path in ${shq(globalFile())}`
         : cfg[name].runner === 'auto' && r.model && cheap ? `${fromEnv ? 'unset LFM_MODEL, or ' : ''}set ${name}.model in ${file} to ${MODELS[cheap.runner][0]}`
         : `install a second agent CLI (${INSTALL}), or set runner_path in ${shq(globalFile())}`));
       continue;

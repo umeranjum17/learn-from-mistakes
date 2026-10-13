@@ -315,12 +315,12 @@ test('doctor offers no runner whose model, as the pinned role would use it, clas
 });
 
 test('doctor offers no runner whose premium model allow_premium forbids, so the fix does not make a new fail', () => {
-  const { lfm, config } = setup(['claude', 'codex']);
+  const { lfm, config, env } = setup(['claude', 'codex']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   writeFileSync(config, readFileSync(config, 'utf8').replace(/^worker: .*$/m, 'worker: { runner: gemini, model: "claude-opus-5-5" }'));
   const fails = JSON.parse(lfm('doctor', '--json').stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
-  assert.match(fails[0].fix, /^install a second agent CLI \(/);
+  assert.equal(fails[0].fix, `install gemini, or set runner_path in ${join(env.LFM_HOME, 'config.yaml')}`);
 });
 
 test('doctor fails an auto worker on a model no installed CLI lists, names a listed model, and that fix makes exit 0', () => {
@@ -347,7 +347,7 @@ test('doctor names the pinned runner\'s own problem, not a premium fix, when tha
   const fails = JSON.parse(r.stdout).checks.filter((c) => c.level === 'fail');
   assert.deepEqual(fails.map((c) => c.label), ['worker']);
   assert.equal(fails[0].detail, 'claude is not usable: claude is not on PATH');
-  assert.doesNotMatch(fails[0].fix, /allow_premium/);
+  assert.equal(fails[0].fix, `install claude, or set runner_path in ${join(env.LFM_HOME, 'config.yaml')}`);
 });
 
 test('doctor offers only a runner that lists the pinned worker model, never one that would run it with a model it does not list', () => {
