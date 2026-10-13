@@ -44,7 +44,7 @@ causes' metrics fill it before the later headings, and 999 exits 2; a sweep of
 caps from 1000 to 4000 keeps the cluster numbers a gapless prefix. A config in a
 subdirectory of the checkout, with the repo row matched by its checkout path,
 reads this repo's gate rows and not the other repo's.
-`test/cli.test.mjs` asserts 8 steps per run, the example's bundle sections, the
+`test/cli.test.mjs` asserts 9 steps per run, the example's bundle sections, the
 `bundle:` attach line, and that a store with no `repos` table exits 2.
 The helper's `retro-v2` drive (`excerpts: off`) checks the bundle has no
 excerpt line, and `retro-sessions` (`excerpts: on`) checks the failed test run

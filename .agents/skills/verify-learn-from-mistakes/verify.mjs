@@ -75,7 +75,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/check.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -100,10 +100,11 @@ try {
   const cli = join(repo, 'bin/learn-from-mistakes-axi.mjs');
   const stagedLabels = join(staged, 'labels.jsonl');
   const stagedProposals = join(staged, 'proposals.jsonl');
-  // The run's own agent is the repo's fake Claude Code: the drives' PATH holds only it, node for its #! line, and git.
+  // The run's own agents are the repo's fake agent as Claude Code (the worker) and Codex (the judge): the drives' PATH holds
+  // only them, node for its #! line, and git.
   const agentBin = join(scratch, 'fake-agent');
   mkdirSync(agentBin);
-  symlinkSync(join(repo, 'test', 'fake-agent', 'claude'), join(agentBin, 'claude'));
+  for (const name of ['claude', 'codex']) symlinkSync(join(repo, 'test', 'fake-agent', 'claude'), join(agentBin, name));
   symlinkSync(process.execPath, join(agentBin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(agentBin, 'git'));
   const lab = { PATH: agentBin };
@@ -149,6 +150,7 @@ try {
   assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
   writeFileSync(stagedConfig, stringify({ ...config, agent: 3 }));
   run('config-bad-agent', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
+  Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'gpt-6-luna' } } }); // the drives below call the judge
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
@@ -213,13 +215,17 @@ try {
     const verdicts = JSON.parse(readFileSync(join(evidence, 'retro-followup.stdout'), 'utf8')).followups.map((f) => [f.change, f.before, f.after, f.verdict]);
     assert.deepEqual(verdicts, [['chg-1', 'n/a', 'n/a', 'no-data'], ['chg-2', 1, 3, 'rollback']], 'the followup step does not give the verdicts');
     // Propose and check: eight fixes for the gate's repeated cause; five are kept, three are problems; one goes into the ledger.
-    run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait' });
+    run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2' });
     const proposed = JSON.parse(readFileSync(join(evidence, 'retro-propose.stdout'), 'utf8'));
     assert.deepEqual(proposed.fixes.map((f) => [f.n, f.cause, f.tripwire]), [1, 2, 3, 4, 5].map((n) => [n, 'agent-exit-wait', '<= 0']), 'check does not keep five ranked fixes');
     const db = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
     try {
       assert.deepEqual(db.prepare('SELECT change_id, reason IS NOT NULL AS given FROM followups WHERE run_id = ?').all(proposed.run.id).map((f) => [f.change_id, f.given]), [['chg-1', 1], ['chg-2', 1]], 'a follow-up that is not keep has no reason');
+      assert.deepEqual(db.prepare('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id').all(proposed.run.id).map((f) => f.verdict), ['confirmed', 'refuted', ...Array(6).fill('confirmed')], 'the judge\'s verdicts are not on the fixes');
+      assert.deepEqual({ ...db.prepare(`SELECT role, runner FROM invocations WHERE run_id = ? AND step = 'verify'`).get(proposed.run.id) }, { role: 'judge', runner: 'codex' }, 'the judge is not the second agent');
     } finally { db.close(); }
+    drive('logs-verify', 'logs', '--step', 'verify');
+    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*verdicts: 8 confirmed, 0 weakened, 1 refuted, 0 not judged/, 'logs do not show the judge\'s verdicts');
     drive('logs-check', 'logs', '--step', 'check');
     assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[5\]: more than 5 fixes[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
     drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', 'abc1234', '--json');
@@ -264,7 +270,7 @@ try {
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/run.mjs', 'src/store.mjs',
       'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/check.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/learn-from-mistakes/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');

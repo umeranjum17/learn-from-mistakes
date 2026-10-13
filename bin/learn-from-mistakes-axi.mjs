@@ -352,7 +352,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   report              print the report; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, check, report) in a background worker
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, report) in a background worker
                       that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
@@ -376,7 +376,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, check or report
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file

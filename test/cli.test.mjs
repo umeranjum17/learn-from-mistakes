@@ -849,7 +849,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.doesNotMatch(r.stderr, /ExperimentalWarning/); // the examples read a store, so node:sqlite loads
   const run = decode(r.stdout);
   assert.equal(run.run.status, 'completed');
-  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['check', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed']]);
   // The bundle: the metrics; the example's records and gate rows are all from March, before this window.
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8');
   assert.match(bundle, /^\| defects \| 0 \| 0 \|  \|$/m);
@@ -860,7 +860,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
   assert.deepEqual(JSON.parse(steps[0].output_json).sources.map((s) => s.items), [13, 5]);
-  assert.deepEqual(JSON.parse(steps[7].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
+  assert.deepEqual(JSON.parse(steps[8].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
   const status = lfm('status', '--json');
   assert.equal(status.status, 0, status.stderr);
   assert.deepEqual(JSON.parse(status.stdout), run);
@@ -884,7 +884,7 @@ allow_premium: false
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
-  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['check', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed']]);
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent_args_override: { codex: --profile }\n');
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
@@ -904,7 +904,7 @@ allow_premium: false
   assert.equal(failed.status, 1, failed.stderr);
   const f = JSON.parse(failed.stdout);
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
-  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'failed']);
+  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
@@ -939,7 +939,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.doesNotMatch(waited.stderr, /ExperimentalWarning/);
   const first = JSON.parse(waited.stdout);
   assert.equal(first.run.status, 'completed');
-  assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
 
   // Without --wait, retro returns while the worker runs: spawnSync ends only when no process holds its pipes.
   const slowEnv = { ...env, LFM_TEST_SLOW_STEP: 'report' }; // the worker inherits it: report sleeps 60 s
@@ -952,10 +952,10 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   let steps;
   for (let i = 0; i < 100; i++) { // up to 20 s for the worker to reach the slow step
     steps = JSON.parse(lfm('status', '--json').stdout).steps;
-    if (steps[7].status === 'running') break;
+    if (steps[8].status === 'running') break;
     await new Promise((r) => setTimeout(r, 200));
   }
-  assert.deepEqual(steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'running']);
+  assert.deepEqual(steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'running']);
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -967,7 +967,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const k = JSON.parse(killed.stdout);
   assert.equal(k.run.status, 'interrupted');
   assert.equal(k.run.error, 'report: the worker stopped before the step ended');
-  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'interrupted']);
+  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'interrupted']);
   assert.match(killed.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
 
   const next = lfm('retro', '--wait', '--json'); // the interrupted run blocks nothing; a bare --wait waits 8 minutes
@@ -979,8 +979,8 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const r = JSON.parse(resumed.stdout);
   assert.equal(r.run.status, 'completed');
   assert.equal(r.run.error, null);
-  assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
-  assert.deepEqual(r.steps.slice(0, 7), k.steps.slice(0, 7), 'the completed collect, metrics, followup, bundle, analyse, propose and check steps were not run again');
+  assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  assert.deepEqual(r.steps.slice(0, 8), k.steps.slice(0, 8), 'the completed collect, metrics, followup, bundle, analyse, propose, verify and check steps were not run again');
   assert.deepEqual(r.metrics, k.metrics);
   const again = lfm('rerun', '--resume', '--run', String(run.id));
   assert.equal(again.status, 2, again.stderr);
@@ -1016,15 +1016,15 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.deepEqual([l.step, l.run, l.status, l.lines, l.log.length], ['collect', first.id, 'completed', '2 total', 2]);
   assert.match(l.log[0].line, /^log +markdown-log +13 items$/);
   assert.doesNotMatch(log.stdout, /sha256/);
-  const nope = lfm('logs', '--step', 'verify');
+  const nope = lfm('logs', '--step', 'judge');
   assert.equal(nope.status, 2, nope.stderr);
-  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "verify" \\(steps: collect, metrics, followup, bundle, analyse, propose, check, report\\)$`, 'm'));
+  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "judge" \\(steps: collect, metrics, followup, bundle, analyse, propose, verify, check, report\\)$`, 'm'));
 
   // abort stops a running run: its worker ends and the run is cancelled; a new retro is not blocked.
   const slow = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'report' } });
   const { run } = JSON.parse(slow.stdout);
   after(() => { try { process.kill(run.pid, 'SIGKILL'); } catch {} });
-  await wait(() => JSON.parse(lfm('status', '--json').stdout).steps[7].status === 'running');
+  await wait(() => JSON.parse(lfm('status', '--json').stdout).steps[8].status === 'running');
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -1033,7 +1033,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const a = JSON.parse(aborted.stdout);
   assert.equal(a.run.status, 'cancelled');
   assert.equal(a.run.error, 'report: cancelled by SIGTERM'); // the worker's own trap ended it
-  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'cancelled']);
+  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'cancelled']);
   assert.throws(() => process.kill(run.pid, 0), { code: 'ESRCH' }, 'the worker is gone');
   assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
   const idle = lfm('abort');
@@ -1049,23 +1049,23 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.match(rerun.stderr, new RegExp(`^rerun: started run ${run.id + 1} from run ${run.id}$`, 'm'));
   const r = JSON.parse(rerun.stdout);
   assert.deepEqual([r.run.id, r.from], [run.id + 1, run.id]);
-  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs.map((x) => x.status), ['completed', 'cancelled', 'completed']);
 });
 
-// A copy of the examples with two defect records today, whose PATH holds only the fake agent, node for its #! line, and
-// git: lfm(env, ...args) runs the CLI there, query reads the run store, lines(step, run) a step's log lines.
+// A copy of the examples with two defect records today, whose PATH holds only the fake agents, node for its #! line, and
+// git: lfm(env, ...args) runs the CLI there, query reads the run store, calls(name) an agent's calls, lines(step, run) a step's log lines.
 function agentSetup() {
   const { p, env } = setup();
   const bin = join(p, '..', 'bin'), log = join(p, '..', 'log');
   for (const d of [bin, log]) mkdirSync(d);
-  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  for (const name of ['claude', 'codex']) symlinkSync(FAKE_AGENT, join(bin, name)); // the worker and the judge
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`);
   const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, ...extra } });
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
-  const calls = () => readFileSync(join(log, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const calls = (name = 'claude') => readFileSync(join(log, `${name}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const lines = (step, id) => JSON.parse(lfm({}, 'logs', '--step', step, '--run', String(id), '--json').stdout).log.map((l) => l.line);
   return { p, env, bin, lfm, query, calls, lines };
 }
@@ -1078,7 +1078,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run, steps } = JSON.parse(r.stdout);
-  assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['check', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed']]);
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8');
   const records = [...bundle.matchAll(/^- \[([^\]]+)\] log at /gm)].map((m) => m[1]);
   assert.equal(records.length, 2);
@@ -1120,7 +1120,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const b = JSON.parse(bad.stdout);
   const why = "the worker's answer is not valid after one retry: the answer holds no JSON object";
   assert.equal(b.run.error, `analyse: ${why}`);
-  assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'failed', 'pending', 'pending', 'pending']);
+  assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'failed', 'pending', 'pending', 'pending', 'pending']);
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
   assert.deepEqual(lines(b.run.id).slice(1), ['worker answer 1 is not valid: the answer holds no JSON object', `worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`,
     'worker answer 2 is not valid: the answer holds no JSON object', `error: ${why}`]);
@@ -1189,13 +1189,28 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(decoyExited, false, 'a group that is not the stored agent was signalled');
 });
 
-test('propose and check: of six fixes for a repeated cause five are kept, ranked; a cause that did not repeat and no tripwire are problems; --proposal copies a fix into the ledger', () => {
+test('propose, verify and check: of six fixes for a repeated cause five are kept, ranked; the judge refutes claim p2; a cause that did not repeat and no tripwire are problems; --proposal copies a fix into the ledger', () => {
   const { p, lfm, query, calls, lines } = agentSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' }, 'retro', '--foreground', '--json');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_REFUTE: 'p2' }, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run, fixes } = JSON.parse(r.stdout);
+  // The judge is the second fake agent (codex, its own model), never the worker: in the run dir it got the judge's method,
+  // each finding and fix as a claim with its refs, then the bundle. Its verdicts land on the rows; it refuted fix 2.
+  const [judge] = calls('codex');
+  assert.equal(realpathSync(judge.cwd), realpathSync(join(p, '.lfm', 'runs', String(run.id))));
+  assert.deepEqual(judge.args.slice(0, 3), ['exec', '-m', 'gpt-6-luna']);
+  assert.ok(judge.stdin.startsWith(`lfm-run:${run.id}:verify\nYou are the judge of a retro.`), judge.stdin.slice(0, 200));
+  assert.match(judge.stdin, /The worker's claims are not evidence\./);
+  assert.match(judge.stdin, /^- f1: finding for cause umer-fixtures-unset\. The tests fail when UMER_FIXTURES is unset\. No doc names it\. Refs: \S+\.$/m);
+  assert.match(judge.stdin, /^- p2: fix for cause shared-cache-lock\. Target: launch script 2\. Owner: maintainer\. Change: .+ Metric: cause_count:shared-cache-lock\. Tripwire: <= 0\. Refs: .+\.$/m);
+  assert.ok(judge.stdin.endsWith(readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8')), 'the bundle is not the end of the prompt');
+  assert.ok(!calls().some((c) => c.stdin.includes(':verify\n')), 'the worker was asked to judge');
+  assert.deepEqual(query(`SELECT role, runner, model, exit_status FROM invocations WHERE run_id = ? AND step = 'verify'`, run.id), [{ role: 'judge', runner: 'codex', model: 'gpt-6-luna', exit_status: 'ok' }]);
+  assert.deepEqual(query('SELECT verdict, judge_note FROM findings WHERE run_id = ?', run.id), [{ verdict: 'confirmed', judge_note: 'The cited items show this for Umer.' }]);
+  assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => f.verdict), ['confirmed', 'refuted', ...Array(6).fill('confirmed')]);
+  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'verdicts: 8 confirmed, 0 weakened, 1 refuted, 0 not judged']);
   // The worker got the causes with their counts, the kept finding and the propose method, then the bundle.
   const call = calls().at(-1);
   assert.ok(call.stdin.startsWith(`lfm-run:${run.id}:propose\nYou are the worker of a retro.`), call.stdin.slice(0, 200));
@@ -1232,6 +1247,7 @@ test('propose and check: of six fixes for a repeated cause five are kept, ranked
   assert.deepEqual(followups.map((f) => [f.change, f.verdict]), [['chg-1', 'no-data']]);
   assert.match(calls().at(-1).stdin, /^Follow-ups to explain:\n- chg-1: metric defects, 2 before, 0 after, tripwire <= 0, verdict no-data$/m);
   assert.deepEqual(query('SELECT change_id, reason FROM followups WHERE run_id = ?', second.id), [{ change_id: 'chg-1', reason: 'Too few sessions ran after the change for Umer.' }]);
+  assert.deepEqual(lines('verify', second.id), ['nothing to verify: no finding and no fix']);
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });
 
