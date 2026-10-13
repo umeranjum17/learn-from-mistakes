@@ -7,8 +7,16 @@ appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, stdin }) + '\n')
 if (process.env.FAKE_SIGNOFF_REFUSE) {
   console.error('error: "stdin: proposal is refused"\ncode: VALIDATION_ERROR\nhelp[1]: "Fix proposal"'); process.exit(2);
 }
-if (args[0] === 'answers') console.log(readFileSync(join(dir, 'answers.json'), 'utf8'));
-else {
+if (args[0] === 'wait') {
+  // answers.json holds the answers not yet taken; wait prints them once and takes them.
+  const pending = join(dir, 'answers.json'), taken = existsSync(pending) ? JSON.parse(readFileSync(pending, 'utf8')) : {};
+  if (!Object.keys(taken).length) {
+    console.log(existsSync(join(dir, 'board.json')) ? 'error: no answer within 1s\ncode: TIMEOUT' : 'code: NOT_FOUND');
+    process.exit(1);
+  }
+  writeFileSync(pending, '{}');
+  console.log(JSON.stringify(taken));
+} else {
   const file = join(dir, 'board.json'), board = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
   const item = JSON.parse(stdin), old = board.find((r) => r.key === item.key);
   if (old && JSON.stringify(old) !== JSON.stringify(item)) { console.error('code: CONFLICT\nhelp[1]: "Post it under a new key"'); process.exit(2); }

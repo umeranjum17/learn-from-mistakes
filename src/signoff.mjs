@@ -11,9 +11,11 @@ import { locked, openStore } from './store.mjs';
 const HELP = 'sign-off-axi --help   # read the refusal help; never edit the board file';
 const AGAIN = 'learn-from-mistakes-axi retro --wait 15m   # rerun retro to produce valid findings';
 const keyId = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(s);
-function peer(bin, args, cfg, input) {
+const WAIT = ['wait', '--filer', 'learn-from-mistakes', '--timeout', '1', '--json'];
+function peer(bin, args, cfg, input, noAnswer = false) {
   const r = spawnSync(bin, args, { cwd: cfg.dir, input, encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 });
   if (r.status === 0) return r.stdout;
+  if (noAnswer && r.status === 1 && /code: (TIMEOUT|NOT_FOUND)/.test(r.stdout ?? '')) return null;
   if (r.stdout) process.stderr.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);
   const e = new UsageError(`sign-off-axi: ${r.error?.message ?? `exit ${r.status ?? r.signal}`}`, HELP);
@@ -68,20 +70,22 @@ export async function signoff(action, cfg, opts) {
       }
       if (!rows.length) console.log('No kept fixes.');
     } else if (bin) {
-      let answers;
-      try { answers = JSON.parse(peer(bin, ['answers', '--json'], cfg)); }
-      catch (e) { if (e instanceof UsageError) throw e; throw new UsageError('sign-off-axi answers: invalid JSON', HELP); }
-      if (!answers || Array.isArray(answers) || typeof answers !== 'object') throw new UsageError('sign-off-axi answers: expected a map by key', HELP);
+      let answers = {};
+      const out = peer(bin, WAIT, cfg, undefined, true);
+      if (out !== null) {
+        try { answers = JSON.parse(out); }
+        catch { throw new UsageError('sign-off-axi wait: invalid JSON', HELP); }
+        if (!answers || Array.isArray(answers) || typeof answers !== 'object') throw new UsageError('sign-off-axi wait: expected a map by key', HELP);
+      }
       const updates = db.prepare('SELECT proposal_id, message FROM signoff').all().flatMap((r) => {
         const key = JSON.parse(r.message).key, a = answers[key];
         if (!a) return [];
-        if (a.answer === '') return [{ id: r.proposal_id, key, answer: null }];
-        if (!['apply', 'skip'].includes(a.answer)) { console.error(`sign-off-axi answers: ${key} answer is not apply or skip; skipped`); return []; }
+        if (!['apply', 'skip'].includes(a.answer)) { console.error(`sign-off-axi wait: ${key} answer is not apply or skip; skipped`); return []; }
         return [{ id: r.proposal_id, key, answer: a.answer }];
       });
       locked(db, () => { for (const r of updates) db.prepare('UPDATE signoff SET answer = ? WHERE proposal_id = ?').run(r.answer, r.id); });
-      for (const r of updates) console.log(`saved: ${r.key} ${r.answer ?? 'cleared'}`);
-      if (!updates.length) console.log('No answers for posted findings.');
+      for (const r of updates) console.log(`saved: ${r.key} ${r.answer}`);
+      if (!updates.length) console.log('No new answers for posted findings.');
     } else console.log('No answers read: sign-off-axi is not installed.');
     if (!bin) console.log('npm i -g sign-off-axi');
   } finally { db.close(); }
