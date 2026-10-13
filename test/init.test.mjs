@@ -58,7 +58,7 @@ test('init writes the global agent config and a working project config once: the
       sessions: { type: 'sessions', agents: ['auto'] } },
     agent: 'claude', judge_agent: 'opencode', agent_config: { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }, // exactly what was chosen
     causes: Object.fromEntries(STARTER.map(([id, signal]) => [id, { description: parse(readFileSync(config, 'utf8')).causes[id].description, match: { source: 'sessions', signal } }])) });
-  assert.deepEqual([out.causes, out.causes_status], [STARTER.map(([id]) => id), 'written']);
+  assert.deepEqual(out.causes, STARTER.map(([id]) => id));
   assert.equal(readFileSync(join(p, '.lfm', '.gitignore'), 'utf8'), '*\n');
   assert.equal(execFileSync('git', ['-C', p, 'status', '--short'], { encoding: 'utf8' }), '?? .learn-from-mistakes.yaml\n?? docs/\n');
   const text = lfm('init');
@@ -83,7 +83,7 @@ test('init writes the global agent config and a working project config once: the
     'sources: sessions found, not configured (add it as sessions)']);
   assert.deepEqual(parse(readFileSync(config, 'utf8')), { sources: {} });
   const own = readFileSync(config, 'utf8');
-  assert.equal(JSON.parse(lfm('init', '-y', '--json').stdout).causes_status, 'kept');
+  assert.deepEqual(JSON.parse(lfm('init', '-y', '--json').stdout).causes, []);
   assert.equal(readFileSync(config, 'utf8'), own);
   rmSync(config);
   mkdirSync(join(p, 'data'));
@@ -92,7 +92,7 @@ test('init writes the global agent config and a working project config once: the
   writeFileSync(join(p, 'reviews.md'), '- 2026-10-12 umer: a synthetic review finding\n');
   const plain = lfm('init', '--no-excerpts'); // a plain init with no agent set prints what it wrote, then asks the user
   assert.equal(plain.status, 2, plain.stderr);
-  assert.match(plain.stdout, /^status: written\n[^]*^causes\[4\]: test-failed,command-failed,tool-misused,user-corrected\ncauses_status: written$/m);
+  assert.match(plain.stdout, /^status: written\n[^]*^causes\[4\]: test-failed,command-failed,tool-misused,user-corrected$/m);
   assert.match(plain.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set/m);
   const { excerpts, sources: { log, reviews } } = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([excerpts, log.path, reviews.path], ['off', 'data/defects.md', 'reviews.md']);

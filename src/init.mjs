@@ -160,7 +160,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
   return {
     config: file, status: written ? 'written' : 'already set up', global, global_status: globalWritten ? 'written' : 'kept', ignored,
-    causes: Object.keys(cfg.causes), causes_status: written ? 'written' : 'kept',
+    causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
     gaps, skipped,
