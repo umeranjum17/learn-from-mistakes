@@ -7,10 +7,11 @@ import { pathSource } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 
 export const validate = pathSource;
-// init: the first defect log at a usual place.
+// init: the first defect log at a usual place, as log, and a review log, as reviews.
 export function detect(dir) {
-  const path = ['defects.md', 'docs/defects.md', 'DEFECTS.md'].find((f) => statSync(join(dir, f), { throwIfNoEntry: false })?.isFile());
-  return path && { type: 'markdown-log', path };
+  const at = (...paths) => paths.find((f) => statSync(join(dir, f), { throwIfNoEntry: false })?.isFile());
+  const found = Object.entries({ log: at('defects.md', 'docs/defects.md', 'DEFECTS.md', 'data/defects.md'), reviews: at('reviews.md') }).filter(([, path]) => path);
+  return Object.fromEntries(found.map(([id, path]) => [id, { type: 'markdown-log', path }]));
 }
 
 // Each record's id comes from its text, so it survives line moves.
