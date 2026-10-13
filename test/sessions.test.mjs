@@ -457,6 +457,15 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
   assert.ok(!on.text.includes('hunter2rest') && on.text.includes('password=[redacted] token=[redacted] here in the log.'), 'a secret after a placeholder, or a placeholder redacted again');
 
+  // The bundle step is interrupted after metrics; the config then changes its target. The resumed bundle shows the target the metrics step stored.
+  const lfmDb = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  lfmDb.exec(`UPDATE runs SET status = 'interrupted' WHERE id = ${on.id}; UPDATE steps SET status = 'interrupted' WHERE run_id = ${on.id} AND name = 'bundle'`);
+  lfmDb.close();
+  writeFileSync(cfg, examples.replace('targets: { ', 'targets: { tool_error_rate: "<= 0.1", '));
+  const resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(on.id), 'bundle.md'), 'utf8'), /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
+
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
   writeFileSync(cfg, `${examples}excerpts: off\n`);
   const off = bundleOf(lfm('retro', '--foreground'));

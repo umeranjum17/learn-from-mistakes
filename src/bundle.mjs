@@ -15,8 +15,8 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const window = { start: Date.parse(current_start) }, on = cfg.excerpts === 'on';
   const quote = (text) => (on && text ? `\n  > ${excerpt(text)}` : '');
   const metrics = new Map();
-  for (const m of db.prepare('SELECT window, name, value FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
-    metrics.set(m.name, { ...metrics.get(m.name), [m.window]: m.value ?? 'n/a' });
+  for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
+    metrics.set(m.name, { ...metrics.get(m.name), [m.window]: m.value ?? 'n/a', target: m.target });
   }
   const events = inWindow(db.prepare('SELECT id, session_id, ts, tool, signal, cause, ref, excerpt FROM events WHERE run_id = ? AND signal IS NOT NULL ORDER BY ts DESC, id DESC').all(id), window);
   const clusters = new Map();
@@ -28,7 +28,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const records = db.prepare('SELECT id, source, ts, ref, text FROM records WHERE run_id = ? AND cause IS NULL ORDER BY ts DESC, id').all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
   const sections = [
-    ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(cfg.targets[name] ?? '')} |`),
+    ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
       '| metric | this window | last window | target |\n| --- | --- | --- | --- |\n'],
     ['Follow-ups', 'No follow-ups yet.', []],
     ['Signal clusters', 'No session event has a failure signal in this window.', [...clusters].sort(([, a], [, b]) => b.length - a.length).map(([key, es], i) => {
