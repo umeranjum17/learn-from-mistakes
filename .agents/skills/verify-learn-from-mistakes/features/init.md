@@ -28,8 +28,9 @@ so only types with a reader are written: `markdown-log` takes the first of
 when its `repos` table has a row whose `working_path` is the project's git top
 level or whose `upstream_url` is its `origin` URL (as `gate`); `sessions` is
 written as `{ type: sessions, agents: [auto] }` when any agent session store exists
-(store paths in [sessions.md](sessions.md)). A detect hook returns
-one config entry; init writes it under `log`, `gate`, or else the type name. A store that
+(store paths in [sessions.md](sessions.md)); `github` is written as `{ type: github }`
+when `origin` is a GitHub repo and `gh auth status` passes ([github.md](github.md)). A detect hook returns
+one config entry; init writes it under `log`, `gate`, `prs`, or else the type name. A store that
 cannot be read is listed under `skipped` with its cause; init goes on.
 `excerpts: on` is written (`--no-excerpts` writes `off`), and the text output
 ends with one line naming the worker and judge runners that see redacted

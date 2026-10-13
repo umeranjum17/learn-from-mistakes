@@ -77,6 +77,6 @@ still counts. A defect bullet dated `YYYY-MM-DD` counts from midnight UTC. Two
 sources of one type are read together: two defect logs sum into one `defects`. A
 second sessions source is rejected (exit 2): each reads every agent's stores, so
 its events would count twice.
-A metric whose source type is not configured is n/a. `gate_failures`
-and the github metrics come in later slices. A target compares the unrounded
+A metric whose source type is not configured is n/a. The github numbers are in
+[github.md](github.md). `gate_failures` comes in a later slice. A target compares the unrounded
 number, so `"<= 0.05"` misses 25 failed results of 496 (0.0504) and shows as 0.05.

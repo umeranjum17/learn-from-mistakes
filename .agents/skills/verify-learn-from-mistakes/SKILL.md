@@ -42,7 +42,8 @@ to capture their real stdout/stderr as evidence. Behavior assertions -- help and
 version exit codes, default TOON equal to the `--json` `lfm-report.v1` projection,
 `--full` carrying only non-content ids, the `next:` hint chains, and the private
 canary -- are owned by `test/cli.test.mjs` (runner argv and failures by
-`test/runners.test.mjs`, init by `test/init.test.mjs`); the helper does not duplicate them.
+`test/runners.test.mjs`, init by `test/init.test.mjs`, the github source with a fake `gh` by
+`test/github.test.mjs`); the helper does not duplicate them.
 
 ```sh
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/cli

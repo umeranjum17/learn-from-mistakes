@@ -26,6 +26,8 @@ const MIGRATIONS = [
     PRIMARY KEY (run_id, window, name))`,
   // The metric's target ("<op> <number>", NULL with none), kept as it was when the run ran.
   'ALTER TABLE metrics ADD COLUMN target TEXT',
+  // A record's facts its source's metrics count, as JSON (a PR's merge time, rework and reverts); NULL for other records.
+  'ALTER TABLE records ADD COLUMN data TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

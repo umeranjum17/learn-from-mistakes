@@ -16,21 +16,22 @@ const RUN = 'id, status, pid, created_at, updated_at, error';
 const BIN = fileURLToPath(new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url));
 const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
-  // Reads the sources: session events go to the `events` table, defect-log bullets and failed gate steps to `records`,
+  // Reads the sources: session events go to the `events` table, defect-log bullets, failed gate steps and PRs to `records`,
   // each with the cause its source tagged it with. It can run again: it first drops the run's events and records.
   collect: async (cfg, db, id, log) => {
-    const { sources, events, records, rows, read_from, current_start, previous_start } = await ingest(cfg);
+    const { sources, events, records, rows, prs, read_from, current_start, previous_start } = await ingest(cfg);
     for (const s of sources) log(sourceLine(s, false));
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, cause, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text) VALUES (?, ?, ?, ?, ?, ?)');
+    const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, data) VALUES (?, ?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
       db.prepare('DELETE FROM records WHERE run_id = ?').run(id);
       for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.cause ?? null, e.ref, e.excerpt);
-      for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text);
-      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error);
+      for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text, null);
+      for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, null);
+      for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data));
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');

@@ -179,20 +179,21 @@ export async function ingest(cfg) {
   // This window and the last, and far enough back to have before-numbers for every applied change.
   const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
   const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w).filter(Number.isFinite));
-  const records = [], rows = [], events = [], sources = [];
+  const records = [], rows = [], events = [], prs = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes });
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
     events.push(...(got.events ?? []));
-    sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events).length, hash: got.hash,
+    prs.push(...(got.prs ?? []));
+    sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
       ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl(records));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
-  return { sources, events, records, rows, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
+  return { sources, events, records, rows, prs, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
 }
 
 function analyse(cfg, files, rerunHint) {
@@ -269,8 +270,8 @@ function analyse(cfg, files, rerunHint) {
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
 export function buildReport(cfg, files, rerunHint, full) {
   const a = analyse(cfg, files, rerunHint);
-  // A sessions source always counts: a week with no sessions still has numbers (n/a).
-  if (!a.records.size && !a.rows.length && !a.meta.sources.some((s) => s.items || s.type === 'sessions')) throw new EmptyError('no records or rows in the sources: nothing to count',
+  // A sessions or github source always counts: a week with no sessions or PRs still has numbers.
+  if (!a.records.size && !a.rows.length && !a.meta.sources.some((s) => s.items || ['sessions', 'github'].includes(s.type))) throw new EmptyError('no records or rows in the sources: nothing to count',
     withContext('learn-from-mistakes-axi ingest', 'read the configured sources, or fix source paths in .learn-from-mistakes.yaml', files));
   return { model: project(a, full), problems: a.problems };
 }

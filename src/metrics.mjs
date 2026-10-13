@@ -18,7 +18,7 @@ export function meets(value, rule) {
 export function metrics(cfg, db, id, { current_start, previous_start }) {
   const windows = { current: { start: Date.parse(current_start) }, previous: { start: Date.parse(previous_start), end: Date.parse(current_start) } };
   const events = db.prepare('SELECT session_id, ts, kind, tool, signal, cause FROM events WHERE run_id = ?').all(id);
-  const records = db.prepare('SELECT source, ts, cause FROM records WHERE run_id = ?').all(id);
+  const records = db.prepare('SELECT source, ts, cause, data FROM records WHERE run_id = ?').all(id);
   const add = db.prepare('INSERT INTO metrics (run_id, window, name, value, target) VALUES (?, ?, ?, ?, ?)');
   const types = new Set(Object.values(cfg.sources).map((s) => s.type));
   db.exec('BEGIN');

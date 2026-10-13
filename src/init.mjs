@@ -6,7 +6,7 @@ import { InputError, stateDir, UsageError } from '../bin/learn-from-mistakes-axi
 import { expand, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { detect, resolveRoles } from './runners/index.mjs';
 
-const ID = { 'markdown-log': 'log', 'no-mistakes': 'gate' }; // the id a detected source is written under; else its type
+const ID = { 'markdown-log': 'log', 'no-mistakes': 'gate', github: 'prs' }; // the id a detected source is written under; else its type
 const FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
 const scalar = (v) => JSON.stringify(v); // a JSON string is a YAML scalar
 const flow = (o) => `{ ${Object.entries(o).map(([k, v]) => `${k}: ${scalar(v)}`).join(', ')} }`;

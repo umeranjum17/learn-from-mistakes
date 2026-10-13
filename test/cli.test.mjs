@@ -236,6 +236,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
     [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n  more: { type: sessions }\n')), 2,
       bad("sources.s: sources.more already reads every agent's sessions; keep one and narrow it with agents"), HELP],
+    [() => withConfig('', v1.replace('sources:\n', 'sources:\n  prs: { type: github }\n  more: { type: github }\n')), 2,
+      bad("sources.prs: sources.more already reads the PRs of origin's GitHub repo; keep one"), HELP],
     ...[['source: log', 'causes.env.match.source must name a no-mistakes or sessions source'], ['source: gate, signal: test_fail', 'causes.env.match: unknown key signal'],
       ['source: s', 'causes.env.match needs a signal, tool or text_contains'], ['source: s, tool: ""', 'causes.env.match.tool must be a non-empty string'],
       ['source: s, signal: oops', 'causes.env.match.signal must be one of tool_error, nonzero_exit, test_fail, correction, interrupt, retry'],
@@ -547,13 +549,13 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(missing.status, 2, missing.stderr);
   assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\)$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log }\n  prs: { type: github }\n');
-  const noPath = lfm('ingest'); // each source type checks its own keys; a type with no reader yet is refused
+  const noPath = lfm('ingest'); // each source type checks its own keys
   assert.equal(noPath.status, 2, noPath.stderr);
   assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions$/m); // a list is not a type
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs\.type must be one of markdown-log, no-mistakes, sessions$/m);
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github$/m); // a list is not a type
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github, repo: umer/app }\n'); // the repo comes from origin
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs: unknown key repo$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);

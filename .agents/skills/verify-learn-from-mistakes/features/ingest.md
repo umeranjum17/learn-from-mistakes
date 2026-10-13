@@ -1,7 +1,7 @@
 # Ingest
 
 ## Sub-features
-Read markdown bullets and failed SQLite rows, retain per-source metadata.
+Read markdown bullets, failed SQLite rows and a github source's merged PRs, retain per-source metadata.
 Each source's identity is a sha256 of its content: the log file's text, or the
 failed-step rows read from the store (not the database file, not its mtime).
 
