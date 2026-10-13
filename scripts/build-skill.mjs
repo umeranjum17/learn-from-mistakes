@@ -38,9 +38,10 @@ Never edit the sources or instruction files; your output is a report and recomme
 
 ## Model
 
-Do this work on the cheap default model of the agent CLI that runs it; \`${npx} agents\` lists each one.
+Do this work on a cheap model of the agent CLI that runs it.
 Never take Opus, Sonnet or Sol as the default.
-The tool's own agent is \`agent:\` in ~/.learn-from-mistakes/config.yaml (default auto), with its model in \`agent_config.<agent>.model\`; a project's .learn-from-mistakes.yaml may override both.
+The tool's own agents are \`agent:\` and \`judge_agent:\` in ~/.learn-from-mistakes/config.yaml, each with its model in \`agent_config.<agent>.model\`; a project's .learn-from-mistakes.yaml may override them. The user sets them: the tool never picks one, and neither do you.
+When a command prints "ask the user which agent to use", ask the user which agent and model to use for each role named, never choose one yourself, then run the \`${npx} init ...\` command it printed with the user's answer.
 The CLI makes no network or model calls itself; only its runs, \`${npx} agents --test\` and \`${npx} doctor --live\` start your own agent CLI or a BYOKit route.
 
 ## Request

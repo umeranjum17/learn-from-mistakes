@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agentModel, agents, binName, detect, fileOf, INSTALL, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
+import { agents, binName, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, same, which } from './runners/index.mjs';
+import { saveCommand } from './ask.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -56,14 +57,10 @@ export async function doctor(dir, opts) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     const at = fileOf(cfg, KEY[name]);
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
-    if (!r.bin) {
-      // Offered only where the role would not resolve to the other role's binary and model: that is the clash it names.
-      const other = roles[name === 'worker' ? 'judge' : 'worker'];
-      const offered = list.filter((x) => x.usable && !x.problem && !premiumBlocked(cfg, agentModel(cfg, x.runner)) && !same({ bin: x.bin, model: agentModel(cfg, x.runner) }, other)).map((x) => x.runner);
-      add('fail', name, r.problem, offered.length ? `set ${KEY[name]} in ${at} to ${offered.join(' or ')}`
-        : a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
-        : a?.problem ? `set ${KEY[name]} in ${at} to another agent`
-        : `install ${list.some((x) => x.usable) ? 'another' : 'an'} agent CLI (${INSTALL}), or set agent_path_override in ${shq(cfg.globalPath)}`);
+    if (!r.runner) { add('fail', name, r.problem, saveCommand([KEY[name]], opts.dir)); continue; } // not set: the user chooses
+    if (!r.bin) { // only the configured agent is checked: the tool never offers another one
+      add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
+        : `set ${KEY[name]} in ${at} to another agent the user chooses`);
       continue;
     }
     const route = byokit.routeOf(r.runner);
@@ -89,8 +86,9 @@ export async function doctor(dir, opts) {
     }
     const { model } = r;
     const setModel = `set agent_config."${r.runner}".model in ${fileOf(cfg, `agent_config.${r.runner}`)}`;
-    if (!model && route) { failedModel.add(name); add('fail', `${name} model`, `BYOKit has no default model for ${route}`, setModel); }
-    else if (!model) add('warn', `${name} model`, `none set for ${r.runner}: the agent CLI picks its own, which may be a premium model`, setModel);
+    if (!model && route) { failedModel.add(name); add('fail', `${name} model`, `none set for ${r.runner}: a BYOKit route needs one`, setModel); }
+    else if (!model && cfg.allow_premium) add('warn', `${name} model`, `none set for ${r.runner}: the agent CLI picks its own (allow_premium)`, setModel);
+    else if (!model) { failedModel.add(name); add('fail', `${name} model`, `none set for ${r.runner}: the agent CLI would pick its own, which may be a premium model`, `${setModel}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`); }
     else if (premiumBlocked(cfg, model)) {
       failedModel.add(name);
       add('fail', `${name} model`, `${model} is a premium model`, `${setModel} to a cheap model, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
@@ -102,11 +100,12 @@ export async function doctor(dir, opts) {
     const clash = same(roles.worker, roles.judge);
     const id = (r) => `${r.runner}${r.model ? ` ${r.model}` : ''}`;
     add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker (${id(roles.worker)}) and the judge (${id(roles.judge)}) resolve to the same agent and model, so the judge would judge its own work`
-      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge_agent in ${fileOf(cfg, 'judge_agent')} to another agent, or install a second agent CLI`);
+      : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge_agent in ${fileOf(cfg, 'judge_agent')} to another agent the user chooses`);
   }
 
-  // The skill in each usable agent CLI's own skills dir, or in the project.
-  for (const a of list.filter((x) => x.usable && RUNNERS[x.runner].skills)) {
+  // The skill in each configured, usable agent CLI's own skills dir, or in the project.
+  const used = new Set([roles.worker.runner, roles.judge.runner]);
+  for (const a of list.filter((x) => used.has(x.runner) && x.usable && RUNNERS[x.runner].skills)) {
     const home = join(RUNNERS[a.runner].skills(process.env), 'learn-from-mistakes');
     const at = [home, join(dir, '.claude', 'skills', 'learn-from-mistakes'), join(dir, '.agents', 'skills', 'learn-from-mistakes')].find((d) => existsSync(join(d, 'SKILL.md')));
     add(at ? 'ok' : 'warn', `skill ${a.runner}`, at ? join(at, 'SKILL.md') : `not installed in ${home}`, `mkdir -p ${shq(home)} && cp ${shq(SKILL)} ${shq(`${home}/`)}`);
