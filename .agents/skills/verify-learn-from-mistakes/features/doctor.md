@@ -11,10 +11,12 @@ Checks, in order:
 - `git`: a git repo (warn: worktree sessions are not matched; fix `git -C <dir> init`).
 - `config`: `.learn-from-mistakes.yaml` and `$LFM_HOME/config.yaml` load (fail, then no more
   checks; fix `init` when there is no project config, else edit the file the error names).
-- `state`: `.lfm` is git-ignored (fail, fix `init`); ok when `.lfm` does not exist yet
+- `state`: `.lfm` is git-ignored (fail, fix: append `*` to `<state>/.gitignore`); ok when `.lfm` does not exist yet
   (the first run makes it with its `.gitignore`) or `state_root` moves it out of the project.
 - `source <id>`: each source's registry `doctor()` hook (sessions: stores, and the sessions and
-  skipped records in files written in this window; markdown-log and no-mistakes: readable, the count in the window, and the skipped entries). A read
+  skipped records in files written in this window; a store that is missing is named with its env variable: an
+  ok detail under `agents: auto`, a warn when the agent is listed; no store at all is a warn; markdown-log and
+  no-mistakes: readable, the count in the window, and the skipped entries). A read
   error is a fail with the source's own fix (a missing defect log: `check sources.<id>.path in
   .learn-from-mistakes.yaml, or create it: touch <path>`). No sources at all: warn.
 - `worker`/`judge`: the role resolves to a usable, offered runner (`resolveRoles`), with
