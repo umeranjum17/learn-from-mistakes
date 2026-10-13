@@ -221,8 +221,8 @@ function analyse(cfg, files, rerunHint) {
   problems.push(...ledgerProblems);
   const labels = new Map();
   const lf = files.labels ?? join(cfg.state, 'labels.jsonl'), pf = files.proposals ?? join(cfg.state, 'proposals.jsonl');
-  // Problem lines name file:line and the rule broken, never a record id (a hash of private
-  // text) or a ref; a cause is echoed only through `shown`.
+  // Problem lines name file:line and the rule broken, not the record's text or ref; a cause is
+  // echoed only through `shown`.
   // A run whose worker labelled the records counts with its labels (files.runLabels) instead of labels.jsonl.
   for (const l of files.runLabels ?? readInput(lf, 'labels', files.labels, rerunHint)) {
     const at = files.runLabels ? `the run's label ${l._line}` : `${basename(lf)}:${l._line}`;

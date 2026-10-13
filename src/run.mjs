@@ -80,7 +80,7 @@ function stop(db, id, status, why) {
   for (const { child_pgid: g, child_started_at: t } of db.prepare('SELECT child_pgid, child_started_at FROM invocations WHERE run_id = ? AND completed_at IS NULL AND child_pgid IS NOT NULL').all(id)) {
     if (!t || startTime(g) !== t) continue; // the group's leader is gone or another process; a group whose leader exited is left (a grandchild may hold it)
     if (!signal(g, 'SIGTERM')) continue;
-    for (let i = 0; i < 30 && signal(g, 0); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a synchronous 100 ms wait
+    for (let i = 0; i < 30 && startTime(g) === t; i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a synchronous 100 ms wait
     signal(g, 'SIGKILL');
   }
   db.prepare('UPDATE invocations SET completed_at = ?, exit_status = ? WHERE run_id = ? AND completed_at IS NULL').run(now, status, id);
