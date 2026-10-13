@@ -47,7 +47,6 @@ function setup() {
   after(() => rmSync(tmp, { recursive: true }));
   const p = join(tmp, 'p'), tree = join(tmp, 'wt'), claude = join(tmp, 'home', '.claude');
   cpSync(new URL('../examples', import.meta.url).pathname, p, { recursive: true });
-  appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'worker: { runner: claude }\n'); // the fake agent on PATH labels; the run never picks one
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
   git('init', '-q');
   git('-c', 'user.name=Umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init');
@@ -125,7 +124,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
 
   // No sessions yet, and no other source: the run completes with 0 sessions and every number n/a, never 0.
-  writeFileSync(cfg, 'worker: { runner: claude }\nsources:\n  sessions: { type: sessions }\n');
+  writeFileSync(cfg, 'sources:\n  sessions: { type: sessions }\n');
   const empty = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: join(claude, '..', 'none') } });
   assert.equal(empty.status, 0, empty.stderr);
   writeFileSync(cfg, examples);
@@ -201,12 +200,12 @@ test('two defect logs of one type sum into defects; a config with only a no-mist
   const cfg = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(join(p, 'a.md'), `## ${day(1)}\n\n- [tests] A one.\n- [tests] A two.\n- [tests] A three.\n`);
   writeFileSync(join(p, 'b.md'), `## ${day(2)}\n\n- [build] B one.\n- [build] B two.\n`);
-  writeFileSync(cfg, 'worker: { runner: claude }\nsources:\n  a: { type: markdown-log, path: a.md }\n  b: { type: markdown-log, path: b.md }\n');
+  writeFileSync(cfg, 'sources:\n  a: { type: markdown-log, path: a.md }\n  b: { type: markdown-log, path: b.md }\n');
   const logs = lfm('retro', '--foreground');
   assert.equal(logs.status, 0, logs.stderr);
   assert.deepEqual(decode(logs.stdout).metrics.find((m) => m.name === 'defects'), { name: 'defects', current: 5, previous: 0, target: '', met: '' });
 
-  writeFileSync(cfg, 'worker: { runner: claude }\nsources:\n  gate: { type: no-mistakes, path: gate.sqlite }\n');
+  writeFileSync(cfg, 'sources:\n  gate: { type: no-mistakes, path: gate.sqlite }\n');
   const gate = lfm('retro', '--foreground');
   assert.equal(gate.status, 0, gate.stderr);
   assert.deepEqual(decode(gate.stdout).metrics.map(({ name, current, previous }) => ({ name, current, previous })), ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
@@ -226,8 +225,7 @@ test('a rule tags signal events only, and text_contains reads a retried call as 
     call('a2', quoted), result('a2', 'Exit code 1\nno match', true),
     call('a3', quoted), result('a3', 'ok'),
   ].map((r) => JSON.stringify(r)).join('\n'));
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `worker: { runner: claude }
-sources:
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
   sessions: { type: sessions }
 causes:
   quoted-grep:
@@ -249,8 +247,7 @@ test('a gate row takes one cause, the first in config order, in both the metrics
   const failed = gate.prepare(`UPDATE step_results SET error = 'wait delay expired after timeout', completed_at = ? WHERE status = 'failed'`)
     .run(Math.floor(Date.now() / 1000)).changes;
   gate.close();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `worker: { runner: claude }
-sources:
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
   gate: { type: no-mistakes, path: gate.sqlite }
 causes:
   timeout-hit:
@@ -338,7 +335,7 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
   notes.close();
   const stores = ['opencode.db', 'channel.db', 'notes.db'].map((f) => join(oc, f)), before = stores.map(sha);
 
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'worker: { runner: claude }\nsources:\n  sessions: { type: sessions, agents: [codex, opencode] }\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [codex, opencode] }\n');
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
   const run = decode(r.stdout);
@@ -387,7 +384,7 @@ test('a Codex state store that is not a database fails the retro with an error n
   const { p, env, lfm } = setup();
   mkdirSync(env.CODEX_HOME, { recursive: true });
   writeFileSync(join(env.CODEX_HOME, 'state_5.sqlite'), 'not a sqlite database\n'.repeat(64));
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'worker: { runner: claude }\nsources:\n  sessions: { type: sessions, agents: [codex] }\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [codex] }\n');
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 1, r.stdout);
   assert.ok(r.stderr.includes(`cannot read a codex session store at ${join(env.CODEX_HOME, 'state_5.sqlite')}`), r.stderr);
@@ -397,7 +394,7 @@ test('an OpenCode store that is not a database fails the retro with an error nam
   const { p, env, lfm } = setup();
   mkdirSync(join(env.XDG_DATA_HOME, 'opencode'), { recursive: true });
   writeFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'), 'not a sqlite database\n'.repeat(64));
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'worker: { runner: claude }\nsources:\n  sessions: { type: sessions, agents: [opencode] }\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [opencode] }\n');
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 1, r.stdout);
   assert.ok(r.stderr.includes(`cannot read a opencode session store at ${join(env.XDG_DATA_HOME, 'opencode', 'opencode.db')}`), r.stderr);
@@ -412,7 +409,7 @@ test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0
   const ids = Array.from({ length: 496 }, (_, i) => `t${i}`);
   mkdirSync(join(claude, 'projects', '-repo'), { recursive: true });
   writeFileSync(join(claude, 'projects', '-repo', 's-rate.jsonl'), ids.flatMap((id, i) => [call(id), result(id, i)]).map((r) => JSON.stringify(r)).join('\n'));
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'worker: { runner: claude }\nsources:\n  sessions: { type: sessions }\ntargets: { tool_error_rate: "<= 0.05" }\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions }\ntargets: { tool_error_rate: "<= 0.05" }\n');
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
   const row = decode(r.stdout).metrics.find((m) => m.name === 'tool_error_rate');
@@ -528,8 +525,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   store.close();
   const sub = join(p, 'app');
   mkdirSync(sub);
-  writeFileSync(join(sub, '.learn-from-mistakes.yaml'), `worker: { runner: claude }
-sources:\n  gate: { type: no-mistakes, path: ${join(p, 'gate.sqlite')} }\n`);
+  writeFileSync(join(sub, '.learn-from-mistakes.yaml'), `sources:\n  gate: { type: no-mistakes, path: ${join(p, 'gate.sqlite')} }\n`);
   const nested = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', sub], { encoding: 'utf8', env });
   assert.equal(nested.status, 0, nested.stderr);
   assert.ok(mine > 0, 'no failed gate step of this repo');

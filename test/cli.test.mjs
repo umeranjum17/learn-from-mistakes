@@ -1061,8 +1061,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`);
-  const config = join(p, '.learn-from-mistakes.yaml'), plain = readFileSync(config, 'utf8');
-  writeFileSync(config, `${plain}worker: { runner: claude }\n`); // the user sets the agent; the run never picks one
+  const global = join(env.LFM_HOME, 'config.yaml'); // the user set agent: claude and its model there; the run never picks one
   const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, ...extra } });
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
   const calls = () => readFileSync(join(log, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -1155,15 +1154,17 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
-  const fix = `set worker.runner (and worker.model) in ${join(p, '.learn-from-mistakes.yaml')} to an agent you have; the run never picks one`;
+  const fix = `set agent and its agent_config model in ${global} to an agent you have; the run never picks one`;
   const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
   assert.equal(missing.status, 1, missing.stderr);
   assert.match(JSON.parse(missing.stdout).run.error, new RegExp(`^analyse: worker: .+; ${fix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
-  writeFileSync(config, plain);
+  const runs = query('SELECT count(*) AS n FROM runs')[0].n, set = readFileSync(global, 'utf8');
+  writeFileSync(global, set.replace(/^agent: .*\n/m, '')); // the worker not set: the retro asks before any run or agent call
   const unset = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(unset.status, 1, unset.stderr);
-  assert.equal(JSON.parse(unset.stdout).run.error, `analyse: worker is not set: ${fix}`);
-  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', JSON.parse(unset.stdout).run.id)[0].n, 0);
+  assert.equal(unset.status, 2, unset.stderr);
+  assert.match(unset.stderr, /^error: ask the user which agent to use: agent is not set in /m);
+  assert.equal(query('SELECT count(*) AS n FROM runs')[0].n, runs);
+  writeFileSync(global, set);
 
   // An open invocation whose group leader is not the stored process is not signalled when its run ends.
   const decoy = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });

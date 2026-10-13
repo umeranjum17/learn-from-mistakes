@@ -425,10 +425,10 @@ Model: the tool's own agents are the user's choice: agent: and judge_agent: in $
 that needs it stops with "ask the user which agent to use": ask the user, never choose for them, then run the init
 command it prints with their answer. Never take Opus, Sonnet or Sol as the default.
 
-Set the agent that labels in the config (worker: { runner: <agent>, model: <model> }); the run never picks one.
-Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m. The tool's own agent labels the records and the
-run prints the report with their counts. You only start it and read the result. With no worker set, the retro stops and
-names the key to set; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
+The worker that labels is the agent: the user set. Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m.
+The tool's own agent labels the records and the run prints the report with their counts. You only start it and read the
+result. With agent or its model not set, the retro stops with the ask line; with one that is not ready, it stops at
+analyse with the fix; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
 the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
