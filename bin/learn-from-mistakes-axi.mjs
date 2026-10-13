@@ -261,7 +261,7 @@ function analyse(cfg, files, rerunHint) {
   const repeatedByCause = new Map(list.map((g) => [g.cause, g.repeated]));
   const proposals = readInput(pf, 'proposals', files.proposals, rerunHint).map((p, index) => {
     const refs = Array.isArray(p.refs) ? p.refs : [];
-    const resolves = (ref) => records.has(ref) || rows.some((r) => `${r.source}:${r.id}` === ref);
+    const resolves = (ref) => records.has(ref);
     const missing = refs.filter((ref) => !resolves(ref));
     const bad = typeof p.cause !== 'string' || !groups[p.cause] ? `cause ${typeof p.cause === 'string' ? shown(p.cause) : 'that is not a string'} has no counted events`
       : !refs.length ? 'no evidence refs' : missing.length ? `${missing.length} of ${refs.length} refs not found` : !p.change ? 'no change text'
@@ -315,7 +315,7 @@ function project(a, full) {
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
       // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
       m.store_row_ids = g.store.rows.map((r) => `${r.source}:${r.id}`);
-      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.rows.some((r) => `${r.source}:${r.id}` === ref)))];
+      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.rows.some((r) => recordId(r) === ref)))];
     }
     return m;
   });
