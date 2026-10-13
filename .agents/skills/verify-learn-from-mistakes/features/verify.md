@@ -17,8 +17,12 @@ verdicts land in `findings.verdict`/`judge_note` and
 `proposals.verdict`/`judge_note`. The step logs only ids and verdicts:
 `<verdict>: <id>` for each claim not confirmed, then
 `verdicts: <c> confirmed, <w> weakened, <r> refuted, <u> not judged`. With no
-finding and no fix it asks no agent (`nothing to verify: ...`). `check` does not
-read the verdicts yet.
+finding and no fix it asks no agent (`nothing to verify: ...`). `check` reads the
+verdicts ([propose.md](propose.md)): a refuted finding counts nothing, a refuted
+fix is a problem, a weakened fix ranks after the others and `status` shows its
+verdict. A judge on the worker's identity stops `retro` and `rerun` before the
+run starts (exit 2, `judge: ...` and the fix line); `acp:<target>` counts as the
+target's own binary there.
 
 ## How to get to it (user POV)
 Set `agent:` and `judge_agent:`, each with its own `agent_config` model (the run
@@ -28,13 +32,18 @@ never picks one), then `learn-from-mistakes-axi retro --wait 20m` and
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journey `propose, verify and check: ...`, with the
 fake agent as Claude Code (the worker) and as Codex (the judge, `gpt-6-luna`)
-on the whole PATH and `FAKE_REFUTE=p2`: the judge's argv, run-dir cwd, marker,
-method, claim lines and the bundle at the end; the worker never gets the verify
-marker; the `invocations` row (role `judge`, runner `codex`); the finding
-`confirmed` with its note; claim p2 (the second proposal row) `refuted`, the other 7 `confirmed`; the log
-lines; the next retro with no claim asks no agent. The helper's drives:
-`retro-propose` (`FAKE_REFUTE=p2`: the verdicts and the judge's invocation row)
-and `logs-verify` (`refuted: p2` and the verdict counts).
+on the whole PATH, `FAKE_REFUTE=p2` and `FAKE_WEAKEN=p3`: the judge's argv,
+run-dir cwd, marker, method, claim lines and the bundle at the end; the worker
+never gets the verify marker; the `invocations` row (role `judge`, runner
+`codex`); the finding `confirmed` with its note; claim p2 (the second proposal
+row) `refuted` and a check problem, claim p3 `weakened` and kept fix 5; the log
+lines; the next retro with no claim asks no agent. The journey `propose: ...`
+refutes `f1`: its `count` and `days` stay empty. The journey `retro and rerun
+stop ...` sets the judge to `claude` and to `acp:claude` on the worker's model:
+exit 2, `judge: ...` and the fix line, no store. The helper's drives:
+`retro-judge-clash` (`acp:claude`: exit 2), `retro-propose` (`FAKE_REFUTE=p2`,
+`FAKE_WEAKEN=p3`: the verdicts, the kept fixes with theirs and the judge's
+invocation row) and `logs-verify` (`refuted: p2`, `weakened: p3`, the counts).
 
 Real-product proof (outside the repo; lab sessions only, never the captain's):
 
