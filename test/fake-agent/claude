@@ -7,7 +7,7 @@
 // records (or its first item when it has none): the sixth with metric defects, the seventh for a cause that did not repeat, the eighth with no tripwire.
 // FAKE_PROPOSE=long gives two fixes, the second with a change of four sentences, on every answer.
 // The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
-// list), weakened for one in FAKE_WEAKEN, else confirmed.
+// list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
 // FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -24,7 +24,7 @@ if (mode === 'hang') setInterval(() => {}, 1000);
 else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
   const claims = [...stdin.slice(stdin.indexOf('Claims to judge:'), stdin.indexOf('Reply with one JSON object')).matchAll(/^- (\w+):/gm)].map((m) => m[1]);
   const has = (v, item) => (process.env[v] ?? '').split(',').includes(item);
-  reply(JSON.stringify({ verdicts: claims.map((item) => (has('FAKE_REFUTE', item) ? { item, verdict: 'refuted', reason: 'The cited items show a different failure for Umer.' }
+  reply(JSON.stringify({ verdicts: claims.filter((item) => !has('FAKE_UNJUDGED', item)).map((item) => (has('FAKE_REFUTE', item) ? { item, verdict: 'refuted', reason: 'The cited items show a different failure for Umer.' }
     : has('FAKE_WEAKEN', item) ? { item, verdict: 'weakened', reason: 'The cited items show this only once for Umer.' } : { item, verdict: 'confirmed', reason: 'The cited items show this for Umer.' })) }));
 }
 else if (/^lfm-run:\d+:propose\n/.test(stdin)) {

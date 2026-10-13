@@ -27,7 +27,7 @@ counts nothing and keeps them empty). A fix is kept when the judge did not refut
 target, an owner, a metric (default `cause_count:<cause>`, else a metric name)
 and a `"<op> <number>"` tripwire. A fix that breaks a rule is logged as
 `problem: proposals[<i>]: <rule>`, saved with `proposals.problem` and not kept;
-it is not sent back. Kept fixes are ranked by the judge's verdict (weakened after
+it is not sent back. Kept fixes are ranked by the judge's verdict (weakened or not judged after
 the others), then by their cause's count, then by how
 far their metric misses its target this window, then the worker's order, and
 numbered 1 to 5 (`proposals.n`); one past five is

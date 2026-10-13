@@ -150,8 +150,8 @@ try {
   assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
   writeFileSync(stagedConfig, stringify({ ...config, agent: 3 }));
   run('config-bad-agent', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
-  // A judge on the worker's agent and model (acp:<target> is the target's own binary) stops retro before the run starts.
-  writeFileSync(stagedConfig, stringify({ ...config, judge_agent: 'acp:claude', agent_config: { ...config.agent_config, 'acp:claude': { model: config.agent_config.claude.model } } }));
+  // A judge on the worker's agent and model stops retro before the run starts.
+  writeFileSync(stagedConfig, stringify({ ...config, judge_agent: 'claude' }));
   run('retro-judge-clash', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
   assert.match(readFileSync(join(evidence, 'retro-judge-clash.stderr'), 'utf8'), /^error: judge: the judge resolves to the worker's agent and model[^\n]*\nnext: ask the user which agent and model to use, then set judge_agent/m, 'retro started with the judge on the worker\'s identity');
   Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'gpt-6-luna' } } }); // the drives below call the judge

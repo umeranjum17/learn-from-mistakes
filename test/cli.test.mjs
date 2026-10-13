@@ -1251,17 +1251,37 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });
 
-test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, through acp:<target> too', () => {
+test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
   const { p, env, lfm } = agentSetup();
-  for (const judge of ['claude', 'acp:claude']) {
-    writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: ${judge}\nagent_config: { claude: { model: claude-haiku-5-5 }, "acp:claude": { model: claude-haiku-5-5 } }\n`);
-    for (const cmd of ['retro', 'rerun']) {
-      const r = lfm({}, cmd);
-      assert.equal(r.status, 2, `${judge} ${cmd}: ${r.stderr}`);
-      assert.match(r.stderr, /^error: judge: the judge resolves to the worker's agent and model, so it would judge its own work\nnext: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
-    }
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);
+  for (const cmd of ['retro', 'rerun']) {
+    const r = lfm({}, cmd);
+    assert.equal(r.status, 2, `${cmd}: ${r.stderr}`);
+    assert.match(r.stderr, /^error: judge: the judge resolves to the worker's agent and model, so it would judge its own work\nnext: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
+  }
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: acp:claude\nagent_config: { claude: { model: claude-haiku-5-5 }, "acp:claude": { model: claude-haiku-5-5 } }\n`);
+  for (const cmd of ['retro', 'rerun']) {
+    const r = lfm({}, cmd);
+    assert.equal(r.status, 1, `${cmd}: ${r.stderr}`);
+    assert.match(r.stderr, /^error: judge: acp:claude is not usable: acpx is not on PATH$/m);
   }
   assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a run started');
+});
+
+test('a fix the judge leaves out is not judged: it ranks after the confirmed fixes and status reads not judged', () => {
+  const { p, lfm, query, lines } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_REFUTE: 'p2', FAKE_UNJUDGED: 'p1' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run } = JSON.parse(r.stdout);
+  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'judge answer 1 is not valid: verdicts has no verdict for p1', 'judge codex gpt-6-luna: answered',
+    'refuted: p2', 'verdicts: 7 confirmed, 0 weakened, 1 refuted, 1 not judged']);
+  assert.deepEqual(query('SELECT target, n, verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n', run.id), [
+    { target: 'launch script 6', n: 1, verdict: 'confirmed' }, { target: 'launch script 3', n: 2, verdict: 'confirmed' }, { target: 'launch script 4', n: 3, verdict: 'confirmed' },
+    { target: 'launch script 5', n: 4, verdict: 'confirmed' }, { target: 'launch script 1', n: 5, verdict: null }]);
+  const { fixes } = JSON.parse(lfm({}, 'status', '--json', '--run', String(run.id)).stdout);
+  assert.deepEqual(fixes.map((f) => [f.n, f.verdict]), [[1, 'confirmed'], [2, 'confirmed'], [3, 'confirmed'], [4, 'confirmed'], [5, 'not judged']]);
 });
 
 test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept; check counts nothing for a refuted finding', () => {

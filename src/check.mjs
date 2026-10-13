@@ -92,8 +92,8 @@ export function counts(cfg, db, id, { current_start }) {
 
 // The check step. A fix is kept when the judge did not refute it, its cause has counted events and repeated, its refs
 // name bundle items, it has a target, an owner, a metric (default cause_count:<cause>) and a tripwire; a fix that breaks
-// a rule is a problem: it is logged and saved with the rule. The kept fixes are ranked, a fix the judge weakened after
-// the others, and numbered 1 to 5 (proposals.n); one past five is a problem.
+// a rule is a problem: it is logged and saved with the rule. The kept fixes are ranked, a fix the judge did not confirm
+// (weakened, or not judged) after the others, and numbered 1 to 5 (proposals.n); one past five is a problem.
 // It can run again: it first clears what it set.
 export function check(cfg, db, id, dir, window, log) {
   const { causes, findings } = counts(cfg, db, id, window);
@@ -110,9 +110,9 @@ export function check(cfg, db, id, dir, window, log) {
       : !f.target.trim() ? 'no target' : !f.owner.trim() ? 'no owner'
       : !isMetric(metric, cfg.causes) ? `its metric is not ${METRIC_RULE}`
       : !f.tripwire?.trim() ? 'no tripwire' : !trip ? 'its tripwire is not "<op> <number>", such as "<= 0"' : '';
-    return { id: f.id, i, metric, tripwire: trip ? `${trip[1]} ${trip[2]}` : f.tripwire, count: c?.count ?? 0, gap: gaps.get(metric) ?? 0, weak: f.verdict === 'weakened', bad };
+    return { id: f.id, i, metric, tripwire: trip ? `${trip[1]} ${trip[2]}` : f.tripwire, count: c?.count ?? 0, gap: gaps.get(metric) ?? 0, unconfirmed: f.verdict !== 'confirmed', bad };
   });
-  const kept = fixes.filter((f) => !f.bad).sort((a, b) => a.weak - b.weak || b.count - a.count || b.gap - a.gap || a.i - b.i);
+  const kept = fixes.filter((f) => !f.bad).sort((a, b) => a.unconfirmed - b.unconfirmed || b.count - a.count || b.gap - a.gap || a.i - b.i);
   for (const f of kept.slice(MAX)) f.bad = `more than ${MAX} fixes: ranked below the top ${MAX}`;
   const set = db.prepare('UPDATE proposals SET n = ?, metric = ?, tripwire = ?, problem = ? WHERE id = ?');
   const found = db.prepare('UPDATE findings SET count = ?, days = ? WHERE id = ?');

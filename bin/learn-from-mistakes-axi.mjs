@@ -562,8 +562,12 @@ async function main() {
   let cfg = loadConfig(opts.dir ?? resolve('.'));
   // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
   if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
-  // The judge is never the worker: a judge on the worker's agent and model stops the run before it starts.
-  if (['retro', 'rerun'].includes(cmd) && (await resolveRoles(cfg, detect(cfg))).judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
+  // The judge is never the worker: a judge on the worker's agent and model, or one that is not ready, stops the run before it starts.
+  if (['retro', 'rerun'].includes(cmd)) {
+    const { judge } = await resolveRoles(cfg, detect(cfg));
+    if (judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
+    if (judge.problem) throw new InputError(`judge: ${judge.problem}`, roleFix(cfg, 'judge_agent', judge));
+  }
   if (cmd === 'ingest') {
     for (const s of (await ingest(cfg)).sources) console.log(sourceLine(s));
     console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);

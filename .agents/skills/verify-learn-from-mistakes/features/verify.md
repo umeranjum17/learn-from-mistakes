@@ -19,10 +19,11 @@ verdicts land in `findings.verdict`/`judge_note` and
 `verdicts: <c> confirmed, <w> weakened, <r> refuted, <u> not judged`. With no
 finding and no fix it asks no agent (`nothing to verify: ...`). `check` reads the
 verdicts ([propose.md](propose.md)): a refuted finding counts nothing, a refuted
-fix is a problem, a weakened fix ranks after the others and `status` shows its
-verdict. A judge on the worker's identity stops `retro` and `rerun` before the
-run starts (exit 2, `judge: ...` and the fix line); `acp:<target>` counts as the
-target's own binary there.
+fix is a problem, a fix the judge did not confirm (weakened, or left out: `not
+judged`) ranks after the confirmed ones and `status` shows its verdict. A judge
+on the worker's identity stops `retro` and `rerun` before the run starts (exit
+2, `judge: ...` and the fix line); a judge that is not ready stops them the same
+way (exit 1, `judge: <its problem>` and its fix line).
 
 ## How to get to it (user POV)
 Set `agent:` and `judge_agent:`, each with its own `agent_config` model (the run
