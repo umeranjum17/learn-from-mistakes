@@ -44,6 +44,7 @@ function messages(cfg, db, opts) {
     const refs = JSON.parse(f.refs_json).flatMap((ref) => /^c\d+$/.test(ref) ? (groups[Number(ref.slice(1)) - 1]?.[1] ?? []).map((e) => `e${e.id}`) : [ref]);
     const ids = refs.map((ref) => recordIds.get(ref) ?? (eventIds.has(ref) ? ref : undefined));
     if (ids.some((ref) => !ref)) throw new UsageError(`proposal ${run.id}:${f.n}: evidence does not name records`, AGAIN);
+    if (!causes.has(f.cause)) throw new UsageError(`proposal ${run.id}:${f.n}: cause ${f.cause} is no longer configured`, AGAIN);
     const c = causes.get(f.cause);
     const body = { contract: 1, kind: 'finding', schema: 1,
       title: `Repeated cause: ${f.cause}`, filer: 'learn-from-mistakes', about: `${c.count} incidents over ${c.days} days.`,
