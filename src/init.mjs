@@ -25,7 +25,7 @@ const globalText = `# learn-from-mistakes global configuration
 # plan key route such as opencode-go (learn-from-mistakes-axi agents --test byokit:<route> checks one)
 # agent: claude
 
-# Agent that checks the worker's output. Same values as agent; its agent and model must differ from the
+# Agent that checks the worker's output. Same values as agent; not the same agent and model as the
 # worker's: the judge never judges its own work.
 # judge_agent: codex
 
