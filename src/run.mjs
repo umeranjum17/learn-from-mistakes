@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { bundle } from './bundle.mjs';
 import { analyse } from './steps/analyse.mjs';
+import { propose } from './steps/propose.mjs';
+import { check } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { startTime } from './proc.mjs';
@@ -55,6 +57,10 @@ const STEPS = {
   },
   // The worker reads the bundle: it names the causes it finds and labels the defect records (the labels and findings tables).
   analyse: (cfg, db, id, log) => analyse(cfg, db, id, runDir(cfg, id), log),
+  // The worker proposes fixes for the repeated causes and gives the reason for each follow-up that is not keep.
+  propose: (cfg, db, id, log) => propose(cfg, db, id, runDir(cfg, id), collected(db, id), log),
+  // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
+  check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
   // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;
   // with none, coverage shows every record unlabelled.
   report: (cfg, db, id, log) => {
@@ -324,7 +330,8 @@ export async function runs(cfg) {
 }
 
 // The run, its steps, what each source read once collect is done, the numbers once metrics is done and each
-// applied change's verdict once followup is done: counts and numbers, never content or hashes.
+// applied change's verdict once followup is done, and the kept fixes once check is done: ids, counts and numbers, never
+// content or hashes.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics');
@@ -343,5 +350,6 @@ function show(db, id) {
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
+    ...(out('check') && { fixes: db.prepare('SELECT n, cause, metric, tripwire FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(id).map((f) => ({ ...f })) }),
   };
 }

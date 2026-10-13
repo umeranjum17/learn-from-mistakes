@@ -113,7 +113,7 @@ function moveRunBack(p, id, days) {
 test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data', () => {
   const { p, lfm, retro } = journey();
   const first = retro();
-  assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['check', 'completed'], ['report', 'completed']]);
   const row = (change, metric, before, after, tripwire, verdict) => ({ change, metric, before, after, tripwire, verdict });
   assert.deepEqual(first.followups, [
     row('chg-1', 'cause_count:missing-file', 4, 0, '<= 0', 'keep'),
