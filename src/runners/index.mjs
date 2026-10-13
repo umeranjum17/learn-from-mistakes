@@ -1,9 +1,9 @@
 // The runner table: the user's own agent CLIs, started by the tool as tool-off workers. Every call runs in its own
 // run dir, gets the prompt with a marker first line, and is stopped by its process group at the timeout.
 import { spawn, spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, delimiter, isAbsolute, join } from 'node:path';
-import { InputError, stateDir } from '../../bin/learn-from-mistakes-axi.mjs';
+import { InputError, shq, stateDir } from '../../bin/learn-from-mistakes-axi.mjs';
 import * as claude from './claude.mjs';
 import * as codex from './codex.mjs';
 import * as opencode from './opencode.mjs';
@@ -11,11 +11,10 @@ import * as pi from './pi.mjs';
 import * as gemini from './gemini.mjs';
 import * as acp from './acp.mjs';
 import * as byokit from './byokit.mjs';
+import { PROJECT_FILE } from '../config.mjs';
 
-export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // in auto order; acp runs as acp:<target>
-export const MODELS = JSON.parse(readFileSync(new URL('../models.json', import.meta.url), 'utf8'));
+export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // acp runs as acp:<target>
 const FIX = 'learn-from-mistakes-axi agents   # check the agent CLI is usable and logged in';
-export const INSTALL = 'claude, codex, opencode, pi or gemini';
 const TRANSIENT = /\b(429|503|529)\b|overloaded|rate_limit|ECONNRESET/i;
 const QUOTA = /quota|usage_limit|usage limit|session limit|credit balance/i;
 const tail = (text) => text.replace(/\x1b\[[0-9;]*m/g, '').trim().split('\n').slice(-3).join(' ').slice(-300);
@@ -29,7 +28,17 @@ export function which(name) {
   }
 }
 
-export const binName = (cfg, runner) => cfg.runner_path?.[runner] ?? RUNNERS[runner].bin ?? runner;
+export const binName = (cfg, runner) => (runner === 'acp' ? cfg.acpx_path : cfg.agent_path_override?.[runner]) ?? RUNNERS[runner].bin ?? runner;
+// The model agent_config gives an agent (claude, acp:<target>, byokit:<route>), or "": none set, and no call is made.
+export const agentModel = (cfg, agent) => cfg.agent_config?.[agent]?.model ?? '';
+// The file to change a key in: the file that set it; a key no file sets goes to the project file, else the global file.
+export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? (cfg.dir ? join(cfg.dir, PROJECT_FILE) : cfg.globalPath));
+// The fix for an agent or its model the user has not set, or that is not ready: the user chooses, and the file and key are named.
+export const chooseFix = (cfg, key, agent) => {
+  const file = fileOf(cfg, key), modelFile = agent && fileOf(cfg, `agent_config.${agent}.model`);
+  const where = !agent || modelFile === file ? `set ${key} and its agent_config model in ${file}` : `set ${key} in ${file} and its agent_config model in ${modelFile}`;
+  return `ask the user which agent and model to use, then ${where}; the run never picks one`;
+};
 
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
@@ -38,7 +47,7 @@ export function detect(cfg) {
     const found = which(binName(cfg, runner));
     const { files, vars } = mod.login(process.env);
     const login = [...files.filter((f) => existsSync(f)).map((f) => basename(f)), ...vars.filter((v) => process.env[v])].join(' ') || 'not found (it may be in the system keychain)';
-    const a = { runner, usable: false, version: '', tools: mod.tools, login, model: roleModel(cfg, 'worker', runner), bin: found ? realpathSync(found) : '', problem: '' };
+    const a = { runner, usable: false, version: '', tools: mod.tools, login, model: agentModel(cfg, runner), bin: found ? realpathSync(found) : '', problem: '' };
     if (!found) return { ...a, problem: `${binName(cfg, runner)} is not on PATH` };
     const v = spawnSync(found, ['--version'], { encoding: 'utf8', timeout: 10000 });
     if (v.status !== 0) return { ...a, problem: `--version failed: ${tail(`${v.stderr ?? ''}${v.stdout ?? ''}`) || v.error?.code || `exit ${v.status}`}` };
@@ -46,62 +55,40 @@ export function detect(cfg) {
   });
 }
 
-// The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
-const configuredModel = (cfg, name, env = process.env) => (name === 'worker' ? (env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
-export const lists = (runner, model) => !!MODELS[runner]?.includes(model);
 export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
-// A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
-// it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
-export function roleModel(cfg, name, runner, env = process.env) {
-  const model = configuredModel(cfg, name, env);
-  if (model && (cfg[name]?.runner === runner || lists(runner, model))) return model;
-  return MODELS[runner]?.[0] ?? '';
-}
-
-// The identity rule: a role is the real path of its binary plus its model. An empty model on the same binary is equal.
+// The identity rule: a role is the real path of its binary plus its model. A role with no model is never compared: it is unset.
 export const CLASH = 'the judge resolves to the worker\'s agent and model, so it would judge its own work';
-const WORKER_CLASH = 'the worker resolves to the judge\'s agent and model, so the judge would judge its own work';
-const clashOf = (name) => (name === 'judge' ? CLASH : WORKER_CLASH);
-export const same = (a, b) => a.bin === b.bin && (a.model === b.model || !a.model || !b.model);
-
-// Resolve worker or judge after auto, the table default and the configured model. The judge takes the first candidate
-// that differs from the worker; with none, it keeps the last one, so the caller reports the clash rather than judging
-// its own work.
-export async function resolveRole(cfg, name, agents, worker, env = process.env) {
-  const want = cfg[name];
-  const route = byokit.routeOf(want.runner);
-  if (route) { // in process: its identity is the route itself
+export const same = (a, b) => a.bin === b.bin && a.model === b.model;
+export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
+// One agent as a role: its model from agent_config, its binary (a BYOKit route is its own identity), or its problem.
+async function candidate(cfg, runner, agents) {
+  const model = agentModel(cfg, runner);
+  const route = byokit.routeOf(runner);
+  if (route) { // in process
     const p = await byokit.check(route);
-    if (p) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: want.runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
-    const r = { runner: want.runner, model: await byokit.modelOf(route, configuredModel(cfg, name, env)), bin: want.runner, problem: '' };
-    return worker && same(r, worker) ? { ...r, problem: clashOf(name) } : r;
+    if (p) return { runner, model, bin: runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
+    return { runner, model, bin: runner, problem: '' };
   }
-  const key = want.runner.replace(/^acp:.*/, 'acp');
-  if (want.runner !== 'auto' && !RUNNERS[key]) return { runner: want.runner, model: configuredModel(cfg, name, env), bin: '', problem: `runner ${want.runner} has no adapter in this version` };
-  const model = configuredModel(cfg, name, env);
-  const pool = agents.filter((a) => !a.problem && (want.runner === 'auto' ? !model || lists(a.runner, model) : a.runner === key));
-  if (!pool.length) {
-    const a = agents.find((x) => x.runner === key) ?? (model ? agents.find((x) => lists(x.runner, model)) : agents.find((x) => x.usable));
-    const named = a?.runner === key || !model ? a?.runner : `${a?.runner} lists model ${model} but`;
-    const reason = `${named} ${a?.usable ? 'is' : 'is not usable:'} ${a?.problem}`;
-    return { runner: want.runner, model, bin: '', problem: a ? reason : model ? `no usable agent CLI lists model ${model}` : `no usable agent CLI (install ${INSTALL})` };
-  }
-  let last;
-  for (const a of pool) {
-    last = { runner: a.runner, model: roleModel(cfg, name, a.runner, env), bin: a.bin, problem: '' };
-    if (!worker || !same(last, worker)) return last;
-  }
-  return { ...last, problem: clashOf(name) };
+  const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));
+  if (a.problem) return { runner, model, bin: '', problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
+  return { runner, model, bin: a.bin, problem: '' };
 }
 
-// The pinned role is resolved first, so the auto role takes a runner that differs from it; both auto: the worker first.
+// Resolve the worker (agent:) or the judge (judge_agent:): the one agent the user set. When it is not ready, its own
+// problem is the result and no other agent is tried. A judge on the worker's identity is a clash, which the caller
+// reports rather than judging its own work. A role that is not set resolves to nothing: the tool never picks one.
+export async function resolveRole(cfg, name, agents, worker, env = process.env) {
+  const runner = cfg[KEY[name]];
+  if (!runner) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
+  const r = await candidate(cfg, runner, agents);
+  if (!r.problem && worker && r.model && worker.model && same(r, worker)) return { ...r, problem: CLASH };
+  return r;
+}
+
+// The worker first, then a judge that differs from it.
 export async function resolveRoles(cfg, agents, env = process.env) {
-  if (cfg.worker.runner === 'auto' && cfg.judge.runner !== 'auto') {
-    const judge = await resolveRole(cfg, 'judge', agents, undefined, env);
-    return { worker: await resolveRole(cfg, 'worker', agents, judge.problem ? undefined : judge, env), judge };
-  }
   const worker = await resolveRole(cfg, 'worker', agents, undefined, env);
   return { worker, judge: await resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
 }
@@ -149,12 +136,13 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
+  const name = target ? `acp:${target}` : runner;
+  const role = cfg.judge_agent === name && cfg.agent !== name ? 'judge_agent' : 'agent';
+  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseFix(cfg, role, name));
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (route) model = await byokit.modelOf(route, model);
-  if (route && !model) throw new InputError(`${runner}: BYOKit's catalogue has no cheap model for ${route}`, `set the role's model, such as worker: { runner: "${runner}", model: <model> }`);
-  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, 'set allow_premium: true in the project config, or use a cheap model');
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, role, name)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;
@@ -162,9 +150,10 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   const marker = `lfm-run:${runId}:${step}`;
   const promptFile = join(dir, `prompt-${step}.md`);
   writeFileSync(promptFile, `${marker}\n${prompt}`);
-  const cmd = route ? {} : mod.command({ model, dir, step, target, prompt: promptFile, marker, extra: cfg.runner_args?.[runner] ?? [] });
+  const effort = cfg.agent_config?.[target ? `acp:${target}` : runner]?.effort;
+  const cmd = route ? {} : mod.command({ model, effort, dir, step, target, prompt: promptFile, marker, extra: cfg.agent_args_override?.[runner] ?? [] });
   const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
-  const timeout = cfg.caps.timeout;
+  const timeout = cfg.agent_timeout;
   for (let attempt = 0; ; attempt++) {
     for (const f of cmd.outputs ?? []) rmSync(join(dir, f), { force: true });
     const r = route
@@ -172,7 +161,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
       : await spawnOnce(bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
     const wrote = readdirSync(dir).filter((f) => !before.has(f));
     if (wrote.length) throw new InputError(`${runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, fix);
-    if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (caps.timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, fix);
+    if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (agent_timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, fix);
     if (r.spawnError) throw new InputError(`${runner}: cannot start ${bin} (${r.spawnError.code})`, fix);
     const got = route ? r : mod.answer(r.out, { dir, step });
     const cause = got.error || (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');
@@ -188,8 +177,8 @@ const TEST = `This tests that your tools are off. Create a file named x.txt cont
 Your tools may be off. Never write a tool call or code; if you cannot create the file, say so in the reply.
 Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 
-// `agents`: each runner with its version, login presence (file and variable names only, never contents) and default
-// model; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
+// `agents`: each runner with its version, login presence (file and variable names only, never contents) and the model
+// set; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
 // the agent to write a file, and fails when anything was written; a plain-text answer passes, the file scan is the check.
 export async function agents(cfg, opts) {
   const list = detect(cfg);
@@ -200,7 +189,7 @@ export async function agents(cfg, opts) {
     if (!a.usable) throw new InputError(`${a.runner} is not usable: ${a.problem}`, FIX);
     const p = route && await byokit.check(route);
     if (p) throw new InputError(`${a.runner}: ${p.problem}`, p.fix);
-    if (route) a.model = await byokit.modelOf(route, roleModel(cfg, 'worker', opts.test));
+    a.model = agentModel(cfg, opts.test);
     stateDir(cfg);
     const step = opts.test.replace(':', '-');
     const dir = join(cfg.state, 'runs', `test-${step}`);
@@ -210,9 +199,9 @@ export async function agents(cfg, opts) {
     const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST });
     return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem } };
   }
-  const out = { agents: list };
-  if (cfg.worker) {
-    Object.assign(out, await resolveRoles(cfg, list));
-  }
-  return out;
+  // Only the configured agents: the tool never lists others to pick from.
+  const used = new Set([cfg.agent, cfg.judge_agent].map((a) => a.replace(/^acp:.*/, 'acp')));
+  const configured = [cfg.agent, cfg.judge_agent];
+  const rows = list.filter((a) => used.has(a.runner)).map((a) => ({ ...a, model: agentModel(cfg, configured.find((n) => n.replace(/^acp:.*/, 'acp') === a.runner)) }));
+  return { agents: rows, ...(await resolveRoles(cfg, list)) };
 }

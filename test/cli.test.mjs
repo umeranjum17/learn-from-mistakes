@@ -11,11 +11,13 @@ import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
+// The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
+const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }\n';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const CANARY = 'CANARY-private-prose-9f3a7c';
 const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
-const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
+const MODELS = { claude: ['claude-haiku-5-5'] };
 // git never looks above the temp dir, so a project that is not a git checkout is not read as part of the repo the
 // temp dir happens to sit in (the gate source matches this project's checkout).
 process.env.GIT_CEILING_DIRECTORIES = realpathSync(tmpdir());
@@ -30,6 +32,8 @@ function setup() {
   cpSync(new URL('../examples', import.meta.url).pathname, join(tmp, 'p'), { recursive: true });
   own(join(tmp, 'p'));
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  mkdirSync(env.LFM_HOME);
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
   const raw = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: tmp, env });
   return { p: join(tmp, 'p'), lfm, raw, env };
@@ -119,6 +123,8 @@ test('same-named projects keep separate state; a global state_root still wins', 
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
   after(() => rmSync(tmp, { recursive: true }));
   const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  mkdirSync(env.LFM_HOME);
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const projects = ['a', 'b'].map((parent) => {
     const dir = join(tmp, parent, 'shop'); // same basename, different parents, no `name:` in either config
     cpSync(new URL('../examples', import.meta.url).pathname, dir, { recursive: true });
@@ -136,8 +142,8 @@ test('same-named projects keep separate state; a global state_root still wins', 
   assert.equal(run(projects[0], 'change', 'applied', '--cause', 'flaky', '--ref', 'abc1234').status, 0);
   assert.equal(JSON.parse(run(projects[1], 'changes', '--json').stdout).changes.length, 0);
 
-  mkdirSync(join(tmp, 'home'));
-  writeFileSync(join(tmp, 'home', 'config.yaml'), `state_root: ${join(tmp, 'root')}\n`);
+  mkdirSync(join(tmp, 'home'), { recursive: true });
+  writeFileSync(join(tmp, 'home', 'config.yaml'), `${AGENTS_SET}state_root: ${join(tmp, 'root')}\n`);
   rmSync(join(projects[0], '.lfm'), { recursive: true });
   const r = run(projects[0], 'ingest');
   assert.equal(r.status, 0, r.stderr);
@@ -231,17 +237,23 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('attach', '--wait', '1m'), 2, 'attach does not take --wait', /^next: learn-from-mistakes-axi attach \[--run <id>\]/m],
     [() => raw('status', '--run', '0'), 2, '--run "0" must be a run id that runs lists', /^next: learn-from-mistakes-axi status \[--run <id>\]/m],
     [() => raw('runs', '--full'), 2, 'runs does not take --full', /^next: learn-from-mistakes-axi runs /m],
-    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
-    [() => raw('agents', '--test', 'acp:../..'), 2, '--test "acp:../.." must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m], // a target never leaves runs/
-    [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
-    [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be a runner: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'gpt'), 2, '--test "gpt" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'acp:../..'), 2, '--test "acp:../.." must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m], // a target never leaves runs/
+    [() => raw('agents', '--test', 'ACP:Foo'), 2, '--test "ACP:Foo" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
+    [() => raw('agents', '--test', 'acp'), 2, '--test "acp" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>', /^next: learn-from-mistakes-axi agents \[--test <runner>\]/m],
     [() => raw('agents', '--test', 'claude'), 2, /^error: no \.learn-from-mistakes\.yaml in /m, /^next: learn-from-mistakes-axi guide/m], // --test writes in the project's state dir
-    [() => withConfig('worker: { runner: 3 }\n'), 2, bad('worker.runner must be auto, claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
-    [() => withConfig('judge: { runner: claude, model: 5 }\n'), 2, bad('judge.model must be a string'), HELP],
+    [() => withConfig('agent: [codex, claude]\n'), 2, bad('agent must be one agent, not a list'), /^next: ask the user which one agent to use, then set agent in \S+\.learn-from-mistakes\.yaml to it; the run never picks one$/m],
+    [() => withConfig('agent: 3\n'), 2, bad('agent must be claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'), HELP],
+    [() => withConfig('worker: { runner: claude }\n'), 2, bad('unknown key worker'), HELP], // the old role keys are gone, with no alias
+    [() => withConfig('agent_config: { claude: { model: 5 } }\n'), 2, bad('agent_config.claude.model must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'), HELP],
+    [() => withConfig('agent_config: { gemini: { effort: low } }\n'), 2, bad('agent_config.gemini.effort: gemini has no effort setting; remove it'), HELP],
+    [() => withConfig('agent_config: { opencode: { model: muse } }\n'), 2, bad('agent_config.opencode.model must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'), HELP],
+    [() => withConfig('agent_config: { claude: { model: "--yolo" } }\n'), 2, bad('agent_config.claude.model must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'), HELP], // a model is never an argv flag
+    [() => withConfig('agent_path_override: { claude: ./claude }\n'), 2, /^error: .*\.learn-from-mistakes\.yaml: agent_path_override is global-only: set it in .*config\.yaml$/m, HELP], // a cloned repo never picks the binary
     [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
     [() => withConfig('targets: { first_pass: 70 }\n'), 2, bad('targets.first_pass must be a quoted "<op> <number>", such as ">= 70"'), HELP],
     [() => withConfig('targets: { speed: ">= 1" }\n'), 2, /^error: .*: targets: speed must be a metric \(merged, first_pass, .*, or cause_count:<cause>\)$/m, HELP],
-    [() => withConfig('caps: { timeout: 20 }\n'), 2, bad('caps.timeout must be a duration such as 90s, 20m or 1h'), HELP],
+    [() => withConfig('agent_timeout: 20\n'), 2, bad('agent_timeout must be a duration such as 90s, 20m or 1h'), HELP],
     [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
     [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
@@ -855,30 +867,39 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.deepEqual(decode(lfm('runs').stdout), { runs: [run.run] });
   assert.doesNotMatch(git('status', '--porcelain', '--untracked-files=all'), /\.lfm/);
 
-  // A v2 config with every key, and a global config with the runner keys, loads and runs the same steps.
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}worker: { runner: auto, model: "" }
-judge: { runner: "acp:gemini", model: cheap-model }
+  // A project config with every key, and a global config with the agent keys, loads and runs the same steps.
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}agent: claude
+judge_agent: codex
+agent_config: { "acp:gemini": { model: cheap-model }, claude: { effort: low } }
+agent_timeout: 20m
 window: 30d
 targets: { first_pass: ">= 70", p90_hours_to_merge: "<= 8", escaped: "<= 0", "cause_count:server-memory-kill": "<= 1" }
 followup: { min_sessions: 3, min_days: 2 }
 excerpts: off
-caps: { invocations: 12, bundle_chars: 60000, timeout: 20m }
+caps: { invocations: 12, bundle_chars: 60000 }
 signoff: auto
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_path: { claude: ~/bin/claude }\nrunner_args: { codex: [--profile, cheap] }\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['report', 'completed']]);
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'runner_args: { codex: --profile }\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent_args_override: { codex: --profile }\n');
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
-  assert.match(badGlobal.stderr, /^error: .*config\.yaml: runner_args\.codex must be a list of strings$/m);
-  rmSync(join(p, '..', 'home', 'config.yaml'));
+  assert.match(badGlobal.stderr, /^error: .*config\.yaml: agent_args_override\.codex must be a list of strings$/m);
 
   writeFileSync(join(p, 'defects.md'), ''); // a failed step fails the run with exit 1 and saves the error
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  // With no agent set, a run is never started on an agent the tool picked: a caller that is not a terminal is told to
+  // ask the user, with the choices and the init command that saves the answer.
+  rmSync(join(p, '..', 'home', 'config.yaml'));
+  const unset = lfm('retro', '--foreground');
+  assert.equal(unset.status, 2, unset.stderr);
+  assert.match(unset.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi or byokit:<route>/m);
+  assert.match(unset.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir \S+   # with the user's answer$/m);
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), AGENTS_SET);
   const failed = lfm('retro', '--foreground', '--json');
   assert.equal(failed.status, 1, failed.stderr);
   const f = JSON.parse(failed.stdout);
@@ -1040,8 +1061,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`);
-  const config = join(p, '.learn-from-mistakes.yaml'), plain = readFileSync(config, 'utf8');
-  writeFileSync(config, `${plain}worker: { runner: claude }\n`); // the user sets the agent; the run never picks one
+  const global = join(env.LFM_HOME, 'config.yaml'); // the user set agent: claude and its model there; the run never picks one
   const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, ...extra } });
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
   const calls = () => readFileSync(join(log, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -1134,15 +1154,17 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
-  const fix = `set worker.runner (and worker.model) in ${join(p, '.learn-from-mistakes.yaml')} to an agent you have; the run never picks one`;
+  const fix = `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one`;
   const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
   assert.equal(missing.status, 1, missing.stderr);
   assert.match(JSON.parse(missing.stdout).run.error, new RegExp(`^analyse: worker: .+; ${fix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
-  writeFileSync(config, plain);
+  const runs = query('SELECT count(*) AS n FROM runs')[0].n, set = readFileSync(global, 'utf8');
+  writeFileSync(global, set.replace(/^agent: .*\n/m, '')); // the worker not set: the retro asks before any run or agent call
   const unset = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(unset.status, 1, unset.stderr);
-  assert.equal(JSON.parse(unset.stdout).run.error, `analyse: worker is not set: ${fix}`);
-  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', JSON.parse(unset.stdout).run.id)[0].n, 0);
+  assert.equal(unset.status, 2, unset.stderr);
+  assert.match(unset.stderr, /^error: ask the user which agent to use: agent is not set in /m);
+  assert.equal(query('SELECT count(*) AS n FROM runs')[0].n, runs);
+  writeFileSync(global, set);
 
   // An open invocation whose group leader is not the stored process is not signalled when its run ends.
   const decoy = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
@@ -1182,4 +1204,22 @@ test('a pending step of a reused run id shows no lines from the earlier run', ()
   const report = JSON.parse(lfm('logs', '--step', 'report', '--run', '1', '--json').stdout);
   assert.deepEqual([report.status, report.lines, report.log.length], ['pending', '0 total', 0]);
   assert.equal(lfm('attach').status, 0);
+});
+
+test('the CLI, its guide and the shipped skill say the user sets the agents: no auto, no default model, and the ask re-runs the command', () => {
+  const { lfm, raw, env } = setup();
+  rmSync(join(env.LFM_HOME, 'config.yaml'));
+  const ask = lfm('retro', '--foreground');
+  assert.equal(ask.status, 2, ask.stderr);
+  assert.match(ask.stderr, /^error: ask the user which agent to use: /m);
+  assert.match(ask.stderr, /Then run the command that stopped again/);
+  const check = spawnSync(process.execPath, [new URL('../scripts/build-skill.mjs', import.meta.url).pathname, '--check'], { encoding: 'utf8' });
+  assert.equal(check.status, 0, check.stderr);
+  const skill = readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8');
+  for (const text of [raw('--help').stdout, raw('guide').stdout, skill]) {
+    assert.doesNotMatch(text, /\bauto\b/);
+    assert.doesNotMatch(text, /default model|cheap model|cheap default|as the default/);
+  }
+  assert.match(raw('guide').stdout, /ask the user which agent to use[\s\S]*run the stopped command again/);
+  assert.match(skill, /ask the user which agent to use[\s\S]*run the stopped command again/);
 });

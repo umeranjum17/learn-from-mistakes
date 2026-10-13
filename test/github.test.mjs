@@ -10,6 +10,8 @@ import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { parse } from 'yaml';
+// The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
+const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }\n';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
 const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
@@ -71,6 +73,8 @@ function setup() {
     pr(2, 'feat: old work', { merged: 400 }), // before the read range of two 7d windows
   ], 'third'));
   const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, FAKE_PAGES: pages };
+  mkdirSync(env.LFM_HOME, { recursive: true });
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, ...extra } });
   const calls = () => (existsSync(join(log, 'gh.jsonl')) ? readFileSync(join(log, 'gh.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
   return { tmp, p, bin, lfm, calls };
@@ -166,7 +170,7 @@ test('a missing or logged-out gh and a non-GitHub origin fail the source with th
   const out = lfm({ FAKE_GH: 'logged-out' }, 'ingest');
   assert.equal(out.status, 2, out.stderr);
   assert.match(out.stderr, /^error: source prs: gh is not logged in to github\.com$/m);
-  assert.match(out.stderr, /^next: remove sources\.prs from \.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/m);
+  assert.match(out.stderr, /^next: remove sources\.prs from .*\/umer-app\/\.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/m);
 
   rmSync(join(bin, 'gh'));
   const missing = lfm({}, 'ingest');

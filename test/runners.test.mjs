@@ -8,9 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
+import { parse } from 'yaml';
 
 const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url).pathname;
-const MODELS = JSON.parse(readFileSync(new URL('../src/models.json', import.meta.url), 'utf8'));
+const MODELS = { claude: 'claude-haiku-5-5', codex: 'gpt-6-luna', opencode: 'opencode-go/muse-spark-1.3-contributor' };
+// The global file the user wrote: the tool never picks an agent or a model.
+const GLOBAL = `agent: claude\njudge_agent: codex\nagent_config: ${JSON.stringify(Object.fromEntries(Object.entries(MODELS).map(([a, model]) => [a, { model }])))}\n`;
 const SECRET = 'CANARY-login-secret-5d1e';
 // FAKE_<RUNNER>: ok (default), broken (--version exits 1), hang, grandchild (holds stdout after exit), write, flaky (529 once),
 // prose (answers in plain text, no JSON), error (claude's is_error result; pi's error message, exit 0), empty-error (claude's is_error result with no text), stale (codex writes its answer then 529s; the retry writes nothing).
@@ -46,7 +49,8 @@ function setup() {
   after(() => rmSync(tmp, { recursive: true, force: true }));
   const p = join(tmp, 'p'), bin = join(tmp, 'bin'), log = join(tmp, 'log'), home = join(tmp, 'home');
   cpSync(new URL('../examples', import.meta.url).pathname, p, { recursive: true });
-  for (const d of [bin, log, join(home, '.claude')]) mkdirSync(d, { recursive: true });
+  for (const d of [bin, log, join(home, '.claude'), join(tmp, 'lfm-home')]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), GLOBAL);
   writeFileSync(join(home, '.claude', '.credentials.json'), SECRET); // codex and opencode stay logged out
   for (const name of ['claude', 'codex', 'opencode', 'pi', 'gemini', 'acpx']) {
     writeFileSync(join(bin, name), `#!${process.execPath}\n${FAKE}`);
@@ -59,173 +63,200 @@ function setup() {
     return { ...r, secs: (Date.now() - t) / 1000 };
   };
   const calls = (name) => (existsSync(join(log, `${name}.jsonl`)) ? readFileSync(join(log, `${name}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
-  const config = (extra) => writeFileSync(join(p, '.learn-from-mistakes.yaml'), readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8') + extra);
-  return { tmp, p, env, lfm, calls, config };
+  const base = readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8');
+  const config = (extra) => writeFileSync(join(p, '.learn-from-mistakes.yaml'), base + extra); // the examples config plus these keys
+  const global = (text) => writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), text);
+  return { tmp, p, env, lfm, calls, config, global };
 }
 
-test('agents lists each agent CLI with version, login presence and default model; a broken shim is not usable', () => {
-  const { lfm, tmp } = setup();
-  const r = lfm({ FAKE_CODEX: 'broken' }, 'agents', '--json');
+test('agents lists only the configured agents with version, login presence and model; a broken shim is not usable', () => {
+  const { lfm, tmp, config, global, p } = setup();
+  const r = lfm({}, 'agents', '--json');
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   const by = Object.fromEntries(out.agents.map((a) => [a.runner, a]));
-  assert.deepEqual(Object.keys(by), ['claude', 'codex', 'opencode', 'pi', 'gemini', 'acp']);
+  assert.deepEqual(Object.keys(by), ['claude', 'codex']); // never the other installed agents: the tool lists none to pick from
   assert.equal(by.claude.usable, true);
   assert.equal(by.claude.version, '1.2.3');
   assert.equal(by.claude.login, '.credentials.json'); // the file name only, never its contents
-  assert.equal(by.opencode.login, 'not found (it may be in the system keychain)');
-  assert.equal(by.codex.usable, false);
-  assert.match(by.codex.problem, /--version failed: No version is set for shim: codex/);
-  for (const a of out.agents) assert.equal(a.model, MODELS[a.runner]?.[0] ?? ''); // defaults come from src/models.json; acp: the target's own
-  assert.deepEqual(out.agents.map((a) => a.tools), ['off', 'read-only', 'off', 'off', 'read-only', 'unconfirmed']);
-  assert.equal(by.acp.bin, join(tmp, 'bin', 'acpx'));
-  assert.equal(by.pi.problem, ''); // offered: its tool-off mode is confirmed live
-  for (const r of ['gemini', 'acp']) { // usable, so --test can check them, but never picked as worker or judge
-    assert.equal(by[r].usable, true);
-    assert.match(by[r].problem, /^not offered: /);
-  }
-  assert.deepEqual(out.worker, { runner: 'claude', model: MODELS.claude[0], bin: join(tmp, 'bin', 'claude'), problem: '' });
-  assert.equal(out.judge.runner, 'opencode'); // the first usable identity that differs from the worker's
+  for (const a of out.agents) assert.equal(a.model, MODELS[a.runner]);
+  assert.deepEqual(out.agents.map((a) => a.tools), ['off', 'read-only']);
+  assert.deepEqual(out.worker, { runner: 'claude', model: MODELS.claude, bin: join(tmp, 'bin', 'claude'), problem: '' });
+  assert.deepEqual([out.judge.runner, out.judge.model], ['codex', MODELS.codex]);
   assert.ok(!(r.stdout + r.stderr).includes('CANARY'), 'login contents never print');
   assert.match(r.stderr, /^next: learn-from-mistakes-axi agents --test claude/m);
 
-  const own = lfm({ LFM_MODEL: 'gpt-6-luna' }, 'agents'); // a listed model moves the auto worker to the CLI that lists it
+  config('agent: opencode\n'); // the project file overrides the global agent; a broken shim is not usable
+  const broken = lfm({ FAKE_OPENCODE: 'broken' }, 'agents', '--json');
+  assert.equal(broken.status, 1);
+  const row = JSON.parse(broken.stdout).agents.find((a) => a.runner === 'opencode');
+  assert.equal(row.usable, false);
+  assert.equal(row.login, 'not found (it may be in the system keychain)');
+  assert.match(row.problem, /--version failed: No version is set for shim: opencode/);
+  assert.match(broken.stderr, /^next: install opencode, or ask the user which agent and model to use, then set agent in .*\/p\/\.learn-from-mistakes\.yaml and its agent_config model in .*\/lfm-home\/config\.yaml; the run never picks one$/m);
+
+  // agent takes one agent: a list is refused with the fix line that names the global file.
+  global('agent: [gemini, codex]\njudge_agent: claude\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
+  const list = lfm({}, 'agents');
+  assert.equal(list.status, 2, list.stderr);
+  assert.match(list.stderr, /^error: .*config\.yaml: agent must be one agent, not a list$/m);
+  assert.equal(list.stderr.match(/^next: (.*)$/m)[1], `ask the user which one agent to use, then set agent in ${join(tmp, 'lfm-home', 'config.yaml')} to it; the run never picks one`);
+  // A set agent that is not ready is the worker's problem: no other agent is tried, though claude is usable.
+  global('agent: codex\njudge_agent: claude\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
+  config('');
+  const notReady = lfm({ FAKE_CODEX: 'broken' }, 'agents', '--json');
+  assert.equal(notReady.status, 1, notReady.stderr);
+  const nr = JSON.parse(notReady.stdout);
+  assert.deepEqual([nr.worker.runner, nr.worker.bin], ['codex', '']);
+  assert.match(nr.worker.problem, /^codex is not usable: --version failed: No version is set for shim: codex/);
+  assert.match(notReady.stderr, /^next: install codex, or ask the user which agent and model to use, then set agent and its agent_config model in .*\/config\.yaml; the run never picks one$/m);
+  global('agent: claude\njudge_agent: codex\nagent_config: { codex: { model: umer-cheap-1 }, claude: { model: claude-haiku-5-5 } }\n');
+  const own = lfm({}, 'agents');
   assert.equal(own.status, 0, own.stderr);
   const toon = decode(own.stdout);
-  assert.deepEqual(toon.agents.map((a) => [a.runner, a.model]), [['claude', MODELS.claude[0]], ['codex', 'gpt-6-luna'], ['opencode', MODELS.opencode[0]],
-    ['pi', ''], ['gemini', ''], ['acp', '']]);
-  assert.equal(toon.worker.runner, 'codex');
-  assert.equal(toon.worker.model, 'gpt-6-luna');
+  assert.deepEqual([toon.worker.runner, toon.worker.model], ['claude', MODELS.claude]);
+  assert.deepEqual([toon.judge.runner, toon.judge.model], ['codex', 'umer-cheap-1']);
+  config('agent: gemini\nagent_config: { gemini: { model: umer-gem-1 } }\n'); // one agent that does not resolve: its own problem, and the fix names the file that set it
+  const bad = lfm({}, 'agents');
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /^problem: worker: gemini is not offered: /m);
+  assert.match(bad.stderr, /^next: ask the user which agent and model to use, then set agent and its agent_config model in .*\/p\/\.learn-from-mistakes\.yaml; the run never picks one$/m);
 
-  const unlisted = lfm({ LFM_MODEL: 'my-own-model' }, 'agents'); // no default list has it, so auto cannot pair it with a runner
-  assert.equal(unlisted.status, 1);
-  assert.match(unlisted.stderr, /^problem: worker: no usable agent CLI lists model my-own-model$/m);
-  assert.match(unlisted.stderr, /^next: set worker\.runner in \.learn-from-mistakes\.yaml to a usable agent CLI/m);
-});
-
-test('an auto judge model binds to the runner that lists it, so it cannot clash with the worker unseen', () => {
-  const { lfm, config, tmp } = setup();
-  mkdirSync(join(tmp, 'lfm-home'));
-  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), `runner_path: { opencode: ${join(tmp, 'no-such-opencode')} }\n`); // only claude and codex usable
-  config('judge: { model: claude-haiku-5-5 }\n');
-  const r = lfm({}, 'agents', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  const out = JSON.parse(r.stdout);
-  assert.equal(out.worker.runner, 'claude');
-  assert.equal(out.judge.runner, 'claude');
-  assert.match(out.judge.problem, /would judge its own work/);
+  // With none set, the tool picks nothing: a caller that is not a terminal is told to ask the user, with the save command.
+  global('');
+  config('');
+  const none = lfm({}, 'agents');
+  assert.equal(none.status, 2);
+  assert.match(none.stderr, /^error: ask the user which agent to use: agent and judge_agent are not set in .*\/p\/\.learn-from-mistakes\.yaml, and the tool never picks one\. Choices: claude, codex, opencode, pi or byokit:<route>/m);
+  assert.equal(none.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
+  assert.equal(none.stdout, '');
 });
 
 test('the judge never resolves to the worker: a clash exits 1 with the fix', () => {
-  const { lfm, config } = setup();
-  config('worker: { runner: claude, model: claude-haiku-5-5 }\njudge: { runner: claude }\n');
+  const { lfm, config, p } = setup();
+  config('agent: claude\njudge_agent: claude\n');
   const r = lfm({}, 'agents', '--json');
   assert.equal(r.status, 1, r.stderr);
   assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
   assert.match(r.stderr, /^problem: judge: the judge resolves to the worker's agent and model/m);
-  assert.match(r.stderr, /^next: set judge\.runner and judge\.model in \.learn-from-mistakes\.yaml to an agent CLI and a different model, or install a second agent CLI$/m);
-  const two = lfm({ LFM_MODEL: 'cheap-a' }, 'agents', '--json'); // a pinned worker keeps its model, so it differs from the judge's
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
+  config('agent: claude\njudge_agent: codex\n'); // another agent as the judge resolves
+  const two = lfm({}, 'agents', '--json');
   assert.equal(two.status, 0, two.stderr);
+  assert.equal(JSON.parse(two.stdout).judge.runner, 'codex');
 });
 
 test('a runner whose tool-off mode is not confirmed is never worker or judge, and says why', () => {
-  const { p, lfm, config, tmp } = setup();
-  config('worker: { runner: gemini }\njudge: { runner: acp:fake-agent }\n');
+  const { lfm, config } = setup();
+  config('agent: gemini\njudge_agent: acp:fake-agent\nagent_config: { gemini: { model: umer-gem-1 }, "acp:fake-agent": { model: umer-acp-1 } }\n');
   const r = lfm({}, 'agents', '--json');
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^problem: worker: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode/m);
-  assert.match(r.stderr, /^problem: judge: acp is not offered: acpx --deny-all only denies the permission requests an agent sends/m);
+  assert.match(r.stderr, /^problem: judge: acp:fake-agent is not offered: acpx --deny-all only denies the permission requests an agent sends/m);
 
-  cpSync(new URL('../examples/.learn-from-mistakes.yaml', import.meta.url).pathname, join(p, '.learn-from-mistakes.yaml'));
-  mkdirSync(join(tmp, 'lfm-home'));
-  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), JSON.stringify({ runner_path: Object.fromEntries(['claude', 'codex', 'opencode', 'pi'].map((x) => [x, join(tmp, `no-such-${x}`)])) }));
-  const auto = lfm({}, 'agents', '--json'); // only gemini is installed: auto names it and why it is not offered
-  assert.equal(auto.status, 1, auto.stderr);
-  assert.match(auto.stderr, /^problem: worker: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode/m);
-  assert.doesNotMatch(auto.stderr, /no usable agent CLI/);
 });
 
-test('agents --test starts each runner tool-off in its run dir, with the marker first and the runner default model', () => {
-  const { p, lfm, calls, config, tmp } = setup();
-  mkdirSync(join(tmp, 'lfm-home'));
-  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), 'runner_args: { codex: [--ignore-rules] }\n');
-  config('caps: { timeout: 30s }\n');
+test('agents --test starts each runner tool-off in its run dir, with the marker first and its agent_config model and effort', () => {
+  const { p, lfm, calls, config, global } = setup();
+  global(`agent: claude\njudge_agent: codex\nagent_args_override: { codex: [--ignore-rules], acp: [--umer-flag] }
+agent_config: { claude: { model: ${MODELS.claude}, effort: low }, codex: { model: ${MODELS.codex}, effort: medium }, opencode: { model: ${MODELS.opencode}, effort: high },
+  pi: { model: umer/pi-1, effort: minimal }, gemini: { model: umer-gem-1 } }\n`);
+  config('agent_timeout: 30s\nagent_config: { "acp:fake-agent": { model: umer-acp-1 } }\n'); // the project file adds to the global agent_config
   for (const runner of ['claude', 'codex', 'opencode', 'pi', 'gemini', 'acp:fake-agent']) {
     const r = lfm({}, 'agents', '--test', runner, '--json');
     assert.equal(r.status, 0, r.stderr);
     const bin = runner === 'acp:fake-agent' ? 'acpx' : runner, step = runner.replace(':', '-');
     const dir = join(p, '.lfm', 'runs', `test-${step}`);
-    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner]?.[0] ?? '', tools: { codex: 'read-only', gemini: 'read-only', 'acp:fake-agent': 'unconfirmed' }[runner] ?? 'off', dir,
+    assert.deepEqual(JSON.parse(r.stdout).test, { runner, model: MODELS[runner] ?? { pi: 'umer/pi-1', gemini: 'umer-gem-1', 'acp:fake-agent': 'umer-acp-1' }[runner], tools: { codex: 'read-only', gemini: 'read-only', 'acp:fake-agent': 'unconfirmed' }[runner] ?? 'off', dir,
       reply: `hello from ${bin}`, offered: !['gemini', 'acp:fake-agent'].includes(runner) });
-    if (bin !== runner) assert.match(r.stderr, /^next: learn-from-mistakes-axi agents .*# why acp:fake-agent is not offered as worker or judge/m);
     const [c] = calls(bin);
     assert.equal(c.cwd, dir);
     assert.ok(!existsSync(join(dir, 'x.txt')));
   }
   const [cl] = calls('claude'), [cx] = calls('codex'), [oc] = calls('opencode');
   const run = (r) => join(p, '.lfm', 'runs', `test-${r}`);
-  assert.deepEqual(cl.args, ['-p', '--output-format', 'json', '--model', MODELS.claude[0], '--tools', '', '--no-session-persistence', '--strict-mcp-config']);
+  assert.deepEqual(cl.args, ['-p', '--output-format', 'json', '--model', MODELS.claude, '--effort', 'low', '--tools', '', '--no-session-persistence', '--strict-mcp-config']);
   assert.match(cl.stdin, /^lfm-run:test:claude\nThis tests that your tools are off/);
-  assert.deepEqual(cx.args, ['exec', '-m', MODELS.codex[0], '-s', 'read-only', '--ephemeral', '--skip-git-repo-check', '--ignore-rules', '-o', join(run('codex'), 'out-codex.txt'), '-']);
+  assert.deepEqual(cx.args, ['exec', '-m', MODELS.codex, '-c', 'model_reasoning_effort="medium"', '-s', 'read-only', '--ephemeral', '--skip-git-repo-check', '--ignore-rules', '-o', join(run('codex'), 'out-codex.txt'), '-']);
   assert.match(cx.stdin, /^lfm-run:test:codex\n/);
-  assert.deepEqual(oc.args, ['run', '-m', MODELS.opencode[0], '--format', 'json', '--dir', run('opencode'), '-f', join(run('opencode'), 'prompt-opencode.md'),
+  assert.deepEqual(oc.args, ['run', '-m', MODELS.opencode, '--variant', 'high', '--format', 'json', '--dir', run('opencode'), '-f', join(run('opencode'), 'prompt-opencode.md'),
     '--', 'lfm-run:test:opencode Follow the instructions in the attached file.']);
   assert.equal(oc.permission, '{"*":"deny"}');
   assert.match(readFileSync(join(run('opencode'), 'prompt-opencode.md'), 'utf8'), /^lfm-run:test:opencode\nThis tests that your tools are off/);
   const [pi] = calls('pi'), [gm] = calls('gemini'), [ax] = calls('acpx');
-  assert.deepEqual(pi.args, ['-p', '--mode', 'json', '--no-session', '--no-tools', '--no-context-files', '--no-skills', '--no-extensions']);
+  assert.deepEqual(pi.args, ['-p', '--model', 'umer/pi-1', '--thinking', 'minimal', '--mode', 'json', '--no-session', '--no-tools', '--no-context-files', '--no-skills', '--no-extensions']);
   assert.match(pi.stdin, /^lfm-run:test:pi\nThis tests that your tools are off/);
-  assert.deepEqual(gm.args, ['-p', 'lfm-run:test:gemini Follow the instructions above.', '-o', 'json', '--approval-mode', 'plan', '--skip-trust', '-e', 'none']);
+  assert.deepEqual(gm.args, ['-p', 'lfm-run:test:gemini Follow the instructions above.', '-m', 'umer-gem-1', '-o', 'json', '--approval-mode', 'plan', '--skip-trust', '-e', 'none']);
   assert.match(gm.stdin, /^lfm-run:test:gemini\nThis tests that your tools are off/);
   assert.deepEqual(ax.args, ['--cwd', run('acp-fake-agent'), '--format', 'json', '--json-strict', '--deny-all', '--allowed-tools', '', '--non-interactive-permissions', 'deny',
-    'fake-agent', 'exec', '--file', '-']);
+    '--model', 'umer-acp-1', '--umer-flag', 'fake-agent', 'exec', '--file', '-']);
   assert.match(ax.stdin, /^lfm-run:test:acp-fake-agent\nThis tests that your tools are off/);
   assert.deepEqual(readdirSync(join(p, '.lfm')).sort(), ['.gitignore', 'runs']);
 });
 
-test('a premium model that allow_premium forbids is never called: doctor --live skips it, agents --test refuses it', () => {
-  const { lfm, calls, config } = setup();
-  config('worker: { runner: claude, model: claude-opus-5-5 }\n');
+test('an unset model of a judge_agent is named as judge_agent in the fix, never as agent', () => {
+  const { p, lfm, config } = setup();
+  config('judge_agent: pi\n');
+  const t = lfm({}, 'agents', '--test', 'pi');
+  assert.equal(t.status, 1);
+  assert.match(t.stderr, /^error: pi: no model set in agent_config$/m);
+  assert.equal(t.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
+});
+
+test('a premium or unset model that allow_premium forbids is never called: doctor --live shows its one fail, agents --test refuses it', () => {
+  const { p, lfm, calls, config, env } = setup();
+  config('agent: claude\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
   const r = lfm({}, 'doctor', '--live', '--json');
   const checks = JSON.parse(r.stdout).checks;
   assert.equal(r.status, 1);
   assert.equal(checks.find((c) => c.label === 'worker model').level, 'fail');
-  assert.equal(checks.find((c) => c.label === 'worker live').detail, 'skip live worker: premium model needs allow_premium');
+  assert.equal(checks.find((c) => c.label === 'worker live'), undefined); // the model fail is the one line: no second fail for the live call
   const t = lfm({}, 'agents', '--test', 'claude');
   assert.equal(t.status, 1);
   assert.match(t.stderr, /^error: claude: claude-opus-5-5 is a premium model/m);
   assert.ok(calls('claude').every((c) => !c.args.includes('claude-opus-5-5')), JSON.stringify(calls('claude')));
+
+  // pi with no model set: no call is made, and the key to set is named, with or without allow_premium.
+  const noModel = lfm({}, 'agents', '--test', 'pi');
+  assert.equal(noModel.status, 1);
+  assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
+  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
+  config('agent: pi\njudge_agent: claude\n');
+  const asked = lfm({}, 'doctor', '--live');
+  assert.equal(asked.status, 2, asked.stderr);
+  assert.match(asked.stderr, /^error: ask the user which agent to use: agent_config\.pi\.model is not set in /m);
+  assert.equal(calls('pi').length, 0);
+  config('agent: pi\nallow_premium: true\n');
+  assert.equal(lfm({}, 'agents', '--test', 'pi').status, 1); // allow_premium permits a premium name, never an empty model
+  config('agent: pi\nallow_premium: true\nagent_config: { pi: { model: umer-cheap-1 } }\n');
+  assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);
 });
 
 test('the skill row looks where the agent CLI reads skills: its login check\'s config dir, not the home default', () => {
-  const { lfm, tmp } = setup();
+  const { lfm, tmp, config } = setup();
+  config('agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   const r = lfm({ PI_CODING_AGENT_DIR: join(tmp, 'pi-agent') }, 'doctor', '--json');
   const row = JSON.parse(r.stdout).checks.find((c) => c.label === 'skill pi');
   assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'learn-from-mistakes')}`);
 });
 
-test('no default model is premium: the models table, the agents listing and the guide stay cheap', () => {
+test('init writes no agent or model the user did not choose', () => {
   const { lfm, env, p } = setup();
-  const premium = /opus|sonnet|\bsol\b/i;
-  for (const model of Object.values(MODELS).flat()) assert.doesNotMatch(model, premium);
-  const listed = lfm({}, 'agents', '--json');
-  assert.equal(listed.status, 0, listed.stderr);
-  for (const a of JSON.parse(listed.stdout).agents) assert.doesNotMatch(a.model, premium);
-  const guide = (extra) => spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8', cwd: p, env: { ...env, ...extra } });
-  const dflt = guide({});
-  assert.equal(dflt.status, 0, dflt.stderr);
-  for (const line of dflt.stdout.split('\n')) if (premium.test(line)) assert.match(line, /never/i, `the guide takes a premium model as a default: ${line}`);
-  const own = guide({ LFM_MODEL: 'my-own-model' });
-  assert.equal(own.status, 0, own.stderr);
-  assert.match(own.stdout, /my-own-model \(LFM_MODEL\)/);
+  rmSync(join(env.LFM_HOME, 'config.yaml'));
+  const r = lfm({}, 'init', '-y');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(parse(readFileSync(join(env.LFM_HOME, 'config.yaml'), 'utf8')), null); // the global file init wrote: every key commented
+  const project = parse(readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8'));
+  for (const k of ['agent', 'judge_agent', 'agent_config']) assert.equal(project[k], undefined);
+  assert.match(r.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> /m);
 });
 
 test('a hung, leaking, writing or overloaded agent ends with its real cause', () => {
   const { lfm, calls, config, p } = setup();
-  config('caps: { timeout: 10s }\n');
+  config('agent_timeout: 10s\nagent_config: { claude: { model: umer-cheap-1 }, codex: { model: umer-cheap-1 }, gemini: { model: umer-gem-1 }, opencode: { model: opencode-go/umer-cheap-1 } }\n');
   const hang = lfm({ FAKE_CLAUDE: 'hang' }, 'agents', '--test', 'claude');
   assert.equal(hang.status, 1);
-  assert.match(hang.stderr, /^error: claude: no answer within 10s in one attempt; stopped it \(caps\.timeout\)$/m);
+  assert.match(hang.stderr, /^error: claude: no answer within 10s in one attempt; stopped it \(agent_timeout\)$/m);
   assert.ok(hang.secs < 16, `killed at the timeout, took ${hang.secs}s`);
 
   const color = lfm({ FAKE_GEMINI: 'color-exit' }, 'agents', '--test', 'gemini'); // a colored error line reaches the user plain
@@ -263,6 +294,7 @@ test('a hung, leaking, writing or overloaded agent ends with its real cause', ()
   assert.match(stale.stderr, /^error: codex: the answer holds no JSON object: empty$/m);
   assert.equal(calls('codex').length - before, 2); // the 529 and the retry
 
+  config('agent: pi\nagent_config: { pi: { model: umer-cheap-1 }, "acp:fake-agent": { model: umer-acp-1 } }\n');
   const piErr = lfm({ FAKE_PI: 'error' }, 'agents', '--test', 'pi'); // pi exits 0 on a failed call; its error message is the cause
   assert.equal(piErr.status, 1);
   assert.match(piErr.stderr, /^error: pi: 400: Model is unavailable\.$/m);
@@ -307,7 +339,9 @@ async function byokitSetup() {
 test('byokit: agents --test makes one plan call through BYOKit with the signed-in plan, after the doctor hook finds the sign-in', async () => {
   const { p, mock, lfm, hook, signIn } = await byokitSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml'), base = readFileSync(yaml, 'utf8');
-  const config = (extra) => writeFileSync(yaml, base + extra);
+  const model = 'agent_config: { "byokit:chatgpt": { model: gpt-6-luna } }\n'; // a route takes only the model the user set
+  const config = (extra) => writeFileSync(yaml, base + model + extra);
+  config('');
   const [out] = await hook('chatgpt');
   assert.deepEqual(out, { status: 'fail', label: 'byokit:chatgpt', detail: "ChatGPT isn't signed in yet.", fix: out.fix });
   assert.match(out.fix, /^sign in to chatgpt through BYOKit for member "lfm"/);
@@ -323,7 +357,7 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   const dir = join(p, '.lfm', 'runs', 'test-byokit-chatgpt');
   assert.deepEqual(JSON.parse(r.stdout).test, { runner: 'byokit:chatgpt', tools: 'none', model: 'gpt-6-luna', dir, reply: 'hello from the fake route', offered: true });
   const asked = JSON.parse(mock.state.requests.at(-1).body);
-  assert.equal(asked.model, 'gpt-6-luna'); // the catalogue's cheap model, never its strong one
+  assert.equal(asked.model, 'gpt-6-luna');
   assert.match(JSON.stringify(asked.input), /lfm-run:test:byokit-chatgpt\\nThis tests that your tools are off/);
   assert.deepEqual(readdirSync(dir), ['prompt-byokit-chatgpt.md']);
 
@@ -332,11 +366,11 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   assert.equal((await lfm('agents', '--test', 'byokit:chatgpt')).status, 0);
   assert.equal(mock.state.requests.length - asks, 2);
 
-  config('worker: { runner: claude }\njudge: { runner: "byokit:chatgpt" }\n'); // a judge with no second agent CLI
+  config('agent: claude\njudge_agent: "byokit:chatgpt"\n'); // a judge with no second agent CLI
   const roles = await lfm('agents', '--json');
   assert.equal(roles.status, 0, roles.stderr);
   assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: 'gpt-6-luna', bin: 'byokit:chatgpt', problem: '' });
-  config('worker: { runner: "byokit:chatgpt" }\njudge: { runner: "byokit:chatgpt", model: gpt-6-luna }\n'); // the same route judging itself
+  config('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\n'); // the same route judging itself
   const clash = await lfm('agents', '--json');
   assert.equal(clash.status, 1);
   assert.match(JSON.parse(clash.stdout).judge.problem, /would judge its own work/);
@@ -371,11 +405,12 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   const run = (vars, ...args) => node({ ...env, LFM_TEST_BYOKIT_BASE: standIn.base, ...vars }, CLI, ...args, '--dir', p);
   const hook = async (vars) => JSON.parse((await node({ ...env, ...vars }, '--input-type=module', '-e', HOOK, BYOKIT, 'opencode-go')).stdout);
   const yaml = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}worker: { runner: "byokit:opencode-go" }\n`);
-  const noModel = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go'); // no catalogue model: never a guessed default
+  const base = readFileSync(yaml, 'utf8');
+  const noModel = await run({ ZAI_CODING_CN_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:zai-coding-cn'); // no default model: never a guessed one
   assert.equal(noModel.status, 1);
-  assert.match(noModel.stderr, /^error: byokit:opencode-go: BYOKit's catalogue has no cheap model for opencode-go$/m);
-  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('"byokit:opencode-go" }', '"byokit:opencode-go", model: muse-spark-1.3-contributor }'));
+  assert.match(noModel.stderr, /^error: byokit:zai-coding-cn: no model set in agent_config$/m);
+  assert.match(noModel.stderr, /^next: ask the user which agent and model to use, then set agent in .* and its agent_config model in /m);
+  writeFileSync(yaml, `${base}agent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n`);
 
   assert.deepEqual((await hook({}))[0], { status: 'fail', label: 'byokit:opencode-go', detail: 'OPENCODE_API_KEY is not set',
     fix: 'set OPENCODE_API_KEY to your OpenCode Go key, then: learn-from-mistakes-axi agents --test byokit:opencode-go' });
@@ -398,23 +433,25 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   assert.match(JSON.stringify(asked.body.input), /lfm-run:test:byokit-opencode-go\\nThis tests that your tools are off/);
   assert.deepEqual(readdirSync(dir), ['prompt-byokit-opencode-go.md']);
   assert.equal(existsSync(join(tmp, 'home', '.local', 'share', 'byokit')), false); // no BYOKit store was made
-  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('muse-spark-1.3-contributor', 'no-such-model'));
+
+
+  writeFileSync(yaml, `${base}agent_config: { "byokit:opencode-go": { model: no-such-model } }\n`);
   const bad = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go');
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /^error: byokit:opencode-go: pi-ai lists no model no-such-model for opencode-go$/m);
 });
 
-test('byokit: a name that is not a plan route, a claude route with no cheap model and a missing package each name the fix', async () => {
+test('byokit: a name that is not a plan route, a route with no model set and a missing package each name the fix', async () => {
   const { tmp, lfm, hook } = await byokitSetup();
   const unknown = await lfm('agents', '--test', 'byokit:grok');
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /^error: byokit:grok: byokit:grok is not a BYOKit plan route$/m);
   assert.match(unknown.stderr, /^next: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go/m);
   assert.equal((await hook('grok'))[0].status, 'fail');
-  const claude = await lfm('agents', '--test', 'byokit:claude'); // only opus in the catalogue: never a premium default
+  const claude = await lfm('agents', '--test', 'byokit:claude'); // never a model the user did not set
   assert.equal(claude.status, 1);
-  assert.match(claude.stderr, /^error: byokit:claude: BYOKit's catalogue has no cheap model for claude$/m);
-  assert.match(claude.stderr, /^next: set the role's model, such as worker: \{ runner: "byokit:claude", model: <model> \}$/m);
+  assert.match(claude.stderr, /^error: byokit:claude: no model set in agent_config$/m);
+  assert.match(claude.stderr, /^next: ask the user which agent and model to use, then set agent in .* and its agent_config model in /m);
   const bad = await lfm('agents', '--test', 'byokit:../x');
   assert.equal(bad.status, 2);
 
@@ -425,38 +462,39 @@ test('byokit: a name that is not a plan route, a claude route with no cheap mode
     fix: 'npm install -g learn-from-mistakes-axi   # with its optional dependencies (not --omit=optional): the BYOKit packages install beside it' }]);
 });
 
-test('byokit: with no agent CLI the agents hint lists the ready routes; a worker that names no plan route exits 1 with the problem', async () => {
+test('byokit: a role that is not installed says to install it or choose another; a worker that names no plan route exits 1 with the problem', async () => {
   const { p, env, lfm, tmp } = await byokitSetup();
-  const none = await node({ ...env, PATH: join(tmp, 'empty') }, CLI, 'agents', '--dir', p); // no agent CLI on PATH; BYOKit is installed
+  const none = await node({ ...env, PATH: join(tmp, 'empty') }, CLI, 'agents', '--dir', p); // no agent CLI on PATH
   assert.equal(none.status, 1, none.stderr);
-  assert.match(none.stderr, /^next: set worker\.runner and judge\.runner in \.learn-from-mistakes\.yaml to byokit:<route>; ready: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
+  assert.match(none.stderr, /^problem: worker: claude is not usable: claude is not on PATH$/m);
+  assert.match(none.stderr, /^next: install claude, or ask the user which agent and model to use, then set agent and its agent_config model in .*config\.yaml; the run never picks one$/m);
   const yaml = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}worker: { runner: "byokit:grok" }\n`);
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}agent: "byokit:grok"\nagent_config: { "byokit:grok": { model: umer-cheap-1 } }\n`);
   const r = await lfm('agents');
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^problem: worker: byokit:grok is not a BYOKit plan route: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
 });
 
-test('byokit: with no agent CLI and BYOKit not installed, the hint gives BYOKit\'s own fix next to the agent CLI options', () => {
-  const { tmp, p, env } = setup();
+test('byokit: a route the user set with BYOKit not installed gives BYOKit\'s own fix', () => {
+  const { tmp, p, env, config } = setup();
+  config('agent: "byokit:opencode-go"\nagent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n');
   const app = join(tmp, 'app'); // the CLI tree with every dependency but BYOKit's packages
   mkdirSync(join(app, 'node_modules'), { recursive: true });
   for (const d of ['bin', 'src']) cpSync(new URL(`../${d}`, import.meta.url).pathname, join(app, d), { recursive: true });
   cpSync(new URL('../package.json', import.meta.url).pathname, join(app, 'package.json'));
   for (const e of readdirSync(join(ROOT, 'node_modules'))) if (!e.startsWith('@byokit') && e !== '@earendil-works') symlinkSync(join(ROOT, 'node_modules', e), join(app, 'node_modules', e));
-  mkdirSync(join(tmp, 'empty'));
-  const r = spawnSync(process.execPath, [join(app, 'bin', 'learn-from-mistakes-axi.mjs'), 'agents', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: join(tmp, 'empty') } });
+  const r = spawnSync(process.execPath, [join(app, 'bin', 'learn-from-mistakes-axi.mjs'), 'agents', '--dir', p], { encoding: 'utf8', env });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /^next: install an agent CLI, set runner_path in \$LFM_HOME\/config\.yaml, or for byokit:<route>: npm install -g learn-from-mistakes-axi /m);
+  assert.match(r.stderr, /^problem: worker: BYOKit is not installed: /m);
+  assert.match(r.stderr, /^next: npm install -g learn-from-mistakes-axi /m);
 });
 
-test('byokit: a judge with no agent CLI is told to set judge.runner to a ready route, not a different model', async () => {
+test('byokit: a judge whose agent CLI is not installed is told to install it or set judge_agent to another agent', async () => {
   const { p, env, tmp, config } = setup();
-  config('worker: { runner: "byokit:opencode-go", model: muse-spark-1.3-contributor }\n'); // a worker on a plan key route; the judge has no agent CLI
+  config('agent: "byokit:opencode-go"\nagent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n'); // the global judge is codex
   const r = await node({ ...env, PATH: join(tmp, 'empty'), OPENCODE_API_KEY: 'fake-key' }, CLI, 'agents', '--dir', p);
   assert.equal(r.status, 1, r.stderr);
   assert.doesNotMatch(r.stderr, /problem: worker/);
-  assert.match(r.stderr, /^problem: judge: no usable agent CLI/m);
-  assert.match(r.stderr, /^next: install an agent CLI, or set judge\.runner in \.learn-from-mistakes\.yaml to byokit:<route>; ready: byokit:chatgpt, byokit:claude, .*byokit:opencode-go/m);
-  assert.doesNotMatch(r.stderr, /judge\.model/);
+  assert.match(r.stderr, /^problem: judge: codex is not usable: codex is not on PATH$/m);
+  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `install codex, or ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(env.LFM_HOME, 'config.yaml')}; the run never picks one`);
 });

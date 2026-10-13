@@ -25,7 +25,7 @@ metadata:
 
 ${bin} counts the causes a project's coding agents keep repeating. You read each record of past work (a markdown defect log, failed no-mistakes pipeline steps, and this repo's Claude Code, Codex and OpenCode sessions) and judge what went wrong; the CLI merges duplicates, counts each cause per source, flags the repeated ones and checks that every recommended change cites real records.
 
-You start a retro (\`${npx} retro --wait 15m\`); the tool runs its own agent, the worker set in its config (such as Go Muse through BYOKit), to label the records; the run never picks one. You only start it and read the result. With no worker set, the retro stops and names the key to set.
+You start a retro (\`${npx} retro --wait 15m\`); the tool runs its own agent, the \`agent\` set in its config, to label the records; the run never picks one. You only start it and read the result. With the agent or its model not set, the retro stops with "ask the user which agent to use": ask the user which agent and model to use for each role, never choose, then run the init command it prints with the answer, then run the stopped command again.
 
 ## Current guidance lives in the CLI
 
@@ -40,9 +40,9 @@ Never edit the sources or instruction files; your output is a report and recomme
 
 ## Model
 
-Do this work on the cheap default model of the agent CLI that runs it; \`${npx} agents\` lists each one.
-Never take Opus, Sonnet or Sol as the default.
-To use your own model instead, set LFM_MODEL (or worker.model) to its id. With worker.runner auto it must be a model an agent CLI lists as its default, else set worker.runner to the CLI that runs it (\`${npx} guide\` then names it).
+The user chooses the models; never choose one yourself, and never switch to Opus, Sonnet or Sol.
+The tool's own agents are \`agent:\` and \`judge_agent:\` in ~/.learn-from-mistakes/config.yaml, each with its model in \`agent_config.<agent>.model\`; a project's .learn-from-mistakes.yaml may override them. The user sets them: the tool never picks one, and neither do you.
+When a command prints "ask the user which agent to use", ask the user which agent and model to use for each role named, never choose one yourself, then run the \`${npx} init ...\` command it printed with the user's answer, then run the stopped command again.
 The CLI makes no network or model calls itself; only its runs, \`${npx} agents --test\` and \`${npx} doctor --live\` start your own agent CLI or a BYOKit route.
 
 ## Request

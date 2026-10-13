@@ -7,12 +7,12 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
-import { isMetric, loadConfig, loadGlobal, METRIC_RULE, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
+import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
-import * as byokit from '../src/runners/byokit.mjs';
-import { agents, CLASH, INSTALL, RUNNERS } from '../src/runners/index.mjs';
+import { ensureAgents, saveCommand } from '../src/ask.mjs';
+import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 
@@ -355,8 +355,8 @@ export function summaryLine(model) {
 
 const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents>] [options]
   (no command)        print the project's repeated-cause report (same as \`report\`)
-  init                write .learn-from-mistakes.yaml if the project has none: a worker and a different judge from the
-                      agent CLIs found, and the sources found; otherwise print it and its gaps. Either way, make the state dir .lfm/ and its .gitignore
+  init                write $LFM_HOME/config.yaml (the agent keys, commented) and .learn-from-mistakes.yaml (the sources found, the agents the user chose)
+                      where each is missing, then print the resolved worker and judge and the gaps. Either way, make the state dir .lfm/ and its .gitignore
   doctor              check node, git, the config, .lfm ignored, each source, the worker and judge (usable, login, model,
                       a different identity), the skill per agent CLI and sign-off: ok, warn or fail, with a fix: line; exit 1 on a fail
   guide               print the agent procedure: config, ingest, label, propose, report
@@ -375,7 +375,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   rerun               start a new run with the current config; --run <id> names the run it follows (default: the last run), and say
                       which run it started from; --resume finishes that interrupted, cancelled or failed run
                       from its first step that is not completed
-  agents              list the agent CLIs the tool can start: usable, version, login presence, default model
+  agents              list the agent CLIs the tool can start: usable, version, login presence, the configured model
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)
@@ -392,10 +392,12 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
-  --worker <runner>   (init) the agent CLI that does the work (default: the first usable one)
-  --judge <runner>    (init) the agent CLI that checks it (default: the first usable one that differs from the worker)
+  --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never picked by the tool
+  --model <model>     (init) save agent_config.<agent>.model for that agent
+  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent and model must differ from the worker's
+  --judge-model <model>  (init) save agent_config.<judge agent>.model
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
-  --no-skill, -y      (init) accepted for scripts: init installs no skill and asks nothing
+  --no-skill, -y      (init) init installs no skill; -y asks nothing, even in a terminal
   --json (init, doctor, report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -413,21 +415,20 @@ next: learn-from-mistakes-axi report --full  # add the evidence ids
 next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
 next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date, what and why
 next: learn-from-mistakes-axi retro --wait 8m   # ingest and report as a saved run, then status and runs show it
-next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start and their default models`;
+next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start, their models and the resolved worker and judge`;
 // The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
-// The model line only tells the agent which session model to use; the cheap defaults live in src/models.json.
-const lfmModel = () => (process.env.LFM_MODEL ?? '').trim();
 const guideText = () => `learn-from-mistakes-axi guide: you judge each record, the CLI counts. Never edit the sources,
 AGENTS.md, CLAUDE.md or skills; your output is recommendations only.
 
-Model: do this work on ${lfmModel() ? `${lfmModel()} (LFM_MODEL)` : 'the cheap default of the agent CLI that runs it'}. learn-from-mistakes-axi agents
-lists each agent CLI's default. Never take Opus, Sonnet or Sol as the default. LFM_MODEL or worker.model overrides it; with
-worker.runner auto, the model must be one an agent CLI lists as its default, else set worker.runner to the CLI that runs it.
+Model: the tool's own agents are the user's choice: agent: and judge_agent: in $LFM_HOME/config.yaml or the project's
+.learn-from-mistakes.yaml, each with agent_config.<agent>.model. The tool never picks one. When one is not set, or has no model, a command
+that needs it stops with "ask the user which agent to use": ask the user which agent and model to use for each role, never
+choose for them, then run the init command it prints with their answer, then run the stopped command again.
 
-Set the agent that labels in the config (worker: { runner: <agent>, model: <model> }); the run never picks one.
-Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m. The tool's own agent labels the records and the
-run prints the report with their counts. You only start it and read the result. With no worker set, the retro stops and
-names the key to set; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
+The worker that labels is the agent: the user set. Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m.
+The tool's own agent labels the records and the run prints the report with their counts. You only start it and read the
+result. With agent or its model not set, the retro stops with the ask line; with one that is not ready, it stops at
+analyse with the fix; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
 the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
@@ -490,7 +491,7 @@ const NEXT = (json, full, opts) => {
 const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} into labels.jsonl in the same dir (see learn-from-mistakes-axi guide), then ${withContext('learn-from-mistakes-axi count', 'the counts', opts)}`;
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
-  init: 'learn-from-mistakes-axi init [--worker <runner>] [--judge <runner>] [--no-excerpts] [--no-skill] [-y] [--dir <dir>] [--json]',
+  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--no-excerpts] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
@@ -507,10 +508,10 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const JUDGE_FIX = `set judge.runner and judge.model in ${PROJECT_FILE} to an agent CLI and a different model, or install a second agent CLI`;
-const AGENTS_FIX = 'learn-from-mistakes-axi agents   # the agent CLIs found, and why one is not usable';
-const INSTALL_FIX = `install ${INSTALL}, or set runner_path in $LFM_HOME/config.yaml   # then run agents again`;
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--worker', '--judge'];
+const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent');
+// A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
+const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -556,16 +557,23 @@ async function main() {
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
   // An acp target or a byokit route names the run dir, so it is a plain name: no path, no leading dot.
-  for (const k of ['test', 'worker', 'judge']) {
+  for (const k of ['test', 'agent', 'judge-agent']) {
     if (opts[k] !== undefined && !/^(acp|byokit):[a-z0-9][\w.-]*$/.test(opts[k]) && (opts[k] === 'acp' || !Object.hasOwn(RUNNERS, opts[k].replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
       const list = Object.keys(RUNNERS).filter((r) => r !== 'acp').join(', ');
-      throw new UsageError(`--${k} ${shown(opts[k])} must be a runner: ${k === 'test' ? `${list}, acp:<target> or byokit:<route>` : `${list} or acp:<target>`}`, form);
+      throw new UsageError(`--${k} ${shown(opts[k])} must be an agent: ${list}, acp:<target> or byokit:<route>`, form);
     }
+  }
+  for (const [m, a] of [['model', 'agent'], ['judge-model', 'judge-agent']]) {
+    if (opts[m] === undefined) continue;
+    if (!opts[a]) throw new UsageError(`--${m} needs --${a}`, form);
+    if (!modelOk(opts[a], opts[m])) throw new UsageError(`--${m} ${shown(opts[m])} must be ${MODEL_RULE}`, form);
   }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
   if (cmd === 'init') { await initCommand(opts); return; }
   if (cmd === 'doctor') { await doctorCommand(opts); return; }
-  const cfg = loadConfig(opts.dir ?? resolve('.'));
+  let cfg = loadConfig(opts.dir ?? resolve('.'));
+  // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
+  if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
   if (cmd === 'ingest') {
     for (const s of (await ingest(cfg)).sources) console.log(sourceLine(s));
     console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);
@@ -630,32 +638,34 @@ async function runCommand(cmd, cfg, opts) {
   } else hint(withContext('learn-from-mistakes-axi report', 'the counts this run read', opts));
 }
 
-// `agents` lists anywhere (the global config's runner_path applies); with a project config it adds the resolved worker
-// and judge, and a clash between them exits 1. `--test` writes in the project's state dir, so it needs the config.
+// `agents` lists the configured agents anywhere, with the resolved worker and judge from the global config and the
+// project's overrides when it has a config; a role that does not resolve exits 1. With no agent set it asks (a
+// terminal) or says to ask the user. `--test` writes in the project's state dir, so it needs the config.
 async function agentsCommand(opts) {
-  const dir = opts.dir ?? resolve('.');
-  const out = await agents(opts.test || existsSync(join(dir, PROJECT_FILE)) ? loadConfig(dir) : loadGlobal(), opts);
+  const dir = opts.dir ?? resolve('.'), project = existsSync(join(dir, PROJECT_FILE));
+  const load = () => (opts.test || project ? loadConfig(dir) : loadGlobal());
+  let cfg = load();
+  if (!opts.test && await ensureAgents(cfg, project ? join(dir, PROJECT_FILE) : cfg.globalPath, opts.dir)) cfg = load();
+  const out = await agents(cfg, opts);
   console.log(render(out, opts.json));
-  if (out.test) { hint(withContext('learn-from-mistakes-axi agents', out.test.offered ? 'every agent CLI and the resolved worker and judge' : `why ${out.test.runner} is not offered as worker or judge`, opts)); return; }
-  const roles = ['worker', 'judge'].filter((r) => out[r]?.problem);
+  if (out.test) { hint(withContext('learn-from-mistakes-axi agents', 'the configured agents and the resolved worker and judge', opts)); return; }
+  const roles = ['worker', 'judge'].filter((r) => out[r].problem);
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
-  const pick = (!out.worker?.problem && out.worker?.runner) || (out.agents.find((a) => a.usable && !a.problem) ?? out.agents.find((a) => a.usable))?.runner;
-  const next = pick?.replace(/^acp$/, 'acp:<target>');
-  const bk = byokit.problem();
-  const readyRoutes = async () => (await byokit.readyRoutes()).map((r) => `byokit:${r}`).join(', ');
-  if (!next && !bk) hint(`set worker.runner and judge.runner in ${PROJECT_FILE} to byokit:<route>; ready: ${await readyRoutes()}`);
-  else if (!next) hint(`install an agent CLI, set runner_path in $LFM_HOME/config.yaml, or for byokit:<route>: ${bk.fix}   # then run agents again`);
-  else if (roles.includes('worker')) hint(`set worker.runner in ${PROJECT_FILE} to a usable agent CLI or byokit:<route>, or use a model one agent CLI lists`);
-  else if (roles.includes('judge') && out.judge.problem === CLASH) hint(JUDGE_FIX);
-  else if (roles.includes('judge')) hint(`install an agent CLI, or set judge.runner in ${PROJECT_FILE} to byokit:<route>; ${bk ? bk.fix : `ready: ${await readyRoutes()}`}`);
-  else hint(withContext(`learn-from-mistakes-axi agents --test ${next}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
+  if (roles.includes('worker')) hint(roleFix(cfg, 'agent', out.worker));
+  else if (out.judge.problem === CLASH) hint(JUDGE_FIX(cfg));
+  else if (roles.includes('judge')) hint(roleFix(cfg, 'judge_agent', out.judge));
+  else hint(withContext(`learn-from-mistakes-axi agents --test ${out.worker.runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
 
 // `doctor` prints one line per check and an indented fix: line under each one that is not ok; any fail exits 1.
 async function doctorCommand(opts) {
   quietSqlite();
-  const checks = await doctor(opts.dir ?? resolve('.'), opts);
+  const dir = opts.dir ?? resolve('.');
+  let cfg;
+  try { cfg = loadConfig(dir); } catch (e) { if (!(e instanceof UsageError)) throw e; } // doctor reports a config error itself
+  if (cfg) await ensureAgents(cfg, join(dir, PROJECT_FILE), opts.dir);
+  const checks = await doctor(dir, opts);
   const fails = checks.filter((c) => c.level === 'fail').length;
   if (opts.json) console.log(JSON.stringify({ checks, fails }, null, 2));
   else for (const c of checks) console.log(`${c.level.padEnd(4)} ${c.label.padEnd(15)} ${c.detail}${c.fix ? `\n     fix: ${c.fix}` : ''}`);
@@ -670,11 +680,14 @@ async function initCommand(opts) {
   const out = await init(opts.dir ?? resolve('.'), opts);
   console.log(render(out, opts.json));
   if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
-  const seen = [['worker', out.workerBin, out.worker], ['judge', out.judgeBin, out.judge]].map(([name, bin, r]) => `the ${name} (${bin ? r.runner : 'no usable runner'})`).join(' and ');
+  const seen = [['worker', out.workerBin, out.worker], ['judge', out.judgeBin, out.judge]].map(([name, bin, r]) => `the ${name} (${bin ? r.runner : r.runner ? `${r.runner}, not usable` : 'not set'})`).join(' and ');
   if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: ${seen} see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');
-  if (out.gaps.some((g) => g.startsWith('worker:'))) hint(out.anyUsable ? `set worker.runner in ${PROJECT_FILE} to a usable agent CLI, or use a model one agent CLI lists` : INSTALL_FIX);
-  else if (out.gaps.some((g) => g.startsWith('judge:'))) hint(out.judgeBin ? JUDGE_FIX : AGENTS_FIX);
+  const cfg = loadConfig(opts.dir ?? resolve('.'));
+  const problem = (name) => out.gaps.find((g) => g.startsWith(`${name}: `))?.slice(name.length + 2);
+  if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
+  else if (problem('worker')) hint(roleFix(cfg, 'agent', { runner: out.worker.runner, problem: problem('worker') }));
+  else if (problem('judge')) hint(problem('judge') === CLASH ? JUDGE_FIX(cfg) : roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }
 

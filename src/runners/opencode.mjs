@@ -9,8 +9,8 @@ export const skills = (env) => join(env.XDG_CONFIG_HOME || join(homedir(), '.con
 // Counts the stored credentials and the provider keys set in the environment; only the counts are read.
 export const loginStatus = () => ({ args: ['auth', 'list'], ok: (r) => /\b[1-9]\d* (credentials?|environment variables?)\b/.test(r.stdout), fix: 'opencode auth login' });
 // `--` ends the -f file list, which would otherwise take the message as a second file.
-export const command = ({ model, dir, prompt, marker, extra }) => ({
-  args: ['run', ...(model ? ['-m', model] : []), '--format', 'json', '--dir', dir, '-f', prompt, ...extra, '--', `${marker} Follow the instructions in the attached file.`],
+export const command = ({ model, effort, dir, prompt, marker, extra }) => ({
+  args: ['run', ...(model ? ['-m', model] : []), ...(effort ? ['--variant', effort] : []), '--format', 'json', '--dir', dir, '-f', prompt, ...extra, '--', `${marker} Follow the instructions in the attached file.`],
   env: { OPENCODE_PERMISSION: '{"*":"deny"}' },
 });
 // JSON lines; the answer is the last text part, an error event carries the agent's own cause. Each step_finish part
