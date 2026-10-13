@@ -14,7 +14,7 @@ const CLI = process.env.LFM_CLI || new URL('../bin/learn-from-mistakes-axi.mjs',
 const DAY = 86_400_000;
 const ago = (days) => new Date(Date.now() - days * DAY).toISOString();
 
-test('each applied change gets before and after numbers and a verdict; the second retro deletes a flat rule, with or without a tripwire, and rolls back a second miss', () => {
+test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-followup-'));
   after(() => rmSync(tmp, { recursive: true }));
   const p = join(tmp, 'p'), store = join(tmp, 'home', '.claude', 'projects', '-p');
@@ -37,6 +37,9 @@ test('each applied change gets before and after numbers and a verdict; the secon
   session('s-a2', 2, [...fail(2, 'Grep'), 'Glob', 'Edit']);
   session('s-a3', 2, []);
   session('s-late', 0.5, []);
+  // 5 days ago, 4 failed Writes; 2 days ago, 4 more: the before and after numbers of a met rule change.
+  session('s-write-before', 5, fail(4, 'Write'));
+  session('s-write-after', 2, fail(4, 'Write'));
   // 20 days ago, older than both windows: 2 failed Reads. Only a change 15 days ago reaches back to them.
   const old = new Date(Date.now() - 20 * DAY);
   utimesSync(session('s-old', 20, fail(2, 'Read')), old, old);
@@ -44,14 +47,18 @@ test('each applied change gets before and after numbers and a verdict; the secon
   const rule = (tool) => `{ description: The agent's ${tool} calls fail., match: { source: sessions, signal: tool_error, tool: ${tool} } }`;
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
   sessions: { type: sessions, agents: [claude] }
+  defects: { type: markdown-log, path: defects.md }
 causes:
   missing-file: ${rule('Read')}
   bad-search: ${rule('Grep')}
   bad-glob: ${rule('Glob')}
   bad-edit: ${rule('Edit')}
+  bad-write: ${rule('Write')}
   no-rule: { description: Nothing tags it. }
 followup: { min_sessions: 3, min_days: 1 }
 `);
+  // A defect log whose first record is 4 days ago: a change 6 days ago has no record on or before its before window's start.
+  writeFileSync(join(p, 'defects.md'), `## ${ago(4).slice(0, 10)}\n\n- A defect after the change.\n`);
   const env = { ...process.env, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: join(tmp, 'home', '.claude'),
     CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share') };
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
@@ -68,6 +75,8 @@ followup: { min_sessions: 3, min_days: 1 }
   change('missing-file', 3); // chg-7: no tripwire to check: no-data
   change('missing-file', 15, '--tripwire', '<= 0', '--kind', 'rule'); // chg-8: 2 -> 4 from the old session: rollback
   change('bad-glob', 3, '--kind', 'rule'); // chg-9: flat, no tripwire: no-data, then delete
+  change('bad-write', 3, '--tripwire', '<= 4', '--kind', 'rule'); // chg-10: 4 -> 4, met: keep, also on the second retro
+  change('no-rule', 6, '--metric', 'defects', '--tripwire', '<= 0'); // chg-11: the defect log has no record before its window: no-data
 
   const retro = () => {
     const r = lfm('retro', '--foreground', '--json');
@@ -87,10 +96,13 @@ followup: { min_sessions: 3, min_days: 1 }
     row('chg-7', 'cause_count:missing-file', 4, 0, '', 'no-data'),
     row('chg-8', 'cause_count:missing-file', 2, 4, '<= 0', 'rollback'),
     row('chg-9', 'cause_count:bad-glob', 2, 2, '', 'no-data'),
+    row('chg-10', 'cause_count:bad-write', 4, 4, '<= 4', 'keep'),
+    row('chg-11', 'defects', 'n/a', 1, '<= 0', 'no-data'),
   ]);
   const second = retro();
   assert.deepEqual(second.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'delete'],
-    ['chg-4', 'rollback'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'delete']]);
+    ['chg-4', 'rollback'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'delete'],
+    ['chg-10', 'keep'], ['chg-11', 'no-data']]);
   assert.deepEqual(decode(lfm('status', '--run', String(first.run.id)).stdout).followups, first.followups); // each run keeps its own verdicts
 
   // The store keeps the unrounded numbers, NULL for n/a and for no tripwire; the follow-up step logs one line per change.

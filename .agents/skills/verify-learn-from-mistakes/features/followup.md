@@ -17,11 +17,15 @@ is a ledger problem, so it never gets a row. The verdict is code, the first rule
 
 1. `no-data`: fewer than `followup.min_sessions` sessions (with an event at or
    after `at`) or fewer than `followup.min_days` days from `at` to the run, or
-   the metric is n/a before or after.
-2. `delete`: a `kind: rule` change whose metric moved less than 10% of `before`
-   (or stayed 0) in this run and in the last run.
-3. `no-data`: the change has no tripwire.
-4. `keep`: `after` meets the tripwire.
+   the metric is n/a before or after, or a records-based metric (a `cause_count`
+   whose match rule names a no-mistakes source, or `defects`) has no record on or
+   before the start of the before window, so its `before` is n/a (the source does
+   not cover that window).
+2. `keep`: the tripwire is met (a met rule change is kept, never deleted).
+3. `delete`: a `kind: rule` change whose metric moved less than 10% of `before`
+   (or stayed 0) in this run and in the last run; a missed tripwire or none does
+   not stop it.
+4. `no-data`: the change has no tripwire.
 5. `rollback`: the tripwire missed and the number did not improve (lower for
    `<`/`<=`, higher for `>`/`>=`, nearer the number for `=`), or the tripwire
    also missed in the last run.
@@ -39,14 +43,18 @@ then `learn-from-mistakes-axi retro --foreground` (or `status`) lists each chang
 
 ## Driving it with the public CLI
 `test/followup.test.mjs` owns the journey: synthetic Claude Code sessions 20,
-5, 2 and 0.5 days back and eight changes give, on the first retro, `keep`
+5, 2 and 0.5 days back, a defect log whose first record is 4 days back, and
+eleven changes give, on the first retro, `keep`
 (4 -> 0), `rollback` (4 -> 5), `rollback` for a flat rule change (2 -> 2),
 `fix` (4 -> 2 against `<= 1`), `no-data` for one session after the change, for a
 cause with no match rule (n/a), for no tripwire and for a flat rule change with no tripwire, and `rollback` for a change
 15 days back whose before number comes from a session older than both windows
-(read only through `read_from`). The second retro gives `delete` for both flat
-rule changes and `rollback` for the fixed one; `status --run <first>` still shows
-the first verdicts; the store keeps NULL for n/a and no tripwire.
+(read only through `read_from`). A met rule change (4 -> 4 against `<= 4`) is `keep`,
+and a change on `defects` 6 days back is `no-data` with n/a before, since the log
+has no record by the start of its window. The second retro gives `delete` for both flat
+rule changes and `rollback` for the fixed one, and still `keep` for the met one;
+`status --run <first>` still shows the first verdicts; the store keeps NULL for n/a
+and no tripwire.
 `test/cli.test.mjs` asserts 4 steps per run and that `rerun --resume` keeps the
 completed `followup` step. The helper's `change-followup` and `retro-followup`
 drives add a change between an old failed test run and the three synthetic
