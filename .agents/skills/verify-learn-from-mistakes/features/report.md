@@ -6,6 +6,9 @@ malformed labels, empty input, and proposal rules (repeated causes only, with
 target and owner, at most five lines).
 
 ## How to get to it (user POV)
+After a retro whose worker kept labels, a bare `learn-from-mistakes-axi` or `report` counts that run's labels:
+`labels_from: run <id>`, `findings[n]{cause,refs}` (counts, never the summaries) and `next: ... status --run <id>`.
+With no such run, or with `--labels <file>`, it counts `labels.jsonl` (`labels_from: labels.jsonl` or `--labels`).
 Run `learn-from-mistakes-axi` or `learn-from-mistakes-axi report --labels <file> --proposals <file>` after ingest; add
 `--json` for JSON and `--full` for evidence ids.
 

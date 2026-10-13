@@ -8,7 +8,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
-import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import { ensureAgents, saveCommand } from '../src/ask.mjs';
@@ -263,7 +263,8 @@ function analyse(cfg, files, rerunHint) {
     if (bad) problems.push(`${basename(pf)}:${p._line}: ${bad}`);
     return { ...p, refs: refs.filter(resolves), ok: !bad };
   });
-  return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length, changes };
+  return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length, changes,
+    from: files.runLabels ? `run ${files.run}` : files.labels ? '--labels' : 'labels.jsonl', findings: files.findings ?? [] };
 }
 
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
@@ -316,11 +317,13 @@ function project(a, full) {
     schema: 'lfm-report.v1',
     generated_at: new Date().toISOString(),
     ingested_at: a.meta.read_at ?? '',
+    labels_from: a.from, // a retro run's worker, or the labels file
     coverage: { labelled: a.labels.size, total_records: a.records.size, unlabelled: a.unlabelled },
     problems: a.problems.length,
     ledger: { entries: a.changes?.length ?? 0 },
     sources: a.meta.sources.map((s) => ({ id: s.id, type: s.type, items: s.items })),
     causes,
+    findings: a.findings.map(({ cause, count, days }) => ({ cause, count, days })), // the run worker's, counted by its check step; the summaries print in status only
   };
 }
 
@@ -349,7 +352,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   guide               print the agent procedure: config, ingest, label, propose, report
   ingest              read the configured sources (read-only) into the state dir (<project>/.lfm, git-ignored)
   count               print the counts (same projection as \`report\`)
-  report              print the report; --full adds evidence ids, --json prints JSON
+  report              print the report: the last retro's labels, else labels.jsonl; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
   retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, report) in a background worker
@@ -416,8 +419,9 @@ choose for them, then run the init command it prints with their answer, then run
 The worker that labels is the agent: the user set. Do step 1, then start a retro: learn-from-mistakes-axi retro --wait 15m.
 The tool's own agent labels the records and the run prints the report with their counts. You only start it and read the
 result. With agent or its model not set, the retro stops with the ask line; with one that is not ready, it stops at
-analyse with the fix; steps 2-6 are the manual way, without a retro. The retro's report counts the worker's labels;
-the bare report (learn-from-mistakes-axi or report) counts labels.jsonl only.
+analyse with the fix; steps 2-6 are the manual way, without a retro. A finished retro prints its result: the causes
+it counted and the worker's findings. The bare report (learn-from-mistakes-axi or report) counts the last retro's
+labels (labels_from: run <id>); labels.jsonl only when no run has labels, or --labels <file>.
 
 1. Config. No .learn-from-mistakes.yaml in the project? Write one (it is this tool's own file):
      name: <project>
@@ -574,7 +578,9 @@ async function main() {
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
-  const { model, problems } = buildReport(cfg, opts, rerunHint, full);
+  if (!opts.labels) quietSqlite();
+  const last = opts.labels ? undefined : await lastRun(cfg); // --labels names the file; else the last retro's labels, if a run has them
+  const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
   if (!json) console.log(summaryLine(model));
   if (problems.length) {
@@ -585,7 +591,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  hint(model.coverage.total_records && !model.coverage.labelled ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
+  if (last) hint(withContext(`learn-from-mistakes-axi status --run ${last.run}`, "the run's findings in plain words", opts));
+  else hint(model.coverage.total_records && !model.coverage.labelled ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
 }
 
 // The run commands open the run store, and init may read a no-mistakes store. node:sqlite warns it is experimental on Node 22, so these
@@ -624,7 +631,10 @@ async function runCommand(cmd, cfg, opts) {
     const output = existsSync(log) ? `; the worker's output: ${log}` : '';
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));
     if (cmd !== 'status') process.exitCode = 1;
-  } else hint(withContext('learn-from-mistakes-axi report', 'the counts this run read', opts));
+  } else if (!out.result.labelled && !out.result.findings.length) {
+    console.error('result: the worker labelled no record and named no finding');
+    hint(withContext(`learn-from-mistakes-axi logs --step analyse --run ${out.run.id}`, 'why: nothing new in this window, or the problems with its answer', opts));
+  } else hint(withContext('learn-from-mistakes-axi report --full', 'the evidence ids behind these counts', opts));
 }
 
 // `agents` lists the configured agents anywhere, with the resolved worker and judge from the global config and the

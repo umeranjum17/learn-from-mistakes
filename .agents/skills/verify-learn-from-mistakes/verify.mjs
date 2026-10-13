@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -194,8 +194,15 @@ try {
   const met = (n) => out.metrics.find((m) => m.name === n)?.met;
   assert.deepEqual([met('tool_error_rate'), met('cause_count:test-fails'), met('first_pass')], ['missed', 'met', 'n/a'], 'targets are not compared');
   // Analyse: the fake worker names two findings, one citing an item the bundle lacks; then it answers prose twice.
-  run('retro-analyse', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label' });
-  const analysed = JSON.parse(readFileSync(join(evidence, 'retro-analyse.stdout'), 'utf8')).run.id;
+  if (!mode) appendFileSync(join(staged, sources.find((x) => x.type === 'markdown-log').copy), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`); // two records in this window to label
+  run('retro-analyse', process.execPath, [cli, 'retro', '--wait', '1m', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label' });
+  const { run: { id: analysed }, result } = JSON.parse(readFileSync(join(evidence, 'retro-analyse.stdout'), 'utf8'));
+  assert.deepEqual(result.findings.map((f) => f.cause), ['umer-fixtures-unset'], 'retro --wait does not show the worker\'s finding');
+  drive('report-run', 'report', '--json'); // the bare report counts the run's labels, not labels.jsonl
+  if (!mode) {
+    assert.deepEqual([result.labelled, result.causes.find((c) => c.cause === 'other')?.incidents], [2, 2], 'retro --wait does not show the counted causes');
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'report-run.stdout'), 'utf8')).labels_from, `run ${analysed}`, 'the bare report does not read the run\'s labels');
+  }
   const rows = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
     assert.deepEqual(rows.prepare('SELECT cause FROM findings WHERE run_id = ?').all(analysed).map((f) => f.cause), ['umer-fixtures-unset'], 'the finding with a ref to no bundle item is not kept');

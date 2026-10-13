@@ -997,6 +997,9 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const first = JSON.parse(waited.stdout);
   assert.equal(first.run.status, 'completed');
   assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  // A run whose worker labelled nothing and found nothing says so in one plain line, with where to see why.
+  assert.deepEqual(first.result, { labelled: 0, records: 18, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
+  assert.match(waited.stderr, /^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run 1   # why/m);
 
   // Without --wait, retro returns while the worker runs: spawnSync ends only when no process holds its pipes.
   const slowEnv = { ...env, LFM_TEST_SLOW_STEP: 'report' }; // the worker inherits it: report sleeps 60 s
@@ -1065,7 +1068,8 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.deepEqual(order.map(at), order.map(at).toSorted((a, b) => a - b), attached.stdout);
   assert.doesNotMatch(attached.stdout, /sha256/);
   assert.equal(decode(attached.stdout.slice(attached.stdout.indexOf('run:\n'))).run.status, 'completed');
-  assert.match(attached.stderr, /^next: learn-from-mistakes-axi report /m);
+  // The examples' records are all from March: the run says plainly it found nothing, and where to see why.
+  assert.match(attached.stderr, new RegExp(`^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run ${first.id}   # why`, 'm'));
 
   const log = lfm('logs', '--step', 'collect', '--run', String(first.id), '--json');
   assert.equal(log.status, 0, log.stderr);
@@ -1132,9 +1136,9 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const global = join(env.LFM_HOME, 'config.yaml'); // the user set agent: claude and its model there; the run never picks one
   const lines = (id) => stepLines('analyse', id);
 
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--foreground', '--json');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--wait', '1m', '--json');
   assert.equal(r.status, 0, r.stderr);
-  const { run, steps } = JSON.parse(r.stdout);
+  const { run, steps, result } = JSON.parse(r.stdout);
   assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed']]);
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8');
   const records = [...bundle.matchAll(/^- \[([^\]]+)\] log at /gm)].map((m) => m[1]);
@@ -1163,6 +1167,18 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const report = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, run.id)[0].output_json);
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
+  // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
+  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.' };
+  assert.deepEqual(result, { labelled: 2, records: 20, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
+  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,summary\}:\n {4}umer-fixtures-unset,1,1,The tests fail when UMER_FIXTURES is unset\. No doc names it\.$/m);
+  assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);
+  // The bare report counts the run's labels and names their source; the findings show as counts, their summaries in status only.
+  const bare = lfm({}, 'report', '--json');
+  assert.equal(bare.status, 0, bare.stderr);
+  const bareJson = JSON.parse(bare.stdout);
+  assert.deepEqual([bareJson.labels_from, bareJson.coverage.labelled, bareJson.causes[1].cause, bareJson.causes[1].log.incidents, bareJson.findings], [`run ${run.id}`, 2, 'shared-cache-lock', 2, [{ cause: finding.cause, count: 1, days: 1 }]]);
+  assert.doesNotMatch(bare.stdout, /UMER_FIXTURES|failed for Umer/);
+  assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run's findings`, 'm'));
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');

@@ -147,7 +147,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   writeFileSync(cfgFile, `${readFileSync(cfgFile, 'utf8')}causes:\n  rework:\n    description: "a merged PR needed rework"\n`);
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: true, cause: 'rework', why: 'a PR that needed rework' }) + '\n');
   writeFileSync(join(p, '.lfm', 'proposals.jsonl'), JSON.stringify({ cause: 'rework', target: 'docs', owner: 'umer', change: 'add a check', refs: ['prs:10'] }) + '\n');
-  const full = JSON.parse(lfm({}, 'report', '--full', '--json').stdout);
+  const full = JSON.parse(lfm({}, 'report', '--full', '--json', '--labels', join(p, '.lfm', 'labels.jsonl')).stdout); // not the run's labels
   assert.deepEqual(full.causes.find((c) => c.cause === 'rework').proposal_refs, ['prs:10']);
 });
 
