@@ -127,7 +127,7 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /Which agent runs the worker \(agent\)\?\r?\n {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode/);
   assert.match(r.stdout, /the judge must be another agent than the worker \(claude\)/);
-  assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id such as claude-haiku-5-5/);
+  assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id \(letters/);
   assert.match(r.stdout, /saved: agent and judge_agent in /);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['claude', 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
@@ -257,7 +257,7 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
     [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, 'error: judge: the judge resolves to the worker\'s agent and model, so it would judge its own work'],
     [['--agent', 'umer'], 2, 'error: --agent "umer" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'],
     [['--model', MODELS.claude], 2, 'error: --model needs --agent'],
-    [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be a model id such as claude-haiku-5-5, and provider/model for opencode, such as opencode-go/muse-spark-1.3-contributor'],
+    [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'],
     [['--judge-agent', 'codex', '--judge-model', MODELS.codex], 1, 'error: judge: codex is not usable: codex is not on PATH'],
     [['--judge-agent', 'gemini'], 1, 'error: judge: gemini is not offered: its read-only plan mode is not yet confirmed in headless mode (agents --test gemini runs the write test)'],
   ]) {
@@ -541,7 +541,7 @@ test('init refuses a model that starts with a dash, at --model and --judge-model
   for (const args of [['--agent', 'claude', '--model', '--yolo'], ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', '-x']]) {
     const r = lfm('init', ...args);
     assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /^error: --(judge-)?model .* must be a model id such as claude-haiku-5-5/m);
+    assert.match(r.stderr, /^error: --(judge-)?model .* must be a model id \(letters/m);
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
@@ -555,7 +555,7 @@ test('in a terminal, a typed model that starts with a dash is refused and asked 
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /--yolo is not a model id such as claude-haiku-5-5/);
+  assert.match(r.stdout, /--yolo is not a model id \(letters/);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.equal(yaml.agent_config.claude.model, MODELS.claude);
   assert.ok(!JSON.stringify(yaml).includes('--yolo'));

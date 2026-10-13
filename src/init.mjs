@@ -34,13 +34,11 @@ const globalText = `# learn-from-mistakes global configuration
 # pi; gemini, acp:<target> and byokit:<route> take no effort. An agent with no model here is asked for one: the
 # tool never lets its CLI pick its own model.
 # agent_config:
-#   claude:
-#     model: claude-haiku-5-5
+#   <agent>:
+#     model: <model>
 #     effort: low
-#   codex:
-#     model: gpt-6-luna
-#   "byokit:opencode-go":
-#     model: muse-spark-1.3-contributor
+#   "byokit:<route>":
+#     model: <model>
 
 # Maximum wall-clock time for one agent call. A stalled agent is stopped and the step fails with its cause.
 # agent_timeout: "20m"
@@ -121,7 +119,7 @@ name: ${scalar(basename(dir))}
 # override it for this project. The tool never picks an agent: set agent and judge_agent, each with its model.
 # agent: claude   # or codex, opencode, pi, acp:<target>, byokit:<route>
 # judge_agent: codex   # its agent and model must differ from the worker's
-# agent_config: { claude: { model: claude-haiku-5-5, effort: low } }
+# agent_config: { <agent>: { model: <model>, effort: low } }
 # agent_timeout: "20m"
 excerpts: ${opts['no-excerpts'] ? 'off' : 'on'}   # on: the worker and judge see redacted record excerpts; off: pointers and counts only
 sources:${Object.keys(found).length ? '' : ' {}'}
@@ -134,7 +132,6 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   if (!opts.y && await ensureAgents(cfg, file, opts.dir)) cfg = loadConfig(dir);
   stateDir(cfg);
   const missing = unset(cfg);
-  if (missing.length && !opts.y) throw askError(cfg, missing, file, opts.dir);
   const { worker, judge } = await resolveRoles(cfg, agents);
   const gaps = [...(missing.length ? [`agents: ${askError(cfg, missing, file).message}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),

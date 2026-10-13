@@ -25,7 +25,7 @@ metadata:
 
 ${bin} counts the causes a project's coding agents keep repeating. You read each record of past work (a markdown defect log, failed no-mistakes pipeline steps, and this repo's Claude Code, Codex and OpenCode sessions) and judge what went wrong; the CLI merges duplicates, counts each cause per source, flags the repeated ones and checks that every recommended change cites real records.
 
-You start a retro (\`${npx} retro --wait 15m\`); the tool runs its own agent, the worker set in its config (such as Go Muse through BYOKit), to label the records; the run never picks one. You only start it and read the result. With the agent or its model not set, the retro stops with "ask the user which agent to use": ask the user, never choose, then run the init command it prints with the answer and the retro again.
+You start a retro (\`${npx} retro --wait 15m\`); the tool runs its own agent, the worker set in its config, to label the records; the run never picks one. You only start it and read the result. With the agent or its model not set, the retro stops with "ask the user which agent to use": ask the user, never choose, then run the init command it prints with the answer and the retro again.
 
 ## Current guidance lives in the CLI
 
