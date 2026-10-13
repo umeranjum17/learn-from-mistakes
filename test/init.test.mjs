@@ -179,6 +179,16 @@ test('with an agent set but no model, init, retro, doctor and agents stop with t
   }
 });
 
+// Review-7: a flag never replaces a model the project file already sets, even when the agent comes from the global file.
+test('init --model keeps the model the project file sets for that agent, and lists --model as ignored', () => {
+  const { p, lfm, config } = setup(['claude', 'opencode'], 'agent: claude\n');
+  writeFileSync(config, 'sources: {}\nagent_config: { claude: { model: umer-cheap-1 } }\n');
+  const r = lfm('init', '-y', '--json', '--agent', 'claude', '--model', 'umer-new');
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).ignored, ['--model']);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).agent_config, { claude: { model: 'umer-cheap-1' } });
+});
+
 // The worker is checked against a judge that is already set, so a terminal pick never makes both roles one agent.
 test('in a terminal, a worker pick equal to the set judge is refused and asked again', () => {
   const { tmp, p, env, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
