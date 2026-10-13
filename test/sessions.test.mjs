@@ -75,10 +75,11 @@ function setup() {
 `)}targets: { defects: "<= 1", interrupts: "> 1", "cause_count:fetch-test-fails": "<= 1", "cause_count:missing-file": "= 0", "cause_count:server-memory-kill": "<= 0" }
 `);
   writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(1)}\n\n- [tests] Umer's fetch tests failed.\n- [tests] Again.\n\n## ${day(10)}\n\n- [tests] Once last week.\n`);
-  // PATH holds the fake agent (the analyse step's worker), node for its #! line, and git.
+  // PATH holds the fake agent (the analyse step's worker and the judge), node for its #! line, and git.
   const bin = join(tmp, 'bin');
   mkdirSync(bin);
   symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   const env = { ...process.env, PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: claude,

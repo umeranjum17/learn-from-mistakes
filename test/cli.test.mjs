@@ -31,7 +31,11 @@ function setup() {
   after(() => rmSync(tmp, { recursive: true }));
   cpSync(new URL('../examples', import.meta.url).pathname, join(tmp, 'p'), { recursive: true });
   own(join(tmp, 'p'));
-  const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  // The fake agent as the worker and the judge, ahead of the host PATH: no test reaches a real agent CLI.
+  const fakes = join(tmp, 'fakes');
+  mkdirSync(fakes);
+  for (const name of ['claude', 'codex']) symlinkSync(FAKE_AGENT, join(fakes, name));
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: join(tmp, 'home') };
   mkdirSync(env.LFM_HOME);
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
@@ -1162,6 +1166,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
+  symlinkSync(FAKE_AGENT, join(nobin, 'codex')); // a ready judge, so the run starts; claude is missing, the worker's problem
   const fix = `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one`;
   const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
   assert.equal(missing.status, 1, missing.stderr);
