@@ -143,6 +143,7 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   assert.match(r.stdout, /the judge must be another agent than the worker \(claude\)/);
   assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id \(letters/);
   assert.match(r.stdout, /saved: agent and judge_agent in /);
+  assert.ok(r.stdout.indexOf('status: written') < r.stdout.indexOf('Which agent runs the worker'), 'the written report comes before the ask');
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['claude', 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
   assert.equal(lfm('agents', '--json').status, 0); // the saved config loads
