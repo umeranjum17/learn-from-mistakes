@@ -1235,6 +1235,21 @@ test('propose and check: of six fixes for a repeated cause five are kept, ranked
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });
 
+test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept', () => {
+  const { p, lfm, query, calls, lines } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run } = JSON.parse(r.stdout);
+  const asks = calls().filter((c) => c.stdin.startsWith(`lfm-run:${run.id}:propose\n`));
+  assert.equal(asks.length, 2, 'the worker is asked once more, with the problem');
+  assert.match(asks[1].stdin, /Your last answer was not valid: proposals\[1\]\.change has more than 3 sentences\./);
+  assert.deepEqual(query('SELECT target FROM proposals WHERE run_id = ?', run.id), [{ target: 'launch script 1' }]);
+  assert.ok(lines('propose', run.id).includes('dropped: proposals[1].change has more than 3 sentences'));
+  assert.equal(lines('propose', run.id).at(-1), 'fixes: 1 proposed, reasons: 0 of 0 follow-ups');
+});
+
 test('a run id reused after the store is removed starts its step logs empty', () => {
   const { p, lfm } = setup();
   const first = JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout);

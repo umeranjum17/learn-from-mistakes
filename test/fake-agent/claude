@@ -5,6 +5,7 @@
 // item; prose answers in plain text; blank answers nothing; hang never answers. The propose step (its marker line) gets
 // a reason for each follow-up it lists and, with FAKE_PROPOSE=eight, eight fixes for FAKE_CAUSE citing the bundle's
 // records (or its first item when it has none): the sixth with metric defects, the seventh for a cause that did not repeat, the eighth with no tripwire.
+// FAKE_PROPOSE=long gives two fixes, the second with a change of four sentences, on every answer.
 // FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,8 +22,10 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const refs = records.length ? records : [bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1]];
   const followups = stdin.slice(stdin.indexOf('Follow-ups to explain:'), stdin.indexOf('Reply with one JSON object'));
   const fix = (target, more) => ({ cause: process.env.FAKE_CAUSE || 'other', target, owner: 'maintainer', change: 'Give each worker its own cache directory.', metric: null, tripwire: '<= 0', refs, ...more });
-  const answer = { proposals: process.env.FAKE_PROPOSE !== 'eight' ? [] : [...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
-    fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })],
+  const proposals = process.env.FAKE_PROPOSE === 'long' ? [fix('launch script 1'), fix('launch script 2', { change: 'Give each worker its own cache directory. Keep the lock out of it. Run the launch script alone. Check the result.' })]
+    : process.env.FAKE_PROPOSE !== 'eight' ? [] : [...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
+    fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })];
+  const answer = { proposals,
     reasons: [...followups.matchAll(/^- (chg-\d+):/gm)].map((m) => ({ change: m[1], reason: 'Too few sessions ran after the change for Umer.' })) };
   console.log(JSON.stringify({ type: 'result', is_error: false, result: JSON.stringify(answer), session_id: 'fake-session', usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } }));
 } else {
