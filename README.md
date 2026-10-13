@@ -110,7 +110,7 @@ Agent fleets write down what went wrong: a defect log, a pipeline's failed steps
 ```
 learn-from-mistakes-axi           print the project's repeated-cause report (same as `report`)
 learn-from-mistakes-axi init [--worker <runner>] [--judge <runner>] [--no-excerpts]   write .learn-from-mistakes.yaml once: a worker and a different judge from the agent CLIs found, and the sources found
-learn-from-mistakes-axi doctor [--live]   one ok/warn/fail line per check (node, git, config, .lfm ignored, each source, worker and judge: usable, login, model, a different identity; the skill per agent CLI; sign-off) with a fix: line under each that is not ok; --live makes one agents --test call per role (costs tokens)
+learn-from-mistakes-axi doctor [--live]   one ok/warn/fail line per check (node, git, config, .lfm ignored, each source, worker and judge: usable, login, model, a different identity; the skill per agent CLI; sign-off) with a fix: line under each that is not ok; --live makes one agents --test call per role (costs tokens); --json prints JSON
 learn-from-mistakes-axi guide     print the agent procedure: config, ingest, label, propose, report
 learn-from-mistakes-axi ingest    read the configured sources (read-only) into the state dir
 learn-from-mistakes-axi count     print the counts (same projection as `report`)
