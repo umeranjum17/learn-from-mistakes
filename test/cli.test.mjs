@@ -31,7 +31,11 @@ function setup() {
   after(() => rmSync(tmp, { recursive: true }));
   cpSync(new URL('../examples', import.meta.url).pathname, join(tmp, 'p'), { recursive: true });
   own(join(tmp, 'p'));
-  const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  // The fake agent as the worker and the judge, ahead of the host PATH: no test reaches a real agent CLI.
+  const fakes = join(tmp, 'fakes');
+  mkdirSync(fakes);
+  for (const name of ['claude', 'codex']) symlinkSync(FAKE_AGENT, join(fakes, name));
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: join(tmp, 'home') };
   mkdirSync(env.LFM_HOME);
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
@@ -644,9 +648,10 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   const doctor = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source dd');
   assert.match(doctor.detail, /^done-done: 4 failed or inconclusive verify steps, 4 in the window; no runs for nottes in /);
   assert.match(doctor.fix, /^ls .*# done-done's app names; set sources\.dd\.apps in /);
-  const bin = join(p, '..', 'dd-bin'); // the retro's agent is the fake one, never the host's claude login
+  const bin = join(p, '..', 'dd-bin'); // the retro's worker and judge are the fake one, never the host's claude login
   mkdirSync(bin);
   symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
   symlinkSync(process.execPath, join(bin, 'node'));
   const retro = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
   assert.equal(retro.status, 0, retro.stderr);
@@ -898,10 +903,11 @@ test('the defects metric counts the defect log, not reviews.md', () => {
   writeFileSync(join(p, 'defects.md'), `## ${day}\n- one\n- two\n- three\n`);
   writeFileSync(join(p, 'reviews.md'), `- ${day} umer: first review\n- ${day} umer: second review\n`);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n  reviews: { type: markdown-log, path: reviews.md }\ncauses: { flaky: { description: d } }\n');
-  // PATH holds only the fake agent, so the analyse step never calls a real, logged-in claude.
+  // PATH holds only the fake agent (the worker and the judge), so the run never calls a real, logged-in agent.
   const bin = join(p, '..', 'bin');
   mkdirSync(bin);
   symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
   symlinkSync(process.execPath, join(bin, 'node'));
   const r = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
   assert.equal(r.status, 0, r.stderr);
@@ -1280,6 +1286,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
+  symlinkSync(FAKE_AGENT, join(nobin, 'codex')); // a ready judge, so the run starts; claude is missing, the worker's problem
   const fix = `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one`;
   const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
   assert.equal(missing.status, 1, missing.stderr);
@@ -1331,15 +1338,15 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.doesNotMatch(broken.stderr, /^\s+at /m);
 });
 
-test('propose, verify and check: of six fixes for a repeated cause five are kept, ranked; the judge refutes claim p2; a cause that did not repeat and no tripwire are problems; --proposal copies a fix into the ledger', () => {
+test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; check drops fix 2 and ranks fix 3 last of the five kept; a cause that did not repeat and no tripwire are problems; --proposal copies a fix into the ledger', () => {
   const { p, lfm, query, calls, lines } = agentSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_REFUTE: 'p2' }, 'retro', '--foreground', '--json');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_REFUTE: 'p2', FAKE_WEAKEN: 'p3' }, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run, fixes } = JSON.parse(r.stdout);
   // The judge is the second fake agent (codex, its own model), never the worker: in the run dir it got the judge's method,
-  // each finding and fix as a claim with its refs, then the bundle. Its verdicts land on the rows; it refuted fix 2.
+  // each finding and fix as a claim with its refs, then the bundle. Its verdicts land on the rows.
   const [judge] = calls('codex');
   assert.equal(realpathSync(judge.cwd), realpathSync(join(p, '.lfm', 'runs', String(run.id))));
   assert.deepEqual(judge.args.slice(0, 3), ['exec', '-m', 'gpt-6-luna']);
@@ -1351,8 +1358,8 @@ test('propose, verify and check: of six fixes for a repeated cause five are kept
   assert.ok(!calls().some((c) => c.stdin.includes(':verify\n')), 'the worker was asked to judge');
   assert.deepEqual(query(`SELECT role, runner, model, exit_status FROM invocations WHERE run_id = ? AND step = 'verify'`, run.id), [{ role: 'judge', runner: 'codex', model: 'gpt-6-luna', exit_status: 'ok' }]);
   assert.deepEqual(query('SELECT verdict, judge_note FROM findings WHERE run_id = ?', run.id), [{ verdict: 'confirmed', judge_note: 'The cited items show this for Umer.' }]);
-  assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => f.verdict), ['confirmed', 'refuted', ...Array(6).fill('confirmed')]);
-  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'verdicts: 8 confirmed, 0 weakened, 1 refuted, 0 not judged']);
+  assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => f.verdict), ['confirmed', 'refuted', 'weakened', ...Array(5).fill('confirmed')]);
+  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'weakened: p3', 'verdicts: 7 confirmed, 1 weakened, 1 refuted, 0 not judged']);
   // The worker got the causes with their counts, the kept finding and the propose method, then the bundle.
   const call = calls().at(-1);
   assert.ok(call.stdin.startsWith(`lfm-run:${run.id}:propose\nYou are the worker of a retro.`), call.stdin.slice(0, 200));
@@ -1360,15 +1367,15 @@ test('propose, verify and check: of six fixes for a repeated cause five are kept
   assert.match(call.stdin, /^- umer-fixtures-unset: 1 incident on 1 day, did not repeat$/m);
   assert.match(call.stdin, /Prefer a check, a script or a deleted rule over more prose\./);
   assert.match(call.stdin, /^Follow-ups to explain:\nNone\.$/m);
-  // Six fixes follow the rules: the one whose metric misses its target ranks first, and the sixth by rank is a problem.
+  // Five fixes follow the rules: the one whose metric misses its target ranks first, the weakened one last; the refuted one is a problem.
   assert.deepEqual(lines('propose', run.id).slice(1), ['fixes: 8 proposed, reasons: 0 of 0 follow-ups']);
-  assert.deepEqual(lines('check', run.id), ['problem: proposals[4]: more than 5 fixes: ranked below the top 5', 'problem: proposals[6]: its cause did not repeat; propose only for repeated causes',
+  assert.deepEqual(lines('check', run.id), ['problem: proposals[1]: the judge refuted it', 'problem: proposals[6]: its cause did not repeat; propose only for repeated causes',
     'problem: proposals[7]: no tripwire', 'fixes: 5 kept of 8, problems: 3']);
   assert.deepEqual(query('SELECT n, target, metric, tripwire, problem IS NOT NULL AS problem FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => [f.n, f.target, f.metric, f.tripwire, f.problem]), [
-    [2, 'launch script 1', 'cause_count:shared-cache-lock', '<= 0', 0], [3, 'launch script 2', 'cause_count:shared-cache-lock', '<= 0', 0], [4, 'launch script 3', 'cause_count:shared-cache-lock', '<= 0', 0],
-    [5, 'launch script 4', 'cause_count:shared-cache-lock', '<= 0', 0], [null, 'launch script 5', 'cause_count:shared-cache-lock', '<= 0', 1], [1, 'launch script 6', 'defects', '<= 0', 0],
+    [2, 'launch script 1', 'cause_count:shared-cache-lock', '<= 0', 0], [null, 'launch script 2', 'cause_count:shared-cache-lock', '<= 0', 1], [5, 'launch script 3', 'cause_count:shared-cache-lock', '<= 0', 0],
+    [3, 'launch script 4', 'cause_count:shared-cache-lock', '<= 0', 0], [4, 'launch script 5', 'cause_count:shared-cache-lock', '<= 0', 0], [1, 'launch script 6', 'defects', '<= 0', 0],
     [null, 'test setup', 'cause_count:umer-fixtures-unset', '<= 0', 1], [null, 'cache config', 'cause_count:shared-cache-lock', null, 1]]);
-  assert.deepEqual(fixes, [1, 2, 3, 4, 5].map((n) => ({ n, cause: 'shared-cache-lock', metric: n === 1 ? 'defects' : 'cause_count:shared-cache-lock', tripwire: '<= 0' })));
+  assert.deepEqual(fixes, [1, 2, 3, 4, 5].map((n) => ({ n, cause: 'shared-cache-lock', metric: n === 1 ? 'defects' : 'cause_count:shared-cache-lock', tripwire: '<= 0', verdict: n === 5 ? 'weakened' : 'confirmed' })));
   assert.deepEqual(query('SELECT cause, count, days FROM findings WHERE run_id = ?', run.id), [{ cause: 'umer-fixtures-unset', count: 1, days: 1 }]);
 
   // --proposal copies the kept fix's cause, metric and tripwire into the ledger; a fix that was not kept has no number.
@@ -1393,11 +1400,44 @@ test('propose, verify and check: of six fixes for a repeated cause five are kept
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });
 
-test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept', () => {
+test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
+  const { p, env, lfm } = agentSetup();
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);
+  for (const cmd of ['retro', 'rerun']) {
+    const r = lfm({}, cmd);
+    assert.equal(r.status, 2, `${cmd}: ${r.stderr}`);
+    assert.match(r.stderr, /^error: judge: agent_config holds one model per agent, so a judge on the worker's agent gets the worker's model and would judge its own work\nnext: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
+  }
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: acp:claude\nagent_config: { claude: { model: claude-haiku-5-5 }, "acp:claude": { model: claude-haiku-5-5 } }\n`);
+  for (const cmd of ['retro', 'rerun']) {
+    const r = lfm({}, cmd);
+    assert.equal(r.status, 1, `${cmd}: ${r.stderr}`);
+    assert.match(r.stderr, /^error: judge: acp:claude is not usable: acpx is not on PATH$/m);
+  }
+  assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a run started');
+});
+
+test('a fix the judge leaves out is not judged: it ranks after the confirmed fixes and status reads not judged', () => {
+  const { p, lfm, query, lines } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_REFUTE: 'p2', FAKE_UNJUDGED: 'p1' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run } = JSON.parse(r.stdout);
+  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'judge answer 1 is not valid: verdicts has no verdict for p1', 'judge codex gpt-6-luna: answered',
+    'refuted: p2', 'verdicts: 7 confirmed, 0 weakened, 1 refuted, 1 not judged']);
+  assert.deepEqual(query('SELECT target, n, verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n', run.id), [
+    { target: 'launch script 6', n: 1, verdict: 'confirmed' }, { target: 'launch script 3', n: 2, verdict: 'confirmed' }, { target: 'launch script 4', n: 3, verdict: 'confirmed' },
+    { target: 'launch script 5', n: 4, verdict: 'confirmed' }, { target: 'launch script 1', n: 5, verdict: null }]);
+  const { fixes } = JSON.parse(lfm({}, 'status', '--json', '--run', String(run.id)).stdout);
+  assert.deepEqual(fixes.map((f) => [f.n, f.verdict]), [[1, 'confirmed'], [2, 'confirmed'], [3, 'confirmed'], [4, 'confirmed'], [5, 'not judged']]);
+});
+
+test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept; check counts nothing for a refuted finding', () => {
   const { p, lfm, query, calls, lines } = agentSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long' }, 'retro', '--foreground', '--json');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long', FAKE_REFUTE: 'f1' }, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run } = JSON.parse(r.stdout);
   const asks = calls().filter((c) => c.stdin.startsWith(`lfm-run:${run.id}:propose\n`));
@@ -1406,6 +1446,8 @@ test('propose: a rule-breaking fix is sent back once, then dropped on the second
   assert.deepEqual(query('SELECT target FROM proposals WHERE run_id = ?', run.id), [{ target: 'launch script 1' }]);
   assert.ok(lines('propose', run.id).includes('dropped: proposals[1].change has more than 3 sentences'));
   assert.equal(lines('propose', run.id).at(-1), 'fixes: 1 proposed, reasons: 0 of 0 follow-ups');
+  assert.deepEqual(query('SELECT verdict, count, days FROM findings WHERE run_id = ?', run.id), [{ verdict: 'refuted', count: null, days: null }]);
+  assert.match(lfm({}, 'report').stdout, /^finding: umer-fixtures-unset \(0\/0 days, refuted\): /m);
 });
 
 test('a run id reused after the store is removed starts its step logs empty', () => {

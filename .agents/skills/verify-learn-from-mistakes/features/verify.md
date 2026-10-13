@@ -4,8 +4,8 @@
 `src/steps/verify.mjs` and its prompt `src/prompts/verify.md` are the `verify`
 step, after `propose` and before `check`. It runs through the agent-step harness
 ([analyse.md](analyse.md)) on the judge: `judge_agent` with its `agent_config`
-model, never the worker (a judge on the worker's identity fails the step with
-the fix line). The prompt lists each finding of `analyse` as `f<n>` and each fix
+model, never the worker (a judge on the worker's identity stops `retro` and
+`rerun` before the run starts, with the fix line). The prompt lists each finding of `analyse` as `f<n>` and each fix
 of `propose` as `p<n>` (table order), with its cause, text and refs; then the
 bundle. The method: the worker's claims are not evidence; check each claim
 against the bundle items it cites; answer `confirmed`, `weakened` or `refuted`
@@ -17,8 +17,13 @@ verdicts land in `findings.verdict`/`judge_note` and
 `proposals.verdict`/`judge_note`. The step logs only ids and verdicts:
 `<verdict>: <id>` for each claim not confirmed, then
 `verdicts: <c> confirmed, <w> weakened, <r> refuted, <u> not judged`. With no
-finding and no fix it asks no agent (`nothing to verify: ...`). `check` does not
-read the verdicts yet.
+finding and no fix it asks no agent (`nothing to verify: ...`). `check` reads the
+verdicts ([propose.md](propose.md)): a refuted finding counts nothing, a refuted
+fix is a problem, a fix the judge did not confirm (weakened, or left out: `not
+judged`) ranks after the confirmed ones and `status` shows its verdict. A judge
+on the worker's identity stops `retro` and `rerun` before the run starts (exit
+2, `judge: ...` and the fix line); a judge that is not ready stops them the same
+way (exit 1, `judge: <its problem>` and its fix line).
 
 ## How to get to it (user POV)
 Set `agent:` and `judge_agent:`, each with its own `agent_config` model (the run
@@ -28,13 +33,19 @@ never picks one), then `learn-from-mistakes-axi retro --wait 20m` and
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the journey `propose, verify and check: ...`, with the
 fake agent as Claude Code (the worker) and as Codex (the judge, `gpt-6-luna`)
-on the whole PATH and `FAKE_REFUTE=p2`: the judge's argv, run-dir cwd, marker,
-method, claim lines and the bundle at the end; the worker never gets the verify
-marker; the `invocations` row (role `judge`, runner `codex`); the finding
-`confirmed` with its note; claim p2 (the second proposal row) `refuted`, the other 7 `confirmed`; the log
-lines; the next retro with no claim asks no agent. The helper's drives:
-`retro-propose` (`FAKE_REFUTE=p2`: the verdicts and the judge's invocation row)
-and `logs-verify` (`refuted: p2` and the verdict counts).
+on the whole PATH, `FAKE_REFUTE=p2` and `FAKE_WEAKEN=p3`: the judge's argv,
+run-dir cwd, marker, method, claim lines and the bundle at the end; the worker
+never gets the verify marker; the `invocations` row (role `judge`, runner
+`codex`); the finding `confirmed` with its note; claim p2 (the second proposal
+row) `refuted` and a check problem, claim p3 `weakened` and kept fix 5; the log
+lines; the next retro with no claim asks no agent. The journey `propose: ...`
+refutes `f1`: its `count` and `days` stay empty. The journey `retro and rerun
+stop ...` sets the judge to `claude` on the worker's model: exit 2, `judge: ...`
+and the fix line, no store; `acp:claude`, not ready, exits 1 with its own problem
+(`acp:claude is not usable: acpx is not on PATH`) and fix line, no store. The
+helper's drives: `retro-judge-clash` (`claude`: exit 2), `retro-propose` (`FAKE_REFUTE=p2`,
+`FAKE_WEAKEN=p3`: the verdicts, the kept fixes with theirs and the judge's
+invocation row) and `logs-verify` (`refuted: p2`, `weakened: p3`, the counts).
 
 Real-product proof (outside the repo; lab sessions only, never the captain's):
 

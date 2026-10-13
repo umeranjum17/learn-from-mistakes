@@ -64,10 +64,11 @@ followup: { min_sessions: 3, min_days: 1 }
 `);
   // A defect log whose first record is 4 days ago: a change 6 days ago has no record on or before its before window's start.
   writeFileSync(join(p, 'defects.md'), `## ${ago(4).slice(0, 10)}\n\n- A defect after the change.\n`);
-  // PATH holds the fake agent (the analyse step's worker), node for its #! line, and git.
+  // PATH holds the fake agent (the analyse step's worker and the judge), node for its #! line, and git.
   const bin = join(tmp, 'bin');
   mkdirSync(bin);
   symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   const env = { ...process.env, PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: join(tmp, 'home', '.claude'),
