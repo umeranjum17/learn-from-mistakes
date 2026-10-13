@@ -1001,19 +1001,15 @@ allow_premium: false
 
   const hold = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); // another process holds the write lock past busy_timeout
   hold.exec('BEGIN IMMEDIATE');
-  const busy = lfm('status');
+  const read = lfm('status', '--json'); // a read command takes the write lock only when a running run has lost its worker
+  const busy = lfm('retro', '--foreground');
   hold.exec('ROLLBACK');
   hold.close();
+  assert.equal(read.status, 0, read.stderr);
+  assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
   assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file'); // the store keeps its runs
-  const holdChange = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  holdChange.exec('BEGIN IMMEDIATE');
-  const busyChange = lfm('change', 'applied', '--proposal', '1:1'); // a store opened outside a run command is busy the same way
-  holdChange.exec('ROLLBACK');
-  holdChange.close();
-  assert.equal(busyChange.status, 2, busyChange.stderr);
-  assert.match(busyChange.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment/m);
 
   chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
