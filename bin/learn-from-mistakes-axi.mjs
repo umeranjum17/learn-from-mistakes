@@ -428,7 +428,7 @@ worker.runner auto, the model must be one an agent CLI lists as its default, els
    match: { source: <sessions id>, signal, tool, text_contains } counts session events.
 
 2. Ingest: learn-from-mistakes-axi ingest
-   It prints the state dir. records.jsonl there: one JSON object per record (id, source, date, text; a defect bullet also has its line).
+   It prints the state dir. records.jsonl there: one JSON object per record (id, source, date; text only with excerpts on, redacted; a defect bullet also has its line).
 
 3. Label every record you read into labels.jsonl in the state dir, one line each:
      {"id":"<record id>","event":true,"cause":"<cause id from the config, or other>","why":"<25 words or fewer>"}
