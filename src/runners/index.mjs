@@ -49,6 +49,8 @@ export function detect(cfg) {
 // The model a role was configured with: LFM_MODEL for the worker, else the worker or judge model in the project config.
 const configuredModel = (cfg, name, env = process.env) => (name === 'worker' ? (env.LFM_MODEL ?? '').trim() || cfg.worker?.model : cfg.judge?.model) || '';
 const lists = (runner, model) => !!MODELS[runner]?.includes(model);
+export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
+export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
 // A model belongs to one runner: an auto role uses the configured model only where that runner's models.json list has
 // it, and a role pinned to a runner keeps its model there. Otherwise the runner's first cheap model, or "" (its default).
@@ -152,6 +154,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
   if (route) model = await byokit.modelOf(route, model);
   if (route && !model) throw new InputError(`${runner}: BYOKit's catalogue has no cheap model for ${route}`, `set the role's model, such as worker: { runner: "${runner}", model: <model> }`);
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, 'set allow_premium: true in the project config, or use a cheap model');
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;
