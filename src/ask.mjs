@@ -43,7 +43,7 @@ export function save(file, picks) {
     }
   }
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, doc.toString({ lineWidth: 0 })); // never folds a long line, such as a cause description
+  writeFileSync(file, doc.toString());
 }
 
 // A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
