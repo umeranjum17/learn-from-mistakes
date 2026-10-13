@@ -270,6 +270,9 @@ test('doctor run from another directory names the full project file in each fix'
   const fail = JSON.parse(r.stdout).checks.find((c) => c.level === 'fail');
   assert.equal(fail.label, 'source log');
   assert.ok(fail.fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fail.fix);
+  const ingest = spawnSync(process.execPath, [CLI, 'ingest', '--dir', p], { encoding: 'utf8', env, cwd: env.HOME });
+  assert.equal(ingest.status, 2, ingest.stderr);
+  assert.ok(ingest.stderr.includes(`next: check sources.log.path in ${config}, or create it: touch `), ingest.stderr);
 });
 
 test('doctor warns on a sessions source whose agent has no store, and names that agent\'s store variable', () => {
