@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bundleIds, plain } from '../check.mjs';
+import { redact } from '../redact.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/analyse.md', import.meta.url), 'utf8');
@@ -69,7 +70,7 @@ export async function analyse(cfg, db, id, dir, log) {
   db.exec('BEGIN');
   try {
     for (const l of labels) label.run(id, l.id, l.event ? 1 : 0, l.cause ?? null, l.why.trim(), l.duplicate_of ?? null, l.occurrences ?? null, l.confidence ?? null);
-    for (const f of findings) finding.run(id, f.cause, f.summary.trim(), JSON.stringify(f.refs));
+    for (const f of findings) finding.run(id, f.cause, redact(f.summary).replace(/\s+/g, ' ').trim(), JSON.stringify(f.refs));
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');

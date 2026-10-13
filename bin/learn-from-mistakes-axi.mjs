@@ -608,6 +608,7 @@ function storeError(e, cfg, opts) {
   if (e.code !== 'ERR_SQLITE_ERROR') return e;
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
+  // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
   if ((e.errcode & 0xff) === 5) return new UsageError(`${file} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
