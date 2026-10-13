@@ -496,6 +496,9 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const offRecords = ledger('records.jsonl');
   assert.ok(offRecords.some((r) => r.source === 'gate') && offRecords.some((r) => r.source === 'log'));
   assert.ok(offRecords.every((r) => !('text' in r)), 'record text in records.jsonl with excerpts off');
+  const offRows = readFileSync(join(p, '.lfm', 'rows.jsonl'), 'utf8');
+  assert.ok(offRows.includes('step-planted-0'));
+  for (const [, needle] of PLANTED) assert.ok(!offRows.includes(needle), `${needle} in rows.jsonl with excerpts off`);
   const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
   for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
   assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));

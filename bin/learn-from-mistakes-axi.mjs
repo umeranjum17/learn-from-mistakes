@@ -199,7 +199,7 @@ export async function ingest(cfg) {
   writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records,
     ...rows.map((r) => ({ id: recordId(r), source: r.source, date: r.at.slice(0, 10), text: r.error })),
     ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))].map(forAgent)));
-  writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows));
+  writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows.map(({ error, ...r }) => (cfg.excerpts === 'on' ? { ...r, error } : r))));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
   return { sources, events, records, rows, prs, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
 }
@@ -314,8 +314,9 @@ function project(a, full) {
       m.change_ids = applied.map((c) => c.id);
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
       // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
-      m.store_row_ids = g.store.rows.map((r) => `${r.source}:${r.id}`);
-      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.rows.some((r) => recordId(r) === ref)))];
+      m.store_row_ids = g.store.rows.map(recordId);
+      m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.records.has(ref)
+        && ['no-mistakes', 'github'].includes(a.cfg.sources[a.records.get(ref).source]?.type)))];
     }
     return m;
   });
