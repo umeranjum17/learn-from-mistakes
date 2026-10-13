@@ -1191,7 +1191,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, outside)[0].output_json).coverage.labelled, 0);
   const shown = lfm({}, 'report');
   assert.equal(shown.status, 0, shown.stderr);
-  assert.match(shown.stderr, new RegExp(`^note: run ${outside} labelled nothing; showing run ${run.id}$`, 'm'));
+  assert.match(shown.stderr, new RegExp(`^note: run ${outside} kept no label and no finding; showing run ${run.id}$`, 'm'));
 
   // Bad JSON twice: the answer goes back once with the validation error, then the step fails with it.
   const bad = lfm({ FAKE_ANALYSE: 'prose' }, 'retro', '--foreground', '--json');

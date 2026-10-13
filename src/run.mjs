@@ -84,7 +84,7 @@ function runResult(db, id) {
 // The latest completed run with labels: the bare report counts them. Undefined with none, so labels.jsonl counts.
 export async function lastRun(cfg) {
   const db = await openStore(cfg.state, false);
-  const id = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND id IN (SELECT run_id FROM labels)`).get().id;
+  const id = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id;
   return id == null ? undefined : { ...runResult(db, id), latest: db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id };
 }
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
