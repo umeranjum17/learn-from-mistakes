@@ -101,7 +101,7 @@ export async function doctor(dir, opts) {
   if (roles.worker.bin && roles.judge.bin) {
     const clash = same(roles.worker, roles.judge);
     const id = (r) => `${r.runner}${r.model ? ` ${r.model}` : ''}`;
-    add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker and the judge are both ${id(roles.worker)}, so the judge would judge its own work`
+    add(clash ? 'fail' : 'ok', 'identity', clash ? `the worker (${id(roles.worker)}) and the judge (${id(roles.judge)}) resolve to the same agent and model, so the judge would judge its own work`
       : `worker ${id(roles.worker)}, judge ${id(roles.judge)}`, `set judge.runner and judge.model in ${file} to another agent CLI or a different model, or install a second agent CLI`);
   }
 
