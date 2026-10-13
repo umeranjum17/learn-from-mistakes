@@ -20,7 +20,10 @@ is a ledger problem, so it never gets a row. The verdict is code, the first rule
    the metric is n/a before or after, or a records-based metric (a `cause_count`
    whose match rule names a no-mistakes source, or `defects`) has no record on or
    before the start of the before window, so its `before` is n/a (the source does
-   not cover that window).
+   not cover that window). A change added after `collect` read the ledger can have
+   an `at` older than what `collect` read (`read_from`): its `before` is n/a when
+   `read_from` is after the start of its before window, and its `after` is n/a
+   when `read_from` is after `at`.
 2. `keep`: the tripwire is met (a met rule change is kept, never deleted).
 3. `delete`: a `kind: rule` change whose metric moved less than 10% of `before`
    (or stayed 0) in this run and in the last run; a missed tripwire or none does

@@ -135,6 +135,25 @@ test('each applied change gets before and after numbers and a verdict; the secon
   assert.deepEqual(log.log.slice(0, 2).map((l) => l.line), ['chg-1 cause_count:missing-file: 4 before, 0 after, keep', 'chg-2 cause_count:bad-search: 4 before, 5 after, rollback']);
 });
 
+test('a change added after collect with an at older than what collect read gives n/a numbers and no-data', () => {
+  const { p, lfm, retro } = journey();
+  const first = retro();
+  for (const days of [20, 30]) {
+    const r = lfm('change', 'applied', '--cause', 'missing-file', '--ref', 'abc1234', '--at', ago(days), '--tripwire', '<= 0');
+    assert.equal(r.status, 0, r.stderr);
+  }
+  // The followup step failed after collect had read the ledger; `rerun --resume` runs it again with the new changes in the ledger.
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  db.prepare(`UPDATE steps SET status = 'failed' WHERE run_id = ? AND name = 'followup'`).run(first.run.id);
+  db.prepare(`UPDATE runs SET status = 'failed' WHERE id = ?`).run(first.run.id);
+  db.close();
+  const resumed = lfm('rerun', '--resume', '--run', String(first.run.id), '--wait', '1m', '--json');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const r = JSON.parse(resumed.stdout);
+  assert.deepEqual(r.followups.slice(0, 11), first.followups); // the changes collect read keep their numbers and verdicts
+  assert.deepEqual(r.followups.slice(11).map((f) => [f.change, f.before, f.after, f.verdict]), [['chg-12', 'n/a', 4, 'no-data'], ['chg-13', 'n/a', 'n/a', 'no-data']]);
+});
+
 test('two retros within a minute: no delete, and no missed-twice rollback', () => {
   const { retro } = journey();
   retro();
