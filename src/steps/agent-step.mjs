@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { startTime } from '../proc.mjs';
 import { call, detect, resolveRoles } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
@@ -40,7 +41,7 @@ async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, l
   let got;
   try {
     got = await call(cfg, { runner, model, dir, runId: id, step, prompt,
-      onSpawn: (pgid) => db.prepare('UPDATE invocations SET child_pgid = ? WHERE id = ?').run(pgid, row) });
+      onSpawn: (pgid) => db.prepare('UPDATE invocations SET child_pgid = ?, child_started_at = ? WHERE id = ?').run(pgid, startTime(pgid), row) });
   } catch (e) {
     end.run(iso(), 'error', null, null, null, row);
     throw e;

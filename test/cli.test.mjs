@@ -3,7 +3,7 @@
 // carries only the owner-written what/why of each applied change.
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1130,6 +1130,20 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const noneReport = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, n.run.id)[0].output_json);
   assert.equal(noneReport.warning, n.warning);
   assert.equal(noneReport.coverage.labelled, 1);
+
+  // An open invocation whose group leader is not the stored process is not signalled when its run ends.
+  const decoy = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+  let decoyExited = false;
+  decoy.on('exit', () => { decoyExited = true; });
+  after(() => { try { process.kill(-decoy.pid, 'SIGKILL'); } catch {} });
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  db.prepare(`INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at, child_pgid, child_started_at) VALUES (?, 'analyse', 'worker', 'claude', 'm', 'x', ?, ?, 'reused')`)
+    .run(h.id, new Date().toISOString(), decoy.pid);
+  db.prepare(`UPDATE runs SET status = 'running', pid = ?, pid_started_at = 'gone' WHERE id = ?`).run(h.pid, h.id);
+  db.close();
+  assert.equal(JSON.parse(lfm({}, 'status', '--run', String(h.id), '--json').stdout).run.status, 'interrupted');
+  await new Promise((ok) => setTimeout(ok, 300));
+  assert.equal(decoyExited, false, 'a group that is not the stored agent was signalled');
 });
 
 test('a run id reused after the store is removed starts its step logs empty', () => {

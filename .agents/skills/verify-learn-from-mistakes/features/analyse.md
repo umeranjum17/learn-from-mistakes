@@ -9,7 +9,7 @@ prompt and then `bundle.md` ([bundle.md](bundle.md)), behind the `lfm-run:<id>:<
 marker. It checks the JSON answer with the step's own check. A bad answer goes
 back once with the problems; a second bad answer fails the step (exit 1) with
 `the worker's answer is not valid after one retry: <problems>`. Each call is one
-`invocations` row: step, role, runner, model, the agent's process group while it
+`invocations` row: step, role, runner, model, the agent's process group and its start time while it
 runs, `exit_status` (`ok`, `invalid`, `error`, or the run's `cancelled` or
 `interrupted`), session id and tokens in and out when the agent reports them.
 A run makes at most `caps.invocations` calls; one more exits 1 with

@@ -4,8 +4,8 @@
 // The process that owns a running run is saved as its pid and start time; a running run whose owner is
 // gone is interrupted, and `rerun --resume` runs it again from its first step that is not completed.
 // Each step writes its lines to <state dir>/runs/<id>/<step>.log; `attach` follows them and `logs` prints one.
-import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
@@ -13,6 +13,7 @@ import { bundle } from './bundle.mjs';
 import { analyse } from './steps/analyse.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
+import { startTime } from './proc.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -74,21 +75,13 @@ const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
 const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// A process's start time tells it from a later process with the same pid; null when there is no such process.
-function startTime(pid) {
-  try {
-    if (!existsSync('/proc/self/stat')) return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
-    const f = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ').at(-1).split(' '); // after "pid (comm) "
-    return f[0] === 'Z' ? null : f[19]; // field 22, starttime; a zombie has already ended
-  } catch { return null; }
-}
-
 // Ends a running run and its running step: interrupted (its owner is gone) or cancelled (a signal). An agent call the
 // run left going is ended too: its process group gets SIGTERM, then SIGKILL after 3 s.
 function stop(db, id, status, why) {
   const step = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status = 'running'`).get(id)?.name ?? 'run';
   const now = iso(Date.now());
-  for (const { child_pgid: g } of db.prepare('SELECT child_pgid FROM invocations WHERE run_id = ? AND completed_at IS NULL AND child_pgid IS NOT NULL').all(id)) {
+  for (const { child_pgid: g, child_started_at: t } of db.prepare('SELECT child_pgid, child_started_at FROM invocations WHERE run_id = ? AND completed_at IS NULL AND child_pgid IS NOT NULL').all(id)) {
+    if (!t || startTime(g) !== t) continue; // the group's leader is gone or another process; a group whose leader exited is left (a grandchild may hold it)
     if (!signal(g, 'SIGTERM')) continue;
     for (let i = 0; i < 30 && signal(g, 0); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a synchronous 100 ms wait
     signal(g, 'SIGKILL');

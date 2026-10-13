@@ -36,7 +36,7 @@ const MIGRATIONS = [
   // Each call to the run's own agent: its step and role, the agent CLI and model, its process group while it runs, how it
   // ended (ok, invalid, error, or the run's cancelled or interrupted), and the session id and tokens the agent reported.
   `CREATE TABLE IF NOT EXISTS invocations (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), step TEXT NOT NULL,
-    role TEXT NOT NULL, runner TEXT NOT NULL, model TEXT NOT NULL, child_pgid INTEGER, session_id TEXT, marker TEXT NOT NULL,
+    role TEXT NOT NULL, runner TEXT NOT NULL, model TEXT NOT NULL, child_pgid INTEGER, child_started_at TEXT, session_id TEXT, marker TEXT NOT NULL,
     started_at TEXT NOT NULL, completed_at TEXT, exit_status TEXT, tokens_in INTEGER, tokens_out INTEGER)`,
   // The analyse step's label for each defect record it read: event, cause and why, as labels.jsonl takes them.
   `CREATE TABLE IF NOT EXISTS labels (run_id INTEGER NOT NULL REFERENCES runs(id), record_id TEXT NOT NULL, event INTEGER NOT NULL,
