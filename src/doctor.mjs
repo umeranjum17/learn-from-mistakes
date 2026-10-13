@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, CLASH, chooseAgentFix, chooseModelFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
+import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -54,11 +54,11 @@ export async function doctor(dir, opts) {
   const failedModel = new Set(); // a role whose model check failed gets no --live call
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
-    if (r.problem === CLASH) { add('fail', name, r.problem, chooseAgentFix(cfg, 'judge_agent')); continue; } // the judge would judge its own work
+    if (r.problem === CLASH) { add('fail', name, r.problem, chooseFix(cfg, 'judge_agent')); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
       add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
-        : chooseAgentFix(cfg, KEY[name]));
+        : chooseFix(cfg, KEY[name]));
       continue;
     }
     const route = byokit.routeOf(r.runner);
@@ -85,7 +85,7 @@ export async function doctor(dir, opts) {
     const { model } = r;
     if (premiumBlocked(cfg, model)) {
       failedModel.add(name);
-      add('fail', `${name} model`, `${model} is a premium model`, `${chooseModelFix(cfg, r.runner)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+      add('fail', `${name} model`, `${model} is a premium model`, `${chooseFix(cfg, KEY[name], `agent_config.${r.runner}.model`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
     } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
   }
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.

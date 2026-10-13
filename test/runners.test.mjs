@@ -195,7 +195,7 @@ agent_config: { claude: { model: ${MODELS.claude}, effort: low }, codex: { model
 });
 
 test('a premium or unset model that allow_premium forbids is never called: doctor --live shows its one fail, agents --test refuses it', () => {
-  const { lfm, calls, config, env } = setup();
+  const { p, lfm, calls, config, env } = setup();
   config('agent: claude\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
   const r = lfm({}, 'doctor', '--live', '--json');
   const checks = JSON.parse(r.stdout).checks;
@@ -211,7 +211,7 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   const noModel = lfm({}, 'agents', '--test', 'pi');
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
-  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set agent and its agent_config model in ${join(env.LFM_HOME, 'config.yaml')}; the run never picks one`);
+  assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
   config('agent: pi\njudge_agent: claude\n');
   const asked = lfm({}, 'doctor', '--live');
   assert.equal(asked.status, 2, asked.stderr);

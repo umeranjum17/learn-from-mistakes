@@ -222,7 +222,7 @@ test('a premium model fix names the file that sets the model, not the file that 
   const { lfm, config, global } = setup(['pi', 'claude'], 'agent_config: { pi: { model: claude-opus-5-5 } }\n');
   writeFileSync(config, `agent: pi\njudge_agent: claude\nagent_config: { pi: { effort: low }, claude: { model: ${MODELS.claude} } }\n`);
   const fix = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model').fix;
-  assert.equal(fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${global}`);
+  assert.equal(fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${config}`);
 });
 
 test('agents lists a configured acp target with the model set for that target', () => {
@@ -349,8 +349,8 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'judge']);
   assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
-  // each fix names the file the key came from: agent_config.pi from the project file, allow_premium from neither (the global file)
-  assert.equal(fails[1].fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${config}; the run never picks one, or set allow_premium: true in ${global}`);
+  // each fix names the file the key came from: agent_config.pi from the project file, allow_premium unset so the project file
+  assert.equal(fails[1].fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${config}; the run never picks one, or set allow_premium: true in ${config}`);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);

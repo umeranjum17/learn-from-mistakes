@@ -11,6 +11,7 @@ import * as pi from './pi.mjs';
 import * as gemini from './gemini.mjs';
 import * as acp from './acp.mjs';
 import * as byokit from './byokit.mjs';
+import { PROJECT_FILE } from '../config.mjs';
 
 export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // acp runs as acp:<target>
 const FIX = 'learn-from-mistakes-axi agents   # check the agent CLI is usable and logged in';
@@ -30,11 +31,10 @@ export function which(name) {
 export const binName = (cfg, runner) => (runner === 'acp' ? cfg.acpx_path : cfg.agent_path_override?.[runner]) ?? RUNNERS[runner].bin ?? runner;
 // The model agent_config gives an agent (claude, acp:<target>, byokit:<route>), or "": none set, and no call is made.
 export const agentModel = (cfg, agent) => cfg.agent_config?.[agent]?.model ?? '';
-// The file to change an agent key in: the project file when it set the key, else the global file.
-export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? cfg.globalPath);
+// The file to change a key in: the file that set it; a key no file sets goes to the project file, else the global file.
+export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? (cfg.dir ? join(cfg.dir, PROJECT_FILE) : cfg.globalPath));
 // The fix for an agent or its model the user has not set, or that is not ready: the user chooses, and the file and key are named.
-export const chooseAgentFix = (cfg, key) => `ask the user which agent and model to use, then set ${key} and its agent_config model in ${fileOf(cfg, key)}; the run never picks one`;
-export const chooseModelFix = (cfg, name) => `ask the user which agent and model to use, then set agent and its agent_config model in ${fileOf(cfg, `agent_config.${name}.model`)}; the run never picks one`;
+export const chooseFix = (cfg, key, fileKey = key) => `ask the user which agent and model to use, then set ${key} and its agent_config model in ${fileOf(cfg, fileKey)}; the run never picks one`;
 
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
@@ -133,11 +133,11 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
   const name = target ? `acp:${target}` : runner;
-  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseModelFix(cfg, name));
+  if (!model) throw new InputError(`${runner}: no model set in agent_config`, chooseFix(cfg, 'agent', `agent_config.${name}.model`));
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseModelFix(cfg, name)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
+  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, 'agent', `agent_config.${name}.model`)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;

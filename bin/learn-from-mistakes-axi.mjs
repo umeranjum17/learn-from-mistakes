@@ -12,7 +12,7 @@ import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import { ensureAgents, saveCommand } from '../src/ask.mjs';
-import { agents, CLASH, chooseAgentFix, RUNNERS } from '../src/runners/index.mjs';
+import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 
@@ -508,9 +508,9 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
 };
-const JUDGE_FIX = (cfg) => chooseAgentFix(cfg, 'judge_agent');
+const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent');
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
-const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseAgentFix(cfg, key)}`;
+const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key)}`;
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
