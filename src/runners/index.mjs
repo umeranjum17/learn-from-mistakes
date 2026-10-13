@@ -58,9 +58,9 @@ export function detect(cfg) {
 export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
-// The identity rule: a role is the real path of its binary plus its model. A role with no model is never compared: it is unset.
+// The identity rule: a role is the real path of its binary (self) plus its model. A role with no model is never compared: it is unset.
 export const CLASH = 'the judge resolves to the worker\'s agent and model, so it would judge its own work';
-export const same = (a, b) => a.bin === b.bin && a.model === b.model;
+export const same = (a, b) => a.self === b.self && a.model === b.model;
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
 // One agent as a role: its model from agent_config, its binary (a BYOKit route is its own identity), or its problem.
 async function candidate(cfg, runner, agents) {
@@ -68,29 +68,35 @@ async function candidate(cfg, runner, agents) {
   const route = byokit.routeOf(runner);
   if (route) { // in process
     const p = await byokit.check(route);
-    if (p) return { runner, model, bin: runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
-    return { runner, model, bin: runner, problem: '' };
+    if (p) return { runner, model, bin: runner, self: runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
+    return { runner, model, bin: runner, self: runner, problem: '' };
   }
-  const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));
-  if (a.problem) return { runner, model, bin: '', problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
-  return { runner, model, bin: a.bin, problem: '' };
+  const target = runner.match(/^acp:(.+)/)?.[1];
+  const a = agents.find((x) => x.runner === (target ? 'acp' : runner));
+  // acp:<target> is the target's own agent: its identity is the target's binary when the tool knows it, not acpx.
+  const self = (target && agents.find((x) => x.runner === target)?.bin) || a.bin;
+  if (a.problem) return { runner, model, bin: '', self, problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
+  return { runner, model, bin: a.bin, self, problem: '' };
 }
 
 // Resolve the worker (agent:) or the judge (judge_agent:): the one agent the user set. When it is not ready, its own
 // problem is the result and no other agent is tried. A judge on the worker's identity is a clash, which the caller
-// reports rather than judging its own work. A role that is not set resolves to nothing: the tool never picks one.
+// reports rather than judging its own work; the clash comes first, so a judge that is also not ready names it. A role
+// that is not set resolves to nothing: the tool never picks one.
 export async function resolveRole(cfg, name, agents, worker, env = process.env) {
   const runner = cfg[KEY[name]];
   if (!runner) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
   const r = await candidate(cfg, runner, agents);
-  if (!r.problem && worker && r.model && worker.model && same(r, worker)) return { ...r, problem: CLASH };
+  if (worker && r.self && r.model && worker.model && same(r, worker)) return { ...r, problem: CLASH };
   return r;
 }
 
 // The worker first, then a judge that differs from it.
 export async function resolveRoles(cfg, agents, env = process.env) {
   const worker = await resolveRole(cfg, 'worker', agents, undefined, env);
-  return { worker, judge: await resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
+  const judge = await resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env);
+  const shown = ({ self, ...r }) => r; // self only serves the identity rule
+  return { worker: shown(worker), judge: shown(judge) };
 }
 
 // One process: detached, so a timeout stops its whole group; after exit, a grandchild holding stdout gets 5 s, then

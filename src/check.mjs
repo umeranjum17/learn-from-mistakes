@@ -60,7 +60,7 @@ export function repeats(cfg, records, labels, rows) {
 }
 
 // Each cause's incidents, days and whether it repeated, from this run's labels, tagged items and findings; and each
-// finding's count and days.
+// finding's count and days. A finding the judge refuted is dropped: it counts nothing.
 export function counts(cfg, db, id, { current_start }) {
   const recs = db.prepare('SELECT record_id, source, ts, cause FROM records WHERE run_id = ?').all(id);
   const evs = db.prepare('SELECT id, ts, cause FROM events WHERE run_id = ?').all(id);
@@ -71,7 +71,7 @@ export function counts(cfg, db, id, { current_start }) {
     ...evs.filter((e) => e.cause).map((e) => ({ source: 'sessions', id: `e${e.id}`, cause: e.cause, at: e.ts }))];
   const inBundle = clusters(db, id, Date.parse(current_start)).map(([, es]) => es);
   const dates = new Map([...evs.map((e) => [`e${e.id}`, e.ts?.slice(0, 10)]), ...[...records].map(([k, r]) => [k, r.date])]);
-  const findings = db.prepare('SELECT id, cause, refs_json FROM findings WHERE run_id = ? ORDER BY id').all(id).map((f) => {
+  const findings = db.prepare(`SELECT id, cause, refs_json FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`).all(id).map((f) => {
     const items = new Map();
     for (const ref of JSON.parse(f.refs_json)) {
       const c = /^c(\d+)$/.exec(ref)?.[1];
@@ -90,9 +90,10 @@ export function counts(cfg, db, id, { current_start }) {
   return { causes, findings };
 }
 
-// The check step. A fix is kept when its cause has counted events and repeated, its refs name bundle items, it has a
-// target, an owner, a metric (default cause_count:<cause>) and a tripwire; a fix that breaks a rule is a problem: it is
-// logged and saved with the rule. The kept fixes are ranked and numbered 1 to 5 (proposals.n); one past five is a problem.
+// The check step. A fix is kept when the judge did not refute it, its cause has counted events and repeated, its refs
+// name bundle items, it has a target, an owner, a metric (default cause_count:<cause>) and a tripwire; a fix that breaks
+// a rule is a problem: it is logged and saved with the rule. The kept fixes are ranked, a fix the judge weakened after
+// the others, and numbered 1 to 5 (proposals.n); one past five is a problem.
 // It can run again: it first clears what it set.
 export function check(cfg, db, id, dir, window, log) {
   const { causes, findings } = counts(cfg, db, id, window);
@@ -100,23 +101,24 @@ export function check(cfg, db, id, dir, window, log) {
   // How far each metric this window misses its target; 0 when it meets it or has none.
   const gaps = new Map(db.prepare(`SELECT name, value, target FROM metrics WHERE run_id = ? AND window = 'current' AND target IS NOT NULL AND value IS NOT NULL`).all(id)
     .filter((m) => !meets(m.value, m.target)).map((m) => [m.name, Math.abs(m.value - Number(RULE.exec(m.target)[2]))]));
-  const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
+  const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json, verdict FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
     const refs = JSON.parse(f.refs_json), missing = refs.filter((r) => !ids.has(r)).length, c = causes.get(f.cause);
     const metric = f.metric?.trim() || `cause_count:${f.cause}`, trip = RULE.exec(f.tripwire?.trim() ?? '');
-    const bad = !c?.count ? 'its cause has no counted events'
+    const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !c?.count ? 'its cause has no counted events'
       : !refs.length ? 'no evidence refs' : missing ? `${missing} of ${refs.length} refs name no bundle item`
       : !c.repeated ? 'its cause did not repeat; propose only for repeated causes'
       : !f.target.trim() ? 'no target' : !f.owner.trim() ? 'no owner'
       : !isMetric(metric, cfg.causes) ? `its metric is not ${METRIC_RULE}`
       : !f.tripwire?.trim() ? 'no tripwire' : !trip ? 'its tripwire is not "<op> <number>", such as "<= 0"' : '';
-    return { id: f.id, i, metric, tripwire: trip ? `${trip[1]} ${trip[2]}` : f.tripwire, count: c?.count ?? 0, gap: gaps.get(metric) ?? 0, bad };
+    return { id: f.id, i, metric, tripwire: trip ? `${trip[1]} ${trip[2]}` : f.tripwire, count: c?.count ?? 0, gap: gaps.get(metric) ?? 0, weak: f.verdict === 'weakened', bad };
   });
-  const kept = fixes.filter((f) => !f.bad).sort((a, b) => b.count - a.count || b.gap - a.gap || a.i - b.i);
+  const kept = fixes.filter((f) => !f.bad).sort((a, b) => a.weak - b.weak || b.count - a.count || b.gap - a.gap || a.i - b.i);
   for (const f of kept.slice(MAX)) f.bad = `more than ${MAX} fixes: ranked below the top ${MAX}`;
   const set = db.prepare('UPDATE proposals SET n = ?, metric = ?, tripwire = ?, problem = ? WHERE id = ?');
   const found = db.prepare('UPDATE findings SET count = ?, days = ? WHERE id = ?');
   db.exec('BEGIN');
   try {
+    db.prepare('UPDATE findings SET count = NULL, days = NULL WHERE run_id = ?').run(id);
     for (const f of fixes) set.run(f.bad ? null : kept.indexOf(f) + 1, f.metric, f.tripwire, f.bad || null, f.id);
     for (const f of findings) found.run(f.count, f.days, f.id);
     db.exec('COMMIT');

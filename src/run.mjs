@@ -333,8 +333,8 @@ export async function runs(cfg) {
 }
 
 // The run, its steps, what each source read once collect is done, the numbers once metrics is done and each
-// applied change's verdict once followup is done, and the kept fixes once check is done: ids, counts and numbers, never
-// content or hashes.
+// applied change's verdict once followup is done, and the kept fixes once check is done, each with the judge's verdict
+// (weakened marks a fix the judge found only part of): ids, counts and numbers, never content or hashes.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics');
@@ -353,6 +353,6 @@ function show(db, id) {
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
-    ...(out('check') && { fixes: db.prepare('SELECT n, cause, metric, tripwire FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(id).map((f) => ({ ...f })) }),
+    ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, '') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
   };
 }

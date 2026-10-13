@@ -12,7 +12,7 @@ import { abort, attach, logs, rerun, retro, runs, status, worker } from '../src/
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
 import { ensureAgents, saveCommand } from '../src/ask.mjs';
-import { agents, CLASH, chooseFix, RUNNERS } from '../src/runners/index.mjs';
+import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
@@ -562,6 +562,8 @@ async function main() {
   let cfg = loadConfig(opts.dir ?? resolve('.'));
   // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
   if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
+  // The judge is never the worker: a judge on the worker's agent and model stops the run before it starts.
+  if (['retro', 'rerun'].includes(cmd) && (await resolveRoles(cfg, detect(cfg))).judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
   if (cmd === 'ingest') {
     for (const s of (await ingest(cfg)).sources) console.log(sourceLine(s));
     console.log(`state: ${cfg.state}\nnext: ${LABEL_STEP(cfg, opts)}`);
