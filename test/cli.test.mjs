@@ -270,6 +270,7 @@ test('every rejected input names what was wrong and a next step, never the whole
       ['source: s, signal: oops', 'causes.env.match.signal must be one of tool_error, nonzero_exit, test_fail, correction, interrupt, retry'],
     ].map(([m, rule]) => [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n').replace('causes:\n', `causes:\n  env: { description: x, match: { ${m} } }\n`)), 2, bad(rule), HELP]),
     [() => withConfig('', v1.replace(/^name: .*$/m, 'name: 123')), 2, bad('name must be a string'), HELP],
+    [() => withConfig('', v1.replace('causes:\n', 'causes:\n  Shared_Cache: { description: x }\n')), 2, bad('causes.Shared_Cache: a cause key must be 1-64 of a-z, 0-9 and - (rename it, for example to shared-cache)'), HELP],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
   ]) {
     const r = run();
@@ -848,28 +849,21 @@ test('change applied appends an append-only ledger the report counts and changes
   ]);
   assert.deepEqual(JSON.parse(lfm('report', ...inputs, '--json').stdout).ledger, { entries: 5 });
 
-  // The default metric comes from the cause key as the config spells it, spaces and tabs too; the ledger still reads.
-  const cfgFile = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(cfgFile, readFileSync(cfgFile, 'utf8').replace('causes:\n', 'causes:\n  "spaced\\tcause ":\n    description: A key with a tab and a trailing space.\n'));
-  assert.equal(change('--cause', 'spaced\tcause ', '--ref', 'abc1234').status, 0);
+  // The default metric comes from the cause key as the config spells it; the ledger still reads.
   assert.equal(change('--cause', 'agent-exit-wait', '--ref', 'abc1234').status, 0);
-  assert.deepEqual(JSON.parse(exported('--json').stdout).changes.slice(5).map((c) => c.metric), ['cause_count:spaced\tcause ', 'cause_count:agent-exit-wait']);
+  assert.deepEqual(JSON.parse(exported('--json').stdout).changes.slice(5).map((c) => c.metric), ['cause_count:agent-exit-wait']);
 });
 
 test('change applied refuses a metric the ledger would not read back, and writes nothing', () => {
   const { p, lfm } = setup();
-  const cfgFile = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(cfgFile, readFileSync(cfgFile, 'utf8').replace('causes:\n', `causes:\n  "line\\u2028break":\n    description: A key with a line separator.\n  ${'x'.repeat(190)}:\n    description: A key too long for a metric.\n`));
   const ledger = join(p, '.lfm', 'changes.jsonl');
   assert.equal(lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234').status, 0);
   const before = readFileSync(ledger);
-  for (const cause of ['line break', 'x'.repeat(190)]) {
-    const byDefault = lfm('change', 'applied', '--cause', cause, '--ref', 'abc1234');
-    assert.equal(byDefault.status, 2, cause);
-    assert.match(byDefault.stderr, /^error: metric \(invalid value\) must be one line of 1-200 characters/m);
-    const explicit = lfm('change', 'applied', '--cause', cause, '--ref', 'abc1234', '--metric', `cause_count:${cause}`);
-    assert.equal(explicit.status, 2, cause);
-    assert.ok(readFileSync(ledger).equals(before), `refused input changed the ledger: ${cause}`);
+  for (const metric of ['cause_count:server-memory-kill\u2028break', `cause_count:${'x'.repeat(190)}`]) {
+    const explicit = lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--metric', metric);
+    assert.equal(explicit.status, 2, metric);
+    assert.match(explicit.stderr, /must be a metric/);
+    assert.ok(readFileSync(ledger).equals(before), `refused input changed the ledger: ${metric}`);
   }
   const exported = lfm('changes', '--json');
   assert.equal(exported.status, 0, exported.stderr); // the ledger still reads
@@ -1458,10 +1452,6 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.equal(none.status, 0, none.stderr);
   assert.match(none.stdout, /No new answers for posted findings\./);
   assert.equal(lfm({ ...peerEnv, FAKE_SIGNOFF_REFUSE: '1' }, 'signoff', 'answers').status, 2);
-  rmSync(signBin);
-  assert.equal(lfm({}, 'signoff', 'answers').status, 0);
-  assert.equal(lfm({}, 'signoff', 'post', '--run', '999').status, 2);
-
   // --proposal copies the kept fix's cause, metric and tripwire into the ledger; a fix that was not kept has no number.
   const applied = lfm({}, 'change', 'applied', '--proposal', `${run.id}:1`, '--ref', 'abc1234', '--json');
   assert.equal(applied.status, 0, applied.stderr);
@@ -1472,6 +1462,21 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.match(dropped.stderr, new RegExp(`^error: run ${run.id} has no kept fix 6$`, 'm'));
   const both = lfm({}, 'change', 'applied', '--proposal', `${run.id}:1`, '--cause', 'shared-cache-lock', '--ref', 'abc1234');
   assert.match(both.stderr, /^error: pass --cause or --proposal, not both$/m);
+
+  const posted = () => readFileSync(join(signDir, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((c) => c.args[0] === 'post').map((c) => JSON.parse(c.stdin));
+  const frozen = new Set(board.map((m) => m.key));
+  edit("UPDATE runs SET status = 'failed' WHERE id = ?", run.id);
+  edit("UPDATE steps SET status = 'failed' WHERE run_id = ? AND name IN ('propose', 'verify', 'check', 'report')", run.id);
+  const again = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long' }, 'rerun', '--resume', '--run', String(run.id), '--wait', '8m');
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  const sentBefore = posted().length;
+  assert.equal(lfm(peerEnv, 'signoff', 'post', '--run', String(run.id)).status, 0);
+  const fresh = posted().slice(sentBefore);
+  assert.deepEqual(fresh.map((m) => m.proposal), ['Give each worker its own cache directory.']);
+  assert.ok(fresh.every((m) => !frozen.has(m.key)), 'a re-proposed run posts new keys, not the frozen messages');
+  rmSync(signBin);
+  assert.equal(lfm({}, 'signoff', 'answers').status, 0);
+  assert.equal(lfm({}, 'signoff', 'post', '--run', '999').status, 2);
 
   // The next retro asks the worker why the applied change's verdict is not keep; the reason lands on its follow-up.
   const next = lfm({ FAKE_ANALYSE: 'empty' }, 'retro', '--foreground', '--json');

@@ -68,6 +68,7 @@ function check(v, changes, attempt) {
 }
 
 export async function propose(cfg, db, id, dir, window, log) {
+  db.prepare('DELETE FROM signoff WHERE proposal_id IN (SELECT id FROM proposals WHERE run_id = ?)').run(id);
   db.prepare('DELETE FROM proposals WHERE run_id = ?').run(id); // a step run again starts empty
   db.prepare('UPDATE followups SET reason = NULL WHERE run_id = ?').run(id);
   const findings = db.prepare('SELECT cause, summary, refs_json FROM findings WHERE run_id = ? ORDER BY id').all(id);
