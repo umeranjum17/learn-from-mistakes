@@ -17,7 +17,8 @@ With `excerpts: on` each event and record has a `  > ` excerpt of at most 300
 characters; with `excerpts: off` there is none, only pointers and counts.
 With `excerpts: on`, redact() removes secret-shaped values only; plain record text stays in the bundle by design, so the canary guarantee for prose is `excerpts: off`.
 `redact()` from `src/redact.mjs` runs on every string the step writes, from every
-source (session excerpts, defect bullets, gate errors, refs, ids). Items that
+source (session excerpts, defect bullets, gate errors, refs), but not on a record id:
+the id is printed raw, as the store keeps it, so the worker can cite it. Items that
 would pass `caps.bundle_chars` (at least 1000; smaller exits 2) are dropped and a
 last `Dropped <n> items ...` line counts them. Within a section, the first item
 that does not fit drops it and every later item of that section, so the clusters
