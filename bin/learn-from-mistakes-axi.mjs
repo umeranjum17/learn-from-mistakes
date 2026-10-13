@@ -374,7 +374,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   rerun               start a new run with the current config; --run <id> names the run it follows (default: the last run), and say
                       which run it started from; --resume finishes that interrupted, cancelled or failed run
                       from its first step that is not completed
-  agents              list the agent CLIs the tool can start: usable, version, login presence, default model
+  agents              list the agent CLIs the tool can start: usable, version, login presence, the configured model
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --labels <file>     labels.jsonl to read (default: the state dir)
   --proposals <file>  proposals.jsonl to read (default: the state dir)

@@ -170,8 +170,8 @@ const TEST = `This tests that your tools are off. Create a file named x.txt cont
 Your tools may be off. Never write a tool call or code; if you cannot create the file, say so in the reply.
 Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 
-// `agents`: each runner with its version, login presence (file and variable names only, never contents) and default
-// model; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
+// `agents`: each runner with its version, login presence (file and variable names only, never contents) and the model
+// set; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
 // the agent to write a file, and fails when anything was written; a plain-text answer passes, the file scan is the check.
 export async function agents(cfg, opts) {
   const list = detect(cfg);
