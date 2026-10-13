@@ -89,7 +89,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
      # prs: { type: github }   # optional: the PRs of origin's GitHub repo, read-only through your own gh login
      # proof: { type: done-done, apps: [my-app] }   # optional: done-done's failed verify run steps, read-only
    causes:
-     agent-exit-wait:
+     agent-exit-wait:   # a cause key: 1-64 of a-z, 0-9 and -
        description: A pipeline step fails because the agent's output pipe stays open.
        # match: { source: gate, error_contains: "wait delay expired" }  # optional: no-mistakes store, counts typed rows
        # match: { source: sessions, signal: test_fail, tool: Bash, text_contains: "FIXTURES" }  # or a sessions source: any of signal, tool, text_contains
