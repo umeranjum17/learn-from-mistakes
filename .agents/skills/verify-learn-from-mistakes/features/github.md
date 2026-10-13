@@ -27,7 +27,7 @@ passes; with `gh` missing or logged out it lists the source under `skipped` with
 A missing `gh`, a logged-out `gh`, a failed query or a non-GitHub origin fail the source
 with a usage error whose `next:` starts with `remove sources.<id> from .learn-from-mistakes.yaml`;
 the origin URL is never printed (it can hold a token). A second github source is rejected. `doctor()` returns the PR count in
-the window and the partial ones (no `doctor` command calls it yet).
+the window and the partial ones; `doctor` reports them through that hook.
 
 ## How to get to it (user POV)
 In a clone of a GitHub repo with `gh auth login` done: `learn-from-mistakes-axi init`, or add
