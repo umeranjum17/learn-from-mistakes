@@ -89,6 +89,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
      # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
      # sessions: { type: sessions }   # optional, one per config: this repo's Claude Code, Codex and OpenCode sessions, read-only
      # prs: { type: github }   # optional: the PRs of origin's GitHub repo, read-only through your own gh login
+     # proof: { type: done-done, apps: [my-app] }   # optional: done-done's failed or inconclusive verify run steps, read-only from ~/.done-done (or $DONE_DONE_HOME; path: sets it)
    causes:
      agent-exit-wait:
        description: A pipeline step fails because the agent's output pipe stays open.

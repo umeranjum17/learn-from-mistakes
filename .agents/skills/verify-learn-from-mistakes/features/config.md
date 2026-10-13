@@ -7,7 +7,7 @@ v1 configs (`name`, `sources`, `causes`, `repeat`) load unchanged. The agent key
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys), `read` and `detect` (init); `collect`/`ingest` call the
 registry. Today: `markdown-log` and `no-mistakes`, unchanged, `sessions`
-([sessions.md](sessions.md)) and `github` ([github.md](github.md)). A type outside the
+([sessions.md](sessions.md)), `github` ([github.md](github.md)) and `done-done` ([done-done.md](done-done.md)). A type outside the
 registry exits 2 `sources.<id>.type must be one of ...`. `window` sets the sessions read range and the metrics windows. A cause's `match`
 names a no-mistakes source (`error_contains`) or a sessions source (any of `signal`,
 `tool`, `text_contains`); other keys, a rule with none of the three, an unknown

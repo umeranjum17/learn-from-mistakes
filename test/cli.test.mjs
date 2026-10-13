@@ -589,7 +589,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(noPath.status, 2, noPath.stderr);
   assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github$/m); // a list is not a type
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github, done-done$/m); // a list is not a type
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github, repo: umer/app }\n'); // the repo comes from origin
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs: unknown key repo$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
@@ -611,6 +611,48 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(dir.status, 2, dir.stderr);
   assert.match(dir.stderr, /cannot read \(EISDIR\)/);
   assert.doesNotMatch(dir.stderr, /\n\s+at /);
+});
+
+test('a done-done source: each failed step of a failed or inconclusive verify run is a record; a passed run is not; an unknown schema stops with the fix', () => {
+  const { p, lfm, env } = setup();
+  env.DONE_DONE_HOME = join(p, 'dd-home'); // done-done's own default when the source sets no path
+  const run = (id, run) => {
+    mkdirSync(join(env.DONE_DONE_HOME, 'runs', 'notes', id), { recursive: true });
+    writeFileSync(join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json'), JSON.stringify({ schema: 2, run_id: id, kind: 'verify', app: 'notes', status: 'completed', updated: '2026-03-04T10:00:00Z', ...run }));
+  };
+  const steps = (failed) => ['resolve', 'drive', 'check', 'report'].map((name) => ({ name, status: name === failed ? 'failed' : 'completed', ...(name === failed && { exit: 1, ended: '2026-03-03T09:00:00Z' }) }));
+  run('r1', { result: 'fail', reason: 'check: shot.png: judge says wrong screen; token=ghp_aaaaaaaaaaaaaaaaaaaaaaaa', steps: steps('check') });
+  run('r2', { result: 'inconclusive', reason: 'drive: journey timed out after 30m', steps: steps() }); // no failed step: the step its reason names
+  run('r3', { result: 'pass', steps: steps() });
+  run('r4', { status: 'running', steps: steps('drive') }); // not finished
+  mkdirSync(join(env.DONE_DONE_HOME, 'runs', 'notes', 'judge')); // done-done's judge cache: no run.json
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes, nottes] }\n');
+  const ingest = lfm('ingest');
+  assert.equal(ingest.status, 0, ingest.stderr);
+  const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const file = (id) => join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json');
+  assert.deepEqual(records, [
+    { id: 'dd:notes/r1/check', source: 'dd', step: 'check', ref: file('r1'), date: '2026-03-03', text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
+    { id: 'dd:notes/r2/drive', source: 'dd', step: 'drive', ref: file('r2'), date: '2026-03-04', text: 'verify inconclusive: drive: journey timed out after 30m' }]);
+  const doctor = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source dd');
+  assert.match(doctor.detail, /^done-done: 2 failed verify steps, 0 in the window; no runs for nottes in /);
+  assert.match(doctor.fix, /^ls .*# done-done's app names; set sources\.dd\.apps in /);
+  const retro = lfm('retro', '--foreground');
+  assert.equal(retro.status, 0, retro.stderr);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  assert.deepEqual(db.prepare('SELECT record_id, ref FROM records ORDER BY record_id').all().map((r) => ({ ...r })),
+    [{ record_id: 'dd:notes/r1/check', ref: file('r1') }, { record_id: 'dd:notes/r2/drive', ref: file('r2') }]);
+  db.close();
+
+  run('r5', { schema: 3, result: 'fail', steps: steps('check') }); // a newer done-done: never skipped, never a crash
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes], path: dd-home }\n');
+  const newer = lfm('ingest');
+  assert.equal(newer.status, 2, newer.stderr);
+  assert.ok(newer.stderr.includes(`error: source dd: ${file('r5')} is done-done run schema 3; this version reads schema 2\n`), newer.stderr);
+  assert.match(newer.stderr, /^next: update learn-from-mistakes-axi to read it, or remove sources\.dd from /m);
+  assert.doesNotMatch(newer.stderr, /\n\s+at /);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [../x] }\n');
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.dd\.apps must be a list of done-done app names$/m);
 });
 
 test('an explicit labels or proposals path that does not exist is a usage error', () => {

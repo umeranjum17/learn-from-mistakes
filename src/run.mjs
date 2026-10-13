@@ -22,7 +22,7 @@ const RUN = 'id, status, pid, created_at, updated_at, error';
 const BIN = fileURLToPath(new URL('../bin/learn-from-mistakes-axi.mjs', import.meta.url));
 const REPORT = 'learn-from-mistakes-axi report   # names each problem';
 const STEPS = {
-  // Reads the sources: session events go to the `events` table, defect-log bullets, failed gate steps and PRs to `records`,
+  // Reads the sources: session events go to the `events` table, defect-log bullets, failed gate and verify steps and PRs to `records`,
   // each with the cause its source tagged it with. It can run again: it first drops the run's events and records.
   collect: async (cfg, db, id, log) => {
     const { sources, events, records, rows, prs, read_from, current_start, previous_start } = await ingest(cfg);
@@ -35,7 +35,7 @@ const STEPS = {
       db.prepare('DELETE FROM events WHERE run_id = ?').run(id);
       db.prepare('DELETE FROM records WHERE run_id = ?').run(id);
       for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.cause ?? null, e.ref, e.excerpt);
-      for (const r of records) record.run(id, r.source, r.date || null, `${cfg.sources[r.source].path}:${r.line}`, null, r.text, null, r.id);
+      for (const r of records) record.run(id, r.source, r.date || null, r.ref ?? `${cfg.sources[r.source].path}:${r.line}`, null, r.text, null, r.id);
       for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, null, recordId(r));
       for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data), recordId(r));
       db.exec('COMMIT');
