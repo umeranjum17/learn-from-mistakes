@@ -323,7 +323,7 @@ function project(a, full) {
     ledger: { entries: a.changes?.length ?? 0 },
     sources: a.meta.sources.map((s) => ({ id: s.id, type: s.type, items: s.items })),
     causes,
-    findings: a.findings.map(({ cause, count, days }) => ({ cause, count, days })), // the run worker's, counted by its check step; the summaries print in status only
+    findings: a.findings.map(({ cause, count, days }) => ({ cause, count, days })), // the run worker's, counted by its check step; the summaries print as lines after the TOON report
   };
 }
 
@@ -579,19 +579,19 @@ async function main() {
   if (['retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   if (!opts.labels) quietSqlite();
-  const last = opts.labels ? undefined : await lastRun(cfg); // --labels names the file; else the last retro's labels, if a run has them
+  const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts); }); // --labels names the file; else the last retro's labels, if a run has them
   const { model, problems } = buildReport(cfg, { ...opts, ...last }, rerunHint, full);
   console.log(render(model, json));
-  if (!json) console.log(summaryLine(model));
+  if (!json) console.log([summaryLine(model), ...(last?.findings ?? []).map((f) => `finding: ${f.cause} (${f.count}/${f.days} days): ${f.summary}`)].join('\n'));
   if (problems.length) {
     for (const p of problems.slice(0, PROBLEM_LINES)) console.error(`problem: ${p}`);
     if (problems.length > PROBLEM_LINES) console.error(`problem: ... and ${problems.length - PROBLEM_LINES} more`);
     console.error(`problems: ${problems.length}   # fix the inputs or the change ledger`);
-    hint(rerunHint);
+    hint(last ? withContext('learn-from-mistakes-axi retro --wait', 'a new run relabels the records', opts) : rerunHint);
     process.exitCode = 1;
     return;
   }
-  if (last) hint(withContext(`learn-from-mistakes-axi status --run ${last.run}`, "the run's findings in plain words", opts));
+  if (last) hint(withContext(`learn-from-mistakes-axi status --run ${last.run}`, 'the run and its steps', opts));
   else hint(model.coverage.total_records && !model.coverage.labelled ? LABEL_STEP(cfg, opts) : NEXT(json, full, opts));
 }
 
@@ -602,16 +602,20 @@ function quietSqlite() {
   process.removeAllListeners('warning');
   process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') for (const f of print) f(w); });
 }
+// A run store sqlite cannot use is one usage line with the file to move, never a stack trace.
+function storeError(e, cfg, opts) {
+  if (e.code !== 'ERR_SQLITE_ERROR') return e;
+  const file = join(cfg.state, 'lfm.sqlite');
+  if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
+  return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
+}
 async function runCommand(cmd, cfg, opts) {
   quietSqlite();
-  const file = join(cfg.state, 'lfm.sqlite');
   let out;
   try {
     out = await { retro, status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
   } catch (e) {
-    if (e.code !== 'ERR_SQLITE_ERROR') throw e;
-    if (e.message.includes('UNIQUE constraint failed: runs.status')) throw new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
-    throw new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
+    throw storeError(e, cfg, opts);
   }
   console.log(render(out, opts.json));
   if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
