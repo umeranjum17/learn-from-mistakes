@@ -184,7 +184,7 @@ export async function ingest(cfg) {
   const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w).filter(Number.isFinite));
   const records = [], rows = [], events = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes });
+    const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE) });
     records.push(...(got.records ?? []));
     rows.push(...(got.rows ?? []));
     events.push(...(got.events ?? []));
