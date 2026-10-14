@@ -109,6 +109,9 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], save);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], [undefined, undefined, undefined]);
+  const noSkill = lfm('init', '-y');
+  assert.equal(noSkill.status, 0, noSkill.stderr);
+  assert.match(noSkill.stdout, /^skills: no configured agent has a skills dir$/m);
   for (const cmd of [['retro', '--foreground'], ['doctor'], ['agents']]) {
     const stop = lfm(...cmd);
     assert.equal(stop.status, 2, `${cmd[0]}: ${stop.stderr}`);

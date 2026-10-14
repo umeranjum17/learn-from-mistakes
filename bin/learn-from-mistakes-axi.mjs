@@ -707,7 +707,8 @@ async function initCommand(opts) {
   if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
   for (const f of !opts.json ? out.skills ?? [] : []) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
   for (const f of !opts.json ? out.skills_skipped ?? [] : []) console.log(`skipped: ${f}`);
-  if (!opts.json && !opts['no-skill'] && !(out.skills ?? []).length && !(out.skills_skipped ?? []).length) console.log('skills: nothing new');
+  if (!opts.json && !opts['no-skill'] && !out.skills_roots) console.log('skills: no configured agent has a skills dir');
+  else if (!opts.json && !opts['no-skill'] && !(out.skills ?? []).length && !(out.skills_skipped ?? []).length) console.log('skills: nothing new');
   const seen = [['worker', out.workerBin, out.worker], ['judge', out.judgeBin, out.judge]].map(([name, bin, r]) => `the ${name} (${bin ? r.runner : r.runner ? `${r.runner}, not usable` : 'not set'})`).join(' and ');
   if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: ${seen} see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');

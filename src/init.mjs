@@ -18,7 +18,7 @@ const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an i
 // .claude/skills and .agents/skills instead, `--no-skill` writes none. Each real file is written once: roots that
 // resolve to one dir share it, and a file holding the same bytes is left alone. A failed write is a skip, never fatal.
 export function installSkills(cfg, agents, dir, opts) {
-  if (opts['no-skill']) return { written: [], failed: [] };
+  if (opts['no-skill']) return { written: [], updated: [], failed: [], roots: 0 };
   const roots = opts['project-skill']
     ? [join(dir, '.claude', 'skills'), join(dir, '.agents', 'skills')]
     : [...new Set([cfg.agent, cfg.judge_agent].filter(Boolean))].flatMap((name) => {
@@ -43,7 +43,7 @@ export function installSkills(cfg, agents, dir, opts) {
       if (exists) updated.push(file);
     } catch (e) { failed.push(`${root}: ${e.message}`); }
   }
-  return { written, updated, failed };
+  return { written, updated, failed, roots: roots.length };
 }
 const scalar = (v) => JSON.stringify(v); // a JSON string is a YAML scalar
 const flow = (o) => `{ ${Object.entries(o).map(([k, v]) => `${k}: ${scalar(v)}`).join(', ')} }`;
@@ -186,7 +186,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   stateDir(cfg);
   const missing = unset(cfg);
   const { worker, judge } = await resolveRoles(cfg, agents);
-  const { written: skills, updated: skills_updated, failed: skills_skipped } = installSkills(cfg, agents, dir, opts);
+  const { written: skills, updated: skills_updated, failed: skills_skipped, roots: skills_roots } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
     ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
@@ -197,6 +197,6 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
-    gaps, skipped, skills, skills_updated, skills_skipped,
+    gaps, skipped, skills, skills_updated, skills_skipped, skills_roots,
   };
 }
