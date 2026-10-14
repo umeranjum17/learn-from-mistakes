@@ -42,4 +42,4 @@ private evidence folder, never the repo. Use synthetic logs only. The host
 Claude has its own user-level skills: confirm none is a learn-from-mistakes
 skill before claiming discovery came from the installed stub. `npx skills add`
 needs `owner/repo#branch` for a branch with a slash. The Claude trust dialog
-defaults to "No, exit". npm publish needs the captain's word.
+defaults to "No, exit". Never run `npm publish` by hand: merging a version bump runs `.github/workflows/release.yml`, which publishes (see README "Releasing").
