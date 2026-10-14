@@ -383,6 +383,7 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
 
 test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted secrets out', () => {
   const { tmp, p, env, lfm } = setup();
+  for (const k of ['PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'GEMINI_CLI_HOME']) delete env[k]; // the stores under HOME
   const secrets = (from, to) => PLANTED.slice(from, to).map(([t]) => t).join(' '), now = new Date().toISOString();
   const old = new Date(Date.now() - 60 * 86_400_000), elsewhere = join(tmp, 'elsewhere');
   const put = (file, lines, at) => {
@@ -398,12 +399,14 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
     call('c1', 'bash', { command: 'npm test' }), result('c1', `FAIL fetch ${secrets(0, -10)} END\n\nCommand exited with code 1`, true),
     msg({ role: 'user', content: [{ type: 'text', text: `Umer: use the other script, ${secrets(-10)} END` }] }),
     call('c2', 'bash', { command: 'npm test' }), result('c2', 'ok', false), call('c3', 'read', { path: 'a.js' }), result('c3', 'ENOENT', true),
+    call('c4', 'bash', { command: 'npm test' }), result('c4', 'Command aborted', true), // stopped by the user: no failure
     msg({ role: 'assistant', content: [], stopReason: 'aborted' }), msg({ role: 'user', content: 'Umer: wait.' }), 'not json']);
   const failing = [msg({ role: 'user', content: 'lfm-run:9:analyse Follow the bundle.' }), call('c1', 'read', {}), result('c1', 'no', true)];
   put(join(pi, 'b_pi-marker.jsonl'), [head('pi-marker', p), ...failing]);
   put(join(pi, 'c_pi-lfm.jsonl'), [head('pi-lfm', join(p, '.lfm', 'runs', '1')), ...failing.slice(1)]);
   put(join(pi, 'd_pi-other.jsonl'), [head('pi-other', elsewhere), ...failing.slice(1)]);
   put(join(pi, 'e_pi-old.jsonl'), [head('pi-old', p), ...failing.slice(1)], old);
+  put(join(pi, 'f_pi-fork.jsonl'), [{ ...head('pi-fork', p), parentSession: 'a.jsonl' }, ...failing.slice(1).map((r) => ({ ...r, timestamp: old.toISOString() }))]);
 
   const gem = join(env.HOME, '.gemini'), chats = join(gem, 'tmp', 'umer-p', 'chats');
   put(join(gem, 'projects.json'), [{ projects: { [p]: 'umer-p', [elsewhere]: 'umer-x' } }]);
@@ -411,7 +414,7 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   const g = (id, ...toolCalls) => ({ id, type: 'gemini', timestamp: now, content: '', toolCalls });
   put(join(chats, 'session-2026-10-13T10-00-gm000001.jsonl'), [{ sessionId: 'gm000001-main', startTime: now, kind: 'main' },
     { id: 'u0', type: 'user', content: 'Umer: a draft.' }, { $set: { messages: [] } }, { id: 'u1', type: 'user', content: [{ text: 'Umer: run the checks.' }] },
-    g('g1'), g('g1', tc('run_shell_command', { command: 'npx vitest run' }, 'success', `vitest crashed ${secrets(0, -10)} END\nExit Code: 1`)),
+    g('g1'), g('g1', tc('run_shell_command', { command: 'npx vitest run' }, 'success', `Exit Code: 0\nvitest crashed ${secrets(0, -10)} END\nExit Code: 1`)),
     { id: 'u2', type: 'user', content: `Umer: try again, ${secrets(-10)} END` }, g('g2', tc('run_shell_command', { command: 'npx vitest run' }, 'success', 'ok')),
     g('g3', tc('read_file', { file_path: 'b.js' }, 'error', 'File not found')), { $rewindTo: 'g3' }, { id: 'u3', type: 'user', content: '/stats' },
     g('g4', tc('replace', { file_path: 'c.js' }, 'cancelled')), { $set: { summary: 'Umer' } }, 'not json']);
@@ -426,11 +429,12 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
   const run = decode(r.stdout), id = run.run.id;
-  // this repo's sessions with a Gemini subagent; not the marker runs, .lfm/, the other project or slug, or old files.
+  // this repo's sessions with a Gemini subagent and a Pi fork with none of its parent's copied entries; not the marker
+  // runs, .lfm/, the other project or slug, or old files.
   // A replaced, rewritten, rewound or command message is not an event. Bad records: a non-JSON line in each kept file.
-  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 22, sessions: 2, skipped: 2 });
+  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 25, sessions: 3, skipped: 2 });
   assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
-    [{ agent: 'gemini', session_id: 'gm000001-main', n: 11 }, { agent: 'pi', session_id: 'pi-main', n: 11 }]);
+    [{ agent: 'gemini', session_id: 'gm000001-main', n: 11 }, { agent: 'pi', session_id: 'pi-fork', n: 1 }, { agent: 'pi', session_id: 'pi-main', n: 13 }]);
   const signals = query(p, 'SELECT agent, signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2', id);
   assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['correction', 'interrupt', 'retry', 'test_fail', 'tool_error'].flatMap((s) => [`gemini ${s} 1`, `pi ${s} 1`]).sort());
   assert.deepEqual(query(p, `SELECT tool, exit_code FROM events WHERE run_id = ? AND signal = 'test_fail' ORDER BY agent`, id),
@@ -441,7 +445,7 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   assertNoPlanted(p, [r, lfm('report', '--full')]);
   // A session id the run store recorded as the tool's own agent run is skipped next time, for each agent.
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  for (const sid of ['pi-main', 'gm000001-main']) db.prepare(`INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at, session_id) VALUES (1, 'analyse', 'worker', 'claude', '', 'lfm-run:1:analyse', '2026-10-01T00:00:00Z', ?)`).run(sid);
+  for (const sid of ['pi-main', 'pi-fork', 'gm000001-main']) db.prepare(`INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at, session_id) VALUES (1, 'analyse', 'worker', 'claude', '', 'lfm-run:1:analyse', '2026-10-01T00:00:00Z', ?)`).run(sid);
   db.close();
   assert.equal(JSON.parse(lfm('retro', '--foreground', '--json').stdout).sources.find((s) => s.type === 'sessions').sessions, 0);
 });

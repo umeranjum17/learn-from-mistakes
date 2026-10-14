@@ -14,7 +14,7 @@ export const root = () => process.env.PI_CODING_AGENT_SESSION_DIR || join(proces
 // or the first user message carries the lfm-run: marker.
 async function parse(file, { keep, excerpt }) {
   const events = [], calls = new Map(), failed = new Set();
-  let skipped = 0, n = 0, cwd, id = basename(file, '.jsonl'), start = null, first = true, afterError = false;
+  let skipped = 0, n = 0, cwd, id = basename(file, '.jsonl'), start = null, fork = false, first = true, afterError = false;
   const input = createReadStream(file), lines = createInterface({ input, crlfDelay: Infinity });
   try {
     for await (const line of lines) {
@@ -25,16 +25,17 @@ async function parse(file, { keep, excerpt }) {
       if (n === 1 && r.type === 'session') {
         if (typeof r.cwd !== 'string' || !keep((cwd = r.cwd))) return null;
         if (typeof r.id === 'string' && r.id) id = r.id;
-        start = typeof r.timestamp === 'string' ? r.timestamp : null;
+        start = typeof r.timestamp === 'string' ? r.timestamp : null, fork = typeof r.parentSession === 'string';
         continue;
       }
-      if (r.type !== 'message') continue; // model changes, usage, compaction: not turns
+      // Model changes, usage and compaction are not turns; a fork's copy of its parent's entries keeps their older times.
+      if (r.type !== 'message' || (fork && typeof r.timestamp === 'string' && r.timestamp < start)) continue;
       const m = r.message;
       if (!m || typeof m !== 'object' || typeof m.role !== 'string') { skipped += 1; continue; }
       const at = { agent: 'pi', session_id: id, ts: typeof r.timestamp === 'string' ? r.timestamp : null, ref: `${file}:${n}` };
       if (m.role === 'assistant') {
         const blocks = Array.isArray(m.content) ? m.content : [];
-        if (blocks.some((b) => b?.type === 'text' && b.text?.trim())) afterError = false; // a reply ends the adjacency
+        if (blocks.some((b) => b?.type === 'text' && typeof b.text === 'string' && b.text.trim())) afterError = false; // a reply ends the adjacency
         for (const b of blocks) {
           if (b?.type !== 'toolCall') continue;
           const key = `${b.name}\0${JSON.stringify(b.arguments)}`;
@@ -46,10 +47,11 @@ async function parse(file, { keep, excerpt }) {
       } else if (m.role === 'toolResult') {
         const call = calls.get(m.toolCallId), text = textOf(m.content), error = m.isError === true;
         const exit = /Command exited with code (\d+)\s*$/.exec(text)?.[1]; // the bash tool's own last line
-        const signal = !error ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
+        // A call the user stopped is not a tool failure; the interrupt after it is counted. Pi itself writes these texts.
+        const declined = error && /(?:Command|Operation) aborted\s*$/.test(text);
+        const signal = !error || declined ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
         events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? m.toolName ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, excerpt: signal ? excerpt(text) : '' });
-        if (error && call) failed.add(call.key);
-        else if (call) failed.delete(call.key); // a later repeat is no longer a retry
+        if (call) failed[error && !declined ? 'add' : 'delete'](call.key); // a later repeat after a success is no retry
         afterError ||= error;
       } else if (m.role === 'user') {
         const text = textOf(m.content);

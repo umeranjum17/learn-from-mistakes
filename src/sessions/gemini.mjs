@@ -12,7 +12,7 @@ export const STORE_VAR = 'GEMINI_CLI_HOME';
 export const root = () => join(process.env[STORE_VAR] || homedir(), '.gemini');
 
 // What the CLI itself does not count as a person's message: a command, a question or injected context.
-const WRAPPER = /^\s*(?:\/|\?|<session_context>|<hook_context>)/;
+const WRAPPER = /^\s*(?:\/|\?|<session_context>|<hook_context>|Here is the user's editor context)/;
 // A function response's output or error text; a shell command that exits nonzero still has status success.
 const resultText = (r) => (Array.isArray(r) ? r.map((p) => p?.text ?? p?.functionResponse?.response?.output ?? p?.functionResponse?.response?.error ?? '').join('\n') : '');
 
@@ -55,17 +55,16 @@ async function parse(file, { session, excerpt }) {
         events.push({ ...at, kind: 'tool_call', tool: tc?.name ?? null, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(tc?.args)) : '' });
         // A call the user stopped is not a tool failure; the interrupt is counted.
         if (tc?.status === 'cancelled') { events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' }); afterError = false; continue; }
-        const text = resultText(tc?.result), exit = command ? Number(/^Exit Code: (\d+)$/m.exec(text)?.[1] ?? 0) || null : null;
+        const text = resultText(tc?.result), exit = command ? Number([...text.matchAll(/^Exit Code: (\d+)$/gm)].pop()?.[1] ?? 0) || null : null;
         const error = tc?.status === 'error' || Boolean(exit);
         const signal = !error ? null : TEST.test(command) ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
         events.push({ ...at, kind: 'tool_result', tool: tc?.name ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(text) : '' });
-        if (error) failed.add(key);
-        else failed.delete(key); // a later repeat is no longer a retry
+        failed[error ? 'add' : 'delete'](key); // a later repeat after a success is no retry
         afterError ||= error;
       }
     } else if (m.type === 'user' && !session) { // a subagent's user messages come from its parent agent
       const text = textOf(m.content);
-      if (!text.trim() || WRAPPER.test(text)) continue;
+      if (!(text.trim() || (Array.isArray(m.content) && m.content.some((p) => p?.inlineData))) || WRAPPER.test(text)) continue;
       if (first && text.trimStart().startsWith('lfm-run:')) return null; // this tool's own agent session
       first = false;
       // A person's message right after a tool error, with no assistant reply between, corrects the agent.
