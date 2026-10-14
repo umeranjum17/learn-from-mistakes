@@ -17,6 +17,7 @@ import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 import { signoff } from '../src/signoff.mjs';
+import { apply } from '../src/apply.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -122,7 +123,8 @@ const storedMetric = (m) => oneLine(m, { allowTab: true }) !== undefined;
 // line is the one way to reuse one). Concurrent writers could read the same ledger and
 // repeat an id; a lock file is the upgrade.
 // --proposal <run>:<n> takes the cause, metric and tripwire of that run's kept fix n; --metric and --tripwire override them.
-async function recordChange(cfg, opts, json) {
+// Returns the entry it appended (`apply` records each fix it applies through here).
+export async function recordChange(cfg, opts) {
   const form = FORMS['change-applied'];
   if (opts.proposal !== undefined) {
     if (opts.cause !== undefined) throw new UsageError('pass --cause or --proposal, not both', form);
@@ -167,8 +169,7 @@ async function recordChange(cfg, opts, json) {
     ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind };
   stateDir(cfg);
   appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
-  console.log(render(entry, json)); // what/why leave only through `learn-from-mistakes-axi changes`
-  hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts));
+  return entry; // what/why leave only through `learn-from-mistakes-axi changes`
 }
 
 // lfm-changes.v1: every applied change in ledger order. The join key is `project` + `id`.
@@ -351,10 +352,12 @@ export function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
   (no command)        print the last run's status and its summary line
   signoff post       explicitly post a completed run's kept fixes (optional sign-off-axi)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
+  apply               the worker makes each kept fix answered Apply (or --fix <n>) on a new branch lfm/<run>-<n> from HEAD, a commit
+                      there, and records it in the ledger; it never touches your branch or work tree, never pushes, and refuses a dirty tree
   init                write $LFM_HOME/config.yaml (the agent keys, commented) and .learn-from-mistakes.yaml (the sources found, the agents the user chose)
                       where each is missing, then print the resolved worker and judge and the gaps. Either way, make the state dir .lfm/ and its .gitignore
   doctor              check node, git, the config, .lfm ignored, each source, the worker and judge (usable, login, model,
@@ -366,8 +369,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
                       report.txt, never its text; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, report) in a background worker
-                      that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, report, apply) in a background worker
+                      that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here. With auto_fix: <n>
+                      in the config, its apply step applies the top n kept fixes as apply does; 0 (the default) proposes only
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
   attach              print the run's step states and log lines as they come, until it ends
@@ -389,8 +393,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
-  --run <id>          (status, attach, logs, abort, rerun) the saved run (default: the last one; abort: the running one)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check or report
+  --fix <n>           (apply) the kept fix to apply, which you accept, when no sign-off answer says so; a Skip is never applied
+  --run <id>          (status, attach, logs, abort, rerun, apply) the saved run (default: the last one; abort: the running one)
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check, report or apply
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
@@ -480,6 +485,9 @@ labels (labels_from: run <id>); labels.jsonl only when no run has labels, or --l
      --what "<what changed>" --why "<why>"   # optional, one line each; never record text or label prose
    learn-from-mistakes-axi changes lists them (lfm-changes.v1); the report shows only counts and dates.
    Each retro gives each change a verdict: keep, fix, rollback, delete or no-data (learn-from-mistakes-axi status).
+   A retro's kept fix the user accepts (Apply on the board, or named): learn-from-mistakes-axi apply [--fix <n>] makes it
+   on a new branch lfm/<run>-<n> and records it; the user reviews that branch and opens the PR. auto_fix: <n> in the
+   config applies the top n in the run itself; it is the user's to set, never yours.
 
 next: learn-from-mistakes-axi ingest   # after step 1`;
 
@@ -516,11 +524,12 @@ const FORMS = {
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
   'signoff-post': 'learn-from-mistakes-axi signoff post [--run <id>] [--dir <dir>]',
   'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
+  apply: 'learn-from-mistakes-axi apply [--run <id>] [--fix <n>] [--dir <dir>]',
 };
 const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -542,7 +551,7 @@ async function main(ctx) {
     cmd = `signoff-${argv.shift()}`;
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, ingest, count, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents, signoff, apply)`);
   const name = cmd.replace('-', ' ') || 'learn-from-mistakes-axi', form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -564,7 +573,7 @@ async function main(ctx) {
   }
   const { json, full } = opts;
   if (cmd === 'guide') { console.log(guideText()); return; }
-  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['wait', /^[1-9]\d{0,3}[smh]$/, 'a time like 30s, 8m or 1h'], ['step', /^[a-z]{1,32}$/, 'a step name such as collect or report']]) {
+  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['fix', /^[1-9]\d{0,2}$/, 'the number of a kept fix that status lists'], ['wait', /^[1-9]\d{0,3}[smh]$/, 'a time like 30s, 8m or 1h'], ['step', /^[a-z]{1,32}$/, 'a step name such as collect or report']]) {
     if (opts[k] !== undefined && !re.test(opts[k])) throw new UsageError(`--${k} ${shown(opts[k])} must be ${rule}`, form);
   }
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
@@ -588,7 +597,7 @@ async function main(ctx) {
   let cfg = loadConfig(opts.dir ?? resolve('.'));
   ctx.state = cfg.state;
   // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
-  if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
+  if (['retro', 'rerun', 'apply'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
   // The judge is never the worker: a judge on the worker's agent and model, or one that is not ready, stops the run before it starts.
   if (['retro', 'rerun'].includes(cmd)) {
     const { judge } = await resolveRoles(cfg, detect(cfg));
@@ -603,7 +612,8 @@ async function main(ctx) {
     return;
   }
   if (cmd.startsWith('signoff-')) { quietSqlite(); await signoff(cmd.slice(8), cfg, opts); return; }
-  if (cmd === 'change-applied') { await recordChange(cfg, opts, json); return; }
+  if (cmd === 'change-applied') { console.log(render(await recordChange(cfg, opts), json)); hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts)); return; }
+  if (cmd === 'apply') { quietSqlite(); await apply(cfg, opts); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   if (['', 'retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
