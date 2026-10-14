@@ -72,9 +72,9 @@ Real-product proof (outside the repo; lab sessions only, never the captain's):
 lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky   # as analyse.md: lab sessions with a failing test, a cause matching it,
              # agent: byokit:opencode-go with agent_config model muse-spark-1.3-contributor;
-             # the key arrives only through OPENCODE_API_KEY (presented by the user, never read from an auth file)
-OPENCODE_API_KEY=<your OpenCode Go key> \
-  lfm retro --wait 15m && lfm logs --step propose && lfm logs --step check
+             # the key is typed at a hidden prompt into OPENCODE_API_KEY, never read from an auth file
+(read -rsp 'OpenCode Go key: ' OPENCODE_API_KEY && echo && export OPENCODE_API_KEY &&
+  lfm retro --wait 15m && lfm logs --step propose && lfm logs --step check)
 sqlite3 -readonly .lfm/lfm.sqlite 'select n,cause,metric,tripwire,problem from proposals'
 sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status,tokens_in,tokens_out from invocations'
 ```

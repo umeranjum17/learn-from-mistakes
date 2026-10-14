@@ -59,11 +59,11 @@ lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 cd $SCR/ky   # a test command that fails unless UMER_FIXTURES=1, a cause matching it,
              # agent: "byokit:opencode-go", judge_agent: claude, agent_config: { "byokit:opencode-go": { model: <model> },
              # claude: { model: <model> } } (or agent: opencode with model <provider>/<model>); the OpenCode Go
-             # key arrives only through OPENCODE_API_KEY (the variable BYOKit's opencode-go route names),
-             # presented by the user for the one command, never read from a desktop tool's auth file
+             # key is typed at a hidden prompt into OPENCODE_API_KEY (the variable BYOKit's opencode-go route names),
+             # for one subshell, never read from a desktop tool's auth file
 for ask in ...; do opencode run -m <provider>/<model> "$ask, and run the tests"; done
-OPENCODE_API_KEY=<your OpenCode Go key> \
-  lfm retro --wait 15m && lfm logs --step analyse
+(read -rsp 'OpenCode Go key: ' OPENCODE_API_KEY && echo && export OPENCODE_API_KEY &&
+  lfm retro --wait 15m && lfm logs --step analyse)
 sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status,tokens_in,tokens_out from invocations'
 sqlite3 -readonly .lfm/lfm.sqlite 'select cause,refs_json from findings; select record_id,event,cause from labels'
 ```

@@ -112,15 +112,15 @@ labenv env DBUS_SESSION_BUS_ADDRESS=unix:path=$SCR/no-bus XDG_STATE_HOME=$LAB/.l
   -e 'console.log(JSON.stringify(await (await import(process.argv[1])).doctor("chatgpt")))' $SELF/src/runners/byokit.mjs
 ```
 
-BYOKit plan key route (live, small cost): the key comes from BYOKit as the
-user's env var the route names (`OPENCODE_API_KEY`, the
-`opencode:plan_key:opencode-go` route's `upstream.method`), for the one command
+BYOKit plan key route (live, small cost): the user types the key at a hidden prompt
+into the variable the route names (`OPENCODE_API_KEY`, the
+`opencode:plan_key:opencode-go` route's `upstream.method`), for the one subshell
 only (held in memory, never saved; never read from a desktop tool's auth file),
 with the model the user names in `agent_config` (a route needs one; the tool picks no route):
 
 ```sh
-OPENCODE_API_KEY=<your OpenCode Go key> \
-  lfm agents --test byokit:opencode-go
+(read -rsp 'OpenCode Go key: ' OPENCODE_API_KEY && echo && export OPENCODE_API_KEY &&
+  lfm agents --test byokit:opencode-go)
 ```
 
 No live call is made from this repo's own proof: BYOKit has no store for a
