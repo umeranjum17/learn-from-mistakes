@@ -2,7 +2,7 @@
 // of the repo files its target names, and the tool commits that from HEAD with git's plumbing on lfm/<run>-<n> and records it
 // as `change applied --proposal <run>:<n>` does. The user's branch, index and work tree are never touched; nothing is pushed.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { EmptyError, InputError, readLedger, recordableCauses, recordChange, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { PROJECT_FILE } from './config.mjs';
@@ -30,15 +30,17 @@ function targetFiles(top, target) {
 }
 
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
-async function applyOne(cfg, db, run, fix, log) {
+async function applyOne(cfg, db, run, fix, log, opts = {}) {
   const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`;
-  if (fix.answer === 'skip') throw new UsageError(`fix ${at} was answered Skip, and a Skip is never applied`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its other kept fixes', {}));
+  if (fix.answer === 'skip') throw new UsageError(`fix ${at} was answered Skip, and a Skip is never applied`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its other kept fixes', opts));
   if (!recordableCauses(cfg).includes(fix.cause)) throw new InputError(`fix ${at} names cause ${fix.cause}, which is not a configured cause`, `add ${fix.cause} under causes in ${PROJECT_FILE}, then apply again`);
   const top = git(cfg.dir, ['rev-parse', '--show-toplevel']);
   if (git(top, ['status', '--porcelain', '--untracked-files=no'])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
   const head = git(top, ['rev-parse', '--verify', 'HEAD']); let commit = spawnSync(which('git'), ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: top, encoding: 'utf8' }).stdout.trim();
   if (!commit) {
-    const files = targetFiles(top, fix.target); if (!files.length) throw new InputError(`fix ${at} names no tracked file in its target, so the worker has nothing to edit`, `learn-from-mistakes-axi change applied --proposal ${at} --ref <sha>   # after you make the change by hand`);
+    const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
+    if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);
+    if (!files.length) throw new InputError(`fix ${at} names no tracked file in its target, so the worker has nothing to edit`, withContext(`learn-from-mistakes-axi change applied --proposal ${at} --ref <sha>   # after you make the change by hand`, 'nothing was applied', opts));
     const text = new Map(files.map((f) => [f.path, readFileSync(join(top, f.path), 'utf8')])), fill = { cause: fix.cause, kind: fix.kind ?? 'doc', target: redact(fix.target), change: redact(fix.change), metric: fix.metric, tripwire: fix.tripwire,
       files: files.map((f) => `--- ${f.path}\n${text.get(f.path)}\n--- end of ${f.path}`).join('\n') };
     const check = (v) => {
@@ -93,7 +95,7 @@ export async function apply(cfg, opts) {
     if (!chosen.length) throw new EmptyError(`run ${run} has no fix answered Apply`, withContext(`learn-from-mistakes-axi apply --run ${run} --fix <n>`, 'apply a kept fix you accept; signoff answers reads the board first', opts));
     const done = [];
     for (const fix of chosen) {
-      done.push(await applyOne(cfg, db, run, fix, console.error));
+      done.push(await applyOne(cfg, db, run, fix, console.error, opts));
       console.log(line(run, done.at(-1)));
     }
     console.error(`next: git diff HEAD...${done[0].branch}   # review it, then push the branch and open a PR the way you deliver`);
