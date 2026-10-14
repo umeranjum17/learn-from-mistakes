@@ -79,8 +79,8 @@ What it does today:
 
 What it does not do:
 
-- It never edits your sources or instructions. The one file it writes outside .lfm/ is its own skill, when you run init.
-- It does not apply a change for you. You apply it, then record it.
+- It never edits your sources or instructions in your working tree. An accepted fix goes only to its own branch, `lfm/<run>-<n>`, from HEAD, and is recorded in the ledger. The one file it writes outside .lfm/ is its own skill, when you run init.
+- It never pushes, merges, or touches your branch or uncommitted work.
 - It makes no model call itself. Only your own agent CLI, started by a run, calls a model.
 
 Planned:
