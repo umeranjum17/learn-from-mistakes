@@ -647,7 +647,9 @@ async function runCommand(cmd, cfg, opts) {
   } catch (e) {
     throw storeError(e, cfg, opts, cmd);
   }
-  console.log(render(cmd === 'last' ? { run: out.run, summary: out.result?.summary ?? '' } : out, opts.json)); // bare: the run and its summary line
+  // Bare: the run's id, status and times and its summary line; never its error, whose text can hold an agent's output.
+  const last = () => ({ run: { id: out.run.id, status: out.run.status, created_at: out.run.created_at, updated_at: out.run.updated_at }, summary: out.result?.summary ?? '' });
+  console.log(render(cmd === 'last' ? last() : out, opts.json));
   if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --wait 8m', 'ingest and report as a saved run', opts));
@@ -655,12 +657,12 @@ async function runCommand(cmd, cfg, opts) {
   else if (out.run.status === 'running') hint(withContext(`learn-from-mistakes-axi attach --run ${out.run.id}`, `${opts.wait ? 'still running; ' : ''}follow its steps while the run goes on in the background`, opts));
   else if (cmd === 'abort') hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, 'finish it from its first step that is not completed', opts));
   else if (out.run.status === 'failed') {
-    console.error(`error: ${out.run.error}`);
+    if (cmd !== 'last') console.error(`error: ${out.run.error}`);
     const step = out.steps.find((s) => s.status === 'failed')?.name;
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it after fixing ${step ? `the ${step} step` : 'the cause'}; completed steps are not run again`, opts));
     if (!['status', 'last'].includes(cmd)) process.exitCode = 1;
   } else if (out.run.status !== 'completed') { // interrupted or cancelled
-    console.error(`error: ${out.run.error}`);
+    if (cmd !== 'last') console.error(`error: ${out.run.error}`);
     const log = join(cfg.state, 'runs', String(out.run.id), 'worker.log');
     const output = existsSync(log) ? `; the worker's output: ${log}` : '';
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));

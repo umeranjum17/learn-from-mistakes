@@ -1283,7 +1283,8 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   // The bare command: the last run's status and its summary line, then where its report is.
   const last = lfm({});
   assert.equal(last.status, 0, last.stderr);
-  assert.deepEqual(decode(last.stdout), { run: JSON.parse(lfm({}, 'status', '--json').stdout).run, summary: result.summary });
+  const { id, status, created_at, updated_at } = JSON.parse(lfm({}, 'status', '--json').stdout).run;
+  assert.deepEqual(decode(last.stdout), { run: { id, status, created_at, updated_at }, summary: result.summary });
   assert.match(last.stderr, /^next: learn-from-mistakes-axi report   # its ids, counts, metrics, verdicts and the path of report\.txt/m);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
@@ -1304,6 +1305,8 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(b.run.error, `analyse: ${why}`);
   assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'failed', 'pending', 'pending', 'pending', 'pending']);
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
+  const failed = lfm({}); // the bare command shows the failed run without its error text, which can hold an agent's output
+  assert.deepEqual([failed.status, decode(failed.stdout).run.status, 'error' in decode(failed.stdout).run, failed.stderr.includes(why)], [0, 'failed', false, false]);
   assert.deepEqual(lines(b.run.id).slice(1), ['worker answer 1 is not valid: the answer holds no JSON object', `worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`,
     'worker answer 2 is not valid: the answer holds no JSON object', `error: ${why}`]);
   assert.match(calls().at(-1).stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);

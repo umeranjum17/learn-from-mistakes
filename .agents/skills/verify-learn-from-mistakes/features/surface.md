@@ -2,7 +2,7 @@
 
 ## Sub-features
 `--help`/`-h`, `guide` (the agent procedure) and `--version`/`-v` without reading config; a bare command (or a
-leading flag) shows the last run's status and its `summary` line (no run: exit 3, `next: ... retro --wait 8m`); default TOON
+leading flag) shows the last run's id, status and times (never its error text) and its `summary` line (no run: exit 3, `next: ... retro --wait 8m`); default TOON
 output; `report --json` under the versioned `lfm-report.v2` schema (ids, counts, metrics, follow-ups, fixes, verdicts and the
 `report_txt` path, never its text); `--full` adds allow-listed non-content ids (source row ids; change ids live in [change.md](change.md)); a
 `next:` hint after every working command (stdout for `--help` and `guide`).
