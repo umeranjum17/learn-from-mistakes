@@ -103,9 +103,8 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.ok(gql[1].includes('after=second'));
   assert.ok(!r.stdout.includes(SECRET) && !r.stderr.includes(SECRET));
   assert.match(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8'), /^- \[prs:10\] prs at PR #10, /m);
-  writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: false, why: 'a merged PR' }) + '\n');
-  const labelled = lfm({}, 'report');
-  assert.equal(labelled.status, 0, labelled.stderr);
+  const reported = lfm({}, 'report');
+  assert.equal(reported.status, 0, reported.stderr);
 
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
@@ -145,10 +144,10 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
 
   const cfgFile = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(cfgFile, readFileSync(cfgFile, 'utf8').replace(/^causes:\n/m, 'causes:\n  rework:\n    description: "a merged PR needed rework"\n')); // beside init's starter causes
-  writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id: 'prs:10', event: true, cause: 'rework', why: 'a PR that needed rework' }) + '\n');
-  writeFileSync(join(p, '.lfm', 'proposals.jsonl'), JSON.stringify({ cause: 'rework', target: 'docs', owner: 'umer', change: 'add a check', refs: ['prs:10'] }) + '\n');
-  const full = JSON.parse(lfm({}, 'report', '--full', '--json', '--labels', join(p, '.lfm', 'labels.jsonl')).stdout); // not the run's labels
-  assert.deepEqual(full.causes.find((c) => c.cause === 'rework').proposal_refs, ['prs:10']);
+  const proposed = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'rework', FAKE_PROPOSE: 'twin' }, 'retro', '--foreground'); // one fix citing one PR
+  assert.equal(proposed.status, 0, proposed.stderr);
+  const full = JSON.parse(lfm({}, 'report', '--full', '--json').stdout); // a PR id is not content, so --full names it
+  assert.match(full.causes.find((c) => c.cause === 'rework').proposal_refs.join(' '), /^prs:\d+$/);
 });
 
 test('a window with no merged PR: merged is 0, the ratios and the sums are n/a', () => {
@@ -167,23 +166,20 @@ test('a window with no merged PR: merged is 0, the ratios and the sums are n/a',
 test('a missing or logged-out gh and a non-GitHub origin fail the source with the fix, never the origin URL', () => {
   const { p, bin, lfm } = setup();
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
-  const out = lfm({ FAKE_GH: 'logged-out' }, 'ingest');
-  assert.equal(out.status, 2, out.stderr);
-  assert.match(out.stderr, /^error: source prs: gh is not logged in to github\.com \(0 records read\)$/m);
-  assert.match(out.stderr, /^next: remove sources\.prs from .*\/umer-app\/\.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/m);
+  const source = (env) => JSON.parse(lfm(env, 'doctor', '--json').stdout).checks.find((c) => c.label === 'source prs'); // its problem and fix
+  const out = source({ FAKE_GH: 'logged-out' });
+  assert.equal(out.detail, 'github: gh is not logged in to github.com');
+  assert.match(out.fix, /^remove sources\.prs from .*\/umer-app\/\.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/);
 
   rmSync(join(bin, 'gh'));
-  const missing = lfm({}, 'ingest');
-  assert.equal(missing.status, 2, missing.stderr);
-  assert.match(missing.stderr, /^error: source prs: gh is not on PATH \(0 records read\)$/m);
+  assert.equal(source({}).detail, 'github: gh is not on PATH');
   assert.deepEqual(JSON.parse(lfm({}, 'init', '--json').stdout).skipped, ['github: origin is on GitHub, but gh is not on PATH: install the GitHub CLI, then gh auth login']);
 
   const token = `umer:${'T'.repeat(20)}`;
   execFileSync('git', ['-C', p, 'remote', 'set-url', 'origin', `https://${token}@gitlab.example.com/umer/umer-app.git`]);
-  const other = lfm({}, 'ingest');
-  assert.equal(other.status, 2, other.stderr);
-  assert.match(other.stderr, /^error: source prs: the project's git origin is not a GitHub repo \(0 records read\)$/m);
-  assert.ok(!other.stderr.includes('T'.repeat(20)));
+  const other = lfm({}, 'doctor', '--json');
+  assert.equal(JSON.parse(other.stdout).checks.find((c) => c.label === 'source prs').detail, "github: the project's git origin is not a GitHub repo");
+  assert.ok(!other.stdout.includes('T'.repeat(20)) && !other.stderr.includes('T'.repeat(20)));
   rmSync(join(p, '.learn-from-mistakes.yaml'));
   const init = lfm({}, 'init', '--json'); // not on GitHub: no github source, and nothing skipped
   assert.equal(init.status, 0, init.stderr);

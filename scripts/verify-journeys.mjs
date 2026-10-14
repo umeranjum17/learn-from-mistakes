@@ -15,11 +15,11 @@ import { parse, stringify } from 'yaml';
 const repo = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const raw = process.argv.slice(2);
 const packageProof = raw.includes('--package');
-const [destination, mode, sourceDir, labelsArg, proposalsArg, ...extra] = raw.filter((a) => a !== '--package');
+const [destination, mode, sourceDir, ...extra] = raw.filter((a) => a !== '--package');
 const fromEnv = process.env.DONE_DONE_EVIDENCE_ROOT;
 assert((destination && isAbsolute(destination)) || (fromEnv && isAbsolute(resolve(fromEnv))), 'Provide an absolute private evidence directory');
-assert(!extra.length && (!mode || (mode === '--private' && sourceDir && labelsArg && proposalsArg)),
-  'usage: node scripts/verify-journeys.mjs [/absolute/evidence] [--private /project /labels.jsonl /proposals.jsonl] [--package]');
+assert(!extra.length && (!mode || (mode === '--private' && sourceDir)),
+  'usage: node scripts/verify-journeys.mjs [/absolute/evidence] [--private /project] [--package]');
 const inside = (parent, child) => { const r = relative(parent, child); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 // Resolve existing ancestors too: a symlinked output parent must not redirect into the repo.
 function canonical(path) {
@@ -43,9 +43,6 @@ const sources = Object.entries(config.sources).map(([id, s], i) => {
   inputs.push(path);
   return { id, type: s.type, path, copy: `source-${i}${s.type === 'no-mistakes' ? '.sqlite' : '.md'}` };
 });
-const labels = realpathSync(mode ? labelsArg : join(project, 'labels.jsonl'));
-const proposals = realpathSync(mode ? proposalsArg : join(project, 'proposals.jsonl'));
-inputs.push(labels, proposals);
 for (const input of inputs) {
   assert(statSync(input).isFile(), `Not a regular input: ${input}`);
   assert(!inside(dirname(input), evidence) && !inside(evidence, input), 'Evidence must not overlap any input directory');
@@ -77,7 +74,7 @@ function run(name, command, args, expected = 0, extraEnv = {}) {
 save('inputs.before.json', before);
 save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
-  node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
+  node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
     'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
@@ -97,13 +94,9 @@ try {
     try { db.prepare('UPDATE repos SET working_path = ? WHERE working_path = ?').run(realpathSync(staged), mode ? project : '/example'); } finally { db.close(); }
   }
   writeFileSync(join(staged, '.learn-from-mistakes.yaml'), stringify(config));
-  copyFileSync(labels, join(staged, 'labels.jsonl'));
-  copyFileSync(proposals, join(staged, 'proposals.jsonl'));
   // Reuse, don't duplicate, negative/duplicate/occurrence/unread journey coverage.
   run('npm-test', 'npm', ['test', '--ignore-scripts']);
   const cli = join(repo, 'bin/learn-from-mistakes-axi.mjs');
-  const stagedLabels = join(staged, 'labels.jsonl');
-  const stagedProposals = join(staged, 'proposals.jsonl');
   // The run's own agents are the repo's fake agent as Claude Code (the worker) and Codex (the judge): the drives' PATH holds
   // only them, node for its #! line, and git.
   const agentBin = join(scratch, 'fake-agent');
@@ -114,9 +107,9 @@ try {
   const lab = { PATH: agentBin };
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
   run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
-  drive('ingest', 'ingest');
-  drive('count-unread', 'count');
-  drive('count-labelled', 'count', '--labels', stagedLabels);
+  for (const args of [['ingest'], ['count'], ['report', '--labels', 'x.jsonl'], ['report', '--proposals', 'x.jsonl']])
+    run(`removed-${(args[1] ?? args[0]).replace(/^--/, '')}`, process.execPath, [cli, ...args, '--dir', staged], 2, lab); // the manual flow is gone
+  run('report-no-run', process.execPath, [cli, 'report', '--dir', staged], 3, lab); // no completed run yet
   if (!mode) { // the synthetic config names the cause; a private run never records a change
     drive('changes-empty', 'changes', '--json'); // config only, before any change
     drive('change-applied', 'change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', '--at', '2026-01-02T03:04:05Z',
@@ -128,11 +121,11 @@ try {
     const [chg] = JSON.parse(readFileSync(join(evidence, 'changes-json.stdout'), 'utf8')).changes;
     assert.deepEqual([chg.metric, chg.tripwire, chg.kind], ['cause_count:server-memory-kill', '<= 0', 'rule'], 'the export does not show the ledger fields');
   }
-  drive('report', 'report', '--labels', stagedLabels, '--proposals', stagedProposals);
-  drive('report-detail', 'report', '--full', '--labels', stagedLabels, '--proposals', stagedProposals);
-  drive('report-json', 'report', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
-  drive('report-full', 'report', '--full', '--json', '--labels', stagedLabels, '--proposals', stagedProposals);
   drive('retro', 'retro', '--foreground'); // a saved run in the staged .lfm/lfm.sqlite
+  drive('report', 'report'); // the last run's report
+  drive('report-detail', 'report', '--full');
+  drive('report-json', 'report', '--json');
+  drive('report-full', 'report', '--full', '--json');
   drive('retro-wait', 'retro', '--wait', '1m'); // the same run in a detached worker, waited for
   drive('status', 'status');
   drive('runs', 'runs');
@@ -205,14 +198,13 @@ try {
   run('retro-analyse', process.execPath, [cli, 'retro', '--wait', '1m', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label' });
   const { run: { id: analysed }, result } = JSON.parse(readFileSync(join(evidence, 'retro-analyse.stdout'), 'utf8'));
   assert.deepEqual(result.findings.map((f) => f.cause), ['umer-fixtures-unset'], 'retro --wait does not show the worker\'s finding');
-  drive('report-run', 'report', '--json'); // lfm-report.v2 counts the run's labels, not labels.jsonl
+  drive('report-run', 'report', '--json'); // lfm-report.v2 counts the run's labels
   run('bare', process.execPath, [cli, '--dir', staged], 0, lab); // the bare command: the last run's status and its summary line
   const v2 = JSON.parse(readFileSync(join(evidence, 'report-run.stdout'), 'utf8'));
   assert.deepEqual([v2.schema, v2.run, existsSync(v2.report_txt), Array.isArray(v2.metrics)], ['lfm-report.v2', analysed, true, true], 'report --json is not lfm-report.v2 for the run');
   assert.match(readFileSync(join(evidence, 'bare.stdout'), 'utf8'), new RegExp(`^run:\\n  id: ${analysed}\\n  status: completed\\n[\\s\\S]*^summary: "repeated: `, 'm'), 'the bare command does not show the last run and its summary');
   if (!mode) {
     assert.deepEqual([result.labelled, result.causes.find((c) => c.cause === 'other')?.incidents], [2, 2], 'retro --wait does not show the counted causes');
-    assert.equal(JSON.parse(readFileSync(join(evidence, 'report-run.stdout'), 'utf8')).labels_from, `run ${analysed}`, 'the bare report does not read the run\'s labels');
   }
   const rows = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
@@ -335,7 +327,7 @@ try {
     run('packed-help', installed, ['--help']);
     run('packed-guide', installed, ['guide']);
     run('packed-agents', installed, ['agents', '--json'], 2); // no agent set: the packed bin also says to ask the user
-    run('packed-report', installed, ['report', '--json', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals]);
+    run('packed-report', installed, ['report', '--json', '--dir', staged]);
     assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v2', 'packed bin does not drive the report');
     if (!mode) {
       run('packed-changes', installed, ['changes', '--json', '--dir', staged]);
@@ -355,7 +347,7 @@ try {
   save('inputs.after.json', after);
   save('result.json', { commandsPassed: passed, inputsUnchanged: JSON.stringify(before) === JSON.stringify(after),
     limitation: 'Review output against the journey manifests; trusted no-mistakes prompt consumption is a separate proof.' });
-  if (existsSync(join(staged, '.lfm'))) cpSync(join(staged, '.lfm'), join(evidence, 'state'), { recursive: true }); // retain the ingest artifacts
+  if (existsSync(join(staged, '.lfm'))) cpSync(join(staged, '.lfm'), join(evidence, 'state'), { recursive: true }); // retain the run artifacts
   rmSync(scratch, { recursive: true, force: true, maxRetries: 5 }); // retries ENOTEMPTY/EBUSY from late writers
   assert.deepEqual(after, before, 'Original inputs changed; proof fails');
 }

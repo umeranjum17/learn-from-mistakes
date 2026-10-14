@@ -1,7 +1,7 @@
 // The bundle step: the one file the run's own agents read, <state dir>/runs/<id>/bundle.md. It holds the metrics,
 // the follow-ups, the top signal clusters (this window's session events with a failure signal, by tool and signal)
 // and the records no match rule tagged, this window's and the undated ones. Each item has an id and refs (an event's id
-// is its store row id, for reference only; a record's is the id labels.jsonl takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
+// is its store row id, for reference only; a record's is the id its label takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
 // and a number or a hash, never record text, and the worker must cite it as the store keeps it. Items that would pass caps.bundle_chars are
 // dropped, and a last line counts them.
