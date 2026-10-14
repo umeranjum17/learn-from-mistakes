@@ -55,7 +55,7 @@ step with `logs --step collect`, stop it with `abort`, start it again with `reru
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns three journeys and two reused-run-id checks.
 `retro --foreground saves a run and its steps in .lfm/; status and runs show it`:
-status before a run exits 3 and creates no `.lfm`; 9 completed
+status before a run exits 3 and creates no `.lfm`; 10 completed
 step rows read back from the store; collect saw 13 log and 5 gate items; report
 coverage 0 of 13 labelled; `status --json` equals the retro output; `runs` lists
 it; `git status` has no `.lfm`; a project with an empty log fails at `report`
