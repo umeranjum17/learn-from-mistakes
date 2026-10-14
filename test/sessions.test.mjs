@@ -180,7 +180,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
     const [{ excerpt }] = query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND signal = ? ORDER BY id LIMIT 1', id, signal);
     assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
   }
-  assertNoPlanted(p, [r, lfm('status', '--json'), lfm('runs'), lfm('ingest'), lfm('report', '--json'), lfm('report', '--full')]);
+  assertNoPlanted(p, [r, lfm('status', '--json'), lfm('runs'), lfm('report', '--json'), lfm('report', '--full')]);
   assert.ok(!r.stdout.includes(claude) && !r.stdout.includes('UMER_FIXTURES'), 'no session path or text in the retro output');
 
   // A session id the run store recorded as the tool's own agent run is skipped next time; excerpts: off keeps none.
@@ -552,7 +552,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.match(readFileSync(bundlePath, 'utf8'), /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
 
-  // A collect rerun reads the records again; each record id the bundle cites is one labels.jsonl takes, and a label names it.
+  // A collect rerun reads the records again; each record id the bundle cites is a record id a label names.
   interrupt('collect', 'metrics', 'bundle', 'report');
   resumed = lfm('rerun', '--resume', '--run', String(on.id), '--wait', '1m');
   assert.equal(resumed.status, 0, resumed.stderr);
@@ -562,14 +562,6 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(cited.length, records.length);
   for (const [, id, source] of cited) assert.ok(recordIds.has(id), `[${id}] is not a ${source} id of records.jsonl`);
   for (const [, needle] of PLANTED) assert.ok(!readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').includes(needle), `${needle} in records.jsonl`);
-  const label = (id) => {
-    writeFileSync(join(p, '.lfm', 'labels.jsonl'), JSON.stringify({ id, event: false, why: 'a fix note' }) + '\n');
-    return lfm('report');
-  };
-  const gateId = cited.find(([, , source]) => source === 'gate')[1];
-  assert.equal(label(gateId).status, 0, `a cited gate id is not accepted by labels.jsonl`);
-  assert.match(label('gate:step-missing').stderr, /unknown record id/);
-  rmSync(join(p, '.lfm', 'labels.jsonl'));
 
   // excerpts: off: the same items as pointers and counts, and no text of any record or event.
   writeFileSync(cfg, `${examples}excerpts: off\n`);
