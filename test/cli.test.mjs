@@ -983,7 +983,6 @@ excerpts: off
 caps: { invocations: 12, bundle_chars: 60000 }
 signoff: auto
 allow_premium: false
-auto_fix: 0
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
@@ -1637,6 +1636,15 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   const auto = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   assert.deepEqual(auto.applied, [{ fix: 1, branch: `lfm/${auto.run.id}-1`, commit: git('rev-parse', `lfm/${auto.run.id}-1`), change: 'chg-2' }]);
   assert.deepEqual([git('rev-parse', `lfm/${auto.run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
+});
+
+test('auto_fix is a user setting: a project file that sets it exits 2 and a retro does not start', () => {
+  const { p, lfm } = setup();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}auto_fix: 3\n`);
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^error: .*auto_fix is a user setting; set it in the global config$/m);
+  assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a refused config must not create the store');
 });
 
 test('apply: with no saved store, apply names the empty store and exits 3', () => {
