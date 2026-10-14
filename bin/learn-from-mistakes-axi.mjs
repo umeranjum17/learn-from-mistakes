@@ -123,7 +123,6 @@ const storedMetric = (m) => oneLine(m, { allowTab: true }) !== undefined;
 // line is the one way to reuse one). Concurrent writers could read the same ledger and
 // repeat an id; a lock file is the upgrade.
 // --proposal <run>:<n> takes the cause, metric and tripwire of that run's kept fix n; --metric and --tripwire override them.
-// Returns the entry it appended (`apply` records each fix it applies through here).
 export const recordableCauses = (cfg) => Object.keys(cfg.causes).filter((c) => c !== 'other');
 export async function recordChange(cfg, opts) {
   const form = FORMS['change-applied'];
@@ -357,8 +356,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   (no command)        print the last run's status and its summary line
   signoff post       explicitly post a completed run's kept fixes (optional sign-off-axi)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
-  apply               the worker makes each kept fix answered Apply (or --fix <n>) on a new branch lfm/<run>-<n> from HEAD, a commit
-                      there, and records it in the ledger; it never touches your branch or work tree, never pushes, and refuses a dirty tree
+  apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch lfm/<run>-<n> from HEAD, and records it; never your branch or work tree
   init                write $LFM_HOME/config.yaml (the agent keys, commented) and .learn-from-mistakes.yaml (the sources found, the agents the user chose)
                       where each is missing, then print the resolved worker and judge and the gaps. Either way, make the state dir .lfm/ and its .gitignore
   doctor              check node, git, the config, .lfm ignored, each source, the worker and judge (usable, login, model,
@@ -485,9 +483,8 @@ labels (labels_from: run <id>); labels.jsonl only when no run has labels, or --l
      --what "<what changed>" --why "<why>"   # optional, one line each; never record text or label prose
    learn-from-mistakes-axi changes lists them (lfm-changes.v1); the report shows only counts and dates.
    Each retro gives each change a verdict: keep, fix, rollback, delete or no-data (learn-from-mistakes-axi status).
-   A retro's kept fix the user accepts (Apply on the board, or named): learn-from-mistakes-axi apply [--fix <n>] makes it
-   on a new branch lfm/<run>-<n> and records it; the user reviews that branch and opens the PR. auto_fix: <n> in the
-   config applies the top n in the run itself; it is the user's to set, never yours.
+   A kept fix the user accepts (Apply on the board, or named): learn-from-mistakes-axi apply [--fix <n>] makes it on a new
+   branch lfm/<run>-<n> and records it; the user reviews it and opens the PR. auto_fix: <n> (the user's to set) applies the top n in the run.
 
 next: learn-from-mistakes-axi ingest   # after step 1`;
 

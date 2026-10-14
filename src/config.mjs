@@ -109,10 +109,7 @@ export function loadGlobal() {
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
     agent: '', judge_agent: '', agent_config: {}, agent_timeout: '20m', allow_premium: false, auto_fix: 0, from: {} };
-  if (g.auto_fix !== undefined) { // as no-mistakes' auto_fix: how many kept fixes a run applies with no answer; 0 proposes only
-    check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)');
-    cfg.auto_fix = g.auto_fix;
-  }
+  if (g.auto_fix !== undefined) { check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)'); cfg.auto_fix = g.auto_fix; }
   return agentKeys(cfg, g, file);
 }
 

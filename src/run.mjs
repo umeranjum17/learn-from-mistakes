@@ -76,7 +76,6 @@ const STEPS = {
     log(`report.txt: ${text.lines} lines, ${text.questions} questions`);
     return model;
   },
-  // With auto_fix: n, the worker applies the top n kept fixes, each on its own branch; with 0 (the default), none.
   apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
 };
 // The labels the worker kept in a run that asked it (as labels.jsonl takes them) and its findings; no labels when it was not asked.
