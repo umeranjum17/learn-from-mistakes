@@ -8,6 +8,7 @@
 // FAKE_PROPOSE=long gives two fixes, the second with a change of four sentences, on every answer.
 // The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
+// An apply call (its marker line) adds one line to the first file it lists. FAKE_TARGET, when set, is every fix's target.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
 // FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -27,12 +28,16 @@ else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
   reply(JSON.stringify({ verdicts: claims.filter((item) => !has('FAKE_UNJUDGED', item)).map((item) => (has('FAKE_REFUTE', item) ? { item, verdict: 'refuted', reason: 'The cited items show a different failure for Umer.' }
     : has('FAKE_WEAKEN', item) ? { item, verdict: 'weakened', reason: 'The cited items show this only once for Umer.' } : { item, verdict: 'confirmed', reason: 'The cited items show this for Umer.' })) }));
 }
+else if (/^lfm-run:\d+:apply-\d+\n/.test(stdin)) {
+  const [, path, text] = stdin.match(/^--- (.+)\n([\s\S]*?)\n--- end of \1$/m);
+  reply(JSON.stringify({ files: [{ path, content: `${text}- Give each worker its own cache directory, Umer.\n` }] }));
+}
 else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
   const refs = records.length ? records : [bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1]];
   const followups = stdin.slice(stdin.indexOf('Follow-ups to explain:'), stdin.indexOf('Reply with one JSON object'));
-  const fix = (target, more) => ({ cause: process.env.FAKE_CAUSE || 'other', target, kind: process.env.FAKE_KIND || 'code', owner: 'maintainer', change: 'Give each worker its own cache directory.', metric: null, tripwire: '<= 0', refs, ...more });
+  const fix = (target, more) => ({ cause: process.env.FAKE_CAUSE || 'other', target: process.env.FAKE_TARGET || target, kind: process.env.FAKE_KIND || 'code', owner: 'maintainer', change: 'Give each worker its own cache directory.', metric: null, tripwire: '<= 0', refs, ...more });
   const proposals = process.env.FAKE_PROPOSE === 'long' ? [fix('launch script 1'), fix('launch script 2', { change: 'Give each worker its own cache directory. Keep the lock out of it. Run the launch script alone. Check the result.' })]
     : process.env.FAKE_PROPOSE !== 'eight' ? [] : [...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
     fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })];

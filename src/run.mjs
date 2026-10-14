@@ -9,6 +9,7 @@ import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, w
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { autoApply } from './apply.mjs';
 import { bundle } from './bundle.mjs';
 import { analyse } from './steps/analyse.mjs';
 import { propose } from './steps/propose.mjs';
@@ -73,6 +74,8 @@ const STEPS = {
     log(summaryLine(model));
     return model;
   },
+  // With auto_fix: n, the worker applies the top n kept fixes, each on its own branch; with 0 (the default), none.
+  apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
 };
 // The labels the worker kept in a run that asked it (as labels.jsonl takes them) and its findings; no labels when it was not asked.
 function runResult(db, id) {
@@ -376,6 +379,7 @@ function show(db, id) {
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
+    ...(out('apply') && { applied: JSON.parse(out('apply')).applied }),
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
     ...(report && { result: { labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
