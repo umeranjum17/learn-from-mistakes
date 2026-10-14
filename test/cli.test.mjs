@@ -497,7 +497,7 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
   const outs = [run.lfm(agents, 'retro', '--foreground'), run.lfm(agents, 'retro', '--foreground', '--json')];
   const id = JSON.parse(outs[1].stdout).run.id;
-  outs.push(run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
+  outs.push(run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), run.lfm({}, 'report'), run.lfm({}, 'report', '--full'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
   for (const r of outs) {
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout + r.stderr, new RegExp(CANARY));
@@ -1248,7 +1248,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
   // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
-  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed' }, summary = 'The tests fail when UMER_FIXTURES is unset. No doc names it.';
+  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed' };
   assert.deepEqual(result, { labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
   assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict\}:\n {4}umer-fixtures-unset,1,1,confirmed$/m);
   assert.match(reportOf(p, run.id), /^5\. Fixes\n- No fix passed the rules\.$/m);
@@ -1262,7 +1262,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
   const toon = lfm({}, 'report');
   assert.equal(toon.status, 0, toon.stderr);
-  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${summary}`), toon.stdout);
+  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed)`), toon.stdout);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');

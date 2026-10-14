@@ -29,6 +29,6 @@ configured prints `next: no causes configured: ...`.
 
 ## Gotchas
 The report's `--json` output is one privacy-bounded projection: identifiers, counts and each finding's judge verdict word.
-The default (TOON) and `--full` reports add one `finding:` line per finding with the worker's redacted one-line summary (the separate `changes` export carries owner-written `what`/`why`, see [change.md](change.md)). `--full` is not permission to print private evidence.
+The default (TOON) and `--full` reports add one `finding:` line per finding with its counts and verdict (the summary is in `report.txt`; the separate `changes` export carries owner-written `what`/`why`, see [change.md](change.md)). `--full` is not permission to print private evidence.
 Next hints go to stderr, never inside the JSON/TOON payload, and never carry
 record text. A problem is counted, not echoed: exit 1 with `problems: N`.

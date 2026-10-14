@@ -17,7 +17,6 @@ import { check } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { startTime } from './proc.mjs';
-import { redact } from './redact.mjs';
 import { reportText } from './report-text.mjs';
 import { locked, openStore } from './store.mjs';
 
@@ -83,7 +82,7 @@ function runResult(db, id) {
   const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
     .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
-  return { run: id, runLabels, findings: db.prepare(`SELECT cause, summary, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f, summary: redact(f.summary).replace(/\s+/g, ' ').trim() })) };
+  return { run: id, runLabels, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })) };
 }
 // The latest completed run that kept labels or findings: the bare report counts them. Undefined with none, so labels.jsonl counts.
 export async function lastRun(cfg) {
