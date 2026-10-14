@@ -7,8 +7,8 @@ import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fresh, inputText, json, list, TEST, textOf } from './claude.mjs';
 
-export const STORE_VAR = 'PI_CODING_AGENT_DIR';
-export const root = () => process.env.PI_CODING_AGENT_SESSION_DIR || join(process.env[STORE_VAR] || join(homedir(), '.pi', 'agent'), 'sessions');
+export const STORE_VAR = 'PI_CODING_AGENT_SESSION_DIR';
+export const root = () => process.env[STORE_VAR] || join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions');
 
 // One file's events, streamed line by line. Returns null when `keep` refuses the header cwd, the file has no header,
 // or the first user message carries the lfm-run: marker.
@@ -51,7 +51,7 @@ async function parse(file, { keep, excerpt }) {
         const declined = error && /(?:Command|Operation) aborted\s*$/.test(text);
         const signal = !error || declined ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
         events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? m.toolName ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, excerpt: signal ? excerpt(text) : '' });
-        if (call) failed[error && !declined ? 'add' : 'delete'](call.key); // a later repeat after a success is no retry
+        if (call) { if (error && !declined) failed.add(call.key); else failed.delete(call.key); } // a later repeat after a success is no retry
         afterError ||= error;
       } else if (m.role === 'user') {
         const text = textOf(m.content);
