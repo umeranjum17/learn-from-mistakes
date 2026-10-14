@@ -19,7 +19,7 @@ export const bundleIds = (text) => new Set([...text.matchAll(/^(?:### |- )\[([^\
 // The STE100 length rule on one free-text field; '' when it holds.
 export function plain(text, where, { words, sentences }) {
   if (typeof text !== 'string' || !text.trim()) return `${where} must be a non-empty string`;
-  const parts = text.split(/(?<=[.!?])\s+(?=[^a-z])/).filter((s) => s.trim()); // "e.g. the" does not end a sentence
+  const parts = text.split(/(?<=[.!?])(?<!\b(?:e\.g|i\.e)\.)\s+/).filter((s) => s.trim()); // "e.g. the" does not end a sentence
   const long = parts.findIndex((s) => s.trim().split(/\s+/).length > 20);
   if (long >= 0) return `${where}: sentence ${long + 1} has more than 20 words`;
   if (words && text.trim().split(/\s+/).length > words) return `${where} has more than ${words} words`;
