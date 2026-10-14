@@ -14,7 +14,6 @@ const iso = () => new Date().toISOString();
 
 // Returns the checked JSON object. `check(value, attempt)` returns the problems with the answer, each naming a field and the
 // rule it broke, never the agent's own text.
-// With bundle: false the prompt goes alone, without the run's bundle.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log, bundle = true }) {
   const key = KEY[role];
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
