@@ -27,7 +27,7 @@ export function validate(s, where, dir) {
   if (!Array.isArray(agents) || !agents.length || !agents.every((a) => a === 'auto' || Object.hasOwn(READERS, a))) {
     throw new UsageError(`${where}.agents must be a list of auto or ${Object.keys(READERS).join(', ')}`);
   }
-  return { type: s.type, agents: [...new Set([...(agents.includes('auto') ? Object.keys(AUTO) : []), ...agents.filter((a) => a !== 'auto')])], auto: agents.includes('auto'), dir };
+  return { type: s.type, agents: [...new Set([...(agents.includes('auto') ? Object.keys(AUTO) : []), ...agents.filter((a) => a !== 'auto')])], dir };
 }
 
 const real = (p) => { try { return realpathSync(p); } catch { return p; } };
@@ -102,9 +102,9 @@ export async function doctor(source, entry, ctx) {
     const got = await read(source, entry, { ...ctx, excerpts: false });
     const counts = `${got.sessions} sessions, ${got.skipped} skipped records since ${new Date(ctx.readFrom).toISOString().slice(0, 10)}`;
     if (!missing.length) return { level: 'ok', detail: counts };
-    // With agents: auto an absent store is normal (that agent is not used here); a listed agent's absent store is a warn.
+    // An absent store of an agent that auto picked is normal (not used here); a named agent's absent store is a warn.
     const gone = missing.map((a) => `${a} store not found at ${READERS[a].root()} (${READERS[a].STORE_VAR})`).join('; ');
-    if (entry.auto) return { level: 'ok', detail: `${counts}; ${gone}` };
+    if (missing.every((a) => Object.hasOwn(AUTO, a))) return { level: 'ok', detail: `${counts}; ${gone}` };
     return { level: 'warn', detail: `${counts}; ${gone}`, fix: storeFix };
   } catch (e) { return { level: 'fail', detail: e.message, fix: e.next }; }
 }
