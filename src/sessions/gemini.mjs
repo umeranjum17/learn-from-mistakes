@@ -64,7 +64,7 @@ async function parse(file, { session, excerpt }) {
       }
     } else if (m.type === 'user' && !session) { // a subagent's user messages come from its parent agent
       const text = textOf(m.content);
-      if (!(text.trim() || (Array.isArray(m.content) && m.content.some((p) => p?.inlineData))) || WRAPPER.test(text)) { afterError = false; continue; }
+      if (!(text.trim() || (Array.isArray(m.content) && m.content.some((p) => p?.inlineData))) || WRAPPER.test(text)) continue;
       if (first && text.trimStart().startsWith('lfm-run:')) return null; // this tool's own agent session
       first = false;
       // A person's message right after a tool error, with no assistant reply between, corrects the agent.

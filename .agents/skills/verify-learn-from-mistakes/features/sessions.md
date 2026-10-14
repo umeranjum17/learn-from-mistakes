@@ -36,7 +36,7 @@ Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions
 exited with code N` the exit, `Command aborted` none), assistant `stopReason: aborted` the interrupt. Gemini CLI:
 `${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` and `chats/<session id>/*.jsonl` subagents, the
 slug from `.gemini/projects.json`; the last record per message id counts, `$set.messages` replaces and `$rewindTo`
-drops from one id; `status: error` or a shell `Exit Code: N` is the failure, `cancelled` the interrupt.
+drops from one id; `status: error` or a shell output ending `Exit Code: N` is the failure, `cancelled` the interrupt.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
 first user message starting `lfm-run:`, or a session id in the store's
 `invocations` table. The run's own agent calls ([analyse.md](analyse.md)) write

@@ -413,9 +413,9 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   const tc = (name, args, status, out) => ({ name, args, status, result: out === undefined ? null : [{ functionResponse: { response: status === 'error' ? { error: out } : { output: out } } }] });
   const g = (id, ...toolCalls) => ({ id, type: 'gemini', timestamp: now, content: '', toolCalls });
   put(join(chats, 'session-2026-10-13T10-00-gm000001.jsonl'), [{ sessionId: 'gm000001-main', startTime: now, kind: 'main' },
-    { id: 'u0', type: 'user', content: 'Umer: a draft.' }, { $set: { messages: [] } }, { id: 'u1', type: 'user', content: [{ text: 'Umer: run the checks.' }] },
+    { id: 'u0', type: 'user', content: 'Umer: a draft.' }, { $set: { messages: [] } }, { id: 'u1', type: 'user', content: [{ text: '/src/x.mjs is the file, run the checks.' }] },
     g('g1'), g('g1', tc('run_shell_command', { command: 'npx vitest run' }, 'success', `Exit Code: 0\nvitest crashed ${secrets(0, -10)} END\nExit Code: 1`)),
-    { id: 'u2', type: 'user', content: `Umer: try again, ${secrets(-10)} END` }, g('g2', tc('run_shell_command', { command: 'npx vitest run' }, 'success', 'ok')),
+    { id: 'h1', type: 'user', content: '<hook_context>open: a.js</hook_context>' }, { id: 'u2', type: 'user', content: `Umer: try again, ${secrets(-10)} END` }, g('g2', tc('run_shell_command', { command: 'npx vitest run' }, 'success', 'Exit Code: 3\nok')),
     g('g3', tc('read_file', { file_path: 'b.js' }, 'error', 'File not found')), { $rewindTo: 'g3' }, { id: 'u3', type: 'user', content: '/stats' },
     g('g4', tc('replace', { file_path: 'c.js' }, 'cancelled')), { $set: { summary: 'Umer' } }, 'not json']);
   put(join(chats, 'gm000001-main', 'sub1.jsonl'), [{ sessionId: 'sub1', kind: 'subagent' }, { id: 's1', type: 'user', content: 'Find the loader.' },
