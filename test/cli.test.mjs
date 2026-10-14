@@ -1043,11 +1043,14 @@ allow_premium: false
   chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
   const readonly = lfm('status');
+  const readonlyBare = lfm(); // the bare command must name itself, not its internal alias
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o644);
   chmodSync(join(p, '.lfm'), 0o755);
   assert.equal(readonly.status, 2, readonly.stderr);
   assert.doesNotMatch(readonly.stderr, /^next: mv /m);
   assert.match(readonly.stderr, /^next: learn-from-mistakes-axi status   # after the disk or the file permissions are fixed/m);
+  assert.equal(readonlyBare.status, 2, readonlyBare.stderr);
+  assert.match(readonlyBare.stderr, /^next: learn-from-mistakes-axi   # after the disk or the file permissions are fixed/m);
 
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
   const corrupt = lfm('status');

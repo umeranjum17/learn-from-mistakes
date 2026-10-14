@@ -636,7 +636,7 @@ function storeError(e, cfg, opts, cmd) {
   if (e.code !== 'ERR_SQLITE_ERROR' || (e.errcode & 0xff) === 5) return e; // main() maps a busy store
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
-  if ([8, 10, 13, 14].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi ${cmd}`, 'after the disk or the file permissions are fixed', opts));
+  if ([8, 10, 13, 14].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi${cmd && cmd !== 'last' ? ` ${cmd}` : ''}`, 'after the disk or the file permissions are fixed', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
 async function runCommand(cmd, cfg, opts) {
