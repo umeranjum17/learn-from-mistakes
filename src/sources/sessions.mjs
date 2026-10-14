@@ -14,9 +14,11 @@ import { excerpt as cut } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
 import * as claude from '../sessions/claude.mjs';
 import * as codex from '../sessions/codex.mjs';
+import * as gemini from '../sessions/gemini.mjs';
 import * as opencode from '../sessions/opencode.mjs';
+import * as pi from '../sessions/pi.mjs';
 
-const READERS = { claude, codex, opencode };
+const READERS = { claude, codex, opencode, pi, gemini };
 export const SIGNALS = ['tool_error', 'nonzero_exit', 'test_fail', 'correction', 'interrupt', 'retry'];
 
 export function validate(s, where, dir) {

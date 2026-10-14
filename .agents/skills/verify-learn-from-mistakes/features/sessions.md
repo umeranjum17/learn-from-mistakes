@@ -1,8 +1,8 @@
-# Agent sessions (`sessions` source: Claude Code, Codex, OpenCode)
+# Agent sessions (`sessions` source: Claude Code, Codex, OpenCode, Pi, Gemini CLI)
 
 ## Sub-features
 A `sessions: { type: sessions, agents: [auto] }` source (`agents`: `auto` or any of
-`claude`, `codex`, `opencode`) makes `ingest` and `retro` read this repo's sessions from each
+`claude`, `codex`, `opencode`, `pi`, `gemini`) makes `ingest` and `retro` read this repo's sessions from each
 agent's store. Claude Code: `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<id>.jsonl` and each session's
 `<id>/subagents/**/agent-*.jsonl`, streamed line by line. Store roots come only
 from env overrides. Files older than the read range (this window and the last,
@@ -31,6 +31,14 @@ whose `error.name` is `MessageAbortedError` (the interrupt, placed after the too
 off). A user message is one event over its non-synthetic text and file parts, so the
 `lfm-run:` marker is found after an attached prompt file (a leading quote is ignored).
 Refs are `file:line` for Codex and `db:<db file>:<table>:<rowid>` for OpenCode.
+Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl`
+whose header `cwd` is this repo; a `toolResult` with `isError` is the tool error (its
+`Command exited with code N` line the exit), an assistant `stopReason: aborted` the interrupt.
+Gemini CLI: `${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` whose slug
+`.gemini/projects.json` maps to this repo, plus `chats/<session id>/*.jsonl` subagent files.
+A message rewritten under one id counts once, `$set.messages` replaces the messages and
+`$rewindTo` drops one id onwards; a tool call's `status: error` or a shell result's
+`Exit Code: N` is the failure, `cancelled` the interrupt.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
 first user message starting `lfm-run:`, or a session id in the store's
 `invocations` table. The run's own agent calls ([analyse.md](analyse.md)) write
@@ -79,7 +87,11 @@ no text in `skipped`, exactly 2 corrections (not the goal wrapper, not the messa
 interrupt), 2 interrupts, 2 retries, 4 test failures (two of them `bash -lc` wrapped), 4
 nonzero exits (one a code-mode script) and 5 tool errors (failed patches by their `patch_apply_end`; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a non-shell tool whose output reads `Exit code: 1` after `Output:`, is not one), planted keys redacted, the
 `invocations` ids of both agents skipped on a second run, and every OpenCode database
-byte-identical after both runs. The helper drives
+byte-identical after both runs. A third journey reads a synthetic Pi and
+Gemini CLI store: 2 sessions, 22 events, one each of correction, interrupt, retry,
+test failure and tool error per agent, the marker runs, `.lfm/`, the other project or
+slug and old files skipped, one bad line each in `skipped`, planted keys redacted, and
+both ids skipped on a second run. The helper drives
 `retro-sessions` (one synthetic Claude Code, Codex and OpenCode session each in its
 scratch HOME and XDG dir, `sessions: 3`, its `test-fails` match rule tagging all three, the OpenCode file unchanged).
 
@@ -96,7 +108,7 @@ lfm retro --foreground   # sessions: 0, metrics n/a
 On `$SELF`, counts only: an untracked `.learn-from-mistakes.yaml` with only the
 sessions source and `excerpts: off`, then `time lfm retro --foreground` and
 `sqlite3 -readonly .lfm/lfm.sqlite "select agent,count(*) from events group by agent"`
-(claude, codex and opencode rows when those agents ran here). Hash the OpenCode
+(claude, codex, opencode, pi and gemini rows when those agents ran here). Hash the OpenCode
 `*.db` files before and after.
 Remove the config and `.lfm/` after. Never copy session text into evidence.
 
@@ -107,4 +119,4 @@ other projects' files are not parsed whole. `returnCodeInterpretation` marks a
 benign nonzero exit (such as grep with no match), so it is not a failure.
 A tool use the user turned down is not a tool error; the interrupt or the
 correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error. Claude Code's own wrapper messages (commands, hooks, reminders) are not person messages; an image-only message is. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
-it; the database file itself never changes. Pi and Gemini readers come later.
+it; the database file itself never changes.

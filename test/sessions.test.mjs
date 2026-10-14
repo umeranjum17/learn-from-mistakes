@@ -381,6 +381,71 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
   assert.deepEqual(stores.map(sha), before, 'a session store changed');
 });
 
+test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted secrets out', () => {
+  const { tmp, p, env, lfm } = setup();
+  const secrets = (from, to) => PLANTED.slice(from, to).map(([t]) => t).join(' '), now = new Date().toISOString();
+  const old = new Date(Date.now() - 60 * 86_400_000), elsewhere = join(tmp, 'elsewhere');
+  const put = (file, lines, at) => {
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, lines.map((r) => (typeof r === 'string' ? r : JSON.stringify(r))).join('\n'));
+    if (at) utimesSync(file, at, at);
+  };
+  const pi = join(env.HOME, '.pi', 'agent', 'sessions', '--repo--'), head = (id, cwd) => ({ type: 'session', version: 3, id, timestamp: now, cwd });
+  const msg = (message) => ({ type: 'message', id: 'e1', parentId: null, timestamp: now, message });
+  const call = (id, name, args, extra) => msg({ role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: args }], ...extra });
+  const result = (id, text, isError) => msg({ role: 'toolResult', toolCallId: id, toolName: 'bash', content: [{ type: 'text', text }], isError });
+  put(join(pi, '2026-10-13T10-00_pi-main.jsonl'), [head('pi-main', p), msg({ role: 'user', content: 'Umer: the fetch tests fail, fix it.' }),
+    call('c1', 'bash', { command: 'npm test' }), result('c1', `FAIL fetch ${secrets(0, -10)} END\n\nCommand exited with code 1`, true),
+    msg({ role: 'user', content: [{ type: 'text', text: `Umer: use the other script, ${secrets(-10)} END` }] }),
+    call('c2', 'bash', { command: 'npm test' }), result('c2', 'ok', false), call('c3', 'read', { path: 'a.js' }), result('c3', 'ENOENT', true),
+    msg({ role: 'assistant', content: [], stopReason: 'aborted' }), msg({ role: 'user', content: 'Umer: wait.' }), 'not json']);
+  const failing = [msg({ role: 'user', content: 'lfm-run:9:analyse Follow the bundle.' }), call('c1', 'read', {}), result('c1', 'no', true)];
+  put(join(pi, 'b_pi-marker.jsonl'), [head('pi-marker', p), ...failing]);
+  put(join(pi, 'c_pi-lfm.jsonl'), [head('pi-lfm', join(p, '.lfm', 'runs', '1')), ...failing.slice(1)]);
+  put(join(pi, 'd_pi-other.jsonl'), [head('pi-other', elsewhere), ...failing.slice(1)]);
+  put(join(pi, 'e_pi-old.jsonl'), [head('pi-old', p), ...failing.slice(1)], old);
+
+  const gem = join(env.HOME, '.gemini'), chats = join(gem, 'tmp', 'umer-p', 'chats');
+  put(join(gem, 'projects.json'), [{ projects: { [p]: 'umer-p', [elsewhere]: 'umer-x' } }]);
+  const tc = (name, args, status, out) => ({ name, args, status, result: out === undefined ? null : [{ functionResponse: { response: status === 'error' ? { error: out } : { output: out } } }] });
+  const g = (id, ...toolCalls) => ({ id, type: 'gemini', timestamp: now, content: '', toolCalls });
+  put(join(chats, 'session-2026-10-13T10-00-gm000001.jsonl'), [{ sessionId: 'gm000001-main', startTime: now, kind: 'main' },
+    { id: 'u0', type: 'user', content: 'Umer: a draft.' }, { $set: { messages: [] } }, { id: 'u1', type: 'user', content: [{ text: 'Umer: run the checks.' }] },
+    g('g1'), g('g1', tc('run_shell_command', { command: 'npx vitest run' }, 'success', `vitest crashed ${secrets(0, -10)} END\nExit Code: 1`)),
+    { id: 'u2', type: 'user', content: `Umer: try again, ${secrets(-10)} END` }, g('g2', tc('run_shell_command', { command: 'npx vitest run' }, 'success', 'ok')),
+    g('g3', tc('read_file', { file_path: 'b.js' }, 'error', 'File not found')), { $rewindTo: 'g3' }, { id: 'u3', type: 'user', content: '/stats' },
+    g('g4', tc('replace', { file_path: 'c.js' }, 'cancelled')), { $set: { summary: 'Umer' } }, 'not json']);
+  put(join(chats, 'gm000001-main', 'sub1.jsonl'), [{ sessionId: 'sub1', kind: 'subagent' }, { id: 's1', type: 'user', content: 'Find the loader.' },
+    g('s2', tc('read_file', { file_path: 'x.js' }, 'error', 'not found'))]);
+  const gfail = [{ id: 'n1', type: 'user', content: 'lfm-run:9:analyse Follow the bundle.' }, g('n2', tc('read_file', {}, 'error', 'no'))];
+  put(join(chats, 'session-2026-10-13T10-01-gm000002.jsonl'), [{ sessionId: 'gm000002-mark' }, ...gfail]);
+  put(join(chats, 'session-2026-10-13T10-02-gm000003.jsonl'), [{ sessionId: 'gm000003-old' }, ...gfail.slice(1)], old);
+  put(join(gem, 'tmp', 'umer-x', 'chats', 'session-2026-10-13T10-00-gm000004.jsonl'), [{ sessionId: 'gm000004-other' }, ...gfail.slice(1)]);
+
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [pi, gemini] }\n');
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const run = decode(r.stdout), id = run.run.id;
+  // this repo's sessions with a Gemini subagent; not the marker runs, .lfm/, the other project or slug, or old files.
+  // A replaced, rewritten, rewound or command message is not an event. Bad records: a non-JSON line in each kept file.
+  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 22, sessions: 2, skipped: 2 });
+  assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
+    [{ agent: 'gemini', session_id: 'gm000001-main', n: 11 }, { agent: 'pi', session_id: 'pi-main', n: 11 }]);
+  const signals = query(p, 'SELECT agent, signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2', id);
+  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['correction', 'interrupt', 'retry', 'test_fail', 'tool_error'].flatMap((s) => [`gemini ${s} 1`, `pi ${s} 1`]).sort());
+  assert.deepEqual(query(p, `SELECT tool, exit_code FROM events WHERE run_id = ? AND signal = 'test_fail' ORDER BY agent`, id),
+    [{ tool: 'run_shell_command', exit_code: 1 }, { tool: 'bash', exit_code: 1 }]); // a shell exit of 1 is a failure even with status success
+  for (const [{ excerpt }] of ['test_fail', 'correction'].flatMap((s) => ['pi', 'gemini'].map((a) => query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND agent = ? AND signal = ?', id, a, s)))) {
+    assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
+  }
+  assertNoPlanted(p, [r, lfm('report', '--full')]);
+  // A session id the run store recorded as the tool's own agent run is skipped next time, for each agent.
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  for (const sid of ['pi-main', 'gm000001-main']) db.prepare(`INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at, session_id) VALUES (1, 'analyse', 'worker', 'claude', '', 'lfm-run:1:analyse', '2026-10-01T00:00:00Z', ?)`).run(sid);
+  db.close();
+  assert.equal(JSON.parse(lfm('retro', '--foreground', '--json').stdout).sources.find((s) => s.type === 'sessions').sessions, 0);
+});
+
 test('a Codex state store that is not a database fails the retro with an error naming codex', () => {
   const { p, env, lfm } = setup();
   mkdirSync(env.CODEX_HOME, { recursive: true });

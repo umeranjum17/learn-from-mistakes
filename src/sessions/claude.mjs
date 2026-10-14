@@ -15,8 +15,8 @@ const WRAPPER = /^\s*<(?:command-name|command-message|command-args|local-command
 export const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
 export const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
 export const inputText = (input) => Object.values(input ?? {}).filter((v) => typeof v === 'string').join(' ');
-const list = (dir, opts, miss) => { try { return readdirSync(dir, opts); } catch (e) { miss(e); return []; } };
-const fresh = (file, from, miss) => { try { return statSync(file).mtimeMs >= from; } catch (e) { miss(e); return false; } };
+export const list = (dir, opts, miss) => { try { return readdirSync(dir, opts); } catch (e) { miss(e); return []; } };
+export const fresh = (file, from, miss) => { try { return statSync(file).mtimeMs >= from; } catch (e) { miss(e); return false; } };
 
 // One file's events, streamed line by line (a session file can be larger than one string can hold).
 // Returns null when `keep` refuses the first cwd, or the first user message carries the lfm-run: marker.
