@@ -32,7 +32,7 @@ Never edit the sources or instruction files; your output is a report and recomme
 The user chooses the models; never choose one yourself, and never switch to Opus, Sonnet or Sol.
 The tool's own agents are `agent:` and `judge_agent:` in ~/.learn-from-mistakes/config.yaml, each with its model in `agent_config.<agent>.model`; a project's .learn-from-mistakes.yaml may override them. The user sets them: the tool never picks one, and neither do you.
 When a command prints "ask the user which agent to use", ask the user which agent and model to use for each role named, never choose one yourself, then run the `npx -y learn-from-mistakes-axi init ...` command it printed with the user's answer, then run the stopped command again.
-The CLI makes no network or model calls itself; only its runs, `npx -y learn-from-mistakes-axi agents --test` and `npx -y learn-from-mistakes-axi doctor --live` start your own agent CLI or a BYOKit route.
+The CLI makes no network or model calls itself; only its runs, `npx -y learn-from-mistakes-axi apply`, `npx -y learn-from-mistakes-axi agents --test` and `npx -y learn-from-mistakes-axi doctor --live` start your own agent CLI or a BYOKit route.
 
 ## Optional finding handoff
 
