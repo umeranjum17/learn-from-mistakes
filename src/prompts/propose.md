@@ -9,6 +9,7 @@ Do the work in this order.
    - One fix has one cause, one target, one owner and one change.
    - Name its kind: doc (documentation), rule (an instruction) or code (a program change).
    - The target is the file, tool or process to change. The owner is the role that makes the change.
+   - When the change edits a file, put its path from the repository root in the target.
    - Give the metric that shows whether the fix worked: {{metrics}}.
    - Give the tripwire: the value that metric must reach, "<op> <number>" such as "<= 0".
    - Cite the bundle items that show the cause in refs, by their ids without brackets.
