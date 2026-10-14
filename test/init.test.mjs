@@ -479,7 +479,7 @@ test('doctor names an absent store of an auto agent as information, and warns on
   const sessions = () => JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source sessions');
   const auto = sessions();
   assert.equal(auto.level, 'ok');
-  assert.match(auto.detail, new RegExp(`; codex store not found at ${join(env.HOME, '.codex', 'state_5.sqlite').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(CODEX_HOME\\);`));
+  assert.match(auto.detail, new RegExp(`; codex store not found at ${join(env.HOME, '.codex', 'state_5.sqlite').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(CODEX_HOME\\)$`));
   assert.equal(auto.fix, undefined);
   const yaml = readFileSync(config, 'utf8');
   writeFileSync(config, yaml.replace(/(sessions:[\s\S]*?agents:)\s*(\[[^\]]*\]|(\n\s+- .*)+)/, '$1 [claude, codex]'));

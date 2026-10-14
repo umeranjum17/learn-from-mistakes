@@ -2,7 +2,7 @@
 
 ## Sub-features
 A `sessions: { type: sessions, agents: [auto] }` source (`agents`: `auto` or any of
-`claude`, `codex`, `opencode`, `pi`, `gemini`) makes `ingest` and `retro` read this repo's sessions from each
+`claude`, `codex`, `opencode`, `pi`, `gemini`; `auto` never reads Pi or Gemini) makes `ingest` and `retro` read this repo's sessions from each
 agent's store. Claude Code: `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<id>.jsonl` and each session's
 `<id>/subagents/**/agent-*.jsonl`, streamed line by line. Store roots come only
 from env overrides. Files older than the read range (this window and the last,
@@ -30,7 +30,7 @@ failures), a completed tool part whose `metadata.exit` is not 0, and an assistan
 whose `error.name` is `MessageAbortedError` (the interrupt, placed after the tools it cut
 off). A user message is one event over its non-synthetic text and file parts, so the
 `lfm-run:` marker is found after an attached prompt file (a leading quote is ignored).
-Refs are `file:line` for Codex, Pi and Gemini and `db:<db file>:<table>:<rowid>` for OpenCode.
+Refs are `file:line` for Codex and `db:<db file>:<table>:<rowid>` for OpenCode.
 Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl` whose header `cwd` is this repo (a fork skips its parent's copied entries); `toolResult.isError` the failure (`Command exited with code N` the exit, `Command` or `Operation aborted` none), `stopReason: aborted` the interrupt.
 Gemini CLI: `${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` and `chats/<session id>/*.jsonl` subagents, the slug from `.gemini/projects.json`; the last record per message id counts, `$set.messages` replaces, `$rewindTo` drops from one id; `status: error` or a shell output ending `Exit Code: N` the failure, `cancelled` the interrupt.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
@@ -98,7 +98,7 @@ lfm retro --foreground   # sessions: 0, metrics n/a
 On `$SELF`, counts only: an untracked `.learn-from-mistakes.yaml` with only the
 sessions source and `excerpts: off`, then `time lfm retro --foreground` and
 `sqlite3 -readonly .lfm/lfm.sqlite "select agent,count(*) from events group by agent"`
-(claude, codex, opencode, pi and gemini rows when those agents ran here). Hash the OpenCode
+(claude, codex and opencode rows when those agents ran here). Hash the OpenCode
 `*.db` files before and after.
 Remove the config and `.lfm/` after. Never copy session text into evidence.
 
