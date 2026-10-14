@@ -114,5 +114,5 @@ The cwd test reads at most the lines before the first record with a cwd, so
 other projects' files are not parsed whole. `returnCodeInterpretation` marks a
 benign nonzero exit (such as grep with no match), so it is not a failure.
 A tool use the user turned down is not a tool error; the interrupt or the
-correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error. Claude Code's own wrapper messages (commands, hooks, reminders) are not person messages; an image-only message is. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
+correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error; an interrupt does too (it is its own signal). Wrapper messages (Claude Code's commands, hooks, reminders; Gemini's injected context and slash commands) are not person messages and do not clear it; an image-only message is one. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
 it; the database file itself never changes.

@@ -66,7 +66,7 @@ async function parse(file, { session, keep, sub, excerpt }) {
       if (sub || results.length || r.isCompactSummary || !(text.trim() || blocks.some((b) => b?.type === 'image'))) continue;
       if (first && text.trimStart().startsWith('lfm-run:')) return null; // this tool's own agent session
       first = false;
-      if (WRAPPER.test(text)) { afterError = false; continue; } // a command, hook or system message Claude Code wraps in a tag
+      if (WRAPPER.test(text)) continue; // a command, hook or system message Claude Code wraps in a tag
       if (text.startsWith('[Request interrupted')) events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' });
       // A person's message right after a tool error, with no assistant reply between, corrects the agent.
       else events.push({ ...at, kind: afterError ? 'correction' : 'user_msg', signal: afterError ? 'correction' : null, excerpt: afterError ? excerpt(text) : '' });
