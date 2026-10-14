@@ -112,8 +112,8 @@ labenv env DBUS_SESSION_BUS_ADDRESS=unix:path=$SCR/no-bus XDG_STATE_HOME=$LAB/.l
   -e 'console.log(JSON.stringify(await (await import(process.argv[1])).doctor("chatgpt")))' $SELF/src/runners/byokit.mjs
 ```
 
-BYOKit plan key route (live, small cost): the user presents their own OpenCode Go
-key through the variable BYOKit's route names (`OPENCODE_API_KEY`, the
+BYOKit plan key route (live, small cost): the key comes from BYOKit as the
+user's env var the route names (`OPENCODE_API_KEY`, the
 `opencode:plan_key:opencode-go` route's `upstream.method`), for the one command
 only (held in memory, never saved; never read from a desktop tool's auth file),
 with the model the user names in `agent_config` (a route needs one; the tool picks no route):
@@ -122,6 +122,11 @@ with the model the user names in `agent_config` (a route needs one; the tool pic
 OPENCODE_API_KEY=<your OpenCode Go key> \
   lfm agents --test byokit:opencode-go
 ```
+
+No live call is made from this repo's own proof: BYOKit has no store for a
+plan key, so a BYOKit-only live call waits for that seam (filed to byokit
+through Main). The proof is the no-key refusal and the Responses stand-in
+journey in `test/runners.test.mjs`.
 
 Each `--test` needs a model set for that agent in `agent_config` (the user's). Each `--test` prints `reply` and `offered`, or the real
 error (no gemini login: "Authentication cancelled by user"). `ls` shows no `x.txt` (only `prompt-<runner>.md`, and Codex's
