@@ -1626,9 +1626,9 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.ok(!git('branch', '--list', 'lfm/*').includes('-2') && JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length === 1);
   auto(-1); assert.match(lfm({}, 'apply').stderr, /auto_fix must be a whole number, 0 or more \(0 = propose only\)/);
   writeFileSync(global, readFileSync(global, 'utf8').replace('auto_fix: -1', 'auto_fix: 1'));
-  const auto1 = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
-  assert.deepEqual(auto1.applied, [{ fix: 1, branch: `lfm/${auto1.run.id}-1`, commit: git('rev-parse', `lfm/${auto1.run.id}-1`), change: 'chg-2' }]);
-  assert.deepEqual([git('rev-parse', `lfm/${auto1.run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
+  const auto1 = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout), branch = `lfm/${auto1.run.id}-1`, commit2 = git('rev-parse', branch);
+  assert.deepEqual([auto1.run.status, git('rev-parse', `${branch}^`), git('branch', '--show-current'), git('status', '--porcelain')], ['completed', head, 'main', '']);
+  assert.deepEqual(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.map((c) => [c.id, c.ref]), [['chg-1', commit], ['chg-2', commit2]]);
 });
 
 test('auto_fix is a user setting: a project file that sets it exits 2 and a retro does not start', () => {
@@ -1645,11 +1645,11 @@ test('apply: with no saved store, apply names the empty store and exits 3', () =
 });
 
 test('apply: a refused apply in the run logs one line and the run stays ok with its proposals', () => {
-  const { p, lfm, query, lines, fake, auto } = applyRepo();
+  const { p, lfm, query, lines, git, fake, auto } = applyRepo();
   auto(1);
   writeFileSync(join(p, 'AGENTS.md'), `${readFileSync(join(p, 'AGENTS.md'), 'utf8')}- Unfinished.\n`); // the user's uncommitted work refuses the apply
   const r = lfm(fake, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr);
-  const { run, applied } = JSON.parse(r.stdout); assert.deepEqual([run.status, applied], ['completed', []]);
+  const { run } = JSON.parse(r.stdout); assert.equal(run.status, 'completed'); assert.equal(git('branch', '--list', 'lfm/*'), '');
   const refused = lines('apply', run.id); assert.equal(refused.length, 1, refused.join('\n'));
   assert.match(refused[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: .* has uncommitted changes; apply never touches them$`));
   assert.ok(query('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND n IS NOT NULL', run.id)[0].n > 0);
@@ -1662,7 +1662,7 @@ test('apply: a kept fix naming a cause that is not configured is refused in the 
   db.exec(`UPDATE proposals SET cause = 'unlisted-cause' WHERE run_id = ${run.id} AND n = 1; UPDATE steps SET status = 'failed' WHERE run_id = ${run.id} AND name = 'apply'; UPDATE runs SET status = 'failed' WHERE id = ${run.id};`); db.close();
   auto(1);
   const r = lfm(fake, 'rerun', '--resume', '--run', String(run.id), '--wait', '1m', '--json'); assert.equal(r.status, 0, r.stderr);
-  const resumed = JSON.parse(r.stdout); assert.deepEqual([resumed.run.status, resumed.applied], ['completed', []]);
+  const resumed = JSON.parse(r.stdout); assert.equal(resumed.run.status, 'completed');
   const refused = lines('apply', run.id); assert.equal(refused.length, 1, refused.join('\n'));
   assert.match(refused[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: .* names cause unlisted-cause, which is not a configured cause$`));
   assert.equal(git('branch', '--list', 'lfm/*'), '');
