@@ -1599,17 +1599,19 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
   db.prepare(`INSERT INTO signoff (proposal_id, message, answer) SELECT id, '{}', CASE n WHEN 1 THEN 'apply' ELSE 'skip' END FROM proposals WHERE run_id = ? AND n IN (1, 2)`).run(run.id);
   db.prepare(`UPDATE proposals SET target = 'the launch script' WHERE run_id = ? AND n = 3`).run(run.id); db.close();
-  writeFileSync(join(p, 'notes.txt'), 'Umer is still writing this.\n');
+  writeFileSync(join(p, 'AGENTS.md'), `${rules}\n- Unfinished.\n`);
   const dirty = lfm({}, 'apply'); assert.equal(dirty.status, 1, dirty.stderr);
   assert.match(dirty.stderr, /has uncommitted changes; apply never touches them\nnext: git status/);
-  rmSync(join(p, 'notes.txt'));
+  writeFileSync(join(p, 'AGENTS.md'), rules);
+  writeFileSync(join(p, 'notes.txt'), 'Umer is still writing this.\n');
   const before = calls().length, ok = lfm({}, 'apply');
   assert.equal(ok.status, 0, ok.stderr);
   const commit = git('rev-parse', `lfm/${run.id}-1`);
   assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
   assert.match(ok.stderr, new RegExp(`^next: git diff HEAD\\.\\.\\.lfm/${run.id}-1   # review it`, 'm'));
   // The branch holds one commit on HEAD with the worker's edit; the user's branch, index and work tree are untouched.
-  assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('rev-parse', 'HEAD'), git('branch', '--show-current'), git('status', '--porcelain')], [head, head, 'main', '']);
+  assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('rev-parse', 'HEAD'), git('branch', '--show-current'), git('status', '--porcelain')], [head, head, 'main', '?? notes.txt']);
+  rmSync(join(p, 'notes.txt'));
   assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules);
   assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
   assert.deepEqual(git('diff', '--name-only', `HEAD..lfm/${run.id}-1`), 'AGENTS.md');
