@@ -32,9 +32,12 @@ Init installs the packaged `skills/learn-from-mistakes/SKILL.md` as
 (claude, codex, opencode, pi, gemini), the same set the doctor `skill <agent>`
 check reads, so doctor shows it ok right after init. Each real file is written
 once (symlinked dirs share one file; a file with the same bytes is left
-alone); the text output prints `skill: <file>` per file written, `skills:
-nothing new` when there is nothing new, and `skipped: <dir>: <reason>` for a
-failed write while init goes on. `--project-skill` writes the project's
+alone); the text output prints `skill: <file>` per file written (`skill: updated <file>`
+when it replaces a differing file), `skills: nothing new` when the roots checked are
+already current, `skills: no configured agent has a skills dir` when no root was tried
+(byokit, acp, or an unusable agent), and `skipped: <dir>: <reason>` for a failed write
+while init goes on. The default text output shows only these lines for the skill, not
+the raw `skills*` fields (`--json` keeps them). `--project-skill` writes the project's
 `.claude/skills` and `.agents/skills` instead; `--no-skill` writes none.
 `-y` asks nothing, even in a terminal.
 
