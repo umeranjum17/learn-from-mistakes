@@ -85,7 +85,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
    sources:
      log: { type: markdown-log, path: defects.md }   # each "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## 2026-03-02" heading
      # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
-     # sessions: { type: sessions }   # optional, one per config: this repo's Claude Code, Codex, OpenCode, Pi and Gemini CLI sessions, read-only
+     # sessions: { type: sessions }   # optional, one per config: this repo's Claude Code, Codex and OpenCode sessions (Pi and Gemini CLI only when named in `agents`), read-only
      # prs: { type: github }   # optional: the PRs of origin's GitHub repo, read-only through your own gh login
      # proof: { type: done-done, apps: [my-app] }   # optional: done-done's failed verify run steps, read-only
    causes:
