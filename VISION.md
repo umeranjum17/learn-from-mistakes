@@ -69,7 +69,7 @@ What it does today:
   It never guesses a label.
 - **Proposed rule changes with evidence.** Your agent proposes changes by following `guide`.
   The CLI checks that each proposal cites real records.
-- **A versioned ledger.** `change applied` records a change you already made, as one append-only entry (`chg-<n>`).
+- **A versioned ledger.** `change applied` records a change you already made, and `apply` records a kept fix committed to its own branch, as one append-only entry (`chg-<n>`).
   `changes --json` prints the ledger as a stable contract (`lfm-changes.v1`).
 - **Did the last fix help.** The `followup` step compares each change's metric before and after the change.
   Code, not a model, gives the verdict: `keep`, `fix`, `rollback`, `delete` or `no-data`.
@@ -85,7 +85,6 @@ What it does not do:
 
 Planned:
 
-- The retro run writes proposals with its own agent. Today your agent writes them through `guide`.
 - sign-off shows a "Helped?" answer for each applied change, joined on the change id.
 
 ## Works with

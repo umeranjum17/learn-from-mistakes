@@ -89,7 +89,7 @@ const globalText = `# learn-from-mistakes global configuration
 # Premium models (Opus, Sonnet, Sol) are refused unless this is true.
 # allow_premium: false
 
-# auto_fix: 0   # kept fixes a run applies with no answer, each on its own branch; 0 proposes only
+# auto_fix: 0   # kept fixes a run applies unless answered Skip, each on its own branch; 0 proposes only
 # Override native agent binary paths (optional, global only)
 # agent_path_override:
 #   claude: /usr/local/bin/claude
