@@ -79,7 +79,7 @@ What it does today:
 
 What it does not do:
 
-- It never edits your sources or instructions.
+- It never edits your sources or instructions. The one file it writes outside .lfm/ is its own skill, when you run init.
 - It does not apply a change for you. You apply it, then record it.
 - It makes no model call itself. Only your own agent CLI, started by a run, calls a model.
 
