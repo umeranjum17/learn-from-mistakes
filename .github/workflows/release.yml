@@ -24,13 +24,8 @@ jobs:
       # npm trusted publishing needs npm 11.5+; older Node 24 releases bundle an older npm.
       - name: Ensure npm 11.5+
         run: |
-          echo "bundled npm: $(npm --version)"
-          if [ "$(printf '%s\n%s\n' "$(npm --version)" '11.5.1' | sort -V | head -n1)" = '11.5.1' ]; then
-            echo "npm $(npm --version) is 11.5 or newer"
-          else
-            npm install -g 'npm@^11.5.1'
-            echo "now using npm: $(npm --version)"
-          fi
+          npm install -g 'npm@^11.5.1'
+          echo "using npm: $(npm --version)"
 
       - name: Test
         run: npm test
