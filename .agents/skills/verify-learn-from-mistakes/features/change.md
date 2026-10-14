@@ -28,7 +28,7 @@ missing `--ref`, a bad `--tripwire` such as `< x`, an unknown `--metric` or
 names the bad flag or value on one `error:` line (see [surface.md](surface.md));
 a fresh `report --json` shows the counts and `--full --json` the ids; TOON
 decodes equal to JSON; planted record/label/proposal prose never reaches any
-output. The same journey owns the export: `changes --json` before ingest is an
+output. The same journey owns the export: `changes --json` before any run is an
 empty `lfm-changes.v1`; changes with and without what/why in separate
 processes; rejected what/why (empty, blank, 201 characters, newline, control
 character, missing value) append nothing and name the rule, never the text;

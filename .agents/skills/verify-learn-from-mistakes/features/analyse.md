@@ -23,7 +23,7 @@ at most 3 sentences, refs to bundle ids) and `labels` (one per record under
 "Unlabelled defect records": `event`, a config cause or `other` for an event,
 `why` of at most 25 words, optional `duplicate_of`, `occurrences`, `confidence`).
 They land in the store's `findings` and `labels` tables, and the run's `report`
-step counts with these labels instead of `labels.jsonl` (kept for a run with none). A ref, label id or
+step counts with these labels (a run with none shows every record unlabelled). A ref, label id or
 `duplicate_of` that names no bundle item is a problem: it is logged as
 `problem: ...` and that finding or label is not kept; it is not sent back.
 The step logs `labels: <n> of <m> records, <d> dropped, findings: <f>, problems: <p>`.
@@ -40,8 +40,7 @@ records ...`, with the fake Claude Code in `test/fake-agent/claude` as the whole
 PATH (plus node and git): the argv, the run-dir cwd, the marker and the bundle at
 the end of the prompt; the `labels`, `findings` and `invocations` rows (tokens
 12 in, 5 out); a ref to `c99` is a problem; prose twice fails the step with
-2 `invalid` rows and the retry prompt; the report step counts the 2 labels with no
-`labels.jsonl`; a third call past `caps.invocations: 3`
+2 `invalid` rows and the retry prompt; the report step counts the 2 labels; a third call past `caps.invocations: 3`
 fails; a hung agent's process group is gone after its worker is killed, and a
 group whose leader is another process is never signalled; a worker that is not
 set, or set to an agent not on PATH, stops the run with the fix line.

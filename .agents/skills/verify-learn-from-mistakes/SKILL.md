@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real learn-from-mistakes-axi init, doctor, ingest/count/report, change applied and retro/status/runs/attach/logs/abort/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi init, doctor, guide, report, change applied and retro/status/runs/attach/logs/abort/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 metadata:
   internal: true
 ---
@@ -27,7 +27,7 @@ folders before writing. It creates mode-0700 evidence and an isolated temporary
 HOME/XDG/TMPDIR, runs the existing `npm test` journeys, then the public CLI on copies
 of `examples`. Originals are hashed before and after; scratch is removed even
 when a CLI check fails. No model, network, pipeline, or release is started by the
-default journey: the run's agent is the fake in `test/fake-agent/claude`. It also drives the bare command and `report`/`--json`/`--full`,
+default journey: the run's agent is the fake in `test/fake-agent/claude`. It drives `guide`, the removed `ingest`, `count`, `report --labels` and `report --proposals` (exit 2, [features/removed.md](features/removed.md)), `report` before any run (exit 3), the bare command and, after the first retro, `report`/`--json`/`--full`,
 and (synthetic only) `change applied --metric --tripwire --kind --what --why` plus the `changes` export
 (and a rejected `--tripwire "< x"`, exit 2),
 then a saved run (`retro --foreground`, `status`, `runs`), the same run with
@@ -55,7 +55,7 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 Pass `--package` to add the packaged-install journey: `npm pack` into the
 evidence dir, assert the tarball manifest carries the bin, package metadata and
 the standalone skill (and not `test`/`examples`), install that exact tarball into
-a fresh prefix, drive the installed `learn-from-mistakes-axi` bin (`report --json`, `changes --json`, `retro --wait 1m --json`),
+a fresh prefix, drive the installed `learn-from-mistakes-axi` bin (`guide`, `report --json`, `changes --json`, `retro --wait 1m --json`),
 and rerun the whole `npm test` suite with `LFM_CLI` pointing at the installed bin
 so the same journeys prove the packaged CLI. This one step resolves the
 declared npm dependencies, so it uses the isolated npm cache and may touch
@@ -67,30 +67,29 @@ node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evid
 
 Read `commands.json`, both input manifests, `result.json`,
 `pack.json`/`pack.manifest.txt` (with `--package`) and each stdout/stderr.
-All command exits must be 0 (`config-bad-agent`, `change-bad-tripwire`, `retro-busy`, `init-pinned-clash` and `init-one-agent-two-models` must be 2, `doctor-missing-log` and `retro-analyse-prose` 1), all `npm test` journeys must pass, input SHA256
+All command exits must be 0 (`config-bad-agent`, `change-bad-tripwire`, `retro-busy`, `init-pinned-clash` and `init-one-agent-two-models` and the four `removed-*` must be 2, `report-no-run` 3, `doctor-missing-log` and `retro-analyse-prose` 1), all `npm test` journeys must pass, input SHA256
 manifests must match, and the mapped observations below must be present. A printed
 helper success only proves command exits plus unchanged inputs; inspect the output.
 
 ## Explicit opt-in private source journey
 
-Run the synthetic default first. Only with caller authorization naming a project
-and label/proposal files, use a **different** new private evidence directory:
+Run the synthetic default first. Only with caller authorization naming a project, use a **different** new private evidence directory:
 
 ```sh
 node .agents/skills/verify-learn-from-mistakes/verify.mjs /absolute/private/evidence/private-cli \
-  --private /approved/project /approved/labels.jsonl /approved/proposals.jsonl
+  --private /approved/project
 ```
 
 This reads the project `.learn-from-mistakes.yaml`, resolves source paths against
-that project (and `~` against the caller's home), copies sources/labels/proposals,
+that project (and `~` against the caller's home), copies the sources,
 and forces a safe state name in the copied config. It never labels automatically
 or writes originals. Use quiescent SQLite snapshots without WAL/SHM/journal
 sidecars; don't stop a shared writer to obtain them. Capture private baselines
 (expected per-source items, incidents/duplicates/occurrences and coverage) before
-running; compare actual count/report to those baselines, not synthetic numbers.
-Bad labels/proposals or empty input cause failure; preserve logs and report the
+running; compare the actual retro and report to those baselines, not synthetic numbers.
+Empty input causes failure; preserve logs and report the
 real exit rather than weakening expectations. Do not print private report bodies,
-paths, labels or hashes into a public PR; only publish a sanitized verdict.
+paths or hashes into a public PR; only publish a sanitized verdict.
 Private data is never a repo fixture. A private run is optional, never implied.
 
 ## Evidence and trusted instruction consumption
@@ -98,9 +97,9 @@ Private data is never a repo fixture. A private run is optional, never implied.
 `identity.json` records checkout path, exact Git HEAD/dirty status, runtime, candidate
 hashes, resolved source paths and SHA256 identities of the input file bytes
 (including SQLite). The CLI's own store digest, over the rows read, is in
-`ingest.stdout` and the retained `sources.json`. `commands.json` records argv/cwd/exits; named stdout/stderr files
+the retained `state/sources.json`. `commands.json` records argv/cwd/exits; named stdout/stderr files
 record actions and results; `state/` retains a copy of the staged project's `.lfm/`
-(ingest artifacts, the `*` `.gitignore` and the ledger; the CLI's in-project default).
+(the run store and artifacts, the `*` `.gitignore` and the ledger; the CLI's in-project default).
 `inputs.before.json`, `inputs.after.json` and `result.json` prove read-only inputs.
 Review evidence is terminal output, not a screenshot/theme/viewport matrix: this
 app is a short-lived CLI. Record limitations and PASS/FAIL per mapped journey.

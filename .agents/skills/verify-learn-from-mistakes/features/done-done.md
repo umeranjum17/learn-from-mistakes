@@ -1,7 +1,7 @@
 # done-done source (`done-done` source)
 
 ## Sub-features
-A `proof: { type: done-done, apps: [<app>, ...] }` source makes `ingest` and `retro` read done-done's
+A `proof: { type: done-done, apps: [<app>, ...] }` source makes `retro` read done-done's
 verify run state, read-only, from `<path>/runs/<app>/<run-id>/run.json` (`src/sources/done-done.mjs`).
 `apps` is required: the done-done app names the user chooses (each one path segment). `path` is
 done-done's home; unset, it is `$DONE_DONE_HOME`, else `~/.done-done`, as done-done documents it.
@@ -16,7 +16,7 @@ journey, or `setup:` before the first step) is one record for the step its reaso
 cancelled, unfinished (`pending`, `running`, `awaiting_approval`) and maintain runs are not records; a
 folder with no `run.json` (the judge cache) is skipped. A run before the read's start (its `updated`, else
 `created`, else the file's mtime) is skipped without its schema or steps being checked, so an old run in a newer schema never stops anything.
-A `run.json` in the read range whose schema is not 2 stops `ingest` and `retro` with exit 2, `error: source <id>: <file> is done-done run schema <n>; this
+A `run.json` in the read range whose schema is not 2 stops `retro` with exit 2, `error: source <id>: <file> is done-done run schema <n>; this
 version reads schema 2` and `next: update learn-from-mistakes-axi to read it, or remove
 sources.<id> ...`; a non-JSON one or bad `steps` exits 2 with `next: done-done status --run <id>`, an
 unreadable one with `chmod -R u+r`. `doctor()` gives the records and those in the window; an app
@@ -40,7 +40,7 @@ lfm() { node "$SELF/bin/learn-from-mistakes-axi.mjs" "$@"; }
 mkdir -p $SCR/p $SCR/dd/runs/notes/r1 && cd $SCR/p
 echo '{"schema":2,"run_id":"r1","kind":"verify","app":"notes","status":"completed","result":"fail","reason":"check: shot.png: judge says wrong screen","updated":"'$(date -u +%F)'T10:00:00Z","steps":[{"name":"check","status":"failed","exit":1}]}' > $SCR/dd/runs/notes/r1/run.json
 printf 'sources:\n  proof: { type: done-done, apps: [notes], path: %s }\n' $SCR/dd > .learn-from-mistakes.yaml
-lfm ingest && cat .lfm/records.jsonl && lfm doctor && lfm retro --foreground
+lfm doctor && lfm retro --foreground && cat .lfm/records.jsonl
 ```
 
 `retro` needs the user's `agent` and model set in `$LFM_HOME/config.yaml` (with the record in the

@@ -6,7 +6,7 @@ v1 configs (`name`, `sources`, `causes`, `repeat`) load unchanged. The agent key
 
 Sources come from a registry: one file per type in `src/sources/<type>.mjs`
 exporting `validate` (its own keys), `read` and `doctor`; `detect` (init) is optional, and `done-done`
-and `firstmate` have none, so `init` never detects them (a `firstmate` source is opt-in: `init --firstmate <home>`, [firstmate.md](firstmate.md)). `collect`/`ingest` call the
+and `firstmate` have none, so `init` never detects them (a `firstmate` source is opt-in: `init --firstmate <home>`, [firstmate.md](firstmate.md)). The `collect` step calls the
 registry. Today: `markdown-log` and `no-mistakes`, unchanged, `sessions`
 ([sessions.md](sessions.md)), `github` ([github.md](github.md)), `done-done` ([done-done.md](done-done.md)) and
 `firstmate` ([firstmate.md](firstmate.md)). A type outside the

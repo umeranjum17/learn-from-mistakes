@@ -2,7 +2,7 @@
 
 ## Sub-features
 A `sessions: { type: sessions, agents: [auto] }` source (`agents`: `auto` or any of
-`claude`, `codex`, `opencode`, `pi`, `gemini`; `auto` never reads Pi or Gemini) makes `ingest` and `retro` read this repo's sessions from each
+`claude`, `codex`, `opencode`, `pi`, `gemini`; `auto` never reads Pi or Gemini) makes `retro` read this repo's sessions from each
 agent's store. Claude Code: `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<id>.jsonl` and each session's
 `<id>/subagents/**/agent-*.jsonl`, streamed line by line. Store roots come only
 from env overrides. Files older than the read range (this window and the last,

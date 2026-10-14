@@ -32,14 +32,14 @@ const MIGRATIONS = [
   // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
   `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,
     before NUMERIC, after NUMERIC, tripwire TEXT, verdict TEXT NOT NULL, PRIMARY KEY (run_id, change_id))`,
-  // The id the labels and proposals take: records.jsonl's for a defect-log record, source:id for a gate row or PR.
+  // The id the labels and proposals take: a content hash for a defect-log record, source:id for a gate row or PR.
   'ALTER TABLE records ADD COLUMN record_id TEXT',
   // Each call to the run's own agent: its step and role, the agent CLI and model, its process group while it runs, how it
   // ended (ok, invalid, error, or the run's cancelled or interrupted), and the session id and tokens the agent reported.
   `CREATE TABLE IF NOT EXISTS invocations (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), step TEXT NOT NULL,
     role TEXT NOT NULL, runner TEXT NOT NULL, model TEXT NOT NULL, child_pgid INTEGER, child_started_at TEXT, session_id TEXT, marker TEXT NOT NULL,
     started_at TEXT NOT NULL, completed_at TEXT, exit_status TEXT, tokens_in INTEGER, tokens_out INTEGER)`,
-  // The analyse step's label for each defect record it read: event, cause and why, as labels.jsonl takes them.
+  // The analyse step's label for each defect record it read: event, cause and why.
   `CREATE TABLE IF NOT EXISTS labels (run_id INTEGER NOT NULL REFERENCES runs(id), record_id TEXT NOT NULL, event INTEGER NOT NULL,
     cause TEXT, why TEXT NOT NULL, duplicate_of TEXT, occurrences INTEGER, confidence TEXT, PRIMARY KEY (run_id, record_id))`,
   // The causes and hidden problems the analyse step found, each with refs to bundle items. Later steps count and judge them.

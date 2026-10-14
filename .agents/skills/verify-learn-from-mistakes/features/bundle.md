@@ -12,7 +12,7 @@ first, `[c<n>]` with events, sessions, days and the causes the rules tagged,
 then the 3 latest `[e<n>]` events (`n` is the event's store row id, for reference only, not a label id) with time, session id and
 `file:line`) and unlabelled defect records (this window's and undated records
 no `match` rule tagged, `[<record id>]` with source, ref and date). A record id is
-the source and item: a defect-log record's records.jsonl id, a gate row's `<source>:<step id>`, a PR's `<source>:<number>` (`prs:10`). Each is a records.jsonl id, so labels.jsonl takes it.
+the source and item: a defect-log record's records.jsonl id, a gate row's `<source>:<step id>`, a PR's `<source>:<number>` (`prs:10`). The worker's labels name these ids.
 With `excerpts: on` each event and record has a `  > ` excerpt of at most 300
 characters; with `excerpts: off` there is none, only pointers and counts.
 With `excerpts: on`, redact() removes secret-shaped values only; plain record text stays in the bundle by design, so the canary guarantee for prose is `excerpts: off`.
@@ -24,7 +24,7 @@ last `Dropped <n> items ...` line counts them. Within a section, the first item
 that does not fit drops it and every later item of that section, so the clusters
 shown are always the top ones and their numbers have no gap.
 The no-mistakes source's repo scoping, error redaction and store digest are in
-[ingest.md](ingest.md); the bundle only shows what that source keeps.
+[run.md](run.md); the bundle only shows what that source keeps.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi retro --foreground`, then read

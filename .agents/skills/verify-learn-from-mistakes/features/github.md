@@ -2,7 +2,7 @@
 
 ## Sub-features
 A `prs: { type: github }` source (no other key: the repo comes from `origin`) makes
-`ingest` and `retro` read the pull requests merged in the read range from the
+`retro` reads the pull requests merged in the read range from the
 GitHub repo the project's git `origin` names (https, ssh or scp form; a GitHub
 Enterprise host is passed to gh as `--hostname`). It runs the user's own `gh`, found on an
 absolute PATH entry: one `gh api graphql` query (`src/sources/github.mjs`), newest update

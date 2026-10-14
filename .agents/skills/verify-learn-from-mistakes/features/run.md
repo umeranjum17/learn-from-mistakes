@@ -4,13 +4,13 @@
 `learn-from-mistakes-axi retro` saves a run in the
 run store `<state dir>/lfm.sqlite` (node:sqlite, WAL, a migrations list counted
 by `PRAGMA user_version`): one `runs` row (status, owner pid, times, error) and one `steps` row each for `collect`
-(ingest), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)), `bundle` (see [bundle.md](bundle.md)), `analyse` (see [analyse.md](analyse.md)), `propose` (see [propose.md](propose.md)), `verify` (the judge, see [verify.md](verify.md)), `check` (see [propose.md](propose.md)) and `report` (the counts with the worker's labels from this run, else with the labels already in the state dir; with
+(read the sources), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)), `bundle` (see [bundle.md](bundle.md)), `analyse` (see [analyse.md](analyse.md)), `propose` (see [propose.md](propose.md)), `verify` (the judge, see [verify.md](verify.md)), `check` (see [propose.md](propose.md)) and `report` (the counts with the worker's labels from this run; with
 none, coverage shows every record unlabelled). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
 once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m) polls until the run
 ends or the time is over; `--foreground` runs the steps in the same process. The run output adds `sources`: each
-source's id, type and item count (and a sessions source's counts, see [sessions.md](sessions.md)), then `window` and `metrics`. A completed run adds `result`: `summary` (the `repeated:` line), `labelled`, `records`, `labels_from` (`run <id>` when the worker's labels were counted, else `labels.jsonl`), `causes` (each cause its labels or match rules counted:
+source's id, type and item count (and a sessions source's counts, see [sessions.md](sessions.md)), then `window` and `metrics`. A completed run adds `result`: `summary` (the `repeated:` line), `labelled`, `records`, `causes` (each cause its labels or match rules counted:
 `repeated`, `incidents`, `days`, store `rows`) and `findings` (each worker finding's `cause`, `count`, `days`, and judge `verdict`, one line each; the STE100 `summary` is in `report.txt`, [report-text.md](report-text.md)),
 then `next: ... report --full`; with no label and no finding, stderr says `result: the worker labelled no record and named no finding`
 and `next:` names `logs --step analyse --run <id>`.
