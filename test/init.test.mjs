@@ -641,6 +641,12 @@ test('init installs the skill into each configured agent\'s own skills dir; a se
   assert.match(plain.stdout, /^skills: nothing new$/m); // the second init writes nothing new and says so
   assert.deepEqual(JSON.parse(lfm('init', '-y', '--json').stdout).skills, []);
   assert.deepEqual([readFileSync(config), ...out.skills.map((f) => readFileSync(f))], bytes);
+  const [edited] = out.skills;
+  writeFileSync(edited, 'a local edit\n');
+  const updated = lfm('init');
+  assert.equal(updated.status, 0, updated.stderr);
+  assert.ok(updated.stdout.split('\n').includes(`skill: updated ${edited}`), updated.stdout);
+  assert.equal(readFileSync(edited, 'utf8'), SKILL); // init puts the packaged bytes back
   const doctor = JSON.parse(lfm('doctor', '--json').stdout);
   assert.deepEqual(['skill claude', 'skill codex'].map((l) => doctor.checks.find((c) => c.label === l)?.level), ['ok', 'ok']);
 });

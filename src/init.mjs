@@ -27,7 +27,7 @@ export function installSkills(cfg, agents, dir, opts) {
       return agents.find((x) => x.runner === key)?.usable ? [RUNNERS[key].skills(process.env)] : [];
     });
   const text = readFileSync(SKILL_SRC, 'utf8');
-  const written = [], failed = [], done = new Set();
+  const written = [], updated = [], failed = [], done = new Set();
   for (const root of roots) {
     try {
       const target = join(root, 'learn-from-mistakes');
@@ -36,12 +36,14 @@ export function installSkills(cfg, agents, dir, opts) {
       if (done.has(real)) continue;
       done.add(real);
       const file = join(target, 'SKILL.md');
-      if (existsSync(file) && readFileSync(file, 'utf8') === text) continue;
+      const exists = existsSync(file);
+      if (exists && readFileSync(file, 'utf8') === text) continue;
       writeFileSync(file, text);
       written.push(file);
+      if (exists) updated.push(file);
     } catch (e) { failed.push(`${root}: ${e.message}`); }
   }
-  return { written, failed };
+  return { written, updated, failed };
 }
 const scalar = (v) => JSON.stringify(v); // a JSON string is a YAML scalar
 const flow = (o) => `{ ${Object.entries(o).map(([k, v]) => `${k}: ${scalar(v)}`).join(', ')} }`;
@@ -184,7 +186,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   stateDir(cfg);
   const missing = unset(cfg);
   const { worker, judge } = await resolveRoles(cfg, agents);
-  const { written: skills, failed: skills_skipped } = installSkills(cfg, agents, dir, opts);
+  const { written: skills, updated: skills_updated, failed: skills_skipped } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
     ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
@@ -195,6 +197,6 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
-    gaps, skipped, skills, skills_skipped,
+    gaps, skipped, skills, skills_updated, skills_skipped,
   };
 }
