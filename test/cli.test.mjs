@@ -1582,16 +1582,14 @@ function applyRepo() {
   writeFileSync(join(s.p, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');
   s.git = (...args) => execFileSync(join(s.bin, 'git'), ['-C', s.p, ...args], { encoding: 'utf8' }).trim();
   for (const a of [['init', '-q', '-b', 'main'], ['config', 'user.name', 'Umer'], ['config', 'user.email', 'umer@example.com'], ['add', '-A'], ['commit', '-qm', 'start']]) s.git(...a);
-  s.global = join(s.env.LFM_HOME, 'config.yaml');
-  s.auto = (v) => writeFileSync(s.global, `${readFileSync(s.global, 'utf8')}auto_fix: ${v}\n`);
+  s.global = join(s.env.LFM_HOME, 'config.yaml'); s.auto = (v) => writeFileSync(s.global, `${readFileSync(s.global, 'utf8')}auto_fix: ${v}\n`);
   s.fake = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_TARGET: 'AGENTS.md (the rules list)' };
   return s;
 }
 
 test('apply: the worker makes an accepted fix on its own branch from HEAD and records it; Skip, a dirty tree and no file refuse; auto_fix applies in the run', () => {
   const { p, global, lfm, query, calls, lines, git, fake, auto } = applyRepo();
-  const rules = '# Rules\n\n- Run the tests before a PR.\n';
-  const head = git('rev-parse', 'HEAD');
+  const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   assert.deepEqual(lines('apply', run.id), ['auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply']);
   const none = lfm({}, 'apply'); assert.equal(none.status, 3, none.stderr);
@@ -1604,15 +1602,12 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.match(dirty.stderr, /has uncommitted changes; apply never touches them\nnext: git status/);
   writeFileSync(join(p, 'AGENTS.md'), rules);
   writeFileSync(join(p, 'notes.txt'), 'Umer is still writing this.\n');
-  const before = calls().length, ok = lfm({}, 'apply');
-  assert.equal(ok.status, 0, ok.stderr);
-  const commit = git('rev-parse', `lfm/${run.id}-1`);
-  assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  const before = calls().length, ok = lfm({}, 'apply'); assert.equal(ok.status, 0, ok.stderr);
+  const commit = git('rev-parse', `lfm/${run.id}-1`); assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
   assert.match(ok.stderr, new RegExp(`^next: git diff HEAD\\.\\.\\.lfm/${run.id}-1   # review it`, 'm'));
   // The branch holds one commit on HEAD with the worker's edit; the user's branch, index and work tree are untouched.
   assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('rev-parse', 'HEAD'), git('branch', '--show-current'), git('status', '--porcelain')], [head, head, 'main', '?? notes.txt']);
-  rmSync(join(p, 'notes.txt'));
-  assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules);
+  rmSync(join(p, 'notes.txt')); assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules);
   assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
   assert.deepEqual(git('diff', '--name-only', `HEAD..lfm/${run.id}-1`), 'AGENTS.md');
   // One fresh tool-off call to the worker, never the judge, with the fix and the file: no bundle and no record text.
@@ -1624,16 +1619,12 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(query(`SELECT role, runner, exit_status FROM invocations WHERE run_id = ? AND step = 'apply-1'`, run.id), [{ role: 'worker', runner: 'claude', exit_status: 'ok' }]);
   const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes;
   assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/${run.id}-1`]);
-  assert.equal(lfm({}, 'apply').stdout, ok.stdout);
-  assert.equal(calls().length, before + 1);
+  assert.equal(lfm({}, 'apply').stdout, ok.stdout); assert.equal(calls().length, before + 1);
   for (const [n, code, error] of [[2, 2, `fix ${run.id}:2 was answered Skip, and a Skip is never applied`], [3, 1, `fix ${run.id}:3 names no tracked file in its target, so the worker has nothing to edit`], [9, 2, `run ${run.id} has no kept fix 9`]]) {
-    const r = lfm({}, 'apply', '--fix', String(n));
-    assert.equal(r.status, code, r.stderr);
-    assert.match(r.stderr, new RegExp(`^error: ${error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
+    const r = lfm({}, 'apply', '--fix', String(n)); assert.equal(r.status, code, r.stderr); assert.match(r.stderr, new RegExp(`^error: ${error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
   }
   assert.ok(!git('branch', '--list', 'lfm/*').includes('-2') && JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length === 1);
-  auto(-1);
-  assert.match(lfm({}, 'apply').stderr, /auto_fix must be a whole number, 0 or more \(0 = propose only\)/);
+  auto(-1); assert.match(lfm({}, 'apply').stderr, /auto_fix must be a whole number, 0 or more \(0 = propose only\)/);
   writeFileSync(global, readFileSync(global, 'utf8').replace('auto_fix: -1', 'auto_fix: 1'));
   const auto1 = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   assert.deepEqual(auto1.applied, [{ fix: 1, branch: `lfm/${auto1.run.id}-1`, commit: git('rev-parse', `lfm/${auto1.run.id}-1`), change: 'chg-2' }]);
@@ -1658,10 +1649,8 @@ test('apply: a refused apply in the run logs one line and the run stays ok with 
   auto(1);
   writeFileSync(join(p, 'AGENTS.md'), `${readFileSync(join(p, 'AGENTS.md'), 'utf8')}- Unfinished.\n`); // the user's uncommitted work refuses the apply
   const r = lfm(fake, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr);
-  const { run, applied } = JSON.parse(r.stdout);
-  assert.deepEqual([run.status, applied], ['completed', []]);
-  const refused = lines('apply', run.id);
-  assert.equal(refused.length, 1, refused.join('\n'));
+  const { run, applied } = JSON.parse(r.stdout); assert.deepEqual([run.status, applied], ['completed', []]);
+  const refused = lines('apply', run.id); assert.equal(refused.length, 1, refused.join('\n'));
   assert.match(refused[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: .* has uncommitted changes; apply never touches them$`));
   assert.ok(query('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND n IS NOT NULL', run.id)[0].n > 0);
 });
@@ -1670,14 +1659,11 @@ test('apply: a kept fix naming a cause that is not configured is refused in the 
   const { p, lfm, lines, git, fake, auto } = applyRepo();
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  db.exec(`UPDATE proposals SET cause = 'unlisted-cause' WHERE run_id = ${run.id} AND n = 1; UPDATE steps SET status = 'failed' WHERE run_id = ${run.id} AND name = 'apply'; UPDATE runs SET status = 'failed' WHERE id = ${run.id};`);
-  db.close();
+  db.exec(`UPDATE proposals SET cause = 'unlisted-cause' WHERE run_id = ${run.id} AND n = 1; UPDATE steps SET status = 'failed' WHERE run_id = ${run.id} AND name = 'apply'; UPDATE runs SET status = 'failed' WHERE id = ${run.id};`); db.close();
   auto(1);
   const r = lfm(fake, 'rerun', '--resume', '--run', String(run.id), '--wait', '1m', '--json'); assert.equal(r.status, 0, r.stderr);
-  const resumed = JSON.parse(r.stdout);
-  assert.deepEqual([resumed.run.status, resumed.applied], ['completed', []]);
-  const refused = lines('apply', run.id);
-  assert.equal(refused.length, 1, refused.join('\n'));
+  const resumed = JSON.parse(r.stdout); assert.deepEqual([resumed.run.status, resumed.applied], ['completed', []]);
+  const refused = lines('apply', run.id); assert.equal(refused.length, 1, refused.join('\n'));
   assert.match(refused[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: .* names cause unlisted-cause, which is not a configured cause$`));
   assert.equal(git('branch', '--list', 'lfm/*'), '');
 });
