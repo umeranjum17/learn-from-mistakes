@@ -122,6 +122,10 @@ export async function init(dir, opts) {
       Object.assign(found, await mod.detect?.(dir));
     } catch (e) { skipped.push(`${type}: ${e.message}`); }
   }
+  if (opts.firstmate) { // opt-in only: a Firstmate home is never detected
+    if (!statSync(opts.firstmate, { throwIfNoEntry: false })?.isDirectory()) throw new UsageError(`--firstmate ${opts.firstmate}: not a directory`, 'learn-from-mistakes-axi init --firstmate <home>   # the Firstmate home folder that holds state/');
+    found.home = { type: 'firstmate', path: opts.firstmate };
+  }
   // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
   // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override.
   const before = written ? loadGlobal() : loadConfig(dir), agents = detect(before);
@@ -173,6 +177,17 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     } catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
   if (Object.keys(chosen).length) save(file, chosen);
+  if (!written && opts.firstmate && !Object.values(before.sources).some((s) => s.type === 'firstmate' && s.path === opts.firstmate)) {
+    // the opt-in adds the source to a config that exists, unless it has another home or a source named home
+    if (Object.hasOwn(before.sources, 'home') || Object.values(before.sources).some((s) => s.type === 'firstmate')) ignored.push('--firstmate');
+    else {
+      const doc = parseDocument(readFileSync(file, 'utf8'));
+      if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
+      doc.setIn(['sources', 'home'], doc.createNode({ type: 'firstmate', path: opts.firstmate }, { flow: true }));
+      try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+      catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
+    }
+  }
   let cfg = loadConfig(dir);
   if (written) { // each match names the config's sessions source; with none, the causes are for the worker's labels only
     const doc = parseDocument(readFileSync(file, 'utf8'));
@@ -180,7 +195,8 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     const pair = doc.createPair('causes', Object.fromEntries(Object.entries(STARTER).map(([id, [signal, description]]) => [id, { description, ...(sessions && { match: { source: sessions, signal } }) }])));
     pair.key.commentBefore = ' Starter causes, written by init: the worker labels records with them. Edit, add or remove them.';
     doc.contents.items.push(pair);
-    writeFileSync(file, doc.toString({ lineWidth: 0 }));
+    try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+    catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     cfg = loadConfig(dir);
   }
   stateDir(cfg);

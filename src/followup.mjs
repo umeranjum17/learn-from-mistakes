@@ -40,14 +40,14 @@ function verdict(row, kind, last) {
 }
 
 // The records a records-based metric reads, as a predicate on a record (null for a metric that reads events): a
-// cause_count reads its match rule's source when that source keeps records, a source type's metric the records of its sources.
+// cause_count reads its match rule's source when that source keeps records, a source type's metric the records of the sources that give or add to it.
 function recordsOf(cfg, metric) {
   if (metric.startsWith('cause_count:')) {
     const source = cfg.causes[metric.slice(12)]?.match?.source;
     return source && SOURCES[cfg.sources[source].type].metricRows !== 'events' ? (r) => r.source === source : null;
   }
-  const type = Object.keys(SOURCES).find((t) => SOURCES[t].metricRows !== 'events' && SOURCES[t].metricNames?.includes(metric));
-  return type ? (r) => cfg.sources[r.source]?.type === type : null;
+  const types = Object.keys(SOURCES).filter((t) => SOURCES[t].metricRows !== 'events' && [...(SOURCES[t].metricNames ?? []), ...(SOURCES[t].addsTo ?? [])].includes(metric.split(':')[0]));
+  return types.length ? (r) => types.includes(cfg.sources[r.source]?.type) : null;
 }
 
 // Saves one followups row per applied change, with the unrounded numbers; it can run again: it first drops the run's rows.

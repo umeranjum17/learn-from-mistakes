@@ -227,7 +227,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => applied('--full'), 2, 'change applied does not take --full', CHANGE],
     [() => applied('--tripwire', '< x'), 2, '--tripwire "< x" must be "<op> <number>" with op >=, <=, >, < or =, such as "<= 0"', CHANGE],
     [() => applied('--tripwire', '=< 1'), 2, '--tripwire "=< 1" must be "<op> <number>" with op >=, <=, >, < or =, such as "<= 0"', CHANGE],
-    [() => applied('--metric', 'speed'), 2, /^error: --metric "speed" must be a metric \(merged, first_pass, .*, or cause_count:<cause>\)$/m, CHANGE],
+    [() => applied('--metric', 'speed'), 2, /^error: --metric "speed" must be a metric \(merged, first_pass, .*, or cause_count:<cause>, or gate_failures:<step>\)$/m, CHANGE],
     [() => applied('--metric', 'cause_count:nope'), 2, /^error: --metric "cause_count:nope" must be a metric \(/m, CHANGE], // a cause the config does not name
     [() => applied('--kind', 'policy'), 2, '--kind "policy" must be doc, rule or code', CHANGE],
     [() => applied('--why', '   '), 2, '--why "   " must be one line of 1-200 characters, with no line breaks or control characters', CHANGE],
@@ -256,7 +256,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('agent_path_override: { claude: ./claude }\n'), 2, /^error: .*\.learn-from-mistakes\.yaml: agent_path_override is global-only: set it in .*config\.yaml$/m, HELP], // a cloned repo never picks the binary
     [() => withConfig('window: 7 days\n'), 2, bad('window must be a number of days, such as 7d'), HELP],
     [() => withConfig('targets: { first_pass: 70 }\n'), 2, bad('targets.first_pass must be a quoted "<op> <number>", such as ">= 70"'), HELP],
-    [() => withConfig('targets: { speed: ">= 1" }\n'), 2, /^error: .*: targets: speed must be a metric \(merged, first_pass, .*, or cause_count:<cause>\)$/m, HELP],
+    [() => withConfig('targets: { speed: ">= 1" }\n'), 2, /^error: .*: targets: speed must be a metric \(merged, first_pass, .*, or cause_count:<cause>, or gate_failures:<step>\)$/m, HELP],
     [() => withConfig('agent_timeout: 20\n'), 2, bad('agent_timeout must be a duration such as 90s, 20m or 1h'), HELP],
     [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
     [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
@@ -283,6 +283,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     assert.doesNotMatch(r.stderr, /usage: learn-from-mistakes-axi|--proposals <file> +proposals\.jsonl to read/, `${what}: printed the usage block`);
     assert.doesNotMatch(r.stderr, /y{81}|\u001b/, `${what}: echoed a long or control value`);
   }
+  assert.equal(withConfig('targets: { "gate_failures:lint": "= 0" }\n').status, 0); // a per-step gate failure is a target metric
 });
 
 test('report is valid TOON and JSON lfm-report.v2 with the same projection; with no run the bare command exits 3', () => {
@@ -623,7 +624,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(noPath.status, 2, noPath.stderr);
   assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github, done-done$/m); // a list is not a type
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github, done-done, firstmate$/m); // a list is not a type
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github, repo: umer/app }\n'); // the repo comes from origin
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs: unknown key repo$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
@@ -631,13 +632,14 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(store.status, 2, store.stderr);
   assert.match(store.stderr, /^error: source gate: no such file$/m);
   assert.ok(store.stderr.includes(`next: set sources.gate.path in ${join(p, '.learn-from-mistakes.yaml')} to your no-mistakes state.sqlite, or remove that source`), store.stderr);
-  const flat = new DatabaseSync(join(p, 'flat.sqlite')); // no repos table: its rows cannot be told from other repos' rows
-  flat.exec(`CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT); CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT, step_name TEXT, status TEXT, error TEXT, started_at INTEGER, completed_at INTEGER)`);
-  flat.close();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: flat.sqlite }\n');
-  const flatRun = lfm('ingest');
-  assert.equal(flatRun.status, 2, flatRun.stderr);
-  assert.match(flatRun.stderr, /^error: source gate: not a readable no-mistakes store \(no such table: repos\)$/m);
+  cpSync(join(p, 'gate.sqlite'), join(p, 'old.sqlite')); // a store of a no-mistakes version without a column the read uses
+  const old = new DatabaseSync(join(p, 'old.sqlite'));
+  old.exec('ALTER TABLE step_results DROP COLUMN step_name');
+  old.close();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: old.sqlite }\n');
+  const oldRun = lfm('ingest');
+  assert.equal(oldRun.status, 2, oldRun.stderr);
+  assert.match(oldRun.stderr, /^error: source gate: unknown store schema \(no step_results\.step_name\)$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);

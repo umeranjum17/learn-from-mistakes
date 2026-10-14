@@ -131,8 +131,8 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   writeFileSync(cfg, examples);
   assert.deepEqual(decode(empty.stdout).sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 0, sessions: 0, skipped: 0 });
   const TARGETS = { tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', first_pass: '>= 70', p90_hours_to_merge: '<= 8', escaped: '<= 0' }; // the defaults
-  assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
-    'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped']
+  assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'gate_failures', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
+    'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped', 'decisions', 'blocks', 'steers', 'interventions_per_merge']
     .map((name) => ({ name, current: 'n/a', previous: 'n/a', target: TARGETS[name] ?? '', met: TARGETS[name] ? 'n/a' : '' }))); // the numbers of the types with no source here; n/a is never met or missed
 
   const r = lfm('retro', '--foreground');
@@ -147,10 +147,11 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   // 1 defect. An event or defect older than both is stored, never counted. A cause with no match rule is n/a; the gate
   // rule's rows are from March, so 0.
   // Each number with a target says whether this window met it, at the boundary too (1 <= 1, but not 1 > 1); n/a is neither.
-  assert.deepEqual(run.metrics, [['defects', 2, 1, '<= 1', 'missed'], ['tool_error_rate', 0.5, 0.75, '<= 0.05', 'missed'],
+  assert.deepEqual(run.metrics, [['defects', 2, 1, '<= 1', 'missed'], ...['', ':lint', ':review', ':test'].map((s) => [`gate_failures${s}`, 0, 0, '', '']), ['tool_error_rate', 0.5, 0.75, '<= 0.05', 'missed'],
     ['corrections_per_session', 0.25, 2, '<= 0.3', 'met'], ['interrupts', 1, 0, '> 1', 'missed'], ['retries', 1, 0, '', ''],
     ...['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped']
       .map((name) => [name, 'n/a', 'n/a', { first_pass: '>= 70', p90_hours_to_merge: '<= 8', escaped: '<= 0' }[name] ?? '', name in { first_pass: 1, p90_hours_to_merge: 1, escaped: 1 } ? 'n/a' : '']),
+    ...['decisions', 'blocks', 'steers', 'interventions_per_merge'].map((name) => [name, 'n/a', 'n/a', '', '']),
     ['cause_count:fetch-test-fails', 1, 0, '<= 1', 'met'], ['cause_count:missing-file', 0, 3, '= 0', 'met'], ['cause_count:server-memory-kill', 'n/a', 'n/a', '<= 0', 'n/a'],
     ['cause_count:shared-cache-lock', 'n/a', 'n/a', '', ''], ['cause_count:agent-exit-wait', 0, 0, '', '']]
     .map(([name, current, previous, target, met]) => ({ name, current, previous, target, met })));
@@ -209,8 +210,8 @@ test('two defect logs of one type sum into defects; a config with only a no-mist
   writeFileSync(cfg, 'sources:\n  gate: { type: no-mistakes, path: gate.sqlite }\n');
   const gate = lfm('retro', '--foreground');
   assert.equal(gate.status, 0, gate.stderr);
-  assert.deepEqual(decode(gate.stdout).metrics.map(({ name, current, previous }) => ({ name, current, previous })), ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
-    'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped']
+  assert.deepEqual(decode(gate.stdout).metrics.filter((m) => !m.name.startsWith('gate_failures')).map(({ name, current, previous }) => ({ name, current, previous })), ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
+    'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped', 'decisions', 'blocks', 'steers', 'interventions_per_merge']
     .map((name) => ({ name, current: 'n/a', previous: 'n/a' })));
 });
 
@@ -263,6 +264,8 @@ causes:
   const count = (name) => decode(r.stdout).metrics.find((m) => m.name === `cause_count:${name}`).current;
   assert.equal(count('timeout-hit'), failed);
   assert.equal(count('wait-delay'), 0);
+  assert.deepEqual(decode(r.stdout).metrics.filter((m) => m.name.startsWith('gate_failures')).map(({ name, current }) => [name, current]),
+    [['gate_failures', 5], ['gate_failures:lint', 1], ['gate_failures:review', 3], ['gate_failures:test', 1]]); // by step, in the window
   const report = JSON.parse(lfm('report', '--json').stdout);
   assert.equal(report.causes.find((c) => c.cause === 'timeout-hit').store.rows, failed);
   assert.equal(report.causes.find((c) => c.cause === 'wait-delay')?.store.rows ?? 0, 0);

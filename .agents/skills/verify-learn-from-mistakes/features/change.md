@@ -2,8 +2,8 @@
 
 ## Sub-features
 `learn-from-mistakes-axi change applied` validation (cause key, never `other`; git-sha or
-`sha256:` ref; readable `--at`; optional `--metric` (a metric name or
-`cause_count:<configured cause>`, default `cause_count:<cause>`), `--tripwire`
+`sha256:` ref; readable `--at`; optional `--metric` (a metric name,
+`cause_count:<configured cause>` or `gate_failures:<step>`, default `cause_count:<cause>`), `--tripwire`
 (`"<op> <number>"`, saved as `<op> <number>`, default none) and `--kind`
 (`doc`, `rule` or `code`, default `doc`); optional `--what`/`--why`, trimmed, one line of
 1-200 characters); one-append ledger writes with `chg-<n>` ids;

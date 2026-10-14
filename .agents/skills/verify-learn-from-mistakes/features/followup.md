@@ -18,7 +18,8 @@ is a ledger problem, so it never gets a row. The verdict is code, the first rule
 1. `no-data`: fewer than `followup.min_sessions` sessions (with an event at or
    after `at`) or fewer than `followup.min_days` days from `at` to the run, or
    the metric is n/a before or after, or a records-based metric (a `cause_count`
-   whose match rule names a no-mistakes source, or `defects`) has no record on or
+   whose match rule names a no-mistakes source, `defects` from a defect log or a firstmate home, or a
+   `gate_failures:<step>` metric) has no record on or
    before the start of the before window, so its `before` is n/a (the source does
    not cover that window). A change added after `collect` read the ledger can have
    an `at` older than what `collect` read (`read_from`): its `before` is n/a when

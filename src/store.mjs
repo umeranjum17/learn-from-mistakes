@@ -26,7 +26,8 @@ const MIGRATIONS = [
     PRIMARY KEY (run_id, window, name))`,
   // The metric's target ("<op> <number>", NULL with none), kept as it was when the run ran.
   'ALTER TABLE metrics ADD COLUMN target TEXT',
-  // A record's facts its source's metrics count, as JSON (a PR's merge time, rework and reverts); NULL for other records.
+  // A record's facts its source's metrics count, as JSON (a PR's merge time, rework and reverts; a firstmate record's
+  // kind and redacted tag; a failed gate row's step name); NULL for a record whose source counts no facts.
   'ALTER TABLE records ADD COLUMN data TEXT',
   // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
   `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,

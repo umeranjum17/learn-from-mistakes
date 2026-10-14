@@ -17,7 +17,8 @@ Checks, in order:
 - `source <id>`: each source's registry `doctor()` hook (sessions: stores, and the sessions and
   skipped records in files written in this window; a store that is missing is named with its env variable: an
   ok detail under `agents: auto`, a warn when the agent is listed; no store at all is a warn; markdown-log and
-  no-mistakes: readable, the count in the window, and the skipped entries). A read
+  no-mistakes: readable, the count in the window, and the skipped entries; firstmate: readable, its
+  decisions, blocks, steers and defect records, and the entries with no time). A read
   error is a fail with the source's own fix (a missing defect log: `check sources.<id>.path in
   <the project config's full path>, or create it: touch <path>`). No sources at all: warn.
 - `agent`/`judge_agent` (the labels `worker`/`judge`): only the configured agents are checked (doctor never offers another one). The role resolves to a usable, offered agent (`resolveRoles`), with
