@@ -1558,6 +1558,35 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual([git('rev-parse', `lfm/${auto.run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
 });
 
+test('apply: with no saved store, apply names the empty store and exits 3', () => {
+  const { lfm } = agentSetup();
+  const r = lfm({}, 'apply', '--run', '1');
+  assert.equal(r.status, 3, r.stderr);
+  assert.match(r.stderr, /^error: no retro run has kept fixes$/m);
+});
+
+test('apply: a refused apply in the run logs one line and the run stays ok with its proposals', () => {
+  const { p, env, bin, lfm, query, lines } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  writeFileSync(join(p, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');
+  const git = (...args) => execFileSync(join(bin, 'git'), ['-C', p, ...args], { encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Umer'); git('config', 'user.email', 'umer@example.com'); git('add', '-A'); git('commit', '-qm', 'start');
+  const global = join(env.LFM_HOME, 'config.yaml');
+  writeFileSync(global, `${readFileSync(global, 'utf8')}auto_fix: 1\n`);
+  writeFileSync(join(p, 'notes.txt'), 'Umer is still writing this.\n'); // the user's uncommitted work refuses the apply
+  const fake = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_TARGET: 'AGENTS.md (the rules list)' };
+  const r = lfm(fake, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run, applied } = JSON.parse(r.stdout);
+  assert.equal(run.status, 'completed');
+  assert.deepEqual(applied, []);
+  const refused = lines('apply', run.id);
+  assert.equal(refused.length, 1, refused.join('\n'));
+  assert.match(refused[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: .* has uncommitted changes; apply never touches them$`));
+  assert.ok(query('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND n IS NOT NULL', run.id)[0].n > 0);
+});
+
 test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
   const { p, env, lfm } = agentSetup();
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);

@@ -78,7 +78,11 @@ export async function autoApply(cfg, db, id, log) {
   if (!cfg.auto_fix) { log('auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply'); return { applied: [] }; }
   const applied = [];
   for (const fix of db.prepare(KEPT).all(id).filter((f) => f.answer !== 'skip').slice(0, cfg.auto_fix)) {
-    applied.push(await applyOne(cfg, db, id, fix, log));
+    try { applied.push(await applyOne(cfg, db, id, fix, log)); } catch (e) {
+      if (!(e instanceof InputError)) throw e;
+      log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`);
+      continue;
+    }
     log(line(id, applied.at(-1)));
   }
   return { applied };
@@ -88,7 +92,7 @@ export async function autoApply(cfg, db, id, log) {
 // --fix names (the plain-text fallback). Prints one line per fix as it is applied; the worker's call lines go to stderr.
 export async function apply(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  const run = opts.run ? Number(opts.run) : db?.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL').get().id;
+  const run = db && (opts.run ? Number(opts.run) : db.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL').get().id);
   if (run == null) throw new EmptyError('no retro run has kept fixes', withContext('learn-from-mistakes-axi retro --wait 15m', 'a run that proposes fixes', opts));
   try {
     const fixes = db.prepare(KEPT).all(run);
