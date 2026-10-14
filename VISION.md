@@ -64,7 +64,7 @@ Your agent judges each record. The CLI does the arithmetic and checks the eviden
 What it does today:
 
 - **Sources.** It reads, read-only: a markdown defect log, the failed steps in a no-mistakes store,
-  the agent sessions run in the repo (Claude Code, Codex, OpenCode) and the merged pull requests on GitHub.
+  the agent sessions run in the repo (Claude Code, Codex, OpenCode, and Pi and Gemini CLI when named in `agents`) and the merged pull requests on GitHub.
 - **Findings.** It counts each cause per source, merges duplicates and lists records nobody labelled.
   It never guesses a label.
 - **Proposed rule changes with evidence.** Your agent proposes changes by following `guide`.

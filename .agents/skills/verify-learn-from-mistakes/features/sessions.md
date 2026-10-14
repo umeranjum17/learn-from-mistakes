@@ -1,8 +1,8 @@
-# Agent sessions (`sessions` source: Claude Code, Codex, OpenCode)
+# Agent sessions (`sessions` source: Claude Code, Codex, OpenCode, Pi, Gemini CLI)
 
 ## Sub-features
 A `sessions: { type: sessions, agents: [auto] }` source (`agents`: `auto` or any of
-`claude`, `codex`, `opencode`) makes `ingest` and `retro` read this repo's sessions from each
+`claude`, `codex`, `opencode`, `pi`, `gemini`; `auto` never reads Pi or Gemini) makes `ingest` and `retro` read this repo's sessions from each
 agent's store. Claude Code: `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<id>.jsonl` and each session's
 `<id>/subagents/**/agent-*.jsonl`, streamed line by line. Store roots come only
 from env overrides. Files older than the read range (this window and the last,
@@ -31,6 +31,7 @@ whose `error.name` is `MessageAbortedError` (the interrupt, placed after the too
 off). A user message is one event over its non-synthetic text and file parts, so the
 `lfm-run:` marker is found after an attached prompt file (a leading quote is ignored).
 Refs are `file:line` for Codex and `db:<db file>:<table>:<rowid>` for OpenCode.
+Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl` whose header `cwd` is this repo (a fork skips its parent's copied entries); `toolResult.isError` the failure (`Command exited with code N` the exit, `Command` or `Operation aborted` none), `stopReason: aborted` the interrupt. Gemini CLI: `${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` and `chats/<session id>/*.jsonl` subagents, the slug from `.gemini/projects.json`; the last record per message id counts, `$set.messages` replaces, `$rewindTo` drops from one id; `status: error` or a shell output ending `Exit Code: N` the failure, `cancelled` the interrupt.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
 first user message starting `lfm-run:`, or a session id in the store's
 `invocations` table. The run's own agent calls ([analyse.md](analyse.md)) write
@@ -79,7 +80,7 @@ no text in `skipped`, exactly 2 corrections (not the goal wrapper, not the messa
 interrupt), 2 interrupts, 2 retries, 4 test failures (two of them `bash -lc` wrapped), 4
 nonzero exits (one a code-mode script) and 5 tool errors (failed patches by their `patch_apply_end`; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a non-shell tool whose output reads `Exit code: 1` after `Output:`, is not one), planted keys redacted, the
 `invocations` ids of both agents skipped on a second run, and every OpenCode database
-byte-identical after both runs. The helper drives
+byte-identical after both runs. A third journey reads synthetic Pi and Gemini CLI stores: 3 sessions, 25 events, one correction, interrupt, retry, test failure and tool error per agent, own runs, other projects and old files skipped, one bad line each in `skipped`, keys redacted. The helper drives
 `retro-sessions` (one synthetic Claude Code, Codex and OpenCode session each in its
 scratch HOME and XDG dir, `sessions: 3`, its `test-fails` match rule tagging all three, the OpenCode file unchanged).
 
@@ -106,5 +107,5 @@ The cwd test reads at most the lines before the first record with a cwd, so
 other projects' files are not parsed whole. `returnCodeInterpretation` marks a
 benign nonzero exit (such as grep with no match), so it is not a failure.
 A tool use the user turned down is not a tool error; the interrupt or the
-correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error. Claude Code's own wrapper messages (commands, hooks, reminders) are not person messages; an image-only message is. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
-it; the database file itself never changes. Pi and Gemini readers come later.
+correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error; an interrupt does too (it is its own signal). Wrapper messages (Claude Code's commands, hooks, reminders; Gemini's injected context, slash commands and `?` questions) are not person messages and do not clear it; an image-only message is one. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
+it; the database file itself never changes.

@@ -14,9 +14,11 @@ import { excerpt as cut } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
 import * as claude from '../sessions/claude.mjs';
 import * as codex from '../sessions/codex.mjs';
+import * as gemini from '../sessions/gemini.mjs';
 import * as opencode from '../sessions/opencode.mjs';
+import * as pi from '../sessions/pi.mjs';
 
-const READERS = { claude, codex, opencode };
+const AUTO = { claude, codex, opencode }, READERS = { ...AUTO, pi, gemini }; // auto never reads pi or gemini: only when named
 export const SIGNALS = ['tool_error', 'nonzero_exit', 'test_fail', 'correction', 'interrupt', 'retry'];
 
 export function validate(s, where, dir) {
@@ -25,7 +27,7 @@ export function validate(s, where, dir) {
   if (!Array.isArray(agents) || !agents.length || !agents.every((a) => a === 'auto' || Object.hasOwn(READERS, a))) {
     throw new UsageError(`${where}.agents must be a list of auto or ${Object.keys(READERS).join(', ')}`);
   }
-  return { type: s.type, agents: agents.includes('auto') ? Object.keys(READERS) : [...new Set(agents)], auto: agents.includes('auto'), dir };
+  return { type: s.type, agents: [...new Set([...(agents.includes('auto') ? Object.keys(AUTO) : []), ...agents.filter((a) => a !== 'auto')])], auto: agents.includes('auto'), dir };
 }
 
 const real = (p) => { try { return realpathSync(p); } catch { return p; } };
@@ -87,7 +89,7 @@ export function metrics(events, window) {
 }
 
 // init: a sessions source when any agent store exists here.
-export const detect = () => (Object.values(READERS).some((r) => existsSync(r.root())) ? { sessions: { type: 'sessions', agents: ['auto'] } } : undefined);
+export const detect = () => (Object.values(AUTO).some((r) => existsSync(r.root())) ? { sessions: { type: 'sessions', agents: ['auto'] } } : undefined);
 
 // doctor: whether the stores are readable, and the sessions and skipped records in the read range.
 export async function doctor(source, entry, ctx) {
@@ -102,7 +104,7 @@ export async function doctor(source, entry, ctx) {
     if (!missing.length) return { level: 'ok', detail: counts };
     // With agents: auto an absent store is normal (that agent is not used here); a listed agent's absent store is a warn.
     const gone = missing.map((a) => `${a} store not found at ${READERS[a].root()} (${READERS[a].STORE_VAR})`).join('; ');
-    if (entry.auto) return { level: 'ok', detail: `${counts}; ${gone}` };
+    if (entry.auto && missing.every((a) => Object.hasOwn(AUTO, a))) return { level: 'ok', detail: `${counts}; ${gone}` };
     return { level: 'warn', detail: `${counts}; ${gone}`, fix: storeFix };
   } catch (e) { return { level: 'fail', detail: e.message, fix: e.next }; }
 }
