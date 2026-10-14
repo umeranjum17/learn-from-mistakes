@@ -10,15 +10,15 @@ and fixes the rules left out, items the judge weakened or did not check) and que
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi retro --foreground` (or `--wait`), then read the file. The `report` step log ends with
-`report.txt: <lines> lines, <questions> questions`. A fix's change and the judge's note are only in `report.txt`;
-a finding's summary also prints in `retro` and `status` `result`.
+`report.txt: <lines> lines, <questions> questions`. stdout and `--json` stay ids, counts, metrics and verdicts:
+a finding's summary, a fix's change and the judge's note are only in `report.txt`.
 
 ## Driving it with the public CLI
 The helper's `retro-propose` saves `report.txt` to the evidence dir and checks the seven sections, the Apply or Skip
 question for fix 1 and the roll-back question for `chg-2`. `test/cli.test.mjs` checks every sentence has at most 20
 words, no path or store id is outside an `Evidence:` line, each pointer opens (a project file line, a gate store row,
 a session event), the `signoff post` line when `sign-off-axi` is on PATH, and the canary journey: a canary in each
-agent-written field reaches `report.txt` and the finding summary in `status`, never stderr or a step log.
+agent-written field reaches `report.txt` but never stdout or stderr of `retro`, `status`, `attach` or `logs`.
 
 ## Gotchas
 Agent or config text that breaks the 20-word rule or names a path, file, bundle id or hash is replaced by a line

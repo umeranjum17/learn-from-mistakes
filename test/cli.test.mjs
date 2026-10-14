@@ -474,7 +474,7 @@ test('--full adds only non-content ids, never record text or record ids', () => 
   assert.doesNotMatch(text, /"why"|"change"|"description"|"branch"/); // no private prose fields at all
 });
 
-test('private canary prose never reaches default, --json, --full or stderr; the agents\' canary text reaches report.txt and the status summary, never a step log', () => {
+test('private canary prose never reaches default, --json, --full or stderr; the agents\' canary text reaches only report.txt', () => {
   const { p, lfm } = setup();
   appendFileSync(join(p, 'defects.md'), `- [runner] ${CANARY} stopped the server -> 1 h -> OPEN.\n`);
   const plant = (text, anchor) => {
@@ -495,14 +495,9 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   // Each text field the worker and the judge write (finding summary, label why, fix change, verdict reason) carries the canary.
   const run = agentSetup(), yaml = join(run.p, '.learn-from-mistakes.yaml'), agents = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_CANARY: CANARY };
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
-  const retro = run.lfm(agents, 'retro', '--foreground'), json = run.lfm(agents, 'retro', '--foreground', '--json');
-  assert.equal(retro.status, 0, retro.stderr);
-  assert.equal(json.status, 0, json.stderr);
-  const id = JSON.parse(json.stdout).run.id;
-  const status = run.lfm({}, 'status');
-  assert.equal(status.status, 0, status.stderr);
-  assert.match(status.stdout, new RegExp(CANARY)); // the worker's redacted finding summary is the agent text stdout carries
-  const outs = ['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step));
+  const outs = [run.lfm(agents, 'retro', '--foreground'), run.lfm(agents, 'retro', '--foreground', '--json')];
+  const id = JSON.parse(outs[1].stdout).run.id;
+  outs.push(run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
   for (const r of outs) {
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout + r.stderr, new RegExp(CANARY));
@@ -1253,12 +1248,12 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
   // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
-  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.' };
+  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed' }, summary = 'The tests fail when UMER_FIXTURES is unset. No doc names it.';
   assert.deepEqual(result, { labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
-  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict,summary\}:\n {4}umer-fixtures-unset,1,1,confirmed,The tests fail when UMER_FIXTURES is unset\. No doc names it\.$/m);
+  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict\}:\n {4}umer-fixtures-unset,1,1,confirmed$/m);
   assert.match(reportOf(p, run.id), /^5\. Fixes\n- No fix passed the rules\.$/m);
   assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);
-  // The bare report counts the run's labels and names their source; the findings show as counts with their summaries.
+  // The bare report counts the run's labels and names their source; the findings show as counts, their summaries in status only.
   const bare = lfm({}, 'report', '--json');
   assert.equal(bare.status, 0, bare.stderr);
   const bareJson = JSON.parse(bare.stdout);
@@ -1267,7 +1262,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
   const toon = lfm({}, 'report');
   assert.equal(toon.status, 0, toon.stderr);
-  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${finding.summary}`), toon.stdout);
+  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${summary}`), toon.stdout);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');

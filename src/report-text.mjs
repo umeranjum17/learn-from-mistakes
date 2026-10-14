@@ -67,7 +67,9 @@ export function reportText(cfg, db, id, dir, window, run) {
   if (!repeated.length) lines.push('- None.');
   lines.push('', '5. Fixes');
   for (const f of fixes) {
-    const finding = findings.find((x) => x.cause === f.cause), shown = run.fixes.find((x) => x.n === f.n);
+    const refs = JSON.parse(f.refs_json);
+    const finding = findings.find((x) => x.cause === f.cause && JSON.parse(x.refs_json).some((r) => refs.includes(r))) ?? findings.find((x) => x.cause === f.cause);
+    const shown = run.fixes.find((x) => x.n === f.n);
     const target = run.metrics.find((m) => m.name === shown.metric)?.target;
     lines.push(`Fix ${f.n}, for ${f.cause}:`, '- Finding:', said(finding?.summary ?? cfg.causes[f.cause]?.description), '- Owner:', said(f.owner), '- Change:', said(f.change),
       `- Metric: ${shown.metric}, ${target ? `target ${target}` : 'no target'}. Tripwire: ${shown.tripwire}.`, `- The judge's verdict: ${shown.verdict}.`);
