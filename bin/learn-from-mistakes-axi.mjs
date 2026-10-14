@@ -703,7 +703,8 @@ async function initCommand(opts) {
   quietSqlite();
   const dir = opts.dir ?? resolve('.');
   let out = await init(dir, opts);
-  console.log(render(out, opts.json));
+  const { skills, skills_updated, skills_skipped, skills_roots, ...shown } = out; // text shows the skill lines below, not these
+  console.log(render(opts.json ? out : shown, opts.json));
   if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
   for (const f of !opts.json ? out.skills ?? [] : []) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
   for (const f of !opts.json ? out.skills_skipped ?? [] : []) console.log(`skipped: ${f}`);

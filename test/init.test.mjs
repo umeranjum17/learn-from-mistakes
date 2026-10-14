@@ -642,6 +642,7 @@ test('init installs the skill into each configured agent\'s own skills dir; a se
   const plain = lfm('init');
   assert.equal(plain.status, 0, plain.stderr);
   assert.match(plain.stdout, /^skills: nothing new$/m); // the second init writes nothing new and says so
+  assert.doesNotMatch(plain.stdout, /skills_|^skills\[/m); // the text output shows the skill lines, not the result fields
   assert.deepEqual(JSON.parse(lfm('init', '-y', '--json').stdout).skills, []);
   assert.deepEqual([readFileSync(config), ...out.skills.map((f) => readFileSync(f))], bytes);
   const [edited] = out.skills;
