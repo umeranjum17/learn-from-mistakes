@@ -6,7 +6,8 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, posix } from 'node:path';
-import { EmptyError, InputError, readLedger, recordChange, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { EmptyError, InputError, readLedger, recordableCauses, recordChange, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { PROJECT_FILE } from './config.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 import { agentStep } from './steps/agent-step.mjs';
@@ -34,6 +35,7 @@ function targetFiles(top, target) {
 async function applyOne(cfg, db, run, fix, log) {
   const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`;
   if (fix.answer === 'skip') throw new UsageError(`fix ${at} was answered Skip, and a Skip is never applied`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its other kept fixes', {}));
+  if (!recordableCauses(cfg).includes(fix.cause)) throw new InputError(`fix ${at} names cause ${fix.cause}, which is not a configured cause`, `add ${fix.cause} under causes in ${PROJECT_FILE}, then apply again`);
   const top = git(cfg.dir, ['rev-parse', '--show-toplevel']);
   if (git(top, ['status', '--porcelain'])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
   const head = git(top, ['rev-parse', '--verify', 'HEAD']);
@@ -79,7 +81,7 @@ export async function autoApply(cfg, db, id, log) {
   const applied = [];
   for (const fix of db.prepare(KEPT).all(id).filter((f) => f.answer !== 'skip').slice(0, cfg.auto_fix)) {
     try { applied.push(await applyOne(cfg, db, id, fix, log)); } catch (e) {
-      if (!(e instanceof InputError)) throw e;
+      if (!(e instanceof UsageError)) throw e;
       log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`);
       continue;
     }

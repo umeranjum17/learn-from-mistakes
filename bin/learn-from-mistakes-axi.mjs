@@ -124,6 +124,7 @@ const storedMetric = (m) => oneLine(m, { allowTab: true }) !== undefined;
 // repeat an id; a lock file is the upgrade.
 // --proposal <run>:<n> takes the cause, metric and tripwire of that run's kept fix n; --metric and --tripwire override them.
 // Returns the entry it appended (`apply` records each fix it applies through here).
+export const recordableCauses = (cfg) => Object.keys(cfg.causes).filter((c) => c !== 'other');
 export async function recordChange(cfg, opts) {
   const form = FORMS['change-applied'];
   if (opts.proposal !== undefined) {
@@ -139,7 +140,7 @@ export async function recordChange(cfg, opts) {
   }
   if (opts.cause === undefined) throw new UsageError('change applied needs --cause or --proposal', form);
   if (opts.ref === undefined) throw new UsageError('change applied needs --ref', form);
-  const known = Object.keys(cfg.causes).filter((c) => c !== 'other');
+  const known = recordableCauses(cfg);
   if (!known.includes(opts.cause)) {
     const list = `known: ${known.join(', ') || `none, add causes to ${PROJECT_FILE}`}`;
     throw new UsageError(opts.cause === 'other' ? `cause "other" is reserved and never recordable (${list})` : `unknown cause ${shown(opts.cause)} (${list}; "other" is reserved)`, form);
