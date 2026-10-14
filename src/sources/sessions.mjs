@@ -27,7 +27,7 @@ export function validate(s, where, dir) {
   if (!Array.isArray(agents) || !agents.length || !agents.every((a) => a === 'auto' || Object.hasOwn(READERS, a))) {
     throw new UsageError(`${where}.agents must be a list of auto or ${Object.keys(READERS).join(', ')}`);
   }
-  return { type: s.type, agents: agents.includes('auto') ? Object.keys(AUTO) : [...new Set(agents)], auto: agents.includes('auto'), dir };
+  return { type: s.type, agents: [...new Set([...(agents.includes('auto') ? Object.keys(AUTO) : []), ...agents.filter((a) => a !== 'auto')])], auto: agents.includes('auto'), dir };
 }
 
 const real = (p) => { try { return realpathSync(p); } catch { return p; } };
