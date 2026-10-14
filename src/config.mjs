@@ -65,7 +65,7 @@ const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with 
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
 // in a cloned repo cannot run a program of its choosing.
 const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout', 'allow_premium'];
-const GLOBAL_ONLY = ['state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
+const GLOBAL_ONLY = ['auto_fix', 'state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
 
 // Applies the agent keys one file sets onto cfg, and records that file in cfg.from as the place to change each one.
 function agentKeys(cfg, g, file) {
@@ -105,7 +105,7 @@ export const globalFile = () => join(lfmHome(), 'config.yaml');
 // The global file with every default; cfg.from names, per agent key, the file that set it (here: the global file).
 export function loadGlobal() {
   const home = lfmHome(), file = globalFile();
-  const g = mapping(readYaml(file) ?? {}, [...AGENT_KEYS, 'auto_fix', ...GLOBAL_ONLY], file);
+  const g = mapping(readYaml(file) ?? {}, [...AGENT_KEYS, ...GLOBAL_ONLY], file);
   const path = (v, where) => { check(typeof v === 'string' && v, where, 'a path to the binary'); return v.includes('/') ? expand(v, home) : v; }; // a bare name stays a PATH lookup
   const agent_path_override = mapping(g.agent_path_override ?? {}, AGENTS, `${file}: agent_path_override`);
   for (const [k, v] of Object.entries(agent_path_override)) agent_path_override[k] = path(v, `${file}: agent_path_override.${k}`);
@@ -127,7 +127,6 @@ sources:
   log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi guide   # the full config, then ingest, label and report');
   if (p.name !== undefined) check(typeof p.name === 'string', `${file}: name`, 'a string');
   for (const k of GLOBAL_ONLY) if (Object.hasOwn(p, k)) throw new UsageError(`${file}: ${k} is global-only: set it in ${global.globalPath}`);
-  if (Object.hasOwn(p, 'auto_fix')) throw new UsageError(`${file}: auto_fix is a user setting; set it in the global config`);
   mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', ...AGENT_KEYS], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {

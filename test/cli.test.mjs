@@ -1642,7 +1642,7 @@ test('auto_fix is a user setting: a project file that sets it exits 2 and a retr
   const { p, lfm } = setup();
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}auto_fix: 3\n`);
   const r = lfm('retro', '--foreground'); assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, /^error: .*auto_fix is a user setting; set it in the global config$/m);
+  assert.match(r.stderr, /^error: .*\.learn-from-mistakes\.yaml: auto_fix is global-only: set it in .*config\.yaml$/m);
   assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a refused config must not create the store');
 });
 
