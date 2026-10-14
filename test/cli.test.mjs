@@ -510,6 +510,16 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   assert.ok(!hidden.includes('cache.mjs') && hidden.includes('- Change:\n  This text breaks the report rules, so it is not shown.\n'), hidden);
 });
 
+test('a fix shows the finding its refs cite, not the first finding with the same cause', () => {
+  const run = agentSetup(), yaml = join(run.p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const r = run.lfm({ FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'twins', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'twin' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const text = reportOf(run.p, JSON.parse(r.stdout).run.id);
+  assert.match(text, /^Fix 1, for shared-cache-lock:\n- Finding:\n  Second twin failed alone\.\n/m);
+  assert.doesNotMatch(text, /First twin/);
+});
+
 test('a labelled gate row counts once: its label decides the cause, not its error tag', () => {
   const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);

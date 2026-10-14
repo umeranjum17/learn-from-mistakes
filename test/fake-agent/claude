@@ -5,7 +5,8 @@
 // item; prose answers in plain text; blank answers nothing; hang never answers. The propose step (its marker line) gets
 // a reason for each follow-up it lists and, with FAKE_PROPOSE=eight, eight fixes for FAKE_CAUSE citing the bundle's
 // records (or its first item when it has none): the sixth with metric defects, the seventh for a cause that did not repeat, the eighth with no tripwire.
-// FAKE_PROPOSE=long gives two fixes, the second with a change of four sentences, on every answer.
+// FAKE_PROPOSE=long gives two fixes, the second with a change of four sentences, on every answer. FAKE_PROPOSE=twin gives one
+// fix for FAKE_CAUSE citing only the second record; with FAKE_FINDINGS=twins, label names two findings under FAKE_CAUSE, one per record.
 // The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
@@ -35,7 +36,8 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const followups = stdin.slice(stdin.indexOf('Follow-ups to explain:'), stdin.indexOf('Reply with one JSON object'));
   const fix = (target, more) => ({ cause: process.env.FAKE_CAUSE || 'other', target, kind: process.env.FAKE_KIND || 'code', owner: 'maintainer', change: 'Give each worker its own cache directory.', metric: null, tripwire: '<= 0', refs, ...more });
   const proposals = process.env.FAKE_PROPOSE === 'long' ? [fix('launch script 1'), fix('launch script 2', { change: 'Give each worker its own cache directory. Keep the lock out of it. Run the launch script alone. Check the result.' })]
-    : process.env.FAKE_PROPOSE !== 'eight' ? [] : [...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
+    : process.env.FAKE_PROPOSE === 'twin' ? [fix('launch script 1', { refs: records.slice(1, 2) })]
+    : process.env.FAKE_PROPOSE !== 'eight' ? [] :[...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
     fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })];
   const answer = { proposals,
     reasons: [...followups.matchAll(/^- (chg-\d+):/gm)].map((m) => ({ change: m[1], reason: 'Too few sessions ran after the change for Umer.' })) };
@@ -46,8 +48,10 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const first = bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1];
   const answer = mode === 'blank' ? '' : mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] }
     : mode === 'outside' ? { findings: [], labels: [{ id: 'nowhere-9', event: true, cause: 'other', why: 'The run failed for Umer.' }] } : {
-      findings: [{ cause: 'umer-fixtures-unset', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
-        { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
+      findings: process.env.FAKE_FINDINGS === 'twins' ? [{ cause: process.env.FAKE_CAUSE, summary: 'First twin failed alone.', refs: [records[0]] },
+        { cause: process.env.FAKE_CAUSE, summary: 'Second twin failed alone.', refs: [records[1]] }]
+        : [{ cause: 'umer-fixtures-unset', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
+          { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
       labels: records.map((id) => ({ id, event: true, cause: process.env.FAKE_CAUSE || 'other', why: 'The run failed for Umer.', duplicate_of: null, occurrences: null, confidence: null })),
     });
   reply(answer);
