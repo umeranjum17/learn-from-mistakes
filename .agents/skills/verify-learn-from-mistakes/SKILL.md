@@ -1,6 +1,6 @@
 ---
 name: verify-learn-from-mistakes
-description: Drive the real learn-from-mistakes-axi init, doctor, ingest/count/report, change applied and retro/status/runs/attach/logs/abort/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
+description: Drive the real learn-from-mistakes-axi init, doctor, ingest/count/report, change applied, apply and retro/status/runs/attach/logs/abort/rerun/agents CLI, reuse its e2e journeys, and retain private identity, input hashes, command logs and results before a PR or after CLI changes.
 metadata:
   internal: true
 ---
