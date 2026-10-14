@@ -69,7 +69,7 @@ function setup() {
   utimesSync(join(claude, 'projects', '-repo', 's-old.jsonl'), old, old);
   utimesSync(join(claude, 'projects', '-repo', 's-main.jsonl'), old, old); // its subagent file changed later, so it is read
   const cfg = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(cfg, `${readFileSync(cfg, 'utf8').replace('sources:\n', 'sources:\n  sessions: { type: sessions }\n').replace('causes:\n', `causes:
+  writeFileSync(cfg, `${readFileSync(cfg, 'utf8').replace('sources:\n', 'sources:\n  sessions: { type: sessions, agents: [claude] }\n').replace('causes:\n', `causes:
   fetch-test-fails: { description: The fetch tests fail., match: { source: sessions, signal: test_fail, text_contains: fetch.test } }
   missing-file: { description: The agent reads a file that is not there., match: { source: sessions, signal: tool_error, tool: Read } }
 `)}targets: { defects: "<= 1", interrupts: "> 1", "cause_count:fetch-test-fails": "<= 1", "cause_count:missing-file": "= 0", "cause_count:server-memory-kill": "<= 0" }
@@ -125,7 +125,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
 
   // No sessions yet, and no other source: the run completes with 0 sessions and every number n/a, never 0.
-  writeFileSync(cfg, 'sources:\n  sessions: { type: sessions }\n');
+  writeFileSync(cfg, 'sources:\n  sessions: { type: sessions, agents: [claude] }\n');
   const empty = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: join(claude, '..', 'none') } });
   assert.equal(empty.status, 0, empty.stderr);
   writeFileSync(cfg, examples);
@@ -228,7 +228,7 @@ test('a rule tags signal events only, and text_contains reads a retried call as 
     call('a3', quoted), result('a3', 'ok'),
   ].map((r) => JSON.stringify(r)).join('\n'));
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
-  sessions: { type: sessions }
+  sessions: { type: sessions, agents: [claude] }
 causes:
   quoted-grep:
     description: A retried grep with quotes.
@@ -480,7 +480,7 @@ test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0
   const ids = Array.from({ length: 496 }, (_, i) => `t${i}`);
   mkdirSync(join(claude, 'projects', '-repo'), { recursive: true });
   writeFileSync(join(claude, 'projects', '-repo', 's-rate.jsonl'), ids.flatMap((id, i) => [call(id), result(id, i)]).map((r) => JSON.stringify(r)).join('\n'));
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions }\ntargets: { tool_error_rate: "<= 0.05" }\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  sessions: { type: sessions, agents: [claude] }\ntargets: { tool_error_rate: "<= 0.05" }\n');
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
   const row = decode(r.stdout).metrics.find((m) => m.name === 'tool_error_rate');

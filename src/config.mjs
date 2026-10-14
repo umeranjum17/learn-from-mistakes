@@ -134,7 +134,7 @@ sources:
     const type = mapping(s, null, where).type;
     if (typeof type !== 'string' || !Object.hasOwn(SOURCES, type)) throw new UsageError(`${where}.type must be one of ${Object.keys(SOURCES).join(', ')}`);
     const other = Object.keys(sources).find((k) => k !== id && sources[k]?.type === type);
-    if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads every agent's sessions; keep one and narrow it with agents`);
+    if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads sessions; keep one and list every agent in its agents`);
     if (type === 'github' && other) throw new UsageError(`${where}: sources.${other} already reads the PRs of origin's GitHub repo; keep one`);
     sources[id] = SOURCES[type].validate(s, where, dir);
   }

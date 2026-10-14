@@ -6,9 +6,10 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
 import { InputError, shq, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { save, saveCommand, unset } from './ask.mjs';
+import { interactive, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { CLASH, detect, KEY, resolveRoles, RUNNERS } from './runners/index.mjs';
+import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an installed agent CLI or byokit:<route>; agents --test <agent> checks one`;
@@ -141,6 +142,13 @@ export async function init(dir, opts) {
     if (opts[model] && !takeModel) ignored.push(`--${model}`);
   }
   if (!written && opts['no-excerpts']) ignored.push('--no-excerpts');
+  // The sessions source: the agents --sessions names, or a terminal's pick of the local stores (none selected); else a gap.
+  const names = Object.keys(READERS), local = stores();
+  const has = !written && Object.values(before.sources).some((s) => s.type === 'sessions');
+  let reads = opts.sessions?.split(',').map((a) => a.trim()), asked = false;
+  if (reads && !reads.every((a) => names.includes(a))) throw new UsageError(`--sessions ${shq(opts.sessions)} must list agents by name: ${names.join(', ')}`, 'learn-from-mistakes-axi init --sessions claude,pi   # the agents whose sessions the user wants read');
+  if (reads && has) { ignored.push('--sessions'); reads = undefined; }
+  if (!reads && !has && local.length && !opts.y && interactive()) { reads = await pickSessions(local, names); asked = true; }
   // A chosen role that is not usable, or a chosen judge on the worker's identity, is refused before any file is written.
   if (Object.keys(chosen).length) {
     const want = { ...before, agent_config: structuredClone(before.agent_config) };
@@ -189,6 +197,11 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
       catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     }
   }
+  if (reads?.length) {
+    const doc = parseDocument(readFileSync(file, 'utf8'));
+    doc.setIn(['sources', before.sources?.sessions ? 'agent-sessions' : 'sessions'], doc.createNode({ type: 'sessions', agents: [...new Set(reads)] }, { flow: true }));
+    writeFileSync(file, doc.toString({ lineWidth: 0 }));
+  }
   let cfg = loadConfig(dir);
   if (written) { // each match names the config's sessions source; with none, the causes are for the worker's labels only
     const doc = parseDocument(readFileSync(file, 'utf8'));
@@ -206,6 +219,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   const { written: skills, updated: skills_updated, failed: skills_skipped, roots: skills_roots } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
+    ...(!has && !reads?.length && !asked && local.length ? [sessionsAsk(local, opts.dir)] : []),
     ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];

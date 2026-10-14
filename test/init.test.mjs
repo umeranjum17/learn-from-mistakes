@@ -45,7 +45,7 @@ const PICK = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'o
 
 test('init writes the global agent config and a working project config once: the agents the user chose, the sources found, a git-ignored .lfm', () => {
   const { p, nm, lfm, config, global } = setup(['claude', 'opencode']);
-  const r = lfm('init', '-y', '--no-skill', '--json', ...PICK);
+  const r = lfm('init', '-y', '--no-skill', '--json', ...PICK, '--sessions', 'claude');
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.deepEqual([out.status, out.global, out.global_status], ['written', global, 'written']);
@@ -55,7 +55,7 @@ test('init writes the global agent config and a working project config once: the
   assert.match(readFileSync(config, 'utf8'), /^# agent: claude /m); // the project file names the keys it may override, commented
   assert.deepEqual(parse(readFileSync(config, 'utf8')), { name: 'umer-app', excerpts: 'on',
     sources: { log: { type: 'markdown-log', path: 'docs/defects.md' }, gate: { type: 'no-mistakes', path: join(nm, 'state.sqlite') },
-      sessions: { type: 'sessions', agents: ['auto'] } },
+      sessions: { type: 'sessions', agents: ['claude'] } }, // only the agents the user named
     agent: 'claude', judge_agent: 'opencode', agent_config: { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }, // exactly what was chosen
     causes: Object.fromEntries(STARTER.map(([id, signal]) => [id, { description: parse(readFileSync(config, 'utf8')).causes[id].description, match: { source: 'sessions', signal } }])) });
   assert.deepEqual(out.causes, STARTER.map(([id]) => id));
@@ -77,10 +77,9 @@ test('init writes the global agent config and a working project config once: the
   writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten: no starter causes, and its gaps say how to add them
   const gaps = JSON.parse(lfm('init', '-y', '--json').stdout).gaps;
   assert.match(gaps[0], ASK);
-  assert.deepEqual(gaps.slice(1), ['causes: none in .learn-from-mistakes.yaml, so every label is other: add a causes key with a description per cause',
+  assert.deepEqual(gaps.slice(1), [`sessions: ask the user which agents' sessions to read (local stores: claude), then run learn-from-mistakes-axi init --sessions <agent>,<agent> --dir ${p}   # with the user's answer`,'causes: none in .learn-from-mistakes.yaml, so every label is other: add a causes key with a description per cause',
     'sources: markdown-log found at docs/defects.md, not configured (add it as log)',
-    'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)',
-    'sources: sessions found, not configured (add it as sessions)']);
+    'sources: no-mistakes found at ' + join(nm, 'state.sqlite') + ', not configured (add it as gate)']);
   assert.deepEqual(parse(readFileSync(config, 'utf8')), { sources: {} });
   const own = readFileSync(config, 'utf8');
   assert.deepEqual(JSON.parse(lfm('init', '-y', '--json').stdout).causes, []);
@@ -107,8 +106,12 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
   assert.match(out.gaps[0], ASK);
   const save = `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`;
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], save);
+  // Not a terminal: the sessions source is asked too, with the local stores as choices, and none is written.
+  const sessionsSave = `learn-from-mistakes-axi init --sessions <agent>,<agent> --dir ${p}   # with the user's answer`;
+  assert.equal(out.gaps[1], `sessions: ask the user which agents' sessions to read (local stores: claude), then run ${sessionsSave}`);
   const yaml = parse(readFileSync(config, 'utf8'));
-  assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], [undefined, undefined, undefined]);
+  assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config, yaml.sources.sessions], [undefined, undefined, undefined, undefined]);
+  assert.ok(Object.values(yaml.causes).every((c) => !c.match)); // no sessions source: the starter causes match nothing
   const noSkill = lfm('init', '-y');
   assert.equal(noSkill.status, 0, noSkill.stderr);
   assert.match(noSkill.stdout, /^skills: no configured agent has a skills dir$/m);
@@ -128,7 +131,17 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
   assert.equal(plainWorker.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
   assert.equal(parse(readFileSync(config, 'utf8')).agent, 'claude'); // a set key is never rewritten
   const set = lfm('init', '--agent', 'codex', '--model', MODELS.codex, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode, '--json');
-  assert.deepEqual([JSON.parse(set.stdout).ignored, JSON.parse(set.stdout).gaps], [['--agent', '--model'], []]); // a set key is never rewritten
+  assert.deepEqual([JSON.parse(set.stdout).ignored, JSON.parse(set.stdout).gaps.length], [['--agent', '--model'], 1]); // a set key is never rewritten
+  assert.equal(lfm('init').stderr.match(/^next: (.*)$/m)[1], sessionsSave);
+  assert.match(lfm('init', '--sessions', 'auto').stderr, /^error: --sessions auto must list agents by name: claude, codex, opencode, pi, gemini$/m);
+  const named = lfm('init', '--sessions', 'claude,pi,gemini', '--json'); // an existing file takes the user's named agents
+  assert.deepEqual([named.status, JSON.parse(named.stdout).gaps], [0, []]);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).sources.sessions, { type: 'sessions', agents: ['claude', 'pi', 'gemini'] });
+  assert.deepEqual(JSON.parse(lfm('init', '--sessions', 'codex', '--json').stdout).ignored, ['--sessions']); // never rewritten
+  writeFileSync(config, readFileSync(config, 'utf8').replace('[ claude, pi, gemini ]', '[ auto ]'));
+  const auto = lfm('doctor');
+  assert.equal(auto.status, 1, auto.stdout);
+  assert.match(auto.stdout, /sources\.sessions\.agents: auto is not a value; ask the user which agents' sessions to read and list them by name, such as agents: \[claude, pi\]/);
   assert.deepEqual(Object.entries(parse(readFileSync(config, 'utf8'))).filter(([k]) => k.includes('agent')),
     [['agent', 'claude'], ['agent_config', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }], ['judge_agent', 'opencode']]);
 });
@@ -138,7 +151,7 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
 test('in a terminal, init asks for each agent and model and saves the answer', () => {
   const { tmp, p, env, config, lfm } = setup(['claude', 'opencode']);
   // the worker and judge are picked by number; the judge is claude first, refused as the worker's agent; its first model is a bare id, refused and asked again, then typed
-  const answers = ['1', MODELS.claude, '1', '3', 'muse-spark-1.3-contributor', MODELS.opencode].join('\n') + '\n';
+  const answers = ['1', '1', MODELS.claude, '1', '3', 'muse-spark-1.3-contributor', MODELS.opencode].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
@@ -155,7 +168,7 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
 // Ctrl-D at the first pick: nothing is saved, and the printed command that saves the answer keeps the project dir.
 test('in a terminal, ending the pick early prints the save command with --dir', () => {
   const { tmp, p, env, config } = setup(['claude', 'opencode']);
-  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: '\x04', env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 2, r.stdout);
   assert.match(r.stdout, /no answer given: agent and judge_agent not saved/);
@@ -167,7 +180,7 @@ test('in a terminal, ending the pick early prints the save command with --dir', 
 test('in a terminal, a worker agent set globally is asked only its model, and the judge is asked both', () => {
   const { tmp, p, env, config, global } = setup(['claude', 'opencode'], 'agent: claude\n');
   const answers = [MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
-  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.doesNotMatch(r.stdout, /Which agent runs the worker/);
@@ -180,7 +193,7 @@ test('in a terminal, a worker agent set globally is asked only its model, and th
 // A worker and judge already set to one agent with no model: the clash is refused before any model is asked, and nothing is saved.
 test('in a terminal, a worker and judge set to one agent are refused before any model is asked', () => {
   const { tmp, p, env, config, global } = setup(['claude'], 'agent: claude\njudge_agent: claude\n');
-  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: '', env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 2, r.stdout);
   assert.match(r.stdout, /judge_agent and agent are both claude: agent_config holds one model per agent/);
@@ -232,7 +245,7 @@ test('init --model keeps the model the project file sets for that agent, and lis
 test('in a terminal, a worker pick equal to the set judge is refused and asked again', () => {
   const { tmp, p, env, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
   const answers = ['1', '2', MODELS.codex, MODELS.claude].join('\n') + '\n'; // claude refused as the worker; codex, its model, then claude's model
-  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /the worker must be another agent than the judge \(claude\)/);
@@ -461,32 +474,17 @@ test('doctor run from another directory names the full project file in each fix'
   assert.ok(ingest.stderr.includes(`next: check sources.log.path in ${config}, or create it: touch `), ingest.stderr);
 });
 
-test('doctor warns on a sessions source whose agent has no store, and names that agent\'s store variable', () => {
+test('doctor warns on each named sessions agent that has no store, and names that agent\'s store variable', () => {
   const { lfm, config, env } = setup(['claude', 'opencode'], CHOSEN('claude', 'opencode'));
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
-  const yaml = readFileSync(config, 'utf8');
-  writeFileSync(config, yaml.replace(/(sessions:[\s\S]*?agents:)\s*(\[[^\]]*\]|(\n\s+- .*)+)/, '$1 [codex]'));
-  const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source sessions');
-  assert.equal(line.level, 'warn');
-  assert.equal(line.detail, `sessions: no session store at ${join(env.HOME, '.codex', 'state_5.sqlite')}`);
-  assert.equal(line.fix, `export CODEX_HOME=<dir>   # if a store is somewhere else, or drop it from sources.sessions.agents in ${config}`);
-});
-
-test('doctor names an absent store of an auto agent as information, and warns on one a config lists', () => {
-  const { lfm, config, env } = setup(['claude', 'opencode'], CHOSEN('claude', 'opencode'));
-  mkdirSync(join(env.HOME, '.local', 'share', 'opencode'), { recursive: true });
-  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  assert.equal(lfm('init', '-y', '--no-skill', '--sessions', 'codex').status, 0);
   const sessions = () => JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source sessions');
-  const auto = sessions();
-  assert.equal(auto.level, 'ok');
-  assert.match(auto.detail, new RegExp(`; codex store not found at ${join(env.HOME, '.codex', 'state_5.sqlite').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(CODEX_HOME\\)$`));
-  assert.equal(auto.fix, undefined);
-  const yaml = readFileSync(config, 'utf8');
-  writeFileSync(config, yaml.replace(/(sessions:[\s\S]*?agents:)\s*(\[[^\]]*\]|(\n\s+- .*)+)/, '$1 [claude, codex]'));
+  const fix = (vars) => `${vars}   # if a store is somewhere else, or drop it from sources.sessions.agents in ${config}`;
+  assert.deepEqual(sessions(), { level: 'warn', label: 'source sessions', detail: `sessions: no session store at ${join(env.HOME, '.codex', 'state_5.sqlite')}`, fix: fix('export CODEX_HOME=<dir>') });
+  writeFileSync(config, readFileSync(config, 'utf8').replace('[ codex ]', '[ claude, codex, pi ]'));
   const listed = sessions();
   assert.equal(listed.level, 'warn');
-  assert.match(listed.detail, /; codex store not found at .*state_5\.sqlite \(CODEX_HOME\)$/);
-  assert.equal(listed.fix, `export CODEX_HOME=<dir>   # if a store is somewhere else, or drop it from sources.sessions.agents in ${config}`);
+  assert.match(listed.detail, /; codex store not found at .*state_5\.sqlite \(CODEX_HOME\); pi store not found at .*sessions \(PI_CODING_AGENT_SESSION_DIR\)$/);
+  assert.equal(listed.fix, fix('export CODEX_HOME=<dir>; export PI_CODING_AGENT_SESSION_DIR=<dir>'));
 });
 
 test('doctor names the pinned runner\'s own problem, not a premium fix, when that runner is not on PATH', () => {
@@ -685,7 +683,7 @@ test('a symlinked skills dir gets one real file; --no-skill writes none; --proje
 test('in a terminal, a typed model that starts with a dash is refused and asked again', () => {
   const { tmp, p, env, config } = setup(['claude', 'opencode']);
   const answers = ['1', '--yolo', MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
-  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /--yolo is not a model id \(letters/);
