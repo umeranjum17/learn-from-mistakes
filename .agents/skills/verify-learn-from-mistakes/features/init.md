@@ -26,7 +26,17 @@ cannot be read is listed under `skipped` with its cause; init goes on.
 `excerpts: on` is written (`--no-excerpts` writes `off`), and the text output
 ends with one line naming the worker and judge agents that see redacted
 excerpts. Init makes the state dir (`.lfm/` with its `*` `.gitignore`).
-`--no-skill` is accepted (init installs no skill yet); `-y` asks nothing, even in a terminal.
+Init installs the packaged `skills/learn-from-mistakes/SKILL.md` as
+`<skills-dir>/learn-from-mistakes/SKILL.md` for each configured agent
+(`agent`, `judge_agent`) that is usable and has a runner `skills()` dir
+(claude, codex, opencode, pi, gemini), the same set the doctor `skill <agent>`
+check reads, so doctor shows it ok right after init. Each real file is written
+once (symlinked dirs share one file; a file with the same bytes is left
+alone); the text output prints `skill: <file>` per file written, `skills:
+nothing new` when there is nothing new, and `skipped: <dir>: <reason>` for a
+failed write while init goes on. `--project-skill` writes the project's
+`.claude/skills` and `.agents/skills` instead; `--no-skill` writes none.
+`-y` asks nothing, even in a terminal.
 
 ## How to get to it (user POV)
 `learn-from-mistakes-axi init` in any project dir (or `--dir <project>`).

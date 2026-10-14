@@ -1,15 +1,48 @@
 // init: write the global $LFM_HOME/config.yaml and a project's .learn-from-mistakes.yaml, each once and never over a
 // file that exists. The global file holds the agent keys, fully commented, in no-mistakes' shape; the project file
 // holds the sources the registry's detect hooks find and the agents the user chose.
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
 import { InputError, shq, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { save, saveCommand, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
-import { CLASH, detect, KEY, resolveRoles } from './runners/index.mjs';
+import { CLASH, detect, KEY, resolveRoles, RUNNERS } from './runners/index.mjs';
 
+const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an installed agent CLI or byokit:<route>; agents --test <agent> checks one`;
+
+// Installs the packaged skill for the agents the user configured (agent and judge_agent), each into its own global
+// skills dir (the runner skills() paths, as `npx skills` lays them out); `--project-skill` writes the project's
+// .claude/skills and .agents/skills instead, `--no-skill` writes none. Each real file is written once: roots that
+// resolve to one dir share it, and a file holding the same bytes is left alone. A failed write is a skip, never fatal.
+export function installSkills(cfg, agents, dir, opts) {
+  if (opts['no-skill']) return { written: [], failed: [] };
+  const roots = opts['project-skill']
+    ? [join(dir, '.claude', 'skills'), join(dir, '.agents', 'skills')]
+    : [...new Set([cfg.agent, cfg.judge_agent].filter(Boolean))].flatMap((name) => {
+      const key = name.replace(/^acp:.*/, 'acp');
+      if (name.startsWith('byokit:') || !RUNNERS[key]?.skills) return [];
+      return agents.find((x) => x.runner === key)?.usable ? [RUNNERS[key].skills(process.env)] : [];
+    });
+  const text = readFileSync(SKILL_SRC, 'utf8');
+  const written = [], failed = [], done = new Set();
+  for (const root of roots) {
+    try {
+      const target = join(root, 'learn-from-mistakes');
+      mkdirSync(target, { recursive: true });
+      const real = realpathSync(target);
+      if (done.has(real)) continue;
+      done.add(real);
+      const file = join(target, 'SKILL.md');
+      if (existsSync(file) && readFileSync(file, 'utf8') === text) continue;
+      writeFileSync(file, text);
+      written.push(file);
+    } catch (e) { failed.push(`${root}: ${e.message}`); }
+  }
+  return { written, failed };
+}
 const scalar = (v) => JSON.stringify(v); // a JSON string is a YAML scalar
 const flow = (o) => `{ ${Object.entries(o).map(([k, v]) => `${k}: ${scalar(v)}`).join(', ')} }`;
 // Starter causes for any project, so the worker has causes to label with, not only "other": each tags the session events
@@ -151,6 +184,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   stateDir(cfg);
   const missing = unset(cfg);
   const { worker, judge } = await resolveRoles(cfg, agents);
+  const { written: skills, failed: skills_skipped } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
     ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
@@ -161,6 +195,6 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
-    gaps, skipped,
+    gaps, skipped, skills, skills_skipped,
   };
 }
