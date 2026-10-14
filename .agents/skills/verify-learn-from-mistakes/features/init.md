@@ -17,7 +17,10 @@ level or whose `upstream_url` is its `origin` URL (as `gate`); `sessions` is
 written as `{ type: sessions, agents: [auto] }` when a Claude Code, Codex or OpenCode session store exists (never for Pi or Gemini)
 (store paths in [sessions.md](sessions.md)); `github` is written as `{ type: github }`
 when `origin` is a GitHub repo and `gh auth status` passes ([github.md](github.md)). A detect hook returns
-the config entries it finds by id (`log`, `reviews`, `gate`, `sessions`, `prs`).
+the config entries it finds by id (`log`, `reviews`, `gate`, `sessions`, `prs`). A `firstmate` source is never
+detected: `--firstmate <home>` opts in (the path must be a directory, else exit 2). It is written as `home` in a new
+project file, or added to an existing one by a YAML edit unless that exact path is already there; another `firstmate`
+source or a source named `home` puts `--firstmate` in `ignored` ([firstmate.md](firstmate.md)).
 A new project file gets 4 starter causes, `test-failed`, `command-failed`,
 `tool-misused` and `user-corrected`, each with a description and a `match` on the config's sessions source
 (`test_fail`, `nonzero_exit`, `tool_error`, `correction`; no `match` when there is no sessions source); the output

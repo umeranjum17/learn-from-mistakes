@@ -13,12 +13,16 @@ window (empty strings for a metric with no target); it prints the number rounded
 to 3 decimals. `current` runs from
 `now - window` with no end; `previous` is the same length before it. Collect
 saves the two starts, so `rerun --resume` counts over the same windows.
-Each source type gives its numbers through its `metrics(rows, window)` over the
+Each source type gives its numbers through its `metrics` over the
 rows of all its sources (its `metricRows`, `events` or `records`), and names them in `metricNames`: the sessions type
 `tool_error_rate`, `corrections_per_session`, `interrupts`, `retries` (its
 `events`); the markdown-log type `defects` (its records dated in the window, summed
 over every defect log except the `reviews` one, from the new `records` table, which also holds failed gate
-rows). A type with no source in the config gives its names n/a.
+rows); the no-mistakes type `gate_failures` (its failed steps in the window) and
+`gate_failures:<step>` (per step name that failed in the read range); the firstmate type `decisions`,
+`blocks` and `steers` (its status and inbox records in the window) and `interventions_per_merge` (their
+sum over the github `merged` number, n/a with no merged PRs), whose defect records add to `defects`.
+A type with no source in the config gives its names n/a.
 `cause_count:<cause>` counts the events and records tagged with that cause in
 the window. `collect` tags them through `causes.<c>.match`: a no-mistakes source
 by `error_contains` in the row's error, a sessions source by any of `signal`,
@@ -78,5 +82,5 @@ sources of one type are read together: two defect logs sum into one `defects`. A
 second sessions source is rejected (exit 2): each reads every agent's stores, so
 its events would count twice.
 A metric whose source type is not configured is n/a. The github numbers are in
-[github.md](github.md). `gate_failures` comes in a later slice. A target compares the unrounded
+[github.md](github.md), a firstmate home's in [firstmate.md](firstmate.md). A target compares the unrounded
 number, so `"<= 0.05"` misses 25 failed results of 496 (0.0504) and shows as 0.05.

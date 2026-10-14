@@ -1,5 +1,5 @@
 // The metrics step: the numbers for this window (current) and the last (previous), from the events and records
-// collect saved for the run. Each source type gives its numbers (its metrics(rows, window), over the rows of all its
+// collect saved for the run. Each source type gives its numbers (its metrics(rows, window[, values so far]), over the rows of all its
 // sources); cause_count:<cause> counts the items collect tagged with that cause. A metric whose source type is not
 // configured is n/a (NULL), never 0. A metric with a target saves the target with its value.
 import { RULE, SOURCES } from './config.mjs';
