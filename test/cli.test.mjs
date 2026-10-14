@@ -474,7 +474,7 @@ test('--full adds only non-content ids, never record text or record ids', () => 
   assert.doesNotMatch(text, /"why"|"change"|"description"|"branch"/); // no private prose fields at all
 });
 
-test('private canary prose never reaches default, --json, --full or stderr', () => {
+test('private canary prose never reaches default, --json, --full or stderr; the agents\' canary text reaches only report.txt', () => {
   const { p, lfm } = setup();
   appendFileSync(join(p, 'defects.md'), `- [runner] ${CANARY} stopped the server -> 1 h -> OPEN.\n`);
   const plant = (text, anchor) => {
@@ -492,6 +492,18 @@ test('private canary prose never reaches default, --json, --full or stderr', () 
     assert.doesNotMatch(r.stdout, new RegExp(CANARY));
     assert.doesNotMatch(r.stderr, new RegExp(CANARY));
   }
+  // Each text field the worker and the judge write (finding summary, label why, fix change, verdict reason) carries the canary.
+  const run = agentSetup(), yaml = join(run.p, '.learn-from-mistakes.yaml'), agents = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_CANARY: CANARY };
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const outs = [run.lfm(agents, 'retro', '--foreground'), run.lfm(agents, 'retro', '--foreground', '--json')];
+  const id = JSON.parse(outs[1].stdout).run.id;
+  outs.push(run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
+  for (const r of outs) {
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout + r.stderr, new RegExp(CANARY));
+  }
+  assert.equal(run.query(`SELECT count(*) AS n FROM labels WHERE run_id = ? AND why LIKE '%${CANARY}%'`, id)[0].n, 2);
+  assert.ok(reportOf(run.p, id).includes(`  Give each worker its own cache directory ${CANARY}.\n`), 'report.txt shows the change');
 });
 
 test('a labelled gate row counts once: its label decides the cause, not its error tag', () => {
@@ -1169,6 +1181,31 @@ function agentSetup() {
   const lines = (step, id) => JSON.parse(lfm({}, 'logs', '--step', step, '--run', String(id), '--json').stdout).log.map((l) => l.line);
   return { p, env, bin, lfm, query, calls, lines };
 }
+// A run's report.txt: the seven sections in order; each line a person reads has sentences of at most 20 words and no
+// path or store id; each pointer on an Evidence line opens: a line of a project file, a gate store row or a session.
+function reportOf(p, id) {
+  const text = readFileSync(join(p, '.lfm', 'runs', String(id), 'report.txt'), 'utf8');
+  const heads = text.split('\n').filter((l) => /^\d\. [A-Z][a-z ]+$/.test(l));
+  assert.deepEqual(heads, ['1. Short answer', '2. Numbers', '3. Last changes', '4. Repeated mistakes', '5. Fixes', '6. Not checked', '7. Questions for you']);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }), gate = new DatabaseSync(join(p, 'gate.sqlite'), { readOnly: true });
+  try {
+    for (const line of text.split('\n')) {
+      const ev = /^ {3}Evidence: (.+)$/.exec(line);
+      if (!ev) {
+        for (const s of line.split(/(?<=[.!?])\s+/)) assert.ok(s.split(/\s+/).filter(Boolean).length <= 20, `more than 20 words: ${s}`);
+        assert.doesNotMatch(line, /\.md\b|sqlite|step_results|session |\/(home|tmp)\/|\be\d+\b|\bstep-\d/, line);
+        continue;
+      }
+      for (const ptr of ev[1].split('; ').filter((x) => !/^and \d+ more$/.test(x))) {
+        const file = /^([^\s:]+):(\d+)$/.exec(ptr), row = /^(\S+) step_results row (\S+)$/.exec(ptr), session = /^session (\S+) at (\S+)$/.exec(ptr);
+        if (file) assert.ok(readFileSync(join(p, file[1]), 'utf8').split('\n')[file[2] - 1]?.trim(), ptr);
+        else if (row) assert.ok(row[1] === 'gate.sqlite' && gate.prepare('SELECT 1 FROM step_results WHERE id = ?').get(row[2]), ptr);
+        else assert.ok(session && db.prepare('SELECT 1 FROM events WHERE run_id = ? AND session_id = ? AND ts = ?').get(id, session[1], session[2]), ptr);
+      }
+    }
+  } finally { db.close(); gate.close(); }
+  return text;
+}
 
 test('analyse: the worker labels the bundle\'s records and names findings; a ref to no bundle item is a problem; bad JSON twice fails the step; a crash leaves no agent', async () => {
   const { p, env, bin, lfm, query, calls, lines: stepLines } = agentSetup();
@@ -1207,9 +1244,10 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
   // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
-  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.' };
+  const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed' }, summary = 'The tests fail when UMER_FIXTURES is unset. No doc names it.';
   assert.deepEqual(result, { labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
-  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict,summary\}:\n {4}umer-fixtures-unset,1,1,confirmed,The tests fail when UMER_FIXTURES is unset\. No doc names it\.$/m);
+  assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict\}:\n {4}umer-fixtures-unset,1,1,confirmed$/m);
+  assert.match(reportOf(p, run.id), /^5\. Fixes\n- No fix passed the rules\.$/m);
   assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);
   // The bare report counts the run's labels and names their source; the findings show as counts, their summaries in status only.
   const bare = lfm({}, 'report', '--json');
@@ -1220,7 +1258,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
   const toon = lfm({}, 'report');
   assert.equal(toon.status, 0, toon.stderr);
-  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${finding.summary}`), toon.stdout);
+  assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed): ${summary}`), toon.stdout);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');
@@ -1371,6 +1409,15 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
     [null, 'test setup', 'cause_count:umer-fixtures-unset', '<= 0', 1], [null, 'cache config', 'cause_count:shared-cache-lock', null, 1]]);
   assert.deepEqual(fixes, [1, 2, 3, 4, 5].map((n) => ({ n, cause: 'shared-cache-lock', metric: n === 1 ? 'defects' : 'cause_count:shared-cache-lock', tripwire: '<= 0', verdict: n === 5 ? 'weakened' : 'confirmed' })));
   assert.deepEqual(query('SELECT cause, count, days FROM findings WHERE run_id = ?', run.id), [{ cause: 'umer-fixtures-unset', count: 1, days: 1 }]);
+  // report.txt: the kept fixes with the judge's verdict and note, what was not checked, and with no sign-off-axi an Apply or Skip question per fix.
+  const text = reportOf(p, run.id);
+  assert.match(text, /^- 2 mistakes came back in this window\.\n- 5 fixes passed the rules\. The judge confirmed 4 of them\.\n- 1 metric missed the target\.$/m);
+  assert.match(text, /^- defects: this window 2, last window 0, target <= 0, missed\.$/m);
+  assert.match(text, /^- shared-cache-lock: 2 times on 1 day\.\n {3}Evidence: defects\.md:\d+; defects\.md:\d+$/m);
+  assert.match(text, /^Fix 5, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory\.\n[\s\S]*?^- The judge's verdict: weakened\.\n {2}The cited items show this only once for Umer\.$/m);
+  assert.match(text, /^6\. Not checked\n- The rules left out 3 fixes\.\n- The judge weakened 1 item\.$/m);
+  assert.deepEqual(text.split('\n').filter((l) => /^\d\. Apply/.test(l)), [1, 2, 3, 4, 5].map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`));
+  assert.match(lines('report', run.id).at(-1), /^report\.txt: \d+ lines, 5 questions$/);
 
   // Explicit sign-off handoff: absent peer prints findings, a peer gets only contract-v1 fields.
   assert.deepEqual(query('SELECT DISTINCT kind FROM proposals WHERE run_id = ?', run.id), [{ kind: 'code' }]);
@@ -1473,6 +1520,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   edit("UPDATE steps SET status = 'failed' WHERE run_id = ? AND name IN ('propose', 'verify', 'check', 'report')", run.id);
   const again = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long' }, 'rerun', '--resume', '--run', String(run.id), '--wait', '8m');
   assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.match(reportOf(p, run.id), /^7\. Questions for you\n- Run learn-from-mistakes-axi signoff post\. It sends each fix to sign-off as an Apply or Skip question\.\n$/m);
   const sentBefore = posted().length;
   assert.equal(lfm(peerEnv, 'signoff', 'post', '--run', String(run.id)).status, 0);
   const fresh = posted().slice(sentBefore);
@@ -1489,6 +1537,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(followups.map((f) => [f.change, f.verdict]), [['chg-1', 'no-data']]);
   assert.match(calls().at(-1).stdin, /^Follow-ups to explain:\n- chg-1: metric defects, 2 before, 0 after, tripwire <= 0, verdict no-data$/m);
   assert.deepEqual(query('SELECT change_id, reason FROM followups WHERE run_id = ?', second.id), [{ change_id: 'chg-1', reason: 'Too few sessions ran after the change for Umer.' }]);
+  assert.match(reportOf(p, second.id), /^3\. Last changes\n- Change chg-1, metric defects: 2 before, 0 after\. The verdict is no-data\. Wait for more data\.\n {2}Too few sessions ran after the change for Umer\.\n\n4\.[\s\S]*^7\. Questions for you\n- No questions\.\n$/m);
   assert.deepEqual(lines('verify', second.id), ['nothing to verify: no finding and no fix']);
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });

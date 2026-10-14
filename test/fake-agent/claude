@@ -9,7 +9,8 @@
 // The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
-// FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl.
+// FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl. FAKE_CANARY, when set, is
+// added as a last word to each sentence that ends a text field of the answer.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
@@ -18,7 +19,7 @@ if (args[0] === '--version') { console.log(`2.0.0 (fake ${name})`); process.exit
 const stdin = readFileSync(0, 'utf8');
 if (process.env.FAKE_LOG) appendFileSync(join(process.env.FAKE_LOG, `${name}.jsonl`), `${JSON.stringify({ args, cwd: process.cwd(), stdin })}\n`);
 const mode = process.env.FAKE_ANALYSE || 'empty';
-const reply = (result) => (name === 'codex' ? args.includes('-o') && writeFileSync(args[args.indexOf('-o') + 1], result)
+const reply = (answer, result = process.env.FAKE_CANARY ? answer.replace(/\.(?=")/g, ` ${process.env.FAKE_CANARY}.`) : answer) => (name === 'codex' ? args.includes('-o') && writeFileSync(args[args.indexOf('-o') + 1], result)
   : console.log(JSON.stringify({ type: 'result', is_error: false, result, session_id: 'fake-session', usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } })));
 if (mode === 'hang') setInterval(() => {}, 1000);
 else if (/^lfm-run:\d+:verify\n/.test(stdin)) {

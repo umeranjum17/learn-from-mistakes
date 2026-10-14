@@ -18,6 +18,7 @@ import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { startTime } from './proc.mjs';
 import { redact } from './redact.mjs';
+import { reportText } from './report-text.mjs';
 import { locked, openStore } from './store.mjs';
 
 const RUN = 'id, status, pid, created_at, updated_at, error';
@@ -66,11 +67,13 @@ const STEPS = {
   // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
   check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
   // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;
-  // with none, coverage shows every record unlabelled.
+  // with none, coverage shows every record unlabelled. Then writes report.txt, the run's report for a person.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, runResult(db, id), REPORT);
     if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
     log(summaryLine(model));
+    const text = reportText(cfg, db, id, runDir(cfg, id), collected(db, id), show(db, id));
+    log(`report.txt: ${text.lines} lines, ${text.questions} questions`);
     return model;
   },
 };
@@ -356,8 +359,8 @@ export async function runs(cfg) {
 // The run, its steps, what each source read once collect is done, the numbers once metrics is done, each
 // applied change's verdict once followup is done, the kept fixes once check is done, each with the judge's verdict (a fix the judge left
 // out reads not judged), and once report is done the result:
-// the causes its labels counted and the worker's findings, each with its counts and its redacted STE100 summary on one line.
-// Hashes stay out.
+// the causes its labels counted and the worker's findings, each with its counts and verdict. Agent text and hashes stay out:
+// the finding summaries are in report.txt.
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics'), report = out('report') && JSON.parse(out('report'));
@@ -379,6 +382,6 @@ function show(db, id) {
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
     ...(report && { result: { labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
-      findings: runResult(db, id).findings.map(({ cause, count, days, verdict, summary }) => ({ cause, count, days, verdict, summary })) } }),
+      findings: runResult(db, id).findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })) } }),
   };
 }

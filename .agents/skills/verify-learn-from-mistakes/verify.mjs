@@ -236,6 +236,12 @@ try {
       assert.deepEqual(db.prepare('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id').all(proposed.run.id).map((f) => f.verdict), ['confirmed', 'refuted', 'weakened', ...Array(5).fill('confirmed')], 'the judge\'s verdicts are not on the fixes');
       assert.deepEqual({ ...db.prepare(`SELECT role, runner FROM invocations WHERE run_id = ? AND step = 'verify'`).get(proposed.run.id) }, { role: 'judge', runner: 'codex' }, 'the judge is not the second agent');
     } finally { db.close(); }
+    // report.txt: the seven sections for a person, an Apply or Skip question per kept fix and a yes or no one per rollback.
+    const reportTxt = readFileSync(join(staged, '.lfm', 'runs', String(proposed.run.id), 'report.txt'), 'utf8');
+    save('report.txt', reportTxt);
+    assert.match(reportTxt, /^1\. Short answer$[\s\S]*^2\. Numbers$[\s\S]*^3\. Last changes$[\s\S]*^4\. Repeated mistakes$[\s\S]*^5\. Fixes$[\s\S]*^6\. Not checked$[\s\S]*^7\. Questions for you\n1\. Apply fix 1, for agent-exit-wait\? Answer Apply or Skip\.$/m, 'report.txt does not have the seven sections and the questions');
+    assert.match(reportTxt, /^6\. Roll back change chg-2\? Answer yes or no\.$/m, 'report.txt does not ask to roll back chg-2');
+    assert.ok(!reportTxt.includes(staged), 'report.txt shows a path outside its evidence lines');
     drive('logs-verify', 'logs', '--step', 'verify');
     assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted, 0 not judged/, 'logs do not show the judge\'s verdicts');
     drive('logs-check', 'logs', '--step', 'check');
