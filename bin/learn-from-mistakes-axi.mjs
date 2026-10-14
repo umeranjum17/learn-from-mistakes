@@ -214,7 +214,7 @@ export async function ingest(cfg) {
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   // The agent reads records.jsonl: a record's text is there only with excerpts on, redacted; with excerpts off it has no text field.
   const forAgent = ({ text, ...rest }) => (cfg.excerpts === 'on' ? { ...rest, text: redact(text ?? '') } : rest);
-  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records.map((r) => ({ ...r, date: r.date.slice(0, 10) })),
+  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records,
     ...rows.map((r) => ({ id: recordId(r), source: r.source, date: r.at.slice(0, 10), text: r.error })),
     ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))].map(forAgent)));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows.map(({ error, ...r }) => (cfg.excerpts === 'on' ? { ...r, error } : r))));

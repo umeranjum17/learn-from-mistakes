@@ -39,7 +39,8 @@ export async function detect(dir) {
   try {
     const { DatabaseSync } = await import('node:sqlite');
     db = new DatabaseSync(path, { readOnly: true });
-    if (missing(db).length) throw new Error(UNKNOWN(missing(db)));
+    const gone = missing(db);
+    if (gone.length) throw new Error(UNKNOWN(gone));
     const row = db.prepare('SELECT 1 FROM repos WHERE working_path IN (SELECT value FROM json_each(?)) OR upstream_url = ? LIMIT 1')
       .get(JSON.stringify(roots(checkout(dir))), git('remote', 'get-url', 'origin') || null);
     if (row) return { gate: { type: 'no-mistakes', path: home ? path : '~/.no-mistakes/state.sqlite' } };

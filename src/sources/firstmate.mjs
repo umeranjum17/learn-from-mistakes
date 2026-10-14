@@ -9,10 +9,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { readText, shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource, RULE } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
-import { excerpt } from '../redact.mjs';
+import { excerpt, redact } from '../redact.mjs';
 import * as markdownLog from './markdown-log.mjs';
 
 const KINDS = { 'needs-decision': 'decision', blocked: 'block' };
@@ -39,21 +39,22 @@ export function read(source, { path }, { readFrom = 0, excerpts = true, project 
   }
   const add = (ms, id, ref, kind, body, tag) => {
     if (Number.isNaN(new Date(ms).getTime())) skipped += 1; // no stamp, or one that is not a time
-    else if (ms >= readFrom) records.push({ id, source, ref, date: new Date(ms).toISOString(), text: text(body), data: { kind, ...(tag && { tag }) } });
+    else if (ms >= readFrom) records.push({ id, source, ref, date: new Date(ms).toISOString().slice(0, 10), text: text(body), data: { kind, ...(tag && excerpts && { tag: redact(tag) }) } });
   };
+  const read1 = (f) => readText(join(state, f), `source ${source}`, `chmod -R u+r ${shq(state)}   # the tool only reads it`);
   for (const f of files.filter((n) => /^[^/]+\.status$/.test(n))) {
     let at = NaN;
-    readFileSync(join(state, f), 'utf8').split(/\r?\n/).forEach((line, i) => {
+    read1(f).split(/\r?\n/).forEach((line, i) => {
       const m = line.match(/^([a-z-]+)((?: \[[^\]]*\])*): (.*)$/);
       if (!m) return;
       const stamp = m[2].match(/\[at=([^\]]*)\]/)?.[1];
       if (stamp !== undefined) at = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : NaN; // a stamp that is not digits is no time
-      if (KINDS[m[1]]) add(at, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
+      if (Object.hasOwn(KINDS, m[1])) add(at, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
     });
   }
   for (const f of files.filter((n) => /^[^/]+\.inbox\/(handled\/)?[^/]+\.msg$/.test(n))) {
-    const body = readFileSync(join(state, f), 'utf8'), stamp = body.match(/^at=(\d+)\r?$/m)?.[1];
-    add(stamp ? Number(stamp) * 1000 : NaN, f, join(state, f), 'steer', body.replace(/^at=\d+\r?$/m, ''), body.match(/\[([^\]\s]+)\]/)?.[1]);
+    const body = read1(f), stamp = body.match(/^at=(\d+)\r?$/m)?.[1];
+    add(stamp ? Number(stamp) * 1000 : NaN, f, join(state, f), 'steer', body.replace(/^at=\d+\r?$/m, ''), body.match(/^(?:at=\d+\r?\n)?\[([^\]\s]+)\]/)?.[1]);
   }
   const log = join(path, 'data', 'defects.md');
   if (existsSync(log)) {

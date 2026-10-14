@@ -200,7 +200,7 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
   put('state/alpha.status', `working [${at(2)}]: started\nneeds-decision [${at(1)}] [key=k1]: pick a name\nblocked: waiting on ${SECRET}\nresolved [${at(0.5)}] [key=k1]: named\n`);
   put('state/beta.status', `blocked [${at(10)}]: last window\nneeds-decision [${at(1)}]: merge order\n`);
   put('state/gamma.status', `needs-decision: no stamp above\r\nworking [${at(1)}]: ok\r\nblocked [at=<epoch>]: a stamp that is not digits\r\n`);
-  put('state/alpha.inbox/002.msg', `${at(1)}\n[steer] rename the page\n`);
+  put('state/alpha.inbox/002.msg', `${at(1)}\n[${SECRET}] rename the page\n`);
   put('state/alpha.inbox/handled/001.msg', `${at(2)}\n[steer] use the demo data\n`);
   put('state/beta.inbox/001.msg', `${at(9)}\n[answer] yes\n`);
   put('state/gamma.inbox/001.msg', '[steer] no time\n');
@@ -220,5 +220,5 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
   assert.deepEqual([m.decisions, m.blocks, m.steers, m.interventions_per_merge, m.first_pass, m.defects], [[2, 0, '', ''], [1, 1, '<= 0', 'missed'],
     [2, 1, '', ''], [0.5, 0.667, '', ''], [77.8, 33.3, '>= 80', 'missed'], [1, 0, '', '']]);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
-  try { assert.ok(db.prepare(`SELECT text FROM records WHERE source = 'home'`).all().every((x) => !x.text.includes(SECRET))); } finally { db.close(); }
+  try { assert.ok(db.prepare(`SELECT text, data FROM records WHERE source = 'home'`).all().every((x) => !x.text.includes(SECRET) && !x.data.includes(SECRET))); } finally { db.close(); }
 });
