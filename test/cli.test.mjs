@@ -504,6 +504,10 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   }
   assert.equal(run.query(`SELECT count(*) AS n FROM labels WHERE run_id = ? AND why LIKE '%${CANARY}%'`, id)[0].n, 2);
   assert.ok(reportOf(run.p, id).includes(`  Give each worker its own cache directory ${CANARY}.\n`), 'report.txt shows the change');
+  // Agent text that names a path is left out of report.txt.
+  const pathy = JSON.parse(run.lfm({ ...agents, FAKE_CANARY: `${CANARY} in src/cache.mjs` }, 'retro', '--foreground', '--json').stdout).run.id;
+  const hidden = reportOf(run.p, pathy);
+  assert.ok(!hidden.includes('cache.mjs') && hidden.includes('- Change:\n  This text breaks the report rules, so it is not shown.\n'), hidden);
 });
 
 test('a labelled gate row counts once: its label decides the cause, not its error tag', () => {

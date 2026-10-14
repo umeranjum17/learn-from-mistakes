@@ -13,10 +13,12 @@ const EVIDENCE = 3; // pointers shown per item; the rest are counted
 const DO = { keep: 'Keep it.', fix: 'Change it. The metric got better, but it missed the tripwire.', rollback: 'Roll it back.',
   delete: 'Delete it. It did not change the metric.', 'no-data': 'Wait for more data.' };
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
-// Free text from an agent or the config, on its own line; text that breaks the sentence rule is left out.
+// A path, a file name, a bundle id (c3, e12), a hash or a session uuid: none goes on a line a person reads.
+const RAW = /(?:^|[\s(])[~.]{0,2}\/\S|\w\/\w|\b[\w-]+\.(?:[cm]js|ts|md|json|ya?ml|sqlite|db|sh|py)\b|\b[ce]\d+\b|\b[0-9a-f]{12,}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-/i;
+// Free text from an agent or the config, on its own line; text that breaks the sentence rule or names a RAW item is left out.
 const said = (text) => {
   const t = redact(text ?? '').replace(/\s+/g, ' ').trim();
-  return t && !plain(t, '', {}) ? `  ${t}` : '  This text breaks the sentence rule, so it is not shown.';
+  return t && !plain(t, '', {}) && !RAW.test(t) ? `  ${t}` : '  This text breaks the report rules, so it is not shown.';
 };
 
 // `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.
@@ -74,7 +76,7 @@ export function reportText(cfg, db, id, dir, window, run) {
   }
   if (!fixes.length) lines.push('- No fix passed the rules.');
   const step = (name) => JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, name)?.output_json ?? '{}');
-  const judged = (verdict) => all(`SELECT count(*) AS n FROM (SELECT verdict FROM findings WHERE run_id = ?1 UNION ALL SELECT verdict FROM proposals WHERE run_id = ?1) WHERE verdict IS ?2`, verdict)[0].n;
+  const judged = (verdict) => [...fixes, ...findings].filter((x) => x.verdict === verdict).length; // the kept fixes and the findings counted above
   const gaps = [...run.sources.filter((s) => !s.items).map((s) => `- Source ${s.id} gave no records.`),
     ...run.sources.filter((s) => s.skipped).map((s) => `- Source ${s.id} skipped ${plural(s.skipped, 'session')}.`),
     ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],

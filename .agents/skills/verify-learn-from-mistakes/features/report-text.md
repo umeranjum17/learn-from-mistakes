@@ -21,5 +21,6 @@ a session event), the `signoff post` line when `sign-off-axi` is on PATH, and th
 agent-written field reaches `report.txt` but never stdout or stderr of `retro`, `status`, `attach` or `logs`.
 
 ## Gotchas
-Agent or config text that breaks the 20-word rule is replaced by a line that says it is not shown. Pointers:
+Agent or config text that breaks the 20-word rule or names a path, file, bundle id or hash is replaced by a line
+that says it is not shown. Pointers:
 `file:line` (relative to the project), `<store> step_results row <id>`, `session <id> at <time>`, `PR #N`.
