@@ -22,8 +22,8 @@ const STARTER = {
 };
 
 const globalText = `# learn-from-mistakes global configuration
-# A project's .learn-from-mistakes.yaml may override agent, judge_agent, agent_config, agent_timeout,
-# allow_premium and auto_fix; the other keys here are global-only.
+# A project's .learn-from-mistakes.yaml may override agent, judge_agent, agent_config, agent_timeout and
+# allow_premium; auto_fix and the other keys here are global-only.
 
 # Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never picks one, and asks
 # when it is not set (init --agent <agent> --model <model> saves the answer). It is one agent: the tool never

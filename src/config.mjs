@@ -60,7 +60,7 @@ const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with an effort flag
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
 // in a cloned repo cannot run a program of its choosing.
-const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout', 'allow_premium', 'auto_fix'];
+const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout', 'allow_premium'];
 const GLOBAL_ONLY = ['state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
 
 // Applies the agent keys one file sets onto cfg, and records that file in cfg.from as the place to change each one.
@@ -93,10 +93,6 @@ function agentKeys(cfg, g, file) {
     cfg.allow_premium = g.allow_premium;
     cfg.from.allow_premium = file;
   }
-  if (g.auto_fix !== undefined) { // as no-mistakes' auto_fix: how many kept fixes a run applies with no answer; 0 proposes only
-    check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)');
-    cfg.auto_fix = g.auto_fix;
-  }
   return cfg;
 }
 
@@ -105,7 +101,7 @@ export const globalFile = () => join(lfmHome(), 'config.yaml');
 // The global file with every default; cfg.from names, per agent key, the file that set it (here: the global file).
 export function loadGlobal() {
   const home = lfmHome(), file = globalFile();
-  const g = mapping(readYaml(file) ?? {}, [...AGENT_KEYS, ...GLOBAL_ONLY], file);
+  const g = mapping(readYaml(file) ?? {}, [...AGENT_KEYS, 'auto_fix', ...GLOBAL_ONLY], file);
   const path = (v, where) => { check(typeof v === 'string' && v, where, 'a path to the binary'); return v.includes('/') ? expand(v, home) : v; }; // a bare name stays a PATH lookup
   const agent_path_override = mapping(g.agent_path_override ?? {}, AGENTS, `${file}: agent_path_override`);
   for (const [k, v] of Object.entries(agent_path_override)) agent_path_override[k] = path(v, `${file}: agent_path_override.${k}`);
@@ -113,6 +109,10 @@ export function loadGlobal() {
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
     agent: '', judge_agent: '', agent_config: {}, agent_timeout: '20m', allow_premium: false, auto_fix: 0, from: {} };
+  if (g.auto_fix !== undefined) { // as no-mistakes' auto_fix: how many kept fixes a run applies with no answer; 0 proposes only
+    check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)');
+    cfg.auto_fix = g.auto_fix;
+  }
   return agentKeys(cfg, g, file);
 }
 
@@ -126,6 +126,7 @@ sources:
   log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi guide   # the full config, then ingest, label and report');
   if (p.name !== undefined) check(typeof p.name === 'string', `${file}: name`, 'a string');
   for (const k of GLOBAL_ONLY) if (Object.hasOwn(p, k)) throw new UsageError(`${file}: ${k} is global-only: set it in ${global.globalPath}`);
+  if (Object.hasOwn(p, 'auto_fix')) throw new UsageError(`${file}: auto_fix is a user setting; set it in the global config`);
   mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', ...AGENT_KEYS], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
