@@ -31,12 +31,8 @@ whose `error.name` is `MessageAbortedError` (the interrupt, placed after the too
 off). A user message is one event over its non-synthetic text and file parts, so the
 `lfm-run:` marker is found after an attached prompt file (a leading quote is ignored).
 Refs are `file:line` for Codex and `db:<db file>:<table>:<rowid>` for OpenCode.
-Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl` whose header
-`cwd` is this repo (a fork skips its parent's copied entries); `toolResult.isError` is the failure (`Command
-exited with code N` the exit, `Command aborted` none), assistant `stopReason: aborted` the interrupt. Gemini CLI:
-`${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` and `chats/<session id>/*.jsonl` subagents, the
-slug from `.gemini/projects.json`; the last record per message id counts, `$set.messages` replaces and `$rewindTo`
-drops from one id; `status: error` or a shell output ending `Exit Code: N` is the failure, `cancelled` the interrupt.
+Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl` whose header `cwd` is this repo (a fork skips its parent's copied entries); `toolResult.isError` the failure (`Command exited with code N` the exit, `Command aborted` none), `stopReason: aborted` the interrupt.
+Gemini CLI: `${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` and `chats/<session id>/*.jsonl` subagents, the slug from `.gemini/projects.json`; the last record per message id counts, `$set.messages` replaces, `$rewindTo` drops from one id; `status: error` or a shell output ending `Exit Code: N` the failure, `cancelled` the interrupt.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
 first user message starting `lfm-run:`, or a session id in the store's
 `invocations` table. The run's own agent calls ([analyse.md](analyse.md)) write
@@ -85,9 +81,7 @@ no text in `skipped`, exactly 2 corrections (not the goal wrapper, not the messa
 interrupt), 2 interrupts, 2 retries, 4 test failures (two of them `bash -lc` wrapped), 4
 nonzero exits (one a code-mode script) and 5 tool errors (failed patches by their `patch_apply_end`; a successful call whose output reads `Exit code: 2` or `"exit_code": 1`, or a non-shell tool whose output reads `Exit code: 1` after `Output:`, is not one), planted keys redacted, the
 `invocations` ids of both agents skipped on a second run, and every OpenCode database
-byte-identical after both runs. A third journey reads synthetic Pi and Gemini CLI
-stores: 3 sessions, 25 events, one correction, interrupt, retry, test failure and tool error per agent, own runs,
-other projects and old files skipped, one bad line each in `skipped`, keys redacted. The helper drives
+byte-identical after both runs. A third journey reads synthetic Pi and Gemini CLI stores: 3 sessions, 25 events, one correction, interrupt, retry, test failure and tool error per agent, own runs, other projects and old files skipped, one bad line each in `skipped`, keys redacted. The helper drives
 `retro-sessions` (one synthetic Claude Code, Codex and OpenCode session each in its
 scratch HOME and XDG dir, `sessions: 3`, its `test-fails` match rule tagging all three, the OpenCode file unchanged).
 
