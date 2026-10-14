@@ -1593,7 +1593,7 @@ test('propose: a rule-breaking fix is sent back once, then dropped on the second
   assert.ok(lines('propose', run.id).includes('dropped: proposals[1].change has more than 3 sentences'));
   assert.equal(lines('propose', run.id).at(-1), 'fixes: 1 proposed, reasons: 0 of 0 follow-ups');
   assert.deepEqual(query('SELECT verdict, count, days FROM findings WHERE run_id = ?', run.id), [{ verdict: 'refuted', count: null, days: null }]);
-  assert.match(lfm({}, 'report').stdout, /^finding: umer-fixtures-unset \(0\/0 days, refuted\): /m);
+  assert.match(lfm({}, 'report').stdout, /^finding: umer-fixtures-unset \(0\/0 days, refuted\)$/m);
   const badKind = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_KIND: 'guess' }, 'retro', '--foreground', '--json');
   assert.equal(badKind.status, 0, badKind.stderr);
   const badId = JSON.parse(badKind.stdout).run.id;
