@@ -60,7 +60,7 @@ sqlite3 -readonly .lfm/lfm.sqlite 'select cause,verdict,judge_note from findings
 sqlite3 -readonly .lfm/lfm.sqlite 'select step,role,runner,model,exit_status from invocations'
 ```
 
-The run completes with 9 steps; one `verify` invocation with role `judge` on
+The run completes with 10 steps; one `verify` invocation with role `judge` on
 the second agent; each finding and fix has a verdict and a reason. The lab
 HOME and XDG dirs keep the judge's session out of the real store; the BYOKit
 route owns its credentials (never read a desktop login into the environment).

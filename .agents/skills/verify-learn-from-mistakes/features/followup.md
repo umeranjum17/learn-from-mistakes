@@ -61,7 +61,7 @@ has no record by the start of its window. The second retro gives `delete` for bo
 rule changes and `rollback` for the fixed one, and still `keep` for the met one;
 `status --run <first>` still shows the first verdicts; the store keeps NULL for n/a
 and no tripwire.
-`test/cli.test.mjs` asserts 9 steps per run and that `rerun --resume` keeps the
+`test/cli.test.mjs` asserts 10 steps per run and that `rerun --resume` keeps the
 completed `followup` step. The helper's `change-followup` and `retro-followup`
 drives add a change between an old failed test run and the three synthetic
 sessions and check `rollback` (1 before, 3 after).
