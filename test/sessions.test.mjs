@@ -429,9 +429,7 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
   const run = decode(r.stdout), id = run.run.id;
-  // this repo's sessions with a Gemini subagent and a Pi fork with none of its parent's copied entries; not the marker
-  // runs, .lfm/, the other project or slug, or old files.
-  // A replaced, rewritten, rewound or command message is not an event. Bad records: a non-JSON line in each kept file.
+  // this repo's sessions with a Gemini subagent and a Pi fork with none of its parent's copied entries; not the marker runs, .lfm/, the other project or slug, or old files; a replaced, rewritten, rewound or command message is not an event; bad records: a non-JSON line in each kept file.
   assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 25, sessions: 3, skipped: 2 });
   assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
     [{ agent: 'gemini', session_id: 'gm000001-main', n: 11 }, { agent: 'pi', session_id: 'pi-fork', n: 1 }, { agent: 'pi', session_id: 'pi-main', n: 13 }]);
