@@ -623,7 +623,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(noPath.status, 2, noPath.stderr);
   assert.match(noPath.stderr, /^error: .*: sources\.log\.path must be a string$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: [markdown-log], path: defects.md }\n');
-  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github, done-done$/m); // a list is not a type
+  assert.match(lfm('ingest').stderr, /^error: .*: sources\.log\.type must be one of markdown-log, no-mistakes, sessions, github, done-done, firstmate$/m); // a list is not a type
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github, repo: umer/app }\n'); // the repo comes from origin
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.prs: unknown key repo$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
@@ -631,13 +631,14 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(store.status, 2, store.stderr);
   assert.match(store.stderr, /^error: source gate: no such file$/m);
   assert.ok(store.stderr.includes(`next: set sources.gate.path in ${join(p, '.learn-from-mistakes.yaml')} to your no-mistakes state.sqlite, or remove that source`), store.stderr);
-  const flat = new DatabaseSync(join(p, 'flat.sqlite')); // no repos table: its rows cannot be told from other repos' rows
-  flat.exec(`CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT); CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT, step_name TEXT, status TEXT, error TEXT, started_at INTEGER, completed_at INTEGER)`);
-  flat.close();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: flat.sqlite }\n');
-  const flatRun = lfm('ingest');
-  assert.equal(flatRun.status, 2, flatRun.stderr);
-  assert.match(flatRun.stderr, /^error: source gate: not a readable no-mistakes store \(no such table: repos\)$/m);
+  cpSync(join(p, 'gate.sqlite'), join(p, 'old.sqlite')); // a store of a no-mistakes version without a column the read uses
+  const old = new DatabaseSync(join(p, 'old.sqlite'));
+  old.exec('ALTER TABLE step_results DROP COLUMN step_name');
+  old.close();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: old.sqlite }\n');
+  const oldRun = lfm('ingest');
+  assert.equal(oldRun.status, 2, oldRun.stderr);
+  assert.match(oldRun.stderr, /^error: source gate: unknown store schema \(no step_results\.step_name\)$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);

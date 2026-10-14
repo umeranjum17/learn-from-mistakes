@@ -214,7 +214,7 @@ export async function ingest(cfg) {
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   // The agent reads records.jsonl: a record's text is there only with excerpts on, redacted; with excerpts off it has no text field.
   const forAgent = ({ text, ...rest }) => (cfg.excerpts === 'on' ? { ...rest, text: redact(text ?? '') } : rest);
-  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records,
+  writeFileSync(join(cfg.state, 'records.jsonl'), jsonl([...records.map((r) => ({ ...r, date: r.date.slice(0, 10) })),
     ...rows.map((r) => ({ id: recordId(r), source: r.source, date: r.at.slice(0, 10), text: r.error })),
     ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))].map(forAgent)));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows.map(({ error, ...r }) => (cfg.excerpts === 'on' ? { ...r, error } : r))));
@@ -398,6 +398,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --model <model>     (init) save agent_config.<agent>.model for that agent
   --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
+  --firstmate <home>  (init) add a firstmate source that reads that Firstmate home's status logs, inbox, defect log and targets (opt-in, never detected)
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's .claude/skills and .agents/skills instead of each agent's own skills dir; -y asks nothing, even in a terminal
   --json (init, doctor, report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents, no command)  print JSON instead of the default TOON (report, count: lfm-report.v2; changes: lfm-changes.v1)
@@ -497,7 +498,7 @@ const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} int
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   '': 'learn-from-mistakes-axi [--dir <dir>] [--json]', // no command: the last run's status and summary line
-  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
+  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
@@ -519,7 +520,7 @@ const FORMS = {
 const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -554,7 +555,7 @@ async function main(ctx) {
     if (SWITCHES.includes(flag)) { opts[flag.replace(/^--?/, '')] = true; i += 1; continue; }
     if (flag === '--wait' && !/^[^-]/.test(argv[i + 1] ?? '')) { opts.wait = '8m'; i += 1; continue; } // a bare --wait waits 8 minutes
     if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`, next ?? form);
-    if (['--dir', '--labels', '--proposals'].includes(flag)) {
+    if (['--dir', '--labels', '--proposals', '--firstmate'].includes(flag)) {
       // Paths are echoed whole in later errors so the user can find the file; a control character never is.
       if (UNPRINTABLE.test(argv[i + 1])) throw new UsageError(`${flag} (invalid value): a path must not contain control characters`, next ?? form);
       opts[flag.slice(2)] = resolve(argv[i + 1]);

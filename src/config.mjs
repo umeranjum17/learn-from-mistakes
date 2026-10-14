@@ -7,6 +7,7 @@ import { basename, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as doneDone from './sources/done-done.mjs';
+import * as firstmate from './sources/firstmate.mjs';
 import * as github from './sources/github.mjs';
 import * as markdownLog from './sources/markdown-log.mjs';
 import * as noMistakes from './sources/no-mistakes.mjs';
@@ -18,7 +19,7 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // read) and metrics (its numbers from what it read; a type with no source in the config gives its metricNames as n/a),
 // detect (the config entries init writes, by id) and doctor (a check line); init calls detect, doctor calls doctor.
 // A source slice adds one line here.
-export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github, 'done-done': doneDone };
+export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github, 'done-done': doneDone, firstmate };
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
 // A metric name: one of METRICS, or cause_count:<a configured cause>. Targets and the ledger's --metric take these.
@@ -168,6 +169,8 @@ sources:
     check(isMetric(k, causes), `${file}: targets: ${k}`, METRIC_RULE);
     check(typeof v === 'string' && RULE.test(v), `${file}: targets.${k}`, 'a quoted "<op> <number>", such as ">= 70"');
   }
+  // A firstmate home's targets file overrides targets:
+  for (const s of Object.values(sources)) for (const k of Object.keys(s.targets ?? {})) check(isMetric(k, causes), `${s.targets_file}: ${k}`, METRIC_RULE);
   // the read range is this window and the last one; only the sessions source applies it so far
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
   const caps = block('caps', { invocations: 12, bundle_chars: 60000 });
@@ -176,7 +179,7 @@ sources:
     dir,
     name: p.name ?? basename(dir), sources, causes, repeat: block('repeat', { min_incidents: 3, min_days: 2 }),
     window: p.window ?? '7d',
-    targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets },
+    targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets, ...Object.assign({}, ...Object.values(sources).map((s) => s.targets)) },
     followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps,
     signoff: one('signoff', ['auto', 'off']), ...agentKeys(global, p, file),
   };

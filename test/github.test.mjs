@@ -91,7 +91,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.equal(r.status, 0, r.stderr);
   const run = JSON.parse(r.stdout);
   assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 13 }]); // 13 PRs merged in the range; #2 is older
-  const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries|cause_count:)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
+  const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries|cause_count:|gate_failures|decisions|blocks|steers|interventions)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
   assert.deepEqual(numbers, {
     merged: [10, 3], first_pass: [77.8, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [5, 10],
     rework_ci: [1, 0], rework_other: [1, 0], reverted: [1, 1], escaped: [1, 1],
@@ -188,4 +188,34 @@ test('a missing or logged-out gh and a non-GitHub origin fail the source with th
   const init = lfm({}, 'init', '--json'); // not on GitHub: no github source, and nothing skipped
   assert.equal(init.status, 0, init.stderr);
   assert.deepEqual([JSON.parse(init.stdout).sources, JSON.parse(init.stdout).skipped], [{}, []]);
+});
+
+// A synthetic Firstmate home: 3 status files and 4 inbox messages (one acknowledged into handled/), a defect log and a
+// targets file. Lines with no stamp take the one above; an entry with no time at all is skipped.
+test('init --firstmate <home> opts in; the retro counts its decisions, blocks and steers per merged PR, with its targets', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), at = (days) => `at=${Math.floor(NOW / 1000 - days * 86_400)}`;
+  const put = (file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
+  put('state/alpha.status', `working [${at(2)}]: started\nneeds-decision [${at(1)}] [key=k1]: pick a name\nblocked: waiting on ${SECRET}\nresolved [${at(0.5)}] [key=k1]: named\n`);
+  put('state/beta.status', `blocked [${at(10)}]: last window\nneeds-decision [${at(1)}]: merge order\n`);
+  put('state/gamma.status', 'needs-decision: no stamp above\n');
+  put('state/alpha.inbox/002.msg', `${at(1)}\n[steer] rename the page\n`);
+  put('state/alpha.inbox/handled/001.msg', `${at(2)}\n[steer] use the demo data\n`);
+  put('state/beta.inbox/001.msg', `${at(9)}\n[answer] yes\n`);
+  put('state/gamma.inbox/001.msg', '[steer] no time\n');
+  put('data/defects.md', `## ${new Date(NOW - 86_400_000).toISOString().slice(0, 10)}\n\n- [tests] Umer's demo flake.\n`);
+  put('config/targets.tsv', 'metric\top\ttarget\towner\trule\nblocks\t<=\t0\tUmer\tR1\nfirst_pass\t>=\t80\tUmer\tR2\n');
+  assert.equal(lfm({}, 'init', '-y', '--no-skill', '--firstmate', join(tmp, 'none')).status, 2);
+  const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', home, '--json');
+  assert.equal(init.status, 0, init.stderr);
+  assert.deepEqual(JSON.parse(init.stdout).sources, { prs: { type: 'github' }, home: { type: 'firstmate', path: home } });
+  assert.match(lfm({}, 'doctor').stdout, /2 skipped \(no time\)/);
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!r.stdout.includes(SECRET));
+  const m = Object.fromEntries(JSON.parse(r.stdout).metrics.map((x) => [x.name, [x.current, x.previous, x.target, x.met]]));
+  assert.deepEqual([m.decisions, m.blocks, m.steers, m.interventions_per_merge, m.first_pass, m.defects], [[2, 0, '', ''], [1, 1, '<= 0', 'missed'],
+    [2, 1, '', ''], [0.5, 0.667, '', ''], [77.8, 33.3, '>= 80', 'missed'], [1, 0, '', '']]);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  try { assert.ok(db.prepare(`SELECT text FROM records WHERE source = 'home'`).all().every((x) => !x.text.includes(SECRET))); } finally { db.close(); }
 });

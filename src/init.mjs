@@ -122,6 +122,10 @@ export async function init(dir, opts) {
       Object.assign(found, await mod.detect?.(dir));
     } catch (e) { skipped.push(`${type}: ${e.message}`); }
   }
+  if (opts.firstmate) { // opt-in only: a Firstmate home is never detected
+    if (!statSync(opts.firstmate, { throwIfNoEntry: false })?.isDirectory()) throw new UsageError(`--firstmate ${opts.firstmate}: not a directory`, 'learn-from-mistakes-axi init --firstmate <home>   # the Firstmate home folder that holds state/');
+    found.home = { type: 'firstmate', path: opts.firstmate };
+  }
   // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
   // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override.
   const before = written ? loadGlobal() : loadConfig(dir), agents = detect(before);
