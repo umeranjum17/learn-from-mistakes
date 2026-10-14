@@ -9,7 +9,6 @@
 // fix for FAKE_CAUSE citing only the second record; with FAKE_FINDINGS=twins, label names two findings under FAKE_CAUSE, one per record.
 // The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
-// An apply call (its marker line) adds one line to the first file it lists. FAKE_TARGET, when set, is every fix's target.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
 // FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl. FAKE_CANARY, when set, is
 // added as a last word to each sentence that ends a text field of the answer.
@@ -32,8 +31,7 @@ else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
 }
 else if (/^lfm-run:\d+:apply-\d+\n/.test(stdin)) {
   const [, path, text] = stdin.match(/^--- (.+)\n([\s\S]*?)\n--- end of \1$/m);
-  reply(JSON.stringify({ files: [{ path, content: `${text}- Give each worker its own cache directory, Umer.\n` }] }));
-}
+  reply(JSON.stringify({ files: [{ path, content: `${text}- Give each worker its own cache directory, Umer.\n` }] })); }
 else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);

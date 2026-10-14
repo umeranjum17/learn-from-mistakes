@@ -255,9 +255,7 @@ try {
     writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [posted[0].key]: { answer: 'apply', label: 'Apply', close: 'done', at: '2026-10-13T22:00:52Z' }, [posted[1].key]: { answer: 'skip', label: 'Skip', close: 'done', at: '2026-10-13T22:00:52Z' } }));
     run('signoff-answers', process.execPath, [cli, 'signoff', 'answers', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });
     save('signoff-board.json', posted); save('signoff-calls.jsonl', readFileSync(join(signDir, 'calls.jsonl'), 'utf8'));
-    // apply: fix 1, answered Apply, goes on a new branch from HEAD of the staged project, as a git repo; HEAD and the work tree stay.
-    const git = (...a) => spawnSync(join(agentBin, 'git'), ['-C', staged, ...a], { encoding: 'utf8' }).stdout.trim();
-    writeFileSync(join(staged, 'AGENTS.md'), '# Rules\n');
+    const git = (...a) => spawnSync(join(agentBin, 'git'), ['-C', staged, ...a], { encoding: 'utf8' }).stdout.trim(); writeFileSync(join(staged, 'AGENTS.md'), '# Rules\n');
     for (const a of [['init', '-q'], ['config', 'user.name', 'Umer'], ['config', 'user.email', 'umer@example.com'], ['add', '-A'], ['commit', '-qm', 'start']]) git(...a);
     drive('apply', 'apply');
     assert.match(readFileSync(join(evidence, 'apply.stdout'), 'utf8'), new RegExp(`^applied: fix ${proposed.run.id}:1 on branch lfm/${proposed.run.id}-1, commit [0-9a-f]{12}, ledger chg-\\d+$`, 'm'), 'apply does not make fix 1');
