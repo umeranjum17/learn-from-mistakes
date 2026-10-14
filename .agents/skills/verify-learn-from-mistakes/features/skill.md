@@ -16,7 +16,14 @@ or type `/learn-from-mistakes what keeps going wrong here?`.
 ## Driving it
 1. Check: `npm run build:skill -- --check` exits 0; after a one-character edit
    of SKILL.md it exits 1 and `npm test` fails; `git checkout` the file.
-2. npx before publish: in an owned scratch dir run a throwaway Verdaccio on
+2. Init install: `test/init.test.mjs` owns the journeys with fake agents and a
+   throwaway HOME: each configured agent's own skills dir gets one `SKILL.md`
+   with the packaged bytes, a symlinked skills dir gets one real file, a
+   second init writes nothing (`skills: nothing new`), `--no-skill` writes
+   none, `--project-skill` writes the project's `.claude/skills` and
+   `.agents/skills`, and `doctor` shows each `skill <agent>` check ok after
+   init.
+3. npx before publish: in an owned scratch dir run a throwaway Verdaccio on
    127.0.0.1 (anonymous publish for `learn-from-mistakes-axi` only, `**`
    proxied to npmjs), `npm pack`, `npm publish <tgz> --registry http://127.0.0.1:4873/`
    (never the real registry). In an isolated HOME whose `.npmrc` names only that

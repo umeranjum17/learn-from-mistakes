@@ -392,7 +392,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
-  --no-skill, -y      (init) init installs no skill; -y asks nothing, even in a terminal
+  --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's .claude/skills and .agents/skills instead of each agent's own skills dir; -y asks nothing, even in a terminal
   --json (init, doctor, report, count, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents)  print JSON instead of the default TOON (report, count: lfm-report.v1; changes: lfm-changes.v1)
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -488,7 +488,7 @@ const NEXT = (json, full, opts) => {
 const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} into labels.jsonl in the same dir (see learn-from-mistakes-axi guide), then ${withContext('learn-from-mistakes-axi count', 'the counts', opts)}`;
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
-  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--no-excerpts] [--no-skill] [-y] [--dir <dir>] [--json]',
+  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
@@ -511,7 +511,7 @@ const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
 const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model'];
-const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--no-skill', '-y'];
+const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -703,8 +703,13 @@ async function initCommand(opts) {
   quietSqlite();
   const dir = opts.dir ?? resolve('.');
   let out = await init(dir, opts);
-  console.log(render(out, opts.json));
+  const { skills, skills_updated, skills_skipped, skills_roots, ...shown } = out; // text shows the skill lines below, not these
+  console.log(render(opts.json ? out : shown, opts.json));
   if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
+  for (const f of !opts.json ? out.skills ?? [] : []) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
+  for (const f of !opts.json ? out.skills_skipped ?? [] : []) console.log(`skipped: ${f}`);
+  if (!opts.json && !opts['no-skill'] && !out.skills_roots) console.log('skills: no configured agent has a skills dir');
+  else if (!opts.json && !opts['no-skill'] && !(out.skills ?? []).length && !(out.skills_skipped ?? []).length) console.log('skills: nothing new');
   const seen = [['worker', out.workerBin, out.worker], ['judge', out.judgeBin, out.judge]].map(([name, bin, r]) => `the ${name} (${bin ? r.runner : r.runner ? `${r.runner}, not usable` : 'not set'})`).join(' and ');
   if (!opts.json) console.log(out.excerpts === 'on' ? `excerpts on: ${seen} see redacted record excerpts; excerpts: off in ${PROJECT_FILE} sends pointers and counts only`
     : 'excerpts off: the worker and the judge get pointers and counts only, never record text');

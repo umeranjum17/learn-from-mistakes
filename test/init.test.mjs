@@ -109,6 +109,9 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
   assert.equal(r.stderr.match(/^next: (.*)$/m)[1], save);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], [undefined, undefined, undefined]);
+  const noSkill = lfm('init', '-y');
+  assert.equal(noSkill.status, 0, noSkill.stderr);
+  assert.match(noSkill.stdout, /^skills: no configured agent has a skills dir$/m);
   for (const cmd of [['retro', '--foreground'], ['doctor'], ['agents']]) {
     const stop = lfm(...cmd);
     assert.equal(stop.status, 2, `${cmd[0]}: ${stop.stderr}`);
@@ -621,6 +624,61 @@ test('init refuses a model that starts with a dash, at --model and --judge-model
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
   }
+});
+
+const SKILL = readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8');
+const PICK2 = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'codex', '--judge-model', MODELS.codex];
+
+test('init installs the skill into each configured agent\'s own skills dir; a second init writes nothing; doctor shows the skill ok', () => {
+  const { lfm, config, env } = setup(['claude', 'codex']);
+  const out = JSON.parse(lfm('init', '-y', '--json', ...PICK2).stdout);
+  assert.equal(out.skills.length, 2);
+  for (const root of [join(env.HOME, '.claude', 'skills'), join(env.HOME, '.codex', 'skills')]) {
+    const file = join(root, 'learn-from-mistakes', 'SKILL.md');
+    assert.ok(out.skills.includes(file), `${file} listed`);
+    assert.equal(readFileSync(file, 'utf8'), SKILL);
+  }
+  const bytes = [readFileSync(config), ...out.skills.map((f) => readFileSync(f))];
+  const plain = lfm('init');
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.match(plain.stdout, /^skills: nothing new$/m); // the second init writes nothing new and says so
+  assert.doesNotMatch(plain.stdout, /skills_|^skills\[/m); // the text output shows the skill lines, not the result fields
+  assert.deepEqual(JSON.parse(lfm('init', '-y', '--json').stdout).skills, []);
+  assert.deepEqual([readFileSync(config), ...out.skills.map((f) => readFileSync(f))], bytes);
+  const [edited] = out.skills;
+  writeFileSync(edited, 'a local edit\n');
+  const updated = lfm('init');
+  assert.equal(updated.status, 0, updated.stderr);
+  assert.ok(updated.stdout.split('\n').includes(`skill: updated ${edited}`), updated.stdout);
+  assert.equal(readFileSync(edited, 'utf8'), SKILL); // init puts the packaged bytes back
+  const doctor = JSON.parse(lfm('doctor', '--json').stdout);
+  assert.deepEqual(['skill claude', 'skill codex'].map((l) => doctor.checks.find((c) => c.label === l)?.level), ['ok', 'ok']);
+});
+
+test('a symlinked skills dir gets one real file; --no-skill writes none; --project-skill writes the project dirs', () => {
+  const { p, lfm, env } = setup(['claude', 'opencode']);
+  mkdirSync(join(env.HOME, '.agents', 'skills'), { recursive: true });
+  symlinkSync(join(env.HOME, '.agents', 'skills'), join(env.HOME, '.claude', 'skills'));
+  const PICK_OP = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode];
+  const out = JSON.parse(lfm('init', '-y', '--json', ...PICK_OP).stdout);
+  assert.equal(out.skills.length, 2); // claude through the symlink, and opencode
+  assert.equal(new Set(out.skills.map((f) => realpathSync(f))).size, 2);
+  assert.equal(realpathSync(join(env.HOME, '.claude', 'skills', 'learn-from-mistakes', 'SKILL.md')),
+    realpathSync(join(env.HOME, '.agents', 'skills', 'learn-from-mistakes', 'SKILL.md')));
+  const opencodeFile = join(env.HOME, '.config', 'opencode', 'skills', 'learn-from-mistakes', 'SKILL.md');
+  const opencodeBytes = readFileSync(opencodeFile);
+  rmSync(join(env.HOME, '.agents', 'skills', 'learn-from-mistakes'), { recursive: true, force: true });
+  assert.deepEqual(JSON.parse(lfm('init', '-y', '--no-skill', '--json').stdout).skills, []);
+  assert.ok(!existsSync(join(env.HOME, '.agents', 'skills', 'learn-from-mistakes', 'SKILL.md')), '--no-skill wrote nothing');
+  assert.deepEqual(readFileSync(opencodeFile), opencodeBytes); // and changed nothing
+  const proj = JSON.parse(lfm('init', '-y', '--project-skill', '--json').stdout).skills;
+  assert.equal(proj.length, 2);
+  for (const root of [join(p, '.claude', 'skills'), join(p, '.agents', 'skills')]) {
+    const file = join(root, 'learn-from-mistakes', 'SKILL.md');
+    assert.ok(proj.includes(file), `${file} listed`);
+    assert.equal(readFileSync(file, 'utf8'), SKILL);
+  }
+  assert.deepEqual(JSON.parse(lfm('init', '-y', '--project-skill', '--json').stdout).skills, []);
 });
 
 // The terminal refuses a typed model that starts with a dash, names the rule and asks the model again.
