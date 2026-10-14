@@ -89,6 +89,7 @@ export async function autoApply(cfg, db, id, log) {
 export async function apply(cfg, opts) {
   const db = await openStore(cfg.state, false);
   const run = db && (opts.run ? Number(opts.run) : db.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL').get().id);
+  if (db && opts.run && !db.prepare('SELECT 1 FROM runs WHERE id = ?').get(run)) throw new UsageError(`no run ${run}`, withContext('learn-from-mistakes-axi runs', 'the saved run ids', opts));
   if (run == null) throw new EmptyError('no retro run has kept fixes', withContext('learn-from-mistakes-axi retro --wait 15m', 'a run that proposes fixes', opts));
   try {
     const fixes = db.prepare(KEPT).all(run), chosen = opts.fix ? fixes.filter((f) => f.n === Number(opts.fix)) : fixes.filter((f) => f.answer === 'apply');
