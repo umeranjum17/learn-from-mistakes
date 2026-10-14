@@ -22,9 +22,11 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github, 'done-done': doneDone, firstmate };
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
   'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
-// A metric name: one of METRICS, or cause_count:<a configured cause>. Targets and the ledger's --metric take these.
-export const isMetric = (name, causes) => METRICS.includes(name) || (name.startsWith('cause_count:') && Object.hasOwn(causes, name.slice(12)));
-export const METRIC_RULE = `a metric (${METRICS.join(', ')}, or cause_count:<cause>)`;
+// A metric name: one of METRICS, cause_count:<a configured cause>, or gate_failures:<a step no-mistakes read>. Targets and the ledger's --metric take these.
+export const isMetric = (name, causes) => METRICS.includes(name)
+  || (name.startsWith('cause_count:') && Object.hasOwn(causes, name.slice(12)))
+  || (name.startsWith('gate_failures:') && name.length > 'gate_failures:'.length);
+export const METRIC_RULE = `a metric (${METRICS.join(', ')}, or cause_count:<cause>, or gate_failures:<step>)`;
 // A target or a tripwire: "<op> <number>", such as ">= 70".
 export const RULE = /^(>=|<=|>|<|=) ?(\d+(?:\.\d+)?)$/;
 

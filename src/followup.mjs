@@ -46,7 +46,7 @@ function recordsOf(cfg, metric) {
     const source = cfg.causes[metric.slice(12)]?.match?.source;
     return source && SOURCES[cfg.sources[source].type].metricRows !== 'events' ? (r) => r.source === source : null;
   }
-  const types = Object.keys(SOURCES).filter((t) => SOURCES[t].metricRows !== 'events' && [...(SOURCES[t].metricNames ?? []), ...(SOURCES[t].addsTo ?? [])].includes(metric));
+  const types = Object.keys(SOURCES).filter((t) => SOURCES[t].metricRows !== 'events' && [...(SOURCES[t].metricNames ?? []), ...(SOURCES[t].addsTo ?? [])].includes(metric.split(':')[0]));
   return types.length ? (r) => types.includes(cfg.sources[r.source]?.type) : null;
 }
 
