@@ -1654,7 +1654,7 @@ test('apply: with no saved store, apply names the empty store and exits 3', () =
 test('apply: a refused apply in the run logs one line and the run stays ok with its proposals', () => {
   const { p, lfm, query, lines, fake, auto } = applyRepo();
   auto(1);
-  writeFileSync(join(p, 'notes.txt'), 'Umer is still writing this.\n'); // the user's uncommitted work refuses the apply
+  writeFileSync(join(p, 'AGENTS.md'), `${readFileSync(join(p, 'AGENTS.md'), 'utf8')}- Unfinished.\n`); // the user's uncommitted work refuses the apply
   const r = lfm(fake, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr);
   const { run, applied } = JSON.parse(r.stdout);
   assert.deepEqual([run.status, applied], ['completed', []]);
