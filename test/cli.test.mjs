@@ -1592,6 +1592,8 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(lines('apply', run.id), ['auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply']);
   const none = lfm({}, 'apply'); assert.equal(none.status, 3, none.stderr);
   assert.match(none.stderr, new RegExp(`^error: run ${run.id} has no fix answered Apply\nnext: learn-from-mistakes-axi apply --run ${run.id} --fix <n>`, 'm'));
+  const missing = lfm({}, 'apply', '--run', '99'); assert.equal(missing.status, 2, missing.stderr);
+  assert.match(missing.stderr, /^error: no run 99$/m);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
   db.prepare(`INSERT INTO signoff (proposal_id, message, answer) SELECT id, '{}', CASE n WHEN 1 THEN 'apply' ELSE 'skip' END FROM proposals WHERE run_id = ? AND n IN (1, 2)`).run(run.id);
   db.prepare(`UPDATE proposals SET target = 'the launch script' WHERE run_id = ? AND n = 3`).run(run.id); db.close();
