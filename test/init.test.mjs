@@ -179,6 +179,35 @@ test('in a terminal, init asks which sessions to read once, and an empty answer 
   assert.deepEqual([yaml.agent, yaml.judge_agent], ['claude', 'opencode']);
 });
 
+// No local session store: init still prints the ask line with the save command, and a terminal gets that line, not a
+// pick list it has nothing to offer.
+test('with no local session store, init still says to ask which agents\' sessions to read', () => {
+  const { tmp, p, env, config, lfm } = setup(['claude', 'opencode']);
+  rmSync(join(env.HOME, '.claude'), { recursive: true, force: true });
+  const save = `learn-from-mistakes-axi init --sessions <agent>,<agent> --dir ${p}   # with the user's answer`;
+  const plain = lfm('init', '-y', '--no-skill', '--json');
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.ok(JSON.parse(plain.stdout).gaps.includes(`sessions: ask the user which agents' sessions to read, then run ${save}`), plain.stdout);
+  assert.equal(parse(readFileSync(config, 'utf8')).sources?.sessions, undefined);
+  const answers = ['1', MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.doesNotMatch(r.stdout, /Which agents' sessions should the retro read\?/);
+  assert.match(r.stdout, /sessions: ask the user which agents' sessions to read, then run learn-from-mistakes-axi init --sessions <agent>,<agent> --dir/);
+  assert.equal(parse(readFileSync(config, 'utf8')).sources?.sessions, undefined);
+});
+
+// A hand-edited config whose `sources:` key is null takes the sessions source instead of a stack trace.
+test('init --sessions writes into a config whose sources key is null', () => {
+  const { lfm, config } = setup(['claude', 'opencode'], CHOSEN('claude', 'opencode'));
+  writeFileSync(config, 'sources:\n');
+  const r = lfm('init', '-y', '--no-skill', '--sessions', 'claude');
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /Expected YAML collection/);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).sources, { sessions: { type: 'sessions', agents: ['claude'] } });
+});
+
 // Ctrl-D at the first pick: nothing is saved, and the printed command that saves the answer keeps the project dir.
 test('in a terminal, ending the pick early prints the save command with --dir', () => {
   const { tmp, p, env, config } = setup(['claude', 'opencode']);

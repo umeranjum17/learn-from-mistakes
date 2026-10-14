@@ -103,7 +103,7 @@ export async function pick(keys, cfg, dir) {
 // The sessions source is the user's choice too: init offers the agents whose local store exists, none selected, and
 // writes the ones named; any other caller gets this command to save the user's answer.
 export const sessionsCommand = (dir) => `learn-from-mistakes-axi init --sessions <agent>,<agent>${dir ? ` --dir ${shq(dir)}` : ''}   # with the user's answer`;
-export const sessionsAsk = (stores, dir) => `sessions: ask the user which agents' sessions to read (local stores: ${stores.join(', ')}), then run ${sessionsCommand(dir)}`;
+export const sessionsAsk = (stores, dir) => `sessions: ask the user which agents' sessions to read${stores.length ? ` (local stores: ${stores.join(', ')})` : ''}, then run ${sessionsCommand(dir)}`;
 export async function pickSessions(stores, names) {
   process.stderr.write(`Which agents' sessions should the retro read? Local session stores:\n${stores.map((a, i) => `  ${i + 1}) ${a}`).join('\n')}\n`);
   try {

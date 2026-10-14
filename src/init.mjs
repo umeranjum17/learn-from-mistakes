@@ -199,6 +199,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   }
   if (reads?.length) {
     const doc = parseDocument(readFileSync(file, 'utf8'));
+    if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
     doc.setIn(['sources', before.sources?.sessions ? 'agent-sessions' : 'sessions'], doc.createNode({ type: 'sessions', agents: [...new Set(reads)] }, { flow: true }));
     try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
     catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
@@ -220,7 +221,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   const { written: skills, updated: skills_updated, failed: skills_skipped, roots: skills_roots } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
-    ...(!has && !reads?.length && !asked && local.length ? [sessionsAsk(local, opts.dir)] : []),
+    ...(!has && !reads?.length && !asked ? [sessionsAsk(local, opts.dir)] : []),
     ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
