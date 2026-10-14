@@ -31,7 +31,7 @@ whose `error.name` is `MessageAbortedError` (the interrupt, placed after the too
 off). A user message is one event over its non-synthetic text and file parts, so the
 `lfm-run:` marker is found after an attached prompt file (a leading quote is ignored).
 Refs are `file:line` for Codex, Pi and Gemini and `db:<db file>:<table>:<rowid>` for OpenCode.
-Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl` whose header `cwd` is this repo (a fork skips its parent's copied entries); `toolResult.isError` the failure (`Command exited with code N` the exit, `Command aborted` none), `stopReason: aborted` the interrupt.
+Pi: `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}/*/*.jsonl` whose header `cwd` is this repo (a fork skips its parent's copied entries); `toolResult.isError` the failure (`Command exited with code N` the exit, `Command` or `Operation aborted` none), `stopReason: aborted` the interrupt.
 Gemini CLI: `${GEMINI_CLI_HOME:-~}/.gemini/tmp/<slug>/chats/session-*.jsonl` and `chats/<session id>/*.jsonl` subagents, the slug from `.gemini/projects.json`; the last record per message id counts, `$set.messages` replaces, `$rewindTo` drops from one id; `status: error` or a shell output ending `Exit Code: N` the failure, `cancelled` the interrupt.
 The reader skips the tool's own runs: a cwd under `.lfm/`, a
 first user message starting `lfm-run:`, or a session id in the store's
@@ -108,5 +108,5 @@ The cwd test reads at most the lines before the first record with a cwd, so
 other projects' files are not parsed whole. `returnCodeInterpretation` marks a
 benign nonzero exit (such as grep with no match), so it is not a failure.
 A tool use the user turned down is not a tool error; the interrupt or the
-correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error; an interrupt does too (it is its own signal). Wrapper messages (Claude Code's commands, hooks, reminders; Gemini's injected context and slash commands) are not person messages and do not clear it; an image-only message is one. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
+correction after it is counted. A correction is a person's message right after a tool error; an assistant reply in between means none, but a later successful result in the same batch does not clear the error; an interrupt does too (it is its own signal). Wrapper messages (Claude Code's commands, hooks, reminders; Gemini's injected context, slash commands and `?` questions) are not person messages and do not clear it; an image-only message is one. A read-only open of a WAL database can leave empty `-wal` and `-shm` files beside
 it; the database file itself never changes.
