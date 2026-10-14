@@ -184,7 +184,8 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
       const doc = parseDocument(readFileSync(file, 'utf8'));
       if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
       doc.setIn(['sources', 'home'], doc.createNode({ type: 'firstmate', path: opts.firstmate }, { flow: true }));
-      writeFileSync(file, doc.toString({ lineWidth: 0 }));
+      try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+      catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     }
   }
   let cfg = loadConfig(dir);
@@ -194,7 +195,8 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     const pair = doc.createPair('causes', Object.fromEntries(Object.entries(STARTER).map(([id, [signal, description]]) => [id, { description, ...(sessions && { match: { source: sessions, signal } }) }])));
     pair.key.commentBefore = ' Starter causes, written by init: the worker labels records with them. Edit, add or remove them.';
     doc.contents.items.push(pair);
-    writeFileSync(file, doc.toString({ lineWidth: 0 }));
+    try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+    catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     cfg = loadConfig(dir);
   }
   stateDir(cfg);
