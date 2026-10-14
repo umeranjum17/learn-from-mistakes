@@ -182,6 +182,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     if (Object.hasOwn(before.sources, 'home') || Object.values(before.sources).some((s) => s.type === 'firstmate')) ignored.push('--firstmate');
     else {
       const doc = parseDocument(readFileSync(file, 'utf8'));
+      if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
       doc.setIn(['sources', 'home'], doc.createNode({ type: 'firstmate', path: opts.firstmate }, { flow: true }));
       writeFileSync(file, doc.toString({ lineWidth: 0 }));
     }

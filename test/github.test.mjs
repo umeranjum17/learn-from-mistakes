@@ -221,4 +221,7 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
     [2, 1, '', ''], [0.5, 0.667, '', ''], [77.8, 33.3, '>= 80', 'missed'], [1, 0, '', '']]);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try { assert.ok(db.prepare(`SELECT text, data FROM records WHERE source = 'home'`).all().every((x) => !x.text.includes(SECRET) && !x.data.includes(SECRET))); } finally { db.close(); }
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'name: umer-app\nsources:\n'); // a config whose sources key is empty: the opt-in still adds home
+  const bare = lfm({}, 'init', '-y', '--no-skill', '--firstmate', home, '--json');
+  assert.equal(bare.status, 0, bare.stderr);
 });
