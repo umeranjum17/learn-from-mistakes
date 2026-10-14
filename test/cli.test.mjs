@@ -1658,6 +1658,33 @@ test('apply: a refused apply in the run logs one line and the run stays ok with 
   assert.ok(query('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND n IS NOT NULL', run.id)[0].n > 0);
 });
 
+test('apply: a kept fix naming a cause that is not configured is refused in the run, with no branch', () => {
+  const { p, env, bin, lfm, lines } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  writeFileSync(join(p, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');
+  const git = (...args) => execFileSync(join(bin, 'git'), ['-C', p, ...args], { encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Umer'); git('config', 'user.email', 'umer@example.com'); git('add', '-A'); git('commit', '-qm', 'start');
+  const global = join(env.LFM_HOME, 'config.yaml');
+  const fake = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_TARGET: 'AGENTS.md (the rules list)' };
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  db.prepare('UPDATE proposals SET cause = ? WHERE run_id = ? AND n = 1').run('unlisted-cause', run.id);
+  db.prepare(`UPDATE steps SET status = 'failed' WHERE run_id = ? AND name = 'apply'`).run(run.id);
+  db.prepare(`UPDATE runs SET status = 'failed' WHERE id = ?`).run(run.id);
+  db.close();
+  writeFileSync(global, `${readFileSync(global, 'utf8')}auto_fix: 1\n`);
+  const r = lfm(fake, 'rerun', '--resume', '--run', String(run.id), '--wait', '1m', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const resumed = JSON.parse(r.stdout);
+  assert.equal(resumed.run.status, 'completed');
+  assert.deepEqual(resumed.applied, []);
+  const refused = lines('apply', run.id);
+  assert.equal(refused.length, 1, refused.join('\n'));
+  assert.match(refused[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: .* names cause unlisted-cause, which is not a configured cause$`));
+  assert.equal(git('branch', '--list', 'lfm/*'), '');
+});
+
 test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
   const { p, env, lfm } = agentSetup();
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);
