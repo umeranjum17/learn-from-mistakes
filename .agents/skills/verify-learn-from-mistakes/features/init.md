@@ -14,7 +14,7 @@ so only types with a reader are written: `markdown-log` takes the first of
 `$NM_HOME/state.sqlite` (made absolute; else `~/.no-mistakes/state.sqlite`, written with `~`)
 when its `repos` table has a row whose `working_path` is the project's git top
 level or whose `upstream_url` is its `origin` URL (as `gate`); `sessions` is
-written as `{ type: sessions, agents: [auto] }` when any agent session store exists
+written as `{ type: sessions, agents: [auto] }` when a Claude Code, Codex or OpenCode session store exists (never for Pi or Gemini)
 (store paths in [sessions.md](sessions.md)); `github` is written as `{ type: github }`
 when `origin` is a GitHub repo and `gh auth status` passes ([github.md](github.md)). A detect hook returns
 the config entries it finds by id (`log`, `reviews`, `gate`, `sessions`, `prs`).
