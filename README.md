@@ -7,7 +7,7 @@
 `learn-from-mistakes-axi` is an [AXI](https://axi.md), which means -
 
 - It's just a CLI any capable agent can run without setup (`npx -y learn-from-mistakes-axi`).
-- It's built for agents: TOON output by default, `--json` and `--full` when asked, a contextual `next:` hint that names the likely next command, and the bare command does the main job (the report).
+- It's built for agents: TOON output by default, `--json` and `--full` when asked, a contextual `next:` hint that names the likely next command, and the bare command shows the last run's status and its summary line.
 - The skill below only handles discovery; agents learn the tool by using it.
 
 ## Quick Start
@@ -99,7 +99,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
 
 2. Run `learn-from-mistakes-axi ingest --dir .`. It prints the state dir: `.lfm/` next to `.learn-from-mistakes.yaml`. The tool writes `.lfm/.gitignore` (`*`) whenever it writes state there and finds none, so the state is never committed and you edit no `.gitignore` of your own. An existing `.lfm/.gitignore` is never overwritten: it must contain the line `*` with no line starting with `!`, or the write exits 2 before any state is written. To keep state outside the project instead, set `state_root: <dir>` in `$LFM_HOME/config.yaml` (`LFM_HOME` defaults to `~/.learn-from-mistakes`); the state then goes to `<dir>/<name>`.
 3. Ask your agent to start a retro (`learn-from-mistakes-axi retro --wait 15m`). The tool runs its own agent, the `agent` you set in the config, to label the records; the run never picks one. Your agent only starts it and reads the result. Without a retro, your agent can still follow `learn-from-mistakes-axi guide` and write `labels.jsonl` and `proposals.jsonl` in the state dir by hand.
-4. Read the result. A finished retro prints it: the causes its labels counted and the worker's findings, one line each (`status` prints it again). A person reads `.lfm/runs/<id>/report.txt`: the plain-text report with the evidence. A bare command, or `report`, prints the repeated causes from the last completed retro that has labels (`labels_from: run <id>`), with each finding's cause, its counts and its verdict; with no such run, or with `--labels <file>`, it counts `labels.jsonl`, the manual path. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
+4. Read the result. A finished retro prints it: the causes its labels counted and the worker's findings, one line each (`status` prints it again). A person reads `.lfm/runs/<id>/report.txt`: the plain-text report with the evidence. A bare command prints the last run's status and its summary line. `report` prints `lfm-report.v2` for the last completed retro that has labels (`run: <id>`, `labels_from: run <id>`): the repeated causes, each finding's cause, counts and verdict, the run's metrics, follow-ups and kept fixes, and `report_txt`, the path of `report.txt` (never its text); with no such run, or with `--labels <file>`, it counts `labels.jsonl`, the manual path. The recommended changes are in `proposals.jsonl` in the state dir, or ask your agent to summarise them.
 
 ## Why
 
@@ -110,13 +110,13 @@ Agent fleets write down what went wrong: a defect log, a pipeline's failed steps
 ## Command line
 
 ```
-learn-from-mistakes-axi           print the project's repeated-cause report (same as `report`)
+learn-from-mistakes-axi           print the last run's status and its summary line
 learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--no-excerpts] [--project-skill] [--no-skill] [-y]   write ~/.learn-from-mistakes/config.yaml and .learn-from-mistakes.yaml, each once, with the sources found; save the agents the user chose (in a terminal, with none given, it asks), and check that the worker and a different judge resolve
 learn-from-mistakes-axi doctor [--live]   one ok/warn/fail line per check (node, git, config, .lfm ignored, each source, worker and judge: usable, login, model, a different identity; the skill per agent CLI; sign-off) with a fix: line under each that is not ok; --live makes one agents --test call per role (costs tokens); --json prints JSON
 learn-from-mistakes-axi guide     print the agent procedure: config, ingest, label, propose, report
 learn-from-mistakes-axi ingest    read the configured sources (read-only) into the state dir
 learn-from-mistakes-axi count     print the counts (same projection as `report`)
-learn-from-mistakes-axi report    print the report: the last retro's labels, else labels.jsonl; --full adds evidence ids, --json prints JSON
+learn-from-mistakes-axi report    print lfm-report.v2 for the last retro (else labels.jsonl): ids, counts, metrics, follow-ups, verdicts and the path of report.txt; --full adds evidence ids, --json prints JSON
 learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>]   record an applied change in the ledger
 learn-from-mistakes-axi changes   print every applied change (lfm-changes.v1) with its what and why
 learn-from-mistakes-axi signoff post [--run <id>]   post the latest completed run's kept fixes to sign-off as `finding` messages, only when you ask; without sign-off-axi it prints them and `npm i -g sign-off-axi`
@@ -136,7 +136,7 @@ learn-from-mistakes-axi --version show the version
 
 Every command stays useful:
 
-- Default output is **TOON** (compact, token-lean). For `report`/`count`, `--json` prints the same data as JSON under the versioned `lfm-report.v1` schema (`changes --json` is `lfm-changes.v1`, below). `generated_at` is when the report ran; `ingested_at` is when `ingest` last read the sources. The added field keeps the schema at `lfm-report.v1`.
+- Default output is **TOON** (compact, token-lean). For `report`/`count`, `--json` prints the same data as JSON under the versioned `lfm-report.v2` schema (`changes --json` is `lfm-changes.v1`, below). `generated_at` is when the report ran; `ingested_at` is when `ingest` last read the sources; `run` is the counted retro (`null` for a labels file) and `report_txt` the path of its `report.txt`.
 - `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
 - `change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--metric`, `--tripwire` and `--kind` record what will show whether the change worked: the metric to watch (a metric name, or `cause_count:<cause>` for any configured cause; default `cause_count:<cause>` of the change's own cause), the value it must reach (`"<op> <number>"` with `>=`, `<=`, `>`, `<` or `=`, as a target; default none) and what the change edited (`doc`, `rule` or `code`; default `doc`). A bad value exits 2 and names the allowed form. A ledger line written before these fields reads as the defaults. `--proposal <run>:<n>` records that run's kept fix `n` (the `fixes` that `status --run <run>` lists) in place of `--cause`: its cause, metric and tripwire go into the entry, and `--metric` or `--tripwire` override them; a fix the check step did not keep has no number and exits 2. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
 - `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config, not `ingest`.
@@ -161,8 +161,10 @@ Every command stays useful:
 Default TOON output, abridged to one cause on the example project:
 
 ```
-schema: lfm-report.v1
+schema: lfm-report.v2
 generated_at: "2026-10-12T09:00:00.000Z"
+run: null
+report_txt: ""
 ingested_at: "2026-10-12T08:00:00.000Z"
 coverage:
   labelled: 13
@@ -216,7 +218,7 @@ causes[1]:
 
 ## Privacy
 
-The report's `--json` output is **privacy-bounded**: identifiers, counts and each finding's judge verdict word, never record text. The default (TOON) and `--full` reports also print one `finding:` line per finding of the counted run, with its counts and verdict; `status` and `retro` print only ids, counts, metrics and verdicts, and the summaries are in `report.txt`. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. Two outputs print free text. `changes` prints only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. A run's `report.txt` holds the text its own agents wrote from the bundle (redacted excerpts, or none with `excerpts: off`): finding summaries, fix changes and the judge's notes, redacted, never a label's `why`; it stays in `.lfm/`. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name a source by its config id (for example `source log: cannot read (ENOENT)`) rather than its path, and never echo record text.
+The report's `--json` output is **privacy-bounded**: identifiers, counts, metrics, follow-ups, each finding's and fix's judge verdict word and the path of `report.txt`, never record text. The default (TOON) and `--full` reports also print one `finding:` line per finding of the counted run, with its counts and verdict; `status` and `retro` print only ids, counts, metrics and verdicts, and the summaries are in `report.txt`. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. Two outputs print free text. `changes` prints only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. A run's `report.txt` holds the text its own agents wrote from the bundle (redacted excerpts, or none with `excerpts: off`): finding summaries, fix changes and the judge's notes, redacted, never a label's `why`; it stays in `.lfm/`. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name a source by its config id (for example `source log: cannot read (ENOENT)`) rather than its path, and never echo record text.
 
 The state dir is not bounded: `.lfm/records.jsonl` holds the redacted text of every record with `excerpts: on` (and no text field with `excerpts: off`), `lfm.sqlite`'s `records` table holds the same text for defect bullets, the redacted error of each failed gate step and the redacted title and body of each PR, and `labels.jsonl`/`proposals.jsonl` hold your agent's prose, as do a retro's worker `labels`, `findings` and `proposals` tables and its follow-up reasons in `lfm.sqlite`, and the `signoff` table keeps each message posted to sign-off (its proposed change). It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `ingest`, `change applied` and `retro` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from. Each run's `bundle.md` holds redacted excerpts of those records and session events, or none with `excerpts: off`. With a `sessions` source, `lfm.sqlite` also keeps an excerpt of each session failure, retry and correction: at most 300 characters, with API keys, tokens, a password in a URL, private keys, Bearer and Basic credentials, `KEY=value`, `"key": "value"` and `--key value` secrets whose key name contains token, secret, password, key or auth, and email addresses, replaced by `[redacted]`; a wider key list comes in a later version. `excerpts: off` keeps none.
 

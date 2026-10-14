@@ -2,17 +2,18 @@
 
 ## Sub-features
 `--help`/`-h`, `guide` (the agent procedure) and `--version`/`-v` without reading config; a bare command (or a
-leading flag) runs the report; default TOON output; `--json` under the versioned
-`lfm-report.v1` schema; `--full` adds allow-listed non-content ids (source row ids; change ids live in [change.md](change.md)); a
+leading flag) shows the last run's status and its `summary` line (no run: exit 3, `next: ... retro --wait 8m`); default TOON
+output; `report --json` under the versioned `lfm-report.v2` schema (ids, counts, metrics, follow-ups, fixes, verdicts and the
+`report_txt` path, never its text); `--full` adds allow-listed non-content ids (source row ids; change ids live in [change.md](change.md)); a
 `next:` hint after every working command (stdout for `--help` and `guide`).
 
 ## How to get to it (user POV)
-From an installed package: `learn-from-mistakes-axi --help`, `learn-from-mistakes-axi --version`, `learn-from-mistakes-axi` (report),
+From an installed package: `learn-from-mistakes-axi --help`, `learn-from-mistakes-axi --version`, `learn-from-mistakes-axi` (the last run),
 `learn-from-mistakes-axi --json`, `learn-from-mistakes-axi report --full`, then `learn-from-mistakes-axi report --full --json`.
 
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns the behavioral assertions: help/version exit 0 with no
-config, default TOON decoding to the same `lfm-report.v1` model as `--json`,
+config, default TOON decoding to the same `lfm-report.v2` model as `--json`,
 `--full` carrying only non-content ids (ledger change ids included, see [change.md](change.md)), and both `next:` hint chains (`report ->
 --full -> --full --json` and `report --json -> --full --json`) with `--full
 --json` terminating. The helper drives `bare`, `report-json`, `report-full` and

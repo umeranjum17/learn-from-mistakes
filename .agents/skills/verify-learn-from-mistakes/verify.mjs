@@ -111,7 +111,6 @@ try {
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
   run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
   drive('ingest', 'ingest');
-  drive('bare', '--labels', stagedLabels, '--proposals', stagedProposals); // bare command = the report
   drive('count-unread', 'count');
   drive('count-labelled', 'count', '--labels', stagedLabels);
   if (!mode) { // the synthetic config names the cause; a private run never records a change
@@ -202,7 +201,11 @@ try {
   run('retro-analyse', process.execPath, [cli, 'retro', '--wait', '1m', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label' });
   const { run: { id: analysed }, result } = JSON.parse(readFileSync(join(evidence, 'retro-analyse.stdout'), 'utf8'));
   assert.deepEqual(result.findings.map((f) => f.cause), ['umer-fixtures-unset'], 'retro --wait does not show the worker\'s finding');
-  drive('report-run', 'report', '--json'); // the bare report counts the run's labels, not labels.jsonl
+  drive('report-run', 'report', '--json'); // lfm-report.v2 counts the run's labels, not labels.jsonl
+  run('bare', process.execPath, [cli, '--dir', staged], 0, lab); // the bare command: the last run's status and its summary line
+  const v2 = JSON.parse(readFileSync(join(evidence, 'report-run.stdout'), 'utf8'));
+  assert.deepEqual([v2.schema, v2.run, existsSync(v2.report_txt), Array.isArray(v2.metrics)], ['lfm-report.v2', analysed, true, true], 'report --json is not lfm-report.v2 for the run');
+  assert.match(readFileSync(join(evidence, 'bare.stdout'), 'utf8'), new RegExp(`^run:\\n  id: ${analysed}\\n  status: completed\\n[\\s\\S]*^summary: "repeated: `, 'm'), 'the bare command does not show the last run and its summary');
   if (!mode) {
     assert.deepEqual([result.labelled, result.causes.find((c) => c.cause === 'other')?.incidents], [2, 2], 'retro --wait does not show the counted causes');
     assert.equal(JSON.parse(readFileSync(join(evidence, 'report-run.stdout'), 'utf8')).labels_from, `run ${analysed}`, 'the bare report does not read the run\'s labels');
@@ -321,7 +324,7 @@ try {
     run('packed-guide', installed, ['guide']);
     run('packed-agents', installed, ['agents', '--json'], 2); // no agent set: the packed bin also says to ask the user
     run('packed-report', installed, ['report', '--json', '--dir', staged, '--labels', stagedLabels, '--proposals', stagedProposals]);
-    assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v1', 'packed bin does not drive the report');
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-report.stdout'), 'utf8')).schema, 'lfm-report.v2', 'packed bin does not drive the report');
     if (!mode) {
       run('packed-changes', installed, ['changes', '--json', '--dir', staged]);
       assert.equal(JSON.parse(readFileSync(join(evidence, 'packed-changes.stdout'), 'utf8')).schema, 'lfm-changes.v1', 'packed bin does not drive the export');

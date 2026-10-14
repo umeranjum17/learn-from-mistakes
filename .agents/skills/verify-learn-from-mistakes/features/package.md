@@ -15,7 +15,7 @@ Run the helper with `--package`:
 It records `pack.json`, `pack.manifest.txt` and the packed-command logs. The
 manifest must include `package/bin/learn-from-mistakes-axi.mjs`, `package/src/config.mjs`, `package/src/metrics.mjs`, `package/src/sources/markdown-log.mjs`, `package/src/sources/no-mistakes.mjs`, `package/src/sources/done-done.mjs`, `package/src/run.mjs`, `package/src/store.mjs`, `package/src/redact.mjs`, `package/src/sessions/claude.mjs`, `package/src/sources/sessions.mjs`, `package/package.json` and the skill,
 and must exclude `test`/`examples`. The installed bin's `report --json` must be
-`lfm-report.v1`, its `changes --json` must be `lfm-changes.v1`, its
+`lfm-report.v2`, its `changes --json` must be `lfm-changes.v1`, its
 `retro --wait 1m --json` must be a `completed` run with every step completed, run by the worker the installed bin spawns (`packed-retro`), the whole
 `npm test` suite must pass again with `LFM_CLI` set to the installed bin
 (`packed-npm-test`), and the packaged skill file must exist in the installed prefix.

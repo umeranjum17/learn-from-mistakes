@@ -6,13 +6,14 @@ malformed labels, empty input, and proposal rules (repeated causes only, with
 target and owner, at most five lines).
 
 ## How to get to it (user POV)
-After a retro whose worker kept labels, a bare `learn-from-mistakes-axi` or `report` counts that run's labels:
-`labels_from: run <id>`, `findings[n]{cause,count,days,verdict}` in the TOON report, then one `finding: <cause> (<count>/<days> days, <verdict>)`
+After a retro whose worker kept labels, `report` counts that run's labels (`lfm-report.v2`): `run: <id>`, `report_txt: <path>`,
+that run's `metrics`, `followups` and `fixes` as `status` shows them, `labels_from: run <id>`, `findings[n]{cause,count,days,verdict}` in the TOON report, then one `finding: <cause> (<count>/<days> days, <verdict>)`
 line per finding after the summary line, and `next: ... status --run <id>`. `--json` prints the findings as counts and verdict words; the summaries are in `report.txt` only.
 If the run's labels have problems, the next hint is `retro --wait`, because only a new run relabels the records.
-With no such run, or with `--labels <file>`, it counts `labels.jsonl` (`labels_from: labels.jsonl` or `--labels`).
+With no such run, or with `--labels <file>`, it counts `labels.jsonl` (`labels_from: labels.jsonl` or `--labels`; `run: null`, `report_txt: ""`, empty lists).
+The bare `learn-from-mistakes-axi` shows the last run (any status) and its `summary` line, then `next: ... report`.
 A run store that sqlite cannot read is one `error:` line with a `next:` hint.
-Run `learn-from-mistakes-axi` or `learn-from-mistakes-axi report --labels <file> --proposals <file>` after ingest; add
+Run `learn-from-mistakes-axi report` or `learn-from-mistakes-axi report --labels <file> --proposals <file>` after ingest; add
 `--json` for JSON and `--full` for evidence ids.
 
 ## Driving it with the public CLI
