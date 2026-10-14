@@ -177,6 +177,15 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     } catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
   if (Object.keys(chosen).length) save(file, chosen);
+  if (!written && opts.firstmate && !Object.values(before.sources).some((s) => s.type === 'firstmate' && s.path === opts.firstmate)) {
+    // the opt-in adds the source to a config that exists, unless it has another home or a source named home
+    if (Object.hasOwn(before.sources, 'home') || Object.values(before.sources).some((s) => s.type === 'firstmate')) ignored.push('--firstmate');
+    else {
+      const doc = parseDocument(readFileSync(file, 'utf8'));
+      doc.setIn(['sources', 'home'], doc.createNode({ type: 'firstmate', path: opts.firstmate }, { flow: true }));
+      writeFileSync(file, doc.toString({ lineWidth: 0 }));
+    }
+  }
   let cfg = loadConfig(dir);
   if (written) { // each match names the config's sessions source; with none, the causes are for the worker's labels only
     const doc = parseDocument(readFileSync(file, 'utf8'));

@@ -2,20 +2,22 @@
 
 ## Sub-features
 Opt-in only: `init --firstmate <home>` writes `home: { type: firstmate, path: <home> }`, or the user
-writes it; nothing detects a home. `src/sources/firstmate.mjs` reads, read-only, under `<home>/state`:
+writes it; nothing detects a home. On a config that exists it adds the source once (another home
+or a source named `home` makes it `--firstmate not applied`). `src/sources/firstmate.mjs` reads, read-only, under `<home>/state`:
 each `*.status` file (lines `<state> [at=<epoch>] [<tag>...]: <text>`; a line with no `at=` takes the
 last stamp above it; `needs-decision` is a decision, `blocked` a block) and each `*.msg` in a `*.inbox`
 folder or its `handled/` (a steer, timed by its `at=<epoch>` line, tagged by its first `[tag]`).
 `<home>/data/defects.md` goes through the markdown-log reader (adds to `defects`);
 `<home>/config/targets.tsv` (`metric op target owner rule`, tab-separated, header optional) overrides
-`targets:`. An entry with no time is skipped and counted in `doctor`. Metrics: `decisions`,
+`targets:`. An entry with no time, a stamp that is not digits or one out of range is skipped and counted in
+`doctor`; CRLF line ends read as LF. Metrics: `decisions`,
 `blocks`, `steers`, `interventions_per_merge` (their sum over `merged`, n/a with no github source).
 The no-mistakes source adds `gate_failures` and `gate_failures:<step>` and checks the store's
 columns (`PRAGMA table_info`): one missing exits 2 `unknown store schema (no <table>.<column>)`.
 
 ## Driving it with the public CLI
 `test/github.test.mjs` owns the journey ("init --firstmate"): a synthetic home (3 status files,
-4 messages, a defect log, a targets file) gives decisions 2/0, blocks 1/1 (target `<= 0` missed),
+5 messages, a defect log, a targets file) gives decisions 2/0, blocks 1/1 (target `<= 0` missed),
 steers 2/1, interventions_per_merge 0.5/0.667, `first_pass` target `>= 80`; a planted token never
 shows. `test/sessions.test.mjs` asserts `gate_failures` by step; `test/cli.test.mjs` the dropped column.
 

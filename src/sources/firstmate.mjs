@@ -38,22 +38,22 @@ export function read(source, { path }, { readFrom = 0, excerpts = true, project 
     throw new UsageError(`source ${source}: cannot read ${state} (${e.code})`, `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
   }
   const add = (ms, id, ref, kind, body, tag) => {
-    if (Number.isNaN(ms)) skipped += 1;
+    if (Number.isNaN(new Date(ms).getTime())) skipped += 1; // no stamp, or one that is not a time
     else if (ms >= readFrom) records.push({ id, source, ref, date: new Date(ms).toISOString(), text: text(body), data: { kind, ...(tag && { tag }) } });
   };
   for (const f of files.filter((n) => /^[^/]+\.status$/.test(n))) {
     let at = NaN;
-    readFileSync(join(state, f), 'utf8').split('\n').forEach((line, i) => {
+    readFileSync(join(state, f), 'utf8').split(/\r?\n/).forEach((line, i) => {
       const m = line.match(/^([a-z-]+)((?: \[[^\]]*\])*): (.*)$/);
       if (!m) return;
-      const stamp = m[2].match(/\[at=(\d+)\]/)?.[1];
-      if (stamp) at = Number(stamp) * 1000;
+      const stamp = m[2].match(/\[at=([^\]]*)\]/)?.[1];
+      if (stamp !== undefined) at = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : NaN; // a stamp that is not digits is no time
       if (KINDS[m[1]]) add(at, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
     });
   }
   for (const f of files.filter((n) => /^[^/]+\.inbox\/(handled\/)?[^/]+\.msg$/.test(n))) {
-    const body = readFileSync(join(state, f), 'utf8'), stamp = body.match(/^at=(\d+)$/m)?.[1];
-    add(stamp ? Number(stamp) * 1000 : NaN, f, join(state, f), 'steer', body.replace(/^at=\d+$/m, ''), body.match(/\[([^\]\s]+)\]/)?.[1]);
+    const body = readFileSync(join(state, f), 'utf8'), stamp = body.match(/^at=(\d+)\r?$/m)?.[1];
+    add(stamp ? Number(stamp) * 1000 : NaN, f, join(state, f), 'steer', body.replace(/^at=\d+\r?$/m, ''), body.match(/\[([^\]\s]+)\]/)?.[1]);
   }
   const log = join(path, 'data', 'defects.md');
   if (existsSync(log)) {
@@ -72,6 +72,7 @@ export function doctor(source, entry, ctx) {
 // decisions, blocks and steers in the window; interventions_per_merge is their sum over the PRs merged (n/a with no
 // github source or no merge). The home's dated defect records add to defects.
 export const metricNames = ['decisions', 'blocks', 'steers', 'interventions_per_merge'];
+export const addsTo = ['defects']; // the follow-up step reads this source's records for these metrics too
 export const metricRows = 'records';
 export function metrics(rows, window, v) {
   const of = (kind) => inWindow(rows.filter((r) => JSON.parse(r.data).kind === kind), window);

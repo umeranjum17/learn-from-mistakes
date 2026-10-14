@@ -15,6 +15,11 @@ export const validate = (s, where, dir) => ({ ...pathSource(s, where, dir), dir 
 // The columns the read uses; a store without one is a no-mistakes version this one does not read.
 const COLUMNS = { repos: ['id', 'working_path', 'upstream_url'], runs: ['id', 'repo_id', 'branch'],
   step_results: ['id', 'run_id', 'step_name', 'status', 'error', 'started_at', 'completed_at'] };
+const missing = (db) => Object.entries(COLUMNS).flatMap(([t, cols]) => {
+  const have = new Set(db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name));
+  return cols.filter((c) => !have.has(c)).map((c) => `${t}.${c}`);
+});
+const UNKNOWN = (gone) => `unknown store schema (no ${gone.join(', ')})`;
 
 // The git toplevel of the project dir (the dir itself outside git): the checkout both detect and read match.
 const checkout = (dir) => {
@@ -34,6 +39,7 @@ export async function detect(dir) {
   try {
     const { DatabaseSync } = await import('node:sqlite');
     db = new DatabaseSync(path, { readOnly: true });
+    if (missing(db).length) throw new Error(UNKNOWN(missing(db)));
     const row = db.prepare('SELECT 1 FROM repos WHERE working_path IN (SELECT value FROM json_each(?)) OR upstream_url = ? LIMIT 1')
       .get(JSON.stringify(roots(checkout(dir))), git('remote', 'get-url', 'origin') || null);
     if (row) return { gate: { type: 'no-mistakes', path: home ? path : '~/.no-mistakes/state.sqlite' } };
@@ -62,11 +68,8 @@ export async function read(source, { path, dir }, { causes = {}, project } = {})
   try {
     const { DatabaseSync } = await import('node:sqlite');
     db = new DatabaseSync(path, { readOnly: true });
-    const gone = Object.entries(COLUMNS).flatMap(([t, cols]) => {
-      const have = new Set(db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name));
-      return cols.filter((c) => !have.has(c)).map((c) => `${t}.${c}`);
-    });
-    if (gone.length) throw new UsageError(`source ${source}: unknown store schema (no ${gone.join(', ')})`, `update learn-from-mistakes-axi to read this no-mistakes version, or remove sources.${source} from ${shq(project)}`);
+    const gone = missing(db);
+    if (gone.length) throw new UsageError(`source ${source}: ${UNKNOWN(gone)}`, `update learn-from-mistakes-axi to read this no-mistakes version, or remove sources.${source} from ${shq(project)}`);
     const git = which('git'), origin = (git && spawnSync(git, ['-C', dir, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout?.trim()) || null;
     const rows = db.prepare(`SELECT s.id, s.run_id, s.step_name, s.error, COALESCE(s.completed_at, s.started_at) AS t, r.branch
       FROM step_results s JOIN runs r ON r.id = s.run_id JOIN repos p ON p.id = r.repo_id

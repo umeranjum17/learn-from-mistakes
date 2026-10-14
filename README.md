@@ -52,10 +52,10 @@ Run `npx -y learn-from-mistakes-axi --help` and tell me what keeps going wrong i
 Nothing in Firstmate changes; the tool only reads its records, and only when you turn it on:
 
 ```sh
-learn-from-mistakes-axi init --firstmate <home>   # adds home: { type: firstmate, path: <home> }
+learn-from-mistakes-axi init --firstmate <home>   # adds home: { type: firstmate, path: <home> }, to an existing config too
 ```
 
-A `firstmate` source reads, under the home: `state/*.status` status logs (`<state> [at=<epoch>]: <text>`; a line with no stamp takes the last one above it), the `*.msg` files of `state/*.inbox` and its `handled/` (an `at=<epoch>` line and a `[tag]`), the `data/defects.md` defect log, and `config/targets.tsv` (`metric op target owner rule`, tab-separated), which overrides `targets:`. It gives `decisions` (`needs-decision` lines), `blocks` (`blocked` lines), `steers` (messages) and `interventions_per_merge` (their sum over `merged`, from a github source). It writes nothing in the home.
+A `firstmate` source reads, under the home: `state/*.status` status logs (`<state> [at=<epoch>]: <text>`; a line with no stamp takes the last one above it; a stamp that is not digits is no time), the `*.msg` files of `state/*.inbox` and its `handled/` (an `at=<epoch>` line and a `[tag]`), the `data/defects.md` defect log, and `config/targets.tsv` (`metric op target owner rule`, tab-separated), which overrides `targets:`. It gives `decisions` (`needs-decision` lines), `blocks` (`blocked` lines), `steers` (messages) and `interventions_per_merge` (their sum over `merged`, from a github source). It writes nothing in the home.
 
 ### Manual CLI
 
