@@ -25,8 +25,8 @@ function git(dir, args, { input, env } = {}) {
 // The tracked regular files the target names, by their path from the repo root, with their git mode.
 function targetFiles(top, target) {
   const tracked = new Map(git(top, ['ls-files', '-s', '-z']).split('\0').filter(Boolean).map((l) => [l.slice(l.indexOf('\t') + 1), l.slice(0, 6)]));
-  const words = target.split(/[\s,;`'"()]+/).map((w) => posix.normalize(w.replace(/[.:]+$/, '')).replace(/^\.\//, ''));
-  return [...new Set(words)].filter((w) => ['100644', '100755'].includes(tracked.get(w))).map((path) => ({ path, mode: tracked.get(path) }));
+  const word = target.split(/[\s,;`'"()]+/).map((w) => posix.normalize(w.replace(/:\d+$/, '').replace(/[.:]+$/, '')).replace(/^\.\//, '')).find((w) => ['100644', '100755'].includes(tracked.get(w)));
+  return word ? [{ path: word, mode: tracked.get(word) }] : [];
 }
 
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
