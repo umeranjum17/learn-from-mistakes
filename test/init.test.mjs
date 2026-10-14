@@ -133,7 +133,7 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
   const set = lfm('init', '--agent', 'codex', '--model', MODELS.codex, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode, '--json');
   assert.deepEqual([JSON.parse(set.stdout).ignored, JSON.parse(set.stdout).gaps.length], [['--agent', '--model'], 1]); // a set key is never rewritten
   assert.equal(lfm('init').stderr.match(/^next: (.*)$/m)[1], sessionsSave);
-  assert.match(lfm('init', '--sessions', 'auto').stderr, /^error: --sessions auto must list agents by name: claude, codex, opencode, pi, gemini$/m);
+  assert.match(lfm('init', '--sessions', 'auto').stderr, /^error: --sessions "auto" must list agents by name: claude, codex, opencode, pi, gemini$/m);
   const named = lfm('init', '--sessions', 'claude,pi,gemini', '--json'); // an existing file takes the user's named agents
   assert.deepEqual([named.status, JSON.parse(named.stdout).gaps], [0, []]);
   assert.deepEqual(parse(readFileSync(config, 'utf8')).sources.sessions, { type: 'sessions', agents: ['claude', 'pi', 'gemini'] });
@@ -163,6 +163,20 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['claude', 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
   assert.equal(lfm('agents', '--json').status, 0); // the saved config loads
+});
+
+// The sessions question is asked once: an empty answer (none) is carried into the rerun that saves the roles, so the
+// prompt is printed once and no sessions source is written.
+test('in a terminal, init asks which sessions to read once, and an empty answer writes no sessions source', () => {
+  const { tmp, p, env, config } = setup(['claude', 'opencode']);
+  const answers = ['', '1', MODELS.claude, '3', MODELS.opencode].join('\n') + '\n';
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(r.stdout.match(/Which agents' sessions should the retro read\?/g)?.length, 1);
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.equal(yaml.sources?.sessions, undefined);
+  assert.deepEqual([yaml.agent, yaml.judge_agent], ['claude', 'opencode']);
 });
 
 // Ctrl-D at the first pick: nothing is saved, and the printed command that saves the answer keeps the project dir.

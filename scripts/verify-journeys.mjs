@@ -146,7 +146,7 @@ try {
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'gpt-6-luna' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
-    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'auto', allow_premium: false });
+    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));
   drive('retro-v2', 'retro', '--foreground', '--json');
   const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id), 'bundle.md'), 'utf8');

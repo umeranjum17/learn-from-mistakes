@@ -179,13 +179,14 @@ sources:
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
   const caps = block('caps', { invocations: 12, bundle_chars: 60000 });
   check(caps.bundle_chars >= 1000, `${file}: caps.bundle_chars`, 'at least 1000');
+  if (p.signoff === 'auto') throw new UsageError(`${file}: signoff: auto is not a value; use on (the default) or off`);
   const cfg = {
     dir,
     name: p.name ?? basename(dir), sources, causes, repeat: block('repeat', { min_incidents: 3, min_days: 2 }),
     window: p.window ?? '7d',
     targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets, ...Object.assign({}, ...Object.values(sources).map((s) => s.targets)) },
     followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps,
-    signoff: one('signoff', ['auto', 'off']), ...agentKeys(global, p, file),
+    signoff: one('signoff', ['on', 'off']), ...agentKeys(global, p, file),
   };
   if (global.state_root) return { ...cfg, state: join(expand(String(global.state_root), global.home), cfg.name) };
   return { ...cfg, state: join(dir, '.lfm'), ignore: true };

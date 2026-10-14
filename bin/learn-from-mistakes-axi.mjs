@@ -109,7 +109,7 @@ const KINDS = ['doc', 'rule', 'code']; // what the change edited; the first is t
 export const measure = (e) => ({ metric: e.metric ?? `cause_count:${e.cause}`, tripwire: e.tripwire ?? '', kind: e.kind ?? KINDS[0] });
 const UNPRINTABLE = /[\p{Cc}\u2028\u2029]/u;
 // A value the user typed, safe to echo: quoted, or a placeholder when long or not printable.
-const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
+export const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
 // Owner text for --what/--why: trimmed, 1-200 characters, no line breaks or control characters. A stored metric
 // allows a tab, since a cause key may hold one and the default metric is built from it.
 function oneLine(text, { allowTab = false } = {}) {

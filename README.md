@@ -84,7 +84,7 @@ cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-a
        # match: { source: gate, error_contains: "wait delay expired" }  # optional: no-mistakes store, counts typed rows
        # match: { source: sessions, signal: test_fail, tool: Bash, text_contains: "FIXTURES" }  # or a sessions source: any of signal, tool, text_contains
    repeat: { min_incidents: 3, min_days: 2 }
-   # signoff: off   # optional, auto (default) or off: off makes doctor's sign-off check ok and keeps questions in report.txt; an explicit `signoff post` or `signoff answers` still runs, because you asked for it
+   # signoff: off   # optional, on (default) or off: off makes doctor's sign-off check ok and keeps questions in report.txt; an explicit `signoff post` or `signoff answers` still runs, because you asked for it
    ```
 
 2. Run `learn-from-mistakes-axi ingest --dir .`. It prints the state dir: `.lfm/` next to `.learn-from-mistakes.yaml`. The tool writes `.lfm/.gitignore` (`*`) whenever it writes state there and finds none, so the state is never committed and you edit no `.gitignore` of your own. An existing `.lfm/.gitignore` is never overwritten: it must contain the line `*` with no line starting with `!`, or the write exits 2 before any state is written. To keep state outside the project instead, set `state_root: <dir>` in `$LFM_HOME/config.yaml` (`LFM_HOME` defaults to `~/.learn-from-mistakes`); the state then goes to `<dir>/<name>`.

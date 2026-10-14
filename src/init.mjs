@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
-import { InputError, shq, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { interactive, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { CLASH, detect, KEY, resolveRoles, RUNNERS } from './runners/index.mjs';
@@ -145,10 +145,10 @@ export async function init(dir, opts) {
   // The sessions source: the agents --sessions names, or a terminal's pick of the local stores (none selected); else a gap.
   const names = Object.keys(READERS), local = stores();
   const has = !written && Object.values(before.sources).some((s) => s.type === 'sessions');
-  let reads = opts.sessions?.split(',').map((a) => a.trim()), asked = false;
-  if (reads && !reads.every((a) => names.includes(a))) throw new UsageError(`--sessions ${shq(opts.sessions)} must list agents by name: ${names.join(', ')}`, 'learn-from-mistakes-axi init --sessions claude,pi   # the agents whose sessions the user wants read');
+  let reads = opts.sessions?.split(',').map((a) => a.trim()), asked = opts.sessionsAsked === true;
+  if (reads && !reads.every((a) => names.includes(a))) throw new UsageError(`--sessions ${shown(opts.sessions)} must list agents by name: ${names.join(', ')}`, 'learn-from-mistakes-axi init --sessions claude,pi   # the agents whose sessions the user wants read');
   if (reads && has) { ignored.push('--sessions'); reads = undefined; }
-  if (!reads && !has && local.length && !opts.y && interactive()) { reads = await pickSessions(local, names); asked = true; }
+  if (!reads && !has && local.length && !opts.y && interactive() && !asked) { reads = await pickSessions(local, names); asked = true; opts.sessionsAsked = true; }
   // A chosen role that is not usable, or a chosen judge on the worker's identity, is refused before any file is written.
   if (Object.keys(chosen).length) {
     const want = { ...before, agent_config: structuredClone(before.agent_config) };
@@ -200,7 +200,8 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   if (reads?.length) {
     const doc = parseDocument(readFileSync(file, 'utf8'));
     doc.setIn(['sources', before.sources?.sessions ? 'agent-sessions' : 'sessions'], doc.createNode({ type: 'sessions', agents: [...new Set(reads)] }, { flow: true }));
-    writeFileSync(file, doc.toString({ lineWidth: 0 }));
+    try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+    catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
   let cfg = loadConfig(dir);
   if (written) { // each match names the config's sessions source; with none, the causes are for the worker's labels only
