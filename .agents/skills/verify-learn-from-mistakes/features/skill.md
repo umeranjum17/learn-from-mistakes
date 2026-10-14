@@ -30,7 +30,7 @@ or type `/learn-from-mistakes what keeps going wrong here?`.
    registry, with no `learn-from-mistakes-axi` on PATH, run `npx -y
    learn-from-mistakes-axi --version`, `--help`, `guide`, bare (no config:
    exit 2, `next: ... guide`), then the examples journey (`ingest`, label
-   files copied in, bare report, `report --full --json`).
+   files copied in, bare, `report --full --json`).
 3. Agent session: a fresh git project holding only a synthetic 30-60 line
    `defects.md`; install the skill there with `npx -y skills add
    umeranjum17/learn-from-mistakes#<branch> --skill learn-from-mistakes -a

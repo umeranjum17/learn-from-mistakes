@@ -404,7 +404,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --full (report, count)  add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
-the report --json output is privacy-bounded: identifiers, counts and each finding's judge verdict word (confirmed, weakened, refuted or not judged); the default and --full reports also print one \`finding:\` line per finding with its counts and verdict, never the agent's summary (it is in report.txt only), record text, label/proposal prose or change what/why;
+the report --json output is privacy-bounded: identifiers, counts, metrics, follow-ups, fixes and each finding's judge verdict word (confirmed, weakened, refuted or not judged), plus the run's report.txt path; the default and --full reports also print one \`finding:\` line per finding with its counts and verdict, never the agent's summary (it is in report.txt only), record text, label/proposal prose or change what/why;
 \`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
@@ -471,7 +471,7 @@ labels (labels_from: run <id>); labels.jsonl only when no run has labels, or --l
    Prefer a check, a script or a deleted rule over more prose. Every ref must be a record id or source:row id.
 
 6. Report: learn-from-mistakes-axi report   (exit 1: fix the counted label/proposal problems and rerun)
-   The --json output holds ids, counts and each finding's verdict word; the default and --full output also print one finding line per finding with its counts and verdict; the summaries are in report.txt. Tell the user each repeated cause with its description, its counts
+   The --json output holds ids, counts, metrics, follow-ups, fixes, each finding's verdict word and the run's report.txt path; the default and --full output also print one finding line per finding with its counts and verdict; the summaries are in report.txt. Tell the user each repeated cause with its description, its counts
    and your proposals from proposals.jsonl.
 
 7. Once a change is made: learn-from-mistakes-axi change applied --cause <cause> --ref <git sha | sha256:<64 hex>>
@@ -604,7 +604,7 @@ async function main(ctx) {
   if (cmd.startsWith('signoff-')) { quietSqlite(); await signoff(cmd.slice(8), cfg, opts); return; }
   if (cmd === 'change-applied') { await recordChange(cfg, opts, json); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
-  if (['', 'retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd || 'last', cfg, opts); return; }
+  if (['', 'retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   const rerunHint = withContext(`learn-from-mistakes-axi ${cmd}${full ? ' --full' : ''}${json ? ' --json' : ''}`, 'run again after fixing', opts);
   if (!opts.labels) quietSqlite();
   const last = opts.labels ? undefined : await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts, cmd); }); // --labels names the file; else the last retro's labels, if a run has them
@@ -636,20 +636,20 @@ function storeError(e, cfg, opts, cmd) {
   if (e.code !== 'ERR_SQLITE_ERROR' || (e.errcode & 0xff) === 5) return e; // main() maps a busy store
   const file = join(cfg.state, 'lfm.sqlite');
   if (e.message.includes('UNIQUE constraint failed: runs.status')) return new UsageError('a run is already running', withContext('learn-from-mistakes-axi runs', 'the running run', opts));
-  if ([8, 10, 13, 14].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi${cmd && cmd !== 'last' ? ` ${cmd}` : ''}`, 'after the disk or the file permissions are fixed', opts));
+  if ([8, 10, 13, 14].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi${cmd ? ` ${cmd}` : ''}`, 'after the disk or the file permissions are fixed', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
 async function runCommand(cmd, cfg, opts) {
   quietSqlite();
   let out;
   try {
-    out = await { retro, status, last: status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
+    out = await { retro, status, '': status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
   } catch (e) {
     throw storeError(e, cfg, opts, cmd);
   }
   // Bare: the run's id, status and times and its summary line; never its error, whose text can hold an agent's output.
   const last = () => ({ run: { id: out.run.id, status: out.run.status, created_at: out.run.created_at, updated_at: out.run.updated_at }, summary: out.result?.summary ?? '' });
-  console.log(render(cmd === 'last' ? last() : out, opts.json));
+  console.log(render(cmd === '' ? last() : out, opts.json));
   if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --wait 8m', 'ingest and report as a saved run', opts));
@@ -657,20 +657,20 @@ async function runCommand(cmd, cfg, opts) {
   else if (out.run.status === 'running') hint(withContext(`learn-from-mistakes-axi attach --run ${out.run.id}`, `${opts.wait ? 'still running; ' : ''}follow its steps while the run goes on in the background`, opts));
   else if (cmd === 'abort') hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, 'finish it from its first step that is not completed', opts));
   else if (out.run.status === 'failed') {
-    if (cmd !== 'last') console.error(`error: ${out.run.error}`);
+    if (cmd !== '') console.error(`error: ${out.run.error}`);
     const step = out.steps.find((s) => s.status === 'failed')?.name;
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it after fixing ${step ? `the ${step} step` : 'the cause'}; completed steps are not run again`, opts));
-    if (!['status', 'last'].includes(cmd)) process.exitCode = 1;
+    if (!['status', ''].includes(cmd)) process.exitCode = 1;
   } else if (out.run.status !== 'completed') { // interrupted or cancelled
-    if (cmd !== 'last') console.error(`error: ${out.run.error}`);
+    if (cmd !== '') console.error(`error: ${out.run.error}`);
     const log = join(cfg.state, 'runs', String(out.run.id), 'worker.log');
     const output = existsSync(log) ? `; the worker's output: ${log}` : '';
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));
-    if (!['status', 'last'].includes(cmd)) process.exitCode = 1;
+    if (!['status', ''].includes(cmd)) process.exitCode = 1;
   } else if (!out.result.labelled && !out.result.findings.length) {
     console.error('result: the worker labelled no record and named no finding');
     hint(withContext(`learn-from-mistakes-axi logs --step analyse --run ${out.run.id}`, 'why: nothing new in this window, or the problems with its answer', opts));
-  } else hint(cmd === 'last' ? withContext('learn-from-mistakes-axi report', 'its ids, counts, metrics, verdicts and the path of report.txt', opts)
+  } else hint(cmd === '' ? withContext('learn-from-mistakes-axi report', 'its ids, counts, metrics, verdicts and the path of report.txt', opts)
     : withContext('learn-from-mistakes-axi report --full', 'the evidence ids behind these counts', opts));
 }
 
