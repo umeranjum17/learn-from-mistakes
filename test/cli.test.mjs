@@ -1,5 +1,5 @@
 // End-to-end: runs the real CLI on copies of the synthetic examples (state in the copy's .lfm/) with a throwaway LFM_HOME.
-// The report is the privacy-bounded lfm-report.v1 (identifiers, counts and verdict words, never prose); lfm-changes.v1
+// The report is the privacy-bounded lfm-report.v2 (identifiers, counts and verdict words, never prose); lfm-changes.v1
 // carries only the owner-written what/why of each applied change.
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
@@ -44,7 +44,7 @@ function setup() {
 }
 const inputs = (p) => [join(p, 'labels.jsonl'), join(p, 'proposals.jsonl')];
 const report = (lfm, p, ...extra) => lfm('report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], ...extra);
-// The TOON report's last stdout line is the `repeated:` summary, outside lfm-report.v1.
+// The TOON report's last stdout line is the `repeated:` summary, outside lfm-report.v2.
 const summaryOf = (stdout) => stdout.trimEnd().split('\n').at(-1);
 const toonBodyOf = (stdout) => { const lines = stdout.trimEnd().split('\n'); lines.pop(); return lines.join('\n') + '\n'; };
 
@@ -214,7 +214,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('ingest', '--json'), 2, 'ingest does not take --json', /^next: learn-from-mistakes-axi ingest \[--dir <dir>\]$/m],
     [() => raw('ingest', '--labels', 'x'), 2, 'ingest does not take --labels', /^next: learn-from-mistakes-axi ingest /m],
     [() => raw('report', '--cause', 'x'), 2, 'report does not take --cause', /^next: learn-from-mistakes-axi report \[/m],
-    [() => raw('--cause', 'x'), 2, 'report does not take --cause', HELP], // bare: no command was typed, so --help
+    [() => raw('--cause', 'x'), 2, 'learn-from-mistakes-axi does not take --cause', HELP], // bare: no command was typed, so --help
     [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: learn-from-mistakes-axi report \[/m],
     [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, /^next: learn-from-mistakes-axi guide   # the full config/m], // a config to copy, then the guide
     [() => lfm('change', 'applied', '--cause', 'nope', '--ref', 'abc1234'), 2, `unknown cause "nope" ${known}`, CHANGE],
@@ -285,15 +285,19 @@ test('every rejected input names what was wrong and a next step, never the whole
   }
 });
 
-test('bare report is valid TOON and JSON lfm-report.v1 with the same projection', () => {
+test('report is valid TOON and JSON lfm-report.v2 with the same projection; with no run the bare command exits 3', () => {
   const { p, lfm } = setup();
   const ing = lfm('ingest');
   assert.equal(ing.status, 0);
   assert.doesNotMatch(ing.stderr, /no causes configured/); // the example config names its causes
+  const none = lfm(); // the bare command shows the last run: there is none yet
+  assert.equal(none.status, 3, none.stderr);
+  assert.match(none.stderr, /^error: no saved runs in .*\nnext: learn-from-mistakes-axi retro --wait 8m/m);
   const bare = report(lfm, p);
   assert.equal(bare.status, 0, bare.stderr);
   const toon = decode(toonBodyOf(bare.stdout)); // invalid TOON throws; the summary line is outside the report
-  assert.equal(toon.schema, 'lfm-report.v1');
+  assert.equal(toon.schema, 'lfm-report.v2');
+  assert.deepEqual([toon.run, toon.report_txt, toon.metrics, toon.followups, toon.fixes], [null, '', [], [], []]); // a labels file has no run
   assert.equal(summaryOf(bare.stdout), 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)');
   assert.match(bare.stderr, /next: learn-from-mistakes-axi report --full/); // the next move is always offered
   for (const flag of ['--dir', '--labels', '--proposals']) assert.match(bare.stderr, new RegExp(flag)); // the hint names the inputs it used
@@ -310,7 +314,7 @@ test('bare report is valid TOON and JSON lfm-report.v1 with the same projection'
   const fullJson = report(lfm, p, '--full', '--json');
   assert.equal(fullJson.status, 0, fullJson.stderr);
   assert.doesNotMatch(fullJson.stderr, /next: learn-from-mistakes-axi report --json/); // never suggest a flag the run already used
-  assert.equal(JSON.parse(fullJson.stdout).schema, 'lfm-report.v1'); // the projection is unchanged
+  assert.equal(JSON.parse(fullJson.stdout).schema, 'lfm-report.v2'); // the projection is unchanged
 
   const causes = Object.fromEntries(toon.causes.map((c) => [c.cause, c]));
   assert.equal(causes['server-memory-kill'].log.incidents, 4); // occurrences: 2 collapsed into one incident
@@ -338,7 +342,7 @@ test('generated_at is the report run time and ingested_at is the ingest time', (
       : lfm('count', '--labels', inputs(p)[0], '--proposals', inputs(p)[1], '--json');
     assert.equal(run.status, 0, run.stderr);
     const model = JSON.parse(run.stdout);
-    assert.equal(model.schema, 'lfm-report.v1'); // an added field, not a new schema
+    assert.equal(model.schema, 'lfm-report.v2'); // an added field, not a new schema
     assert.equal(model.ingested_at, earlier);
     assert.ok(Date.parse(model.generated_at) > Date.parse(model.ingested_at), `${cmd}: report time is later than ingest time`);
     assert.ok(Math.abs(Date.now() - Date.parse(model.generated_at)) < 60_000, `${cmd}: generated_at is when the report ran`);
@@ -353,23 +357,22 @@ test('the TOON report ends with one repeated summary line; --json is unchanged',
   const { p, lfm } = setup();
   assert.equal(lfm('ingest').status, 0);
   const expected = 'repeated: server-memory-kill (4 incidents/3 days), agent-exit-wait (4 rows/3 days), shared-cache-lock (3 incidents/3 days)';
-  // report, count and the bare command print the same TOON summary last on stdout.
+  // report and count print the same TOON summary last on stdout.
   for (const args of [
     ['report', '--labels', inputs(p)[0], '--proposals', inputs(p)[1]],
     ['count', '--labels', inputs(p)[0], '--proposals', inputs(p)[1]],
-    ['--labels', inputs(p)[0], '--proposals', inputs(p)[1]],
   ]) {
     const r = lfm(...args);
     assert.equal(r.status, 0, r.stderr);
     assert.equal(summaryOf(r.stdout), expected, args.join(' '));
-    assert.deepEqual(decode(toonBodyOf(r.stdout)).schema, 'lfm-report.v1');
+    assert.deepEqual(decode(toonBodyOf(r.stdout)).schema, 'lfm-report.v2');
     assert.doesNotMatch(toonBodyOf(r.stdout), /^repeated: /m); // the summary is outside the report
   }
   // --json carries the same projection with no summary line.
   const json = report(lfm, p, '--json');
   assert.equal(json.status, 0, json.stderr);
   assert.doesNotMatch(json.stdout, /^repeated: /m);
-  assert.equal(JSON.parse(json.stdout).schema, 'lfm-report.v1');
+  assert.equal(JSON.parse(json.stdout).schema, 'lfm-report.v2');
   // Nothing repeated prints none, with ids and counts only, never record text.
   // With nothing repeated every stock proposal would be a problem, so this reports with none.
   writeFileSync(join(p, 'empty.jsonl'), '');
@@ -438,7 +441,7 @@ test('next hints compose the flags already used so both report chains terminate 
   const assertTerminal = (r) => {
     assert.equal(r.status, 0, r.stderr);
     const model = JSON.parse(r.stdout);
-    assert.equal(model.schema, 'lfm-report.v1');
+    assert.equal(model.schema, 'lfm-report.v2');
     assert.ok(model.causes.find((c) => c.cause === 'agent-exit-wait').store_row_ids.includes('gate:step-1')); // detail ids survive the chain
     assert.doesNotMatch(r.stdout, /"why"|"change"|"description"|"branch"/); // no private prose field
     assert.ok(!r.stderr.includes(p), 'the hint must not echo an input path value');
@@ -497,7 +500,7 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
   const outs = [run.lfm(agents, 'retro', '--foreground'), run.lfm(agents, 'retro', '--foreground', '--json')];
   const id = JSON.parse(outs[1].stdout).run.id;
-  outs.push(run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), run.lfm({}, 'report'), run.lfm({}, 'report', '--full'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
+  outs.push(run.lfm({}), run.lfm({}, '--json'), run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), run.lfm({}, 'report'), run.lfm({}, 'report', '--full'), run.lfm({}, 'report', '--full', '--json'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
   for (const r of outs) {
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout + r.stderr, new RegExp(CANARY));
@@ -836,7 +839,7 @@ test('change applied appends an append-only ledger the report counts and changes
   const json = lfm('report', ...inputs, '--json'); // a fresh process reads the persisted ledger
   assert.equal(json.status, 0, json.stderr);
   const model = JSON.parse(json.stdout);
-  assert.equal(model.schema, 'lfm-report.v1');
+  assert.equal(model.schema, 'lfm-report.v2');
   assert.deepEqual(model.ledger, { entries: 2 });
   assert.deepEqual(model.causes.find((c) => c.cause === 'server-memory-kill').changes, { count: 2, last_at: firstEntry.at });
   assert.deepEqual(model.causes.find((c) => c.cause === 'shared-cache-lock').changes, { count: 0, last_at: '' });
@@ -1040,11 +1043,14 @@ allow_premium: false
   chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
   const readonly = lfm('status');
+  const readonlyBare = lfm(); // the bare command must name itself, not its internal alias
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o644);
   chmodSync(join(p, '.lfm'), 0o755);
   assert.equal(readonly.status, 2, readonly.stderr);
   assert.doesNotMatch(readonly.stderr, /^next: mv /m);
   assert.match(readonly.stderr, /^next: learn-from-mistakes-axi status   # after the disk or the file permissions are fixed/m);
+  assert.equal(readonlyBare.status, 2, readonlyBare.stderr);
+  assert.match(readonlyBare.stderr, /^next: learn-from-mistakes-axi   # after the disk or the file permissions are fixed/m);
 
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
   const corrupt = lfm('status');
@@ -1063,7 +1069,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(first.run.status, 'completed');
   assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
   // A run whose worker labelled nothing and found nothing says so in one plain line, with where to see why.
-  assert.deepEqual(first.result, { labelled: 0, records: 18, labels_from: 'labels.jsonl', causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
+  assert.deepEqual(first.result, { summary: 'repeated: agent-exit-wait (4 rows/3 days)', labelled: 0, records: 18, labels_from: 'labels.jsonl', causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
   assert.match(waited.stderr, /^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run 1   # why/m);
 
   // Without --wait, retro returns while the worker runs: spawnSync ends only when no process holds its pipes.
@@ -1259,7 +1265,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
   // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
   const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed' };
-  assert.deepEqual(result, { labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
+  assert.deepEqual(result, { summary: 'repeated: agent-exit-wait (4 rows/3 days)', labelled: 2, records: 20, labels_from: `run ${run.id}`, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
   assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict\}:\n {4}umer-fixtures-unset,1,1,confirmed$/m);
   assert.match(reportOf(p, run.id), /^5\. Fixes\n- No fix passed the rules\.$/m);
   assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);
@@ -1267,12 +1273,22 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const bare = lfm({}, 'report', '--json');
   assert.equal(bare.status, 0, bare.stderr);
   const bareJson = JSON.parse(bare.stdout);
+  // lfm-report.v2 names the run, its numbers and fixes, and the path of report.txt, never its text.
+  assert.deepEqual([bareJson.run, bareJson.report_txt, bareJson.fixes, bareJson.metrics.length > 0], [run.id, join(p, '.lfm', 'runs', String(run.id), 'report.txt'), [], true]);
+  assert.deepEqual(bareJson.metrics.find((m) => m.name === 'defects'), JSON.parse(lfm({}, 'status', '--json').stdout).metrics.find((m) => m.name === 'defects'));
+  assert.doesNotMatch(bare.stdout, /Retro report|Short answer/);
   assert.deepEqual([bareJson.labels_from, bareJson.coverage.labelled, bareJson.causes[1].cause, bareJson.causes[1].log.incidents, bareJson.findings], [`run ${run.id}`, 2, 'shared-cache-lock', 2, [{ cause: finding.cause, count: 1, days: 1, verdict: 'confirmed' }]]);
   assert.doesNotMatch(bare.stdout, /UMER_FIXTURES|failed for Umer/);
   assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
   const toon = lfm({}, 'report');
   assert.equal(toon.status, 0, toon.stderr);
   assert.ok(toon.stdout.split('\n').includes(`finding: ${finding.cause} (1/1 days, confirmed)`), toon.stdout);
+  // The bare command: the last run's status and its summary line, then where its report is.
+  const last = lfm({});
+  assert.equal(last.status, 0, last.stderr);
+  const { id, status, created_at, updated_at } = JSON.parse(lfm({}, 'status', '--json').stdout).run;
+  assert.deepEqual(decode(last.stdout), { run: { id, status, created_at, updated_at }, summary: result.summary });
+  assert.match(last.stderr, /^next: learn-from-mistakes-axi report   # its ids, counts, metrics, verdicts and the path of report\.txt/m);
   // A worker that was asked keeps none of its labels: the report counts none, not the labels.jsonl left in the state dir.
   writeFileSync(join(p, '.lfm', 'labels.jsonl'), readFileSync(join(p, 'labels.jsonl')));
   const kept = lfm({ FAKE_ANALYSE: 'outside' }, 'retro', '--foreground', '--json');
@@ -1292,6 +1308,8 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.equal(b.run.error, `analyse: ${why}`);
   assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'failed', 'pending', 'pending', 'pending', 'pending']);
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
+  const failed = lfm({}); // the bare command shows the failed run without its error text, which can hold an agent's output
+  assert.deepEqual([failed.status, decode(failed.stdout).run.status, 'error' in decode(failed.stdout).run, failed.stderr.includes(why)], [0, 'failed', false, false]);
   assert.deepEqual(lines(b.run.id).slice(1), ['worker answer 1 is not valid: the answer holds no JSON object', `worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`,
     'worker answer 2 is not valid: the answer holds no JSON object', `error: ${why}`]);
   assert.match(calls().at(-1).stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);

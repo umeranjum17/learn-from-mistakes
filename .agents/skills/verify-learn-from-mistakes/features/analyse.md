@@ -48,8 +48,8 @@ set, or set to an agent not on PATH, stops the run with the fix line.
 `test/github.test.mjs` checks a record id whose source id holds `token` is
 printed raw in the bundle and labelled as the store keeps it.
 The helper's drives run on the same fake PATH: `retro-analyse` (`FAKE_ANALYSE=label`, `--wait 1m`)
-checks the kept finding in its `result`, the counted causes and the invocation row, `report-run` that the bare report
-says `labels_from: run <id>`, `logs-analyse` the problem line,
+checks the kept finding in its `result`, the counted causes and the invocation row, `report-run` that `report --json`
+is `lfm-report.v2` for the run and reads its labels, `bare` that the last run's status and summary line print, `logs-analyse` the problem line,
 `retro-analyse-prose` exits 1 and `logs-analyse-prose` shows the validation error.
 
 Real-product proof (outside the repo; lab sessions only, never the captain's):

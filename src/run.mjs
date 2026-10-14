@@ -5,7 +5,7 @@
 // gone is interrupted, and `rerun --resume` runs it again from its first step that is not completed.
 // Each step writes its lines to <state dir>/runs/<id>/<step>.log; `attach` follows them and `logs` prints one.
 import { spawn } from 'node:child_process';
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
@@ -84,11 +84,15 @@ function runResult(db, id) {
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
   return { run: id, runLabels, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })) };
 }
-// The latest completed run that kept labels or findings: the bare report counts them. Undefined with none, so labels.jsonl counts.
+// The latest completed run that kept labels or findings: `report` counts them and shows its numbers, follow-ups, fixes and
+// report.txt. Undefined with none, so labels.jsonl counts.
 export async function lastRun(cfg) {
   const db = await openStore(cfg.state, false);
   const id = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id;
-  return id == null ? undefined : { ...runResult(db, id), latest: db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id };
+  if (id == null) return undefined;
+  const reportFile = join(runDir(cfg, id), 'report.txt');
+  return { ...runResult(db, id), latest: db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id,
+    shown: show(db, id), ...(existsSync(reportFile) && { reportFile }) };
 }
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
 const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
@@ -379,7 +383,7 @@ function show(db, id) {
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
-    ...(report && { result: { labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
+    ...(report && { result: { summary: summaryLine(report), labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
       findings: runResult(db, id).findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })) } }),
   };
