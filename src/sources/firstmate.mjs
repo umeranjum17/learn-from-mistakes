@@ -58,8 +58,9 @@ export function read(source, { path }, { readFrom = 0, excerpts = true, project 
   }
   const log = join(path, 'data', 'defects.md');
   if (existsSync(log)) {
-    records.push(...markdownLog.read(source, { path: log }, { project }).records
-      .map((r) => ({ ...r, id: `defects:${r.id}`, ref: `${log}:${r.line}`, data: { kind: 'defect' } })));
+    // One push per record: spreading an unbounded array overflows the call stack.
+    for (const r of markdownLog.read(source, { path: log }, { project }).records)
+      records.push({ ...r, id: `defects:${r.id}`, ref: `${log}:${r.line}`, data: { kind: 'defect' } });
   }
   return { records, skipped, hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
 }

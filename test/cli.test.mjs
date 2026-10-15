@@ -621,7 +621,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: missing.md }\n');
   const missing = lfm('ingest');
   assert.equal(missing.status, 2, missing.stderr);
-  assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\)$/m);
+  assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\) \(0 records read\)$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log }\n  prs: { type: github }\n');
   const noPath = lfm('ingest'); // each source type checks its own keys
   assert.equal(noPath.status, 2, noPath.stderr);
@@ -633,7 +633,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);
-  assert.match(store.stderr, /^error: source gate: no such file$/m);
+  assert.match(store.stderr, /^error: source gate: no such file \(0 records read\)$/m);
   assert.ok(store.stderr.includes(`next: set sources.gate.path in ${join(p, '.learn-from-mistakes.yaml')} to your no-mistakes state.sqlite, or remove that source`), store.stderr);
   cpSync(join(p, 'gate.sqlite'), join(p, 'old.sqlite')); // a store of a no-mistakes version without a column the read uses
   const old = new DatabaseSync(join(p, 'old.sqlite'));
@@ -642,7 +642,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: old.sqlite }\n');
   const oldRun = lfm('ingest');
   assert.equal(oldRun.status, 2, oldRun.stderr);
-  assert.match(oldRun.stderr, /^error: source gate: unknown store schema \(no step_results\.step_name\)$/m);
+  assert.match(oldRun.stderr, /^error: source gate: unknown store schema \(no step_results\.step_name\) \(0 records read\)$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);
@@ -650,6 +650,19 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(dir.status, 2, dir.stderr);
   assert.match(dir.stderr, /cannot read \(EISDIR\)/);
   assert.doesNotMatch(dir.stderr, /\n\s+at /);
+});
+
+test('an oversized source streams into the store instead of overflowing the call stack', () => {
+  const { p, lfm } = setup();
+  // Far more records than the stack can spread in one push (500000 already throws
+  // RangeError: Maximum call stack size exceeded): collect either completes or fails naming the source.
+  const lines = ['# defects', '', '## 2026-01-05'];
+  for (let i = 0; i < 600000; i++) lines.push(`- [area] defect ${i} happened -> impact -> action`);
+  writeFileSync(join(p, 'defects.md'), lines.join('\n') + '\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  const r = lfm('ingest');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^log +markdown-log +600000 items /m);
 });
 
 test('a done-done source: each failed step of a failed, inconclusive or overridden verify run is a record; a passed run is not; an unknown schema or bad steps stop with the fix', () => {
@@ -699,13 +712,13 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes], path: dd-home }\n');
   const newer = lfm('ingest');
   assert.equal(newer.status, 2, newer.stderr);
-  assert.ok(newer.stderr.includes(`error: source dd: ${file('r5')} is done-done run schema 3; this version reads schema 2\n`), newer.stderr);
+  assert.ok(newer.stderr.includes(`error: source dd: ${file('r5')} is done-done run schema 3; this version reads schema 2 (0 records read)\n`), newer.stderr);
   assert.match(newer.stderr, /^next: update learn-from-mistakes-axi to read it, or remove sources\.dd from /m);
   assert.doesNotMatch(newer.stderr, /\n\s+at /);
   run('r5', { result: 'fail', steps: [null] });
   const broken = lfm('ingest');
   assert.equal(broken.status, 2, broken.stderr);
-  assert.ok(broken.stderr.includes(`error: source dd: ${file('r5')} is not done-done run state (steps)\nnext: done-done status --run r5   # in the notes repo`), broken.stderr);
+  assert.ok(broken.stderr.includes(`error: source dd: ${file('r5')} is not done-done run state (steps) (0 records read)\nnext: done-done status --run r5   # in the notes repo`), broken.stderr);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [../x] }\n');
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.dd\.apps must be a list of done-done app names$/m);
 });
@@ -1025,12 +1038,12 @@ allow_premium: false
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: gone.md }\n  store: { type: no-mistakes, path: gone.sqlite }\n');
   const unreadable = lfm('retro', '--foreground', '--json');
   assert.equal(unreadable.status, 1, unreadable.stderr);
-  assert.equal(JSON.parse(unreadable.stdout).run.error, 'collect: source log: cannot read (ENOENT)');
-  assert.match(unreadable.stderr, /^error: collect: source log: cannot read \(ENOENT\)$/m);
+  assert.equal(JSON.parse(unreadable.stdout).run.error, 'collect: source log: cannot read (ENOENT) (0 records read)');
+  assert.match(unreadable.stderr, /^error: collect: source log: cannot read \(ENOENT\) \(0 records read\)$/m);
   assert.ok(!unreadable.stdout.includes(p) && !unreadable.stderr.includes(p), 'a source path must not reach machine output');
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  store: { type: no-mistakes, path: gone.sqlite }\n');
   const noStore = lfm('retro', '--foreground', '--json');
-  assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file');
+  assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file (0 records read)');
   assert.ok(!noStore.stdout.includes(p) && !noStore.stderr.includes(p), 'a source path must not reach machine output');
 
   const hold = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); // another process holds the write lock past busy_timeout
@@ -1040,10 +1053,10 @@ allow_premium: false
   hold.exec('ROLLBACK');
   hold.close();
   assert.equal(read.status, 0, read.stderr);
-  assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file');
+  assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file (0 records read)');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
-  assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file'); // the store keeps its runs
+  assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file (0 records read)'); // the store keeps its runs
 
   chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
