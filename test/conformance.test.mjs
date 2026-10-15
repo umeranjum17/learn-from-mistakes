@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { once } from 'node:events';
 import { after, test } from 'node:test';
+import { SIGNOFF_MIN } from '../src/signoff.mjs';
 
 const REPO = new URL('..', import.meta.url).pathname;
 const CLI = process.env.LFM_CLI || join(REPO, 'bin', 'learn-from-mistakes-axi.mjs');
@@ -95,6 +96,45 @@ test('the skill command sequence runs as written from a fresh packed install', (
   assert.equal(out.schema, 'lfm-report.v2', 'the packed report is not lfm-report.v2');
   assert.ok(out.report_txt.startsWith(p) && existsSync(out.report_txt), 'the packed report_txt is missing or escapes the project');
   assert.match(readFileSync(out.report_txt, 'utf8'), /Questions for you/);
+});
+
+// Conformance to the sign-off contract v1 for the one kind this repo sends (finding, schema 1): the released
+// sign-off-axi this repo pins validates the fixtures in both directions and accepts a message in the adapter's
+// exact emitted shape (src/signoff.mjs). Integration style: the real peer CLI, installed fresh like the drive above.
+test('the finding fixtures pass the pinned sign-off-axi validate, and the invalid ones are refused', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'lfm-contract-'));
+  after(() => rmSync(tmp, { recursive: true, force: true }));
+  const peer = join(tmp, 'peer');
+  const install = spawnSync('npm', ['install', '--prefix', peer, `sign-off-axi@${SIGNOFF_MIN}`, '--no-audit', '--no-fund'], { encoding: 'utf8' });
+  assert.equal(install.status, 0, install.stderr);
+  const validate = (...args) => spawnSync(join(peer, 'node_modules', '.bin', 'sign-off-axi'), ['validate', ...args], { encoding: 'utf8' });
+  const dir = join(REPO, 'test', 'fixtures', 'contract', 'finding.v1');
+  const files = readdirSync(dir).map((f) => join(dir, f));
+  const valid = files.filter((f) => f.slice(f.lastIndexOf('/') + 1).startsWith('valid-'));
+  const invalid = files.filter((f) => f.slice(f.lastIndexOf('/') + 1).startsWith('invalid-'));
+  assert.ok(valid.length >= 2 && invalid.length >= 3, 'the contract fixtures hold at least 2 valid and 3 invalid finding messages');
+  const good = validate('--kind', 'finding', ...valid);
+  assert.equal(good.status, 0, `the pinned peer refuses a valid fixture:\n${good.stdout}`);
+  assert.doesNotMatch(good.stdout, /,false,/, `a valid fixture was refused:\n${good.stdout}`);
+  const refused = validate('--kind', 'finding', '--expect-invalid', ...invalid);
+  assert.equal(refused.status, 0, `the pinned peer accepts an invalid fixture:\n${refused.stdout}`);
+  for (const [file, rule] of [
+    ['invalid-cause-missing.json', /cause is required/],
+    ['invalid-proposal-too-long.json', /proposal is \d+ characters, over 500/],
+    ['invalid-record_text-unknown.json', /record_text is not a field of finding schema 1/],
+  ]) {
+    const r = validate('--kind', 'finding', join(dir, file));
+    assert.equal(r.status, 2, `${file}: expected a refusal, got exit ${r.status}\n${r.stdout}`);
+    assert.match(r.stdout, rule, `${file}: the refusal does not name the rule its name gives:\n${r.stdout}`);
+  }
+  // One message in the adapter's emitted shape, written to a temp file: the peer accepts it.
+  writeFileSync(join(tmp, 'finding.json'), JSON.stringify({
+    contract: 1, kind: 'finding', schema: 1, key: 'lfm-7-3-1c4e7a90', title: 'Repeated cause: agent-exit-wait', filer: 'learn-from-mistakes',
+    about: '6 incidents over 4 days.', cause: 'agent-exit-wait', incidents: 6, days: 4, evidence_ids: ['rec-4d21', 'e88'],
+    change_kind: 'rule', proposal: 'Stop the agent by its process group at the timeout, never by a fixed sleep.',
+    options: [{ value: 'apply', label: 'Apply' }, { value: 'skip', label: 'Skip' }], recommend_value: 'apply',
+  }));
+  assert.equal(validate(join(tmp, 'finding.json')).status, 0, 'the pinned peer refuses a message in the adapter\'s emitted shape');
 });
 
 test('every guard refuses bad input with error: and next:, never a stack trace', () => {
