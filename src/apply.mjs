@@ -31,7 +31,10 @@ function targetFiles(top, target) {
 
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
 async function applyOne(cfg, db, run, fix, log, opts = {}) {
-  const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`, message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\n${redact(fix.change)}`;
+  const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`,
+  // The branch's identity for this fix: run, fix, cause, target and change. The target is part of it, so a reused
+  // run id with the same cause and change text for another file never matches this branch and is refused, not applied.
+  message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\ntarget: ${redact(fix.target)}\n\n${redact(fix.change)}`;
   if (fix.answer === 'skip') throw new UsageError(`fix ${at} was answered Skip, and a Skip is never applied`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its other kept fixes', opts));
   if (!recordableCauses(cfg).includes(fix.cause)) throw new InputError(`fix ${at} names cause ${fix.cause}, which is not a configured cause`, `add ${fix.cause} under causes in ${PROJECT_FILE}, then apply again`);
   const top = git(cfg.dir, ['rev-parse', '--show-toplevel']);
