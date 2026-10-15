@@ -93,6 +93,5 @@ Planned:
 - [Firstmate](https://github.com/kunchenguid/firstmate): an agent supervisor; the tool reads its records (see the README).
 - [no-mistakes](https://github.com/kunchenguid/no-mistakes): its failed pipeline steps are a source.
 - [quota-axi](https://github.com/kunchenguid/quota-axi): an AXI tool for agent quota; a pattern this tool follows.
-- [lavish-axi](https://github.com/kunchenguid/lavish-axi): an AXI tool for review pages; a pattern this tool follows.
 
 Each of these is optional. learn-from-mistakes works without any of them.

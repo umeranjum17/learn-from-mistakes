@@ -1,0 +1,14 @@
+# done-done project config. `done-done init` never overwrites this file.
+# The app name finds this repo's evidence and receipts from every checkout.
+app: "learn-from-mistakes"
+# This repo's coding agent, over agent in ~/.done-done/config.yaml (model, effort and the other agent settings stay there).
+# agent: opencode
+# Journeys: the ported verify drives. Each command runs with DONE_DONE_EVIDENCE_ROOT
+# (its own new folder) and DONE_DONE_RUN_ID set, and must write its proof there.
+# `cli` is the synthetic public CLI journey (npm test plus the CLI drives);
+# `package` adds the packaged-install proof. `run` is model-free: journey exit gates.
+journeys:
+  cli:
+    command: "npm ci > \"$DONE_DONE_EVIDENCE_ROOT/npm-ci.log\" 2>&1 && node scripts/verify-journeys.mjs"
+  package:
+    command: "npm ci > \"$DONE_DONE_EVIDENCE_ROOT/npm-ci.log\" 2>&1 && node scripts/verify-journeys.mjs --package"

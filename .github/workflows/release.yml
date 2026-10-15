@@ -27,8 +27,13 @@ jobs:
           npm install -g 'npm@^11.5.1'
           echo "using npm: $(npm --version)"
 
-      - name: Test
-        run: npm test
+      - name: Install done-done
+        run: npm install -g 'done-done-axi@0.3.0'
+
+      # The cli journey runs npm ci, then npm test plus the public CLI drives;
+      # its exit gates the release. done-done run is model-free (no credentials).
+      - name: Verify (done-done cli journey)
+        run: done-done run cli
 
       # A release is a version-bump PR; this publishes it. Without an OIDC
       # trusted-publisher link for this package and repo on npm, the publish
