@@ -11,7 +11,7 @@ import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PRO
 import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
-import { askError, ensureAgents, interactive, saveCommand } from '../src/ask.mjs';
+import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
@@ -109,7 +109,7 @@ const KINDS = ['doc', 'rule', 'code']; // what the change edited; the first is t
 export const measure = (e) => ({ metric: e.metric ?? `cause_count:${e.cause}`, tripwire: e.tripwire ?? '', kind: e.kind ?? KINDS[0] });
 const UNPRINTABLE = /[\p{Cc}\u2028\u2029]/u;
 // A value the user typed, safe to echo: quoted, or a placeholder when long or not printable.
-const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
+export const shown = (v) => ([...v].length > 80 || UNPRINTABLE.test(v) ? '(invalid value)' : JSON.stringify(v));
 // Owner text for --what/--why: trimmed, 1-200 characters, no line breaks or control characters. A stored metric
 // allows a tab, since a cause key may hold one and the default metric is built from it.
 function oneLine(text, { allowTab = false } = {}) {
@@ -190,6 +190,24 @@ export const recordId = (r) => `${r.source}:${r.id}`;
 
 export const sourceLine = (s, hash = true) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items${hash ? `  sha256 ${s.hash.slice(0, 12)}` : ''}`;
 
+// Spreading an unbounded array overflows the call stack (RangeError: Maximum call stack size
+// exceeded), so sources stream into the store in chunks instead of one spread push.
+const PUSH_CHUNK = 8192;
+function pushAll(target, items) {
+  for (let i = 0; i < items.length; i += PUSH_CHUNK) target.push(...items.slice(i, i + PUSH_CHUNK));
+}
+const STACK_OVERFLOW_RE = /maximum call stack size exceeded/i;
+// A source that still throws names the source and how many records it had read, and a raw engine
+// RangeError becomes a fix line instead of an unnamed crash.
+function sourceError(id, e, count) {
+  const overflow = e instanceof RangeError || STACK_OVERFLOW_RE.test(e.message ?? '');
+  const tagged = /^source\s/.test(e.message ?? '') ? e.message : `source ${id}: ${e.message}`;
+  const next = overflow
+    ? `split source ${id} into smaller reads (fewer records in one read), then learn-from-mistakes-axi ingest again`
+    : e instanceof UsageError ? e.next : `fix source ${id} (see its message), then learn-from-mistakes-axi ingest again`;
+  return new UsageError(`${tagged} (${count} records read)`, next);
+}
+
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
 // The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
@@ -204,11 +222,17 @@ export async function ingest(cfg) {
   const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
   const records = [], rows = [], events = [], prs = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE) });
-    records.push(...(got.records ?? []));
-    rows.push(...(got.rows ?? []));
-    events.push(...(got.events ?? []));
-    prs.push(...(got.prs ?? []));
+    let got;
+    try {
+      got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE) });
+      pushAll(records, got.records ?? []);
+      pushAll(rows, got.rows ?? []);
+      pushAll(events, got.events ?? []);
+      pushAll(prs, got.prs ?? []);
+    } catch (e) {
+      const count = got ? (got.records ?? got.rows ?? got.events ?? got.prs).length : 0;
+      throw sourceError(id, e, count);
+    }
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
       ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
@@ -402,6 +426,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|ingest|count|r
   --model <model>     (init) save agent_config.<agent>.model for that agent
   --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
+  --sessions <agent>,...  (init) read these agents' sessions (claude, codex, opencode, pi, gemini); the user's choice, never picked by the tool
   --firstmate <home>  (init) add a firstmate source that reads that Firstmate home's status logs, inbox, defect log and targets (opt-in, never detected)
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's .claude/skills and .agents/skills instead of each agent's own skills dir; -y asks nothing, even in a terminal
@@ -504,7 +529,7 @@ const LABEL_STEP = (cfg, opts) => `label ${join(cfg.state, 'records.jsonl')} int
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   '': 'learn-from-mistakes-axi [--dir <dir>] [--json]', // no command: the last run's status and summary line
-  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
+  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   ingest: 'learn-from-mistakes-axi ingest [--dir <dir>]',
@@ -527,7 +552,7 @@ const FORMS = {
 const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate'];
+const VALUE_FLAGS = ['--dir', '--labels', '--proposals', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -745,13 +770,14 @@ async function initCommand(opts) {
   } else if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
   else if (problem('worker')) hint(roleFix(cfg, 'agent', { runner: out.worker.runner, problem: problem('worker') }));
   else if (problem('judge')) hint(problem('judge') === CLASH ? JUDGE_FIX(cfg) : roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
+  else if (problem('sessions')) hint(sessionsCommand(opts.dir));
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const ctx = {};
-  try { await main(ctx); } catch (raw) {
+  try { await main(ctx); closeAsk(); } catch (raw) {
     // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
     const busy = raw.code === 'ERR_SQLITE_ERROR' && (raw.errcode & 0xff) === 5 && ctx.state !== undefined;
     const e = busy ? new UsageError(`${join(ctx.state, 'lfm.sqlite')} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', ctx.opts)) : raw;

@@ -216,6 +216,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('report', '--cause', 'x'), 2, 'report does not take --cause', /^next: learn-from-mistakes-axi report \[/m],
     [() => raw('--cause', 'x'), 2, 'learn-from-mistakes-axi does not take --cause', HELP], // bare: no command was typed, so --help
     [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: learn-from-mistakes-axi report \[/m],
+    [() => raw('init', '--sessions', 'y'.repeat(81)), 2, /^error: --sessions \(invalid value\) must list agents by name: /, /^next: learn-from-mistakes-axi init --sessions claude,pi/m], // never echoes a long value
+    [() => raw('init', '--sessions', 'a\u001b[31m'), 2, /^error: --sessions \(invalid value\) must list agents by name: /, /^next: learn-from-mistakes-axi init --sessions claude,pi/m], // nor a control character
     [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, /^next: learn-from-mistakes-axi guide   # the full config/m], // a config to copy, then the guide
     [() => lfm('change', 'applied', '--cause', 'nope', '--ref', 'abc1234'), 2, `unknown cause "nope" ${known}`, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'other', '--ref', 'abc1234'), 2, /^error: cause "other" is reserved and never recordable \(known: server-memory-kill,/m, CHANGE],
@@ -261,14 +263,15 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
     [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
+    [() => withConfig('signoff: auto\n'), 2, bad('signoff: auto is not a value; use on (the default) or off'), HELP],
     [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n  more: { type: sessions }\n')), 2,
-      bad("sources.s: sources.more already reads every agent's sessions; keep one and narrow it with agents"), HELP],
+      bad('sources.s: sources.more already reads sessions; keep one and list every agent in its agents'), HELP],
     [() => withConfig('', v1.replace('sources:\n', 'sources:\n  prs: { type: github }\n  more: { type: github }\n')), 2,
       bad("sources.prs: sources.more already reads the PRs of origin's GitHub repo; keep one"), HELP],
     ...[['source: log', 'causes.env.match.source must name a no-mistakes or sessions source'], ['source: gate, signal: test_fail', 'causes.env.match: unknown key signal'],
       ['source: s', 'causes.env.match needs a signal, tool or text_contains'], ['source: s, tool: ""', 'causes.env.match.tool must be a non-empty string'],
       ['source: s, signal: oops', 'causes.env.match.signal must be one of tool_error, nonzero_exit, test_fail, correction, interrupt, retry'],
-    ].map(([m, rule]) => [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n').replace('causes:\n', `causes:\n  env: { description: x, match: { ${m} } }\n`)), 2, bad(rule), HELP]),
+    ].map(([m, rule]) => [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions, agents: [claude] }\n').replace('causes:\n', `causes:\n  env: { description: x, match: { ${m} } }\n`)), 2, bad(rule), HELP]),
     [() => withConfig('', v1.replace(/^name: .*$/m, 'name: 123')), 2, bad('name must be a string'), HELP],
     [() => withConfig('', v1.replace('causes:\n', 'causes:\n  Shared_Cache: { description: x }\n')), 2, bad('causes.Shared_Cache: a cause key must be 1-64 of a-z, 0-9 and - (rename it, for example to shared-cache)'), HELP],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
@@ -618,7 +621,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: missing.md }\n');
   const missing = lfm('ingest');
   assert.equal(missing.status, 2, missing.stderr);
-  assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\)$/m);
+  assert.match(missing.stderr, /^error: source log: cannot read \(ENOENT\) \(0 records read\)$/m);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log }\n  prs: { type: github }\n');
   const noPath = lfm('ingest'); // each source type checks its own keys
   assert.equal(noPath.status, 2, noPath.stderr);
@@ -630,7 +633,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: no-state.sqlite }\n');
   const store = lfm('ingest');
   assert.equal(store.status, 2, store.stderr);
-  assert.match(store.stderr, /^error: source gate: no such file$/m);
+  assert.match(store.stderr, /^error: source gate: no such file \(0 records read\)$/m);
   assert.ok(store.stderr.includes(`next: set sources.gate.path in ${join(p, '.learn-from-mistakes.yaml')} to your no-mistakes state.sqlite, or remove that source`), store.stderr);
   cpSync(join(p, 'gate.sqlite'), join(p, 'old.sqlite')); // a store of a no-mistakes version without a column the read uses
   const old = new DatabaseSync(join(p, 'old.sqlite'));
@@ -639,7 +642,7 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  gate: { type: no-mistakes, path: old.sqlite }\n');
   const oldRun = lfm('ingest');
   assert.equal(oldRun.status, 2, oldRun.stderr);
-  assert.match(oldRun.stderr, /^error: source gate: unknown store schema \(no step_results\.step_name\)$/m);
+  assert.match(oldRun.stderr, /^error: source gate: unknown store schema \(no step_results\.step_name\) \(0 records read\)$/m);
   assert.doesNotMatch(missing.stderr, /\n\s+at /); // no stack trace
   cpSync(join(new URL('../examples', import.meta.url).pathname, '.learn-from-mistakes.yaml'), join(p, '.learn-from-mistakes.yaml'));
   assert.equal(lfm('ingest').status, 0);
@@ -647,6 +650,19 @@ test('an unreadable source or input file is a usage error, never a crash', () =>
   assert.equal(dir.status, 2, dir.stderr);
   assert.match(dir.stderr, /cannot read \(EISDIR\)/);
   assert.doesNotMatch(dir.stderr, /\n\s+at /);
+});
+
+test('an oversized source streams into the store instead of overflowing the call stack', () => {
+  const { p, lfm } = setup();
+  // Far more records than the stack can spread in one push (500000 already throws
+  // RangeError: Maximum call stack size exceeded): collect either completes or fails naming the source.
+  const lines = ['# defects', '', '## 2026-01-05'];
+  for (let i = 0; i < 600000; i++) lines.push(`- [area] defect ${i} happened -> impact -> action`);
+  writeFileSync(join(p, 'defects.md'), lines.join('\n') + '\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  const r = lfm('ingest');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^log +markdown-log +600000 items /m);
 });
 
 test('a done-done source: each failed step of a failed, inconclusive or overridden verify run is a record; a passed run is not; an unknown schema or bad steps stop with the fix', () => {
@@ -696,13 +712,13 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes], path: dd-home }\n');
   const newer = lfm('ingest');
   assert.equal(newer.status, 2, newer.stderr);
-  assert.ok(newer.stderr.includes(`error: source dd: ${file('r5')} is done-done run schema 3; this version reads schema 2\n`), newer.stderr);
+  assert.ok(newer.stderr.includes(`error: source dd: ${file('r5')} is done-done run schema 3; this version reads schema 2 (0 records read)\n`), newer.stderr);
   assert.match(newer.stderr, /^next: update learn-from-mistakes-axi to read it, or remove sources\.dd from /m);
   assert.doesNotMatch(newer.stderr, /\n\s+at /);
   run('r5', { result: 'fail', steps: [null] });
   const broken = lfm('ingest');
   assert.equal(broken.status, 2, broken.stderr);
-  assert.ok(broken.stderr.includes(`error: source dd: ${file('r5')} is not done-done run state (steps)\nnext: done-done status --run r5   # in the notes repo`), broken.stderr);
+  assert.ok(broken.stderr.includes(`error: source dd: ${file('r5')} is not done-done run state (steps) (0 records read)\nnext: done-done status --run r5   # in the notes repo`), broken.stderr);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [../x] }\n');
   assert.match(lfm('ingest').stderr, /^error: .*: sources\.dd\.apps must be a list of done-done app names$/m);
 });
@@ -983,7 +999,7 @@ targets: { first_pass: ">= 70", p90_hours_to_merge: "<= 8", escaped: "<= 0", "ca
 followup: { min_sessions: 3, min_days: 2 }
 excerpts: off
 caps: { invocations: 12, bundle_chars: 60000 }
-signoff: auto
+signoff: on
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
@@ -1022,12 +1038,12 @@ allow_premium: false
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: gone.md }\n  store: { type: no-mistakes, path: gone.sqlite }\n');
   const unreadable = lfm('retro', '--foreground', '--json');
   assert.equal(unreadable.status, 1, unreadable.stderr);
-  assert.equal(JSON.parse(unreadable.stdout).run.error, 'collect: source log: cannot read (ENOENT)');
-  assert.match(unreadable.stderr, /^error: collect: source log: cannot read \(ENOENT\)$/m);
+  assert.equal(JSON.parse(unreadable.stdout).run.error, 'collect: source log: cannot read (ENOENT) (0 records read)');
+  assert.match(unreadable.stderr, /^error: collect: source log: cannot read \(ENOENT\) \(0 records read\)$/m);
   assert.ok(!unreadable.stdout.includes(p) && !unreadable.stderr.includes(p), 'a source path must not reach machine output');
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  store: { type: no-mistakes, path: gone.sqlite }\n');
   const noStore = lfm('retro', '--foreground', '--json');
-  assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file');
+  assert.equal(JSON.parse(noStore.stdout).run.error, 'collect: source store: no such file (0 records read)');
   assert.ok(!noStore.stdout.includes(p) && !noStore.stderr.includes(p), 'a source path must not reach machine output');
 
   const hold = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite')); // another process holds the write lock past busy_timeout
@@ -1037,10 +1053,10 @@ allow_premium: false
   hold.exec('ROLLBACK');
   hold.close();
   assert.equal(read.status, 0, read.stderr);
-  assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file');
+  assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file (0 records read)');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
-  assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file'); // the store keeps its runs
+  assert.equal(JSON.parse(lfm('status', '--json').stdout).run.error, 'collect: source store: no such file (0 records read)'); // the store keeps its runs
 
   chmodSync(join(p, '.lfm'), 0o555); // a readable store that cannot be written is not a run store: no mv hint
   chmodSync(join(p, '.lfm', 'lfm.sqlite'), 0o444);
@@ -1621,6 +1637,16 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(query(`SELECT role, runner, exit_status FROM invocations WHERE run_id = ? AND step = 'apply-1'`, run.id), [{ role: 'worker', runner: 'claude', exit_status: 'ok' }]);
   const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes; assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/${run.id}-1`]);
   assert.equal(lfm({}, 'apply').stdout, ok.stdout); assert.equal(calls().length, before + 1);
+  { // a reused run id with the same cause and change text but another target is refused, never reported applied
+    const reuse = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+    try { reuse.prepare(`UPDATE proposals SET target = 'defects.md' WHERE run_id = ? AND n = 1`).run(run.id); } finally { reuse.close(); }
+    const other = lfm({}, 'apply', '--fix', '1'); assert.equal(other.status, 1, other.stderr);
+    assert.match(other.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
+    assert.equal(git('rev-parse', `lfm/${run.id}-1`), commit, 'a refused reuse must not move the branch');
+    assert.equal(calls().length, before + 1, 'a refused reuse must not call the worker');
+    const restore = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+    try { restore.prepare(`UPDATE proposals SET target = 'AGENTS.md:12 and defects.md' WHERE run_id = ? AND n = 1`).run(run.id); } finally { restore.close(); }
+  }
   git('branch', '-f', `lfm/${run.id}-1`, git('commit-tree', `${head}^{tree}`, '-p', head, '-m', `learn-from-mistakes: fix ${run.id}:1 for slow-build\n\nRebuild the Go binary before the gate.`));
   const stale = lfm({}, 'apply', '--fix', '1'); assert.equal(stale.status, 1, stale.stderr); assert.match(stale.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
   for (const [n, code, error] of [[2, 2, `fix ${run.id}:2 was answered Skip, and a Skip is never applied`], [3, 1, `fix ${run.id}:3 names no tracked file in its target "the launch script", so the worker has nothing to edit`], [9, 2, `run ${run.id} has no kept fix 9`]]) {
