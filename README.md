@@ -115,7 +115,7 @@ State normally lives in `.lfm/` beside the project config: `lfm.sqlite`, collect
 
 **Excerpts are on by default.** The worker and judge providers receive redacted record excerpts in their bundle. Use `init --no-excerpts --no-skill` on a new config, or edit `excerpts: off` in an existing one, to send pointers and counts without record excerpts. This reduces the evidence available to analysis; it is not an offline mode.
 
-Redaction covers recognized API keys, tokens, URL passwords, private keys, Bearer/Basic credentials, secret-named assignments and email addresses. It is not a guarantee that all sensitive content is recognized. Do not point a hosted model at material you cannot share. Agent CLIs may retain their own sessions; this tool cannot promise provider-side deletion.
+Redaction covers recognized API keys, tokens, Slack incoming-webhook URLs (including their secret paths), URL passwords, private keys, Bearer/Basic/Token credentials (including repeated scheme words), secret-named assignments and email addresses. It is not a guarantee that all sensitive content is recognized. Do not point a hosted model at material you cannot share. Agent CLIs may retain their own sessions; this tool cannot promise provider-side deletion.
 
 `report`, `retro` and `status` output ids, counts, metrics and verdicts, not finding prose or record text. `report --json` uses `lfm-report.v2`; `--full` adds allow-listed non-content evidence ids, not private text. The `report_txt` path points to the human-readable report; the file's text is never embedded in the JSON. Read `report.txt` privately before sharing it. Step logs, bundles and the database can hold sensitive material too.
 
