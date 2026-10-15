@@ -329,10 +329,12 @@ try {
     for (const command of ['init --no-skill', 'doctor', 'retro --wait 8m', 'status', 'report', 'attach'])
       assert.ok(readme.includes(`learn-from-mistakes-axi ${command}`), `README omits ${command}`);
     assert.doesNotMatch(readme, /(?:labels|proposals)\.jsonl|--labels\b|--proposals\b|learn-from-mistakes-axi\s+(?:ingest|count)\b/, 'README teaches the removed manual flow');
-    const quick = join(scratch, 'readme-project');
+    const quick = join(scratch, 'readme-project'), quickBin = join(scratch, 'readme-agents');
     mkdirSync(quick);
+    mkdirSync(quickBin);
+    for (const name of ['claude', 'codex', 'node', 'git']) symlinkSync(join(agentBin, name), join(quickBin, name));
     writeFileSync(join(quick, 'defects.md'), `## ${new Date().toISOString().slice(0, 10)}\n- Umer: the test command failed.\n`);
-    const quickRun = (name, args, expected = 0, extra = {}) => run(`readme-${name}`, installed, [...args, '--dir', quick], expected, { ...lab, ...extra });
+    const quickRun = (name, args, expected = 0, extra = {}) => run(`readme-${name}`, installed, [...args, '--dir', quick], expected, { PATH: quickBin, ...extra });
     quickRun('init-missing-choice', ['init', '--no-skill'], 2);
     assert.match(readFileSync(join(evidence, 'readme-init-missing-choice.stderr'), 'utf8'), /ask the user which agent to use/);
     assert.equal(parse(readFileSync(join(quick, '.learn-from-mistakes.yaml'), 'utf8')).agent, undefined, 'init chose an agent');
