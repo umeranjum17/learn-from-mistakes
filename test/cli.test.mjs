@@ -204,7 +204,7 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: learn-from-mistakes-axi report \[/m],
     [() => raw('init', '--sessions', 'y'.repeat(81)), 2, /^error: --sessions \(invalid value\) must list agents by name: /, /^next: learn-from-mistakes-axi init --sessions claude,pi/m], // never echoes a long value
     [() => raw('init', '--sessions', 'a\u001b[31m'), 2, /^error: --sessions \(invalid value\) must list agents by name: /, /^next: learn-from-mistakes-axi init --sessions claude,pi/m], // nor a control character
-    [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, /^next: learn-from-mistakes-axi guide   # the full config/m], // a config to copy, then the guide
+    [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, /^next: learn-from-mistakes-axi init   # writes the config for this project$/m], // a config to copy, or init
     [() => lfm('change', 'applied', '--cause', 'nope', '--ref', 'abc1234'), 2, `unknown cause "nope" ${known}`, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'other', '--ref', 'abc1234'), 2, /^error: cause "other" is reserved and never recordable \(known: server-memory-kill,/m, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'y'.repeat(81), '--ref', 'abc1234'), 2, `unknown cause (invalid value) ${known}`, CHANGE], // never echoes a long value
