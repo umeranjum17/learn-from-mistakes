@@ -37,6 +37,8 @@ const PLANTED = [
   [`secret=abc,${'O'.repeat(10)}`, 'O'.repeat(10)],
   [`postgres://u:${'E'.repeat(8)}/${'F'.repeat(8)}@h/db`, 'F'.repeat(8)], // a password with a slash
   [`postgres://u:${'G'.repeat(8)}@${'H'.repeat(8)}@h/db`, 'H'.repeat(8)], // a password with an @
+  [`bearer Bearer ${'Z'.repeat(24)}`, 'Z'.repeat(24)], // the keyword-doubled token: the real token must go
+  [`https://hooks.slack.com/services/T000/B000/${'U'.repeat(24)}`, 'U'.repeat(24)], // Slack webhook: the path is the secret
 ];
 
 const planted = (from, to) => JSON.stringify(PLANTED.slice(from, to).map(([t]) => t).join(' ')).slice(1, -1); // as JSON string text
@@ -58,7 +60,7 @@ function setup() {
   const fill = (text) => text.replaceAll('$REPO', p).replaceAll('$TREE', tree)
     .replace(/2026-10-0([1-3])T/g, (_, d) => `${day(3 - Number(d))}T`) // the last three days, so inside the window
     .replaceAll('2026-09-24T', `${day(10)}T`) // inside the last window
-    .replaceAll('$SECRETS_A', planted(0, -10)).replaceAll('$SECRETS_B', planted(-10));
+    .replaceAll('$SECRETS_A', planted(0, -12)).replaceAll('$SECRETS_B', planted(-12));
   const src = new URL('fixtures/sessions/claude/projects', import.meta.url).pathname;
   for (const f of readdirSync(src, { recursive: true })) {
     if (!f.endsWith('.jsonl')) continue;
@@ -319,8 +321,8 @@ test('a retro reads this repo\'s Codex and OpenCode sessions read-only and keeps
     ['oc-main', p, [
       ['user', [text('Umer: the lint fails, fix it.')]],
       ['assistant', [tool('bash', { command: 'npm run lint' }, { status: 'completed', output: '1 problem', metadata: { exit: 1 } }),
-        tool('read', { filePath: 'a.js' }, { status: 'error', error: `${secrets(0, -10)} END` })]],
-      ['user', [text('Called the Read tool', { synthetic: true }), text(`Umer: use src/a.js, ${secrets(-10)} END`)]],
+        tool('read', { filePath: 'a.js' }, { status: 'error', error: `${secrets(0, -12)} END` })]],
+      ['user', [text('Called the Read tool', { synthetic: true }), text(`Umer: use src/a.js, ${secrets(-12)} END`)]],
       ['assistant', [text('Reading src/a.js.'), tool('read', { filePath: 'a.js' }, { status: 'completed', output: 'ok' })]],
       ['user', [{ type: 'text' }, { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==' }]],
       ['assistant', [tool('bash', { command: 'sleep 100' }, { status: 'error', error: 'Tool execution aborted' })], 'MessageAbortedError'],
@@ -399,8 +401,8 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   const call = (id, name, args, extra) => msg({ role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: args }], ...extra });
   const result = (id, text, isError) => msg({ role: 'toolResult', toolCallId: id, toolName: 'bash', content: [{ type: 'text', text }], isError });
   put(join(pi, '2026-10-13T10-00_pi-main.jsonl'), [head('pi-main', p), msg({ role: 'user', content: 'Umer: the fetch tests fail, fix it.' }),
-    call('c1', 'bash', { command: 'npm test' }), result('c1', `FAIL fetch ${secrets(0, -10)} END\n\nCommand exited with code 1`, true),
-    msg({ role: 'user', content: [{ type: 'text', text: `Umer: use the other script, ${secrets(-10)} END` }] }),
+    call('c1', 'bash', { command: 'npm test' }), result('c1', `FAIL fetch ${secrets(0, -12)} END\n\nCommand exited with code 1`, true),
+    msg({ role: 'user', content: [{ type: 'text', text: `Umer: use the other script, ${secrets(-12)} END` }] }),
     call('c2', 'bash', { command: 'npm test' }), result('c2', 'ok', false), call('c3', 'read', { path: 'a.js' }), result('c3', 'ENOENT', true),
     call('c4', 'bash', { command: 'npm test' }), result('c4', 'Command aborted', true), // stopped by the user: no failure
     msg({ role: 'assistant', content: [], stopReason: 'aborted' }), msg({ role: 'user', content: 'Umer: wait.' }), 'not json']);
@@ -417,8 +419,8 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   const g = (id, ...toolCalls) => ({ id, type: 'gemini', timestamp: now, content: '', toolCalls });
   put(join(chats, 'session-2026-10-13T10-00-gm000001.jsonl'), [{ sessionId: 'gm000001-main', startTime: now, kind: 'main' },
     { id: 'u0', type: 'user', content: 'Umer: a draft.' }, { $set: { messages: [] } }, { id: 'u1', type: 'user', content: [{ text: '/src/x.mjs is the file, run the checks.' }] },
-    g('g1'), g('g1', tc('run_shell_command', { command: 'npx vitest run' }, 'success', `Exit Code: 0\nvitest crashed ${secrets(0, -10)} END\nExit Code: 1`)),
-    { id: 'h1', type: 'user', content: '<hook_context>open: a.js</hook_context>' }, { id: 'u2', type: 'user', content: `Umer: try again, ${secrets(-10)} END` }, g('g2', tc('run_shell_command', { command: 'npx vitest run' }, 'success', 'Exit Code: 3\nok')),
+    g('g1'), g('g1', tc('run_shell_command', { command: 'npx vitest run' }, 'success', `Exit Code: 0\nvitest crashed ${secrets(0, -12)} END\nExit Code: 1`)),
+    { id: 'h1', type: 'user', content: '<hook_context>open: a.js</hook_context>' }, { id: 'u2', type: 'user', content: `Umer: try again, ${secrets(-12)} END` }, g('g2', tc('run_shell_command', { command: 'npx vitest run' }, 'success', 'Exit Code: 3\nok')),
     g('g3', tc('read_file', { file_path: 'b.js' }, 'error', 'File not found')), { $rewindTo: 'g3' }, { id: 'u3', type: 'user', content: '/stats' },
     g('g4', tc('replace', { file_path: 'c.js' }, 'cancelled')), { $set: { summary: 'Umer' } }, 'not json']);
   put(join(chats, 'gm000001-main', 'sub1.jsonl'), [{ sessionId: 'sub1', kind: 'subagent' }, { id: 's1', type: 'user', content: 'Find the loader.' },
