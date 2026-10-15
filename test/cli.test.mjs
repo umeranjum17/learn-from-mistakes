@@ -374,6 +374,37 @@ test('a fix shows the finding its refs cite, not the first finding with the same
   assert.doesNotMatch(text, /First twin/);
 });
 
+test('duplicate labels collapse to one incident, occurrences add, and log and store totals never add', () => {
+  const run = agentSetup();
+  const dup = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'agent-exit-wait', FAKE_DUP: '1' };
+  const r = run.lfm(dup, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const collapsed = JSON.parse(run.lfm({}, 'report', '--json').stdout).causes.find((c) => c.cause === 'agent-exit-wait');
+  assert.deepEqual(collapsed.log, { incidents: 1, records: 2, days: 1 }); // two labels, the second a duplicate: one incident
+  const o = run.lfm({ ...dup, FAKE_OCC: '3' }, 'retro', '--foreground', '--json');
+  assert.equal(o.status, 0, o.stderr);
+  const id = JSON.parse(o.stdout).run.id;
+  const added = JSON.parse(run.lfm({}, 'report', '--json').stdout).causes.find((c) => c.cause === 'agent-exit-wait');
+  assert.deepEqual(added.log, { incidents: 3, records: 2, days: 1 }); // the kept record counts three times
+  assert.deepEqual([added.store.rows, added.store.days], [4, 3]);
+  const propose = run.calls().find((c) => c.stdin.startsWith(`lfm-run:${id}:propose`)).stdin;
+  assert.match(propose, /^- agent-exit-wait: 4 incidents on 3 days, repeated$/m); // max(3, 4), never 3 + 4
+});
+
+test('signoff: off keeps the section-7 questions in report.txt even when sign-off is installed', () => {
+  const run = agentSetup(), yaml = join(run.p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }')}signoff: off\n`);
+  symlinkSync(new URL('./fake-agent/sign-off-axi', import.meta.url).pathname, join(run.bin, 'sign-off-axi'));
+  const r = run.lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const id = JSON.parse(r.stdout).run.id;
+  const text = reportOf(run.p, id);
+  assert.doesNotMatch(text, /signoff post/);
+  const kept = run.query('SELECT n FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n', id).map((f) => f.n);
+  assert.ok(kept.length > 0);
+  assert.deepEqual(text.split('\n').filter((l) => /^\d+\. Apply/.test(l)), kept.map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`));
+});
+
 test('a bad source is a config error or a failed collect step, never a crash', () => {
   const { p, lfm } = setup();
   const cfg = join(p, '.learn-from-mistakes.yaml');

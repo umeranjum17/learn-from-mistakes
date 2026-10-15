@@ -404,7 +404,7 @@ label and judge them, and it counts. Never judge a record yourself, and never ed
 2. Run learn-from-mistakes-axi doctor. Fix each fail line with the fix: line under it, then run doctor again.
 3. Run learn-from-mistakes-axi retro --wait 8m. While the run is still running, run learn-from-mistakes-axi attach until it ends.
 4. Read the run's report.txt (report prints its path as report_txt) and tell the user what it says in plain words.
-5. If sign-off is installed, use sign-off's skill on the run's decisions; else ask the user the questions in section 7.
+5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7.
 6. Once the user has made a change: learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <git sha>
 
 The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model); the tool never picks one.
