@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir,
 // <project>/.lfm by default, which the tool git-ignores itself.
-// Judgement (is this line a failure, which cause, which earlier line it repeats) comes from a retro's worker;
-// this file only parses, dedups and counts.
+// Judgement (is this line a failure, which cause, which earlier line it repeats) comes from a retro's worker; this file only parses, dedups and counts.
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

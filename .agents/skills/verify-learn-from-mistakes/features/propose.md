@@ -85,5 +85,4 @@ and a tripwire; a fix that broke a rule shows its rule.
 ## Gotchas
 A fix for a cause key the config does not list can be kept with a metric such
 as `defects`, but `change applied --proposal` then exits 2 with the unknown
-cause: add the cause to the config first. The v1 `report` still checks
-`proposals.jsonl`, not the run's fixes.
+cause: add the cause to the config first.

@@ -65,8 +65,7 @@ const STEPS = {
   verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), log),
   // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
   check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
-  // Counts with the labels the worker kept in this run; with none, coverage shows every record unlabelled.
-  // Then writes report.txt, the run's report for a person.
+  // Counts with the labels the worker kept in this run; with none, coverage shows every record unlabelled. Then writes report.txt for a person.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, runResult(db, id));
     if (problems.length) throw new InputError(`${problems.length} problems in the labels or change ledger`, REPORT);
