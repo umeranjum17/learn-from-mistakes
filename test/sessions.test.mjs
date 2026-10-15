@@ -496,10 +496,21 @@ test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0
 });
 
 test('the bundle has ids, refs and redacted excerpts, pointers and counts only with excerpts off, no other repo\'s rows, and keeps to its cap', () => {
-  const { p, lfm, env } = setup();
+  const { tmp, p, lfm, env } = setup();
   const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
+  env.FAKE_LOG = join(tmp, 'agent-log');
+  mkdirSync(env.FAKE_LOG);
   // One defect bullet and one failed gate step of this repo per planted shape, and a failed step of another repo in the same store.
-  const one = PLANTED.filter(([t]) => !t.includes('\n'));
+  const schemes = ['Bearer', 'Basic', 'Token'];
+  const one = [...PLANTED.filter(([t]) => !t.includes('\n')),
+    ...schemes.flatMap((scheme) => schemes.flatMap((prefix) => [...'.-~+/=_'].map((punctuation) => {
+      const secret = `${prefix}${punctuation}${'credentialCanary'.repeat(2)}`;
+      return [`${scheme} ${secret}`, secret];
+    }))),
+    ...schemes.flatMap((scheme) => schemes.map((prefix) => [`${scheme.toLowerCase()} ${prefix} ${'repeatedCanary'.repeat(2)}`, 'repeatedCanary'.repeat(2)])),
+    ...['webhook token https://hooks.slack.com', 'HTTPS://HOOKS.SLACK.COM', 'webhook Token hTtPs://HoOkS.SlAcK.cOm'].map((prefix) =>
+      [`${prefix}/services/T000/B000/${'webhookCanary'.repeat(2)}`, 'webhookCanary'.repeat(2)]),
+  ];
   writeFileSync(join(p, 'defects.md'), `${readFileSync(join(p, 'defects.md'), 'utf8')}\n## ${day(0)}\n\n${one.map(([t]) => `- [deploy] Umer pasted ${t} and password=[redacted]hunter2rest, token=[redacted] here in the log.`).join('\n')}\n`);
   const gate = new DatabaseSync(join(p, 'gate.sqlite')), at = Math.floor(Date.now() / 1000) - 3600;
   const step = gate.prepare(`INSERT INTO step_results (id, run_id, step_name, status, error, started_at, completed_at) VALUES (?, ?, 'push', 'failed', ?, ?, ?)`);
@@ -516,7 +527,10 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
 
   // The canaries are secret-shaped values, which redact() removes; with excerpts on, plain record text stays in the bundle by design.
   const on = bundleOf(lfm('retro', '--foreground'));
-  for (const [, needle] of PLANTED) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
+  for (const [, needle] of one) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
+  const prompts = readdirSync(env.FAKE_LOG).flatMap((f) => readFileSync(join(env.FAKE_LOG, f), 'utf8').trim().split('\n').map((line) => JSON.parse(line).stdin));
+  assert.ok(prompts.some((prompt) => prompt.includes(on.text)), 'bundle not delivered to an agent');
+  for (const [, needle] of one) for (const prompt of prompts) assert.ok(!prompt.includes(needle), `${needle} in agent prompt`);
   assert.ok(!on.text.includes('OTHER-REPO-CANARY') && !on.text.includes('step-other'), 'another repo\'s gate row in bundle.md');
   assert.deepEqual(query(p, `SELECT count(*) AS n FROM records WHERE text LIKE '%OTHER-REPO-CANARY%'`), [{ n: 0 }]); // never read at all
   const stored = query(p, `SELECT text FROM records WHERE run_id = ? AND source = 'gate'`, on.id).map((r) => r.text).join('\n');
