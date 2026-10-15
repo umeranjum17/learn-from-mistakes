@@ -4,9 +4,8 @@
 // own check. An answer that fails the check is sent back once with the problems; a second one fails the step with them.
 // Each call is one `invocations` row, with the agent's process group while it runs and the tokens it reported; a run
 // makes at most caps.invocations calls.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { readBundle } from '../check.mjs';
 import { startTime } from '../proc.mjs';
 import { call, chooseFix, detect, KEY, resolveRoles } from '../runners/index.mjs';
 
@@ -20,7 +19,7 @@ export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, l
   const fix = chooseFix(cfg, key, r.runner);
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);
-  const data = bundle ? `\n\n${readFileSync(join(dir, 'bundle.md'), 'utf8')}` : '';
+  const data = bundle ? `\n\n${readBundle(dir, id)}` : '';
   const invalid = db.prepare(`UPDATE invocations SET exit_status = 'invalid' WHERE id = ?`);
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {

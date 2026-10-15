@@ -4,8 +4,7 @@
 // names no bundle item is a problem: it is counted and logged, and the label or finding that holds it is not kept.
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { bundleIds, plain } from '../check.mjs';
+import { readBundle, bundleIds, plain } from '../check.mjs';
 import { redact } from '../redact.mjs';
 import { agentStep } from './agent-step.mjs';
 
@@ -46,7 +45,7 @@ function check(cfg, v) {
 export async function analyse(cfg, db, id, dir, log) {
   db.prepare('DELETE FROM labels WHERE run_id = ?').run(id); // a step run again starts empty
   db.prepare('DELETE FROM findings WHERE run_id = ?').run(id);
-  const ids = bundleIds(readFileSync(join(dir, 'bundle.md'), 'utf8'));
+  const ids = bundleIds(readBundle(dir, id));
   if (!ids.size) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
     return { asked: false, labels: 0, labels_dropped: 0, findings: 0, problems: 0 };

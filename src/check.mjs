@@ -6,7 +6,7 @@
 // their metric misses its target, and keeps the top five.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { recordId } from '../bin/learn-from-mistakes-axi.mjs';
+import { recordId, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { clusters } from './bundle.mjs';
 import { isMetric, METRIC_RULE, RULE } from './config.mjs';
 import { meets } from './metrics.mjs';
@@ -15,6 +15,17 @@ const MAX = 5;
 
 // The ids a bundle cites: its clusters, events and records.
 export const bundleIds = (text) => new Set([...text.matchAll(/^(?:### |- )\[([^\]\n]+)\]/gm)].map((m) => m[1]));
+
+// The run's own evidence file, <run dir>/bundle.md, the one its agents read and its check step counts refs against.
+// A missing or unreadable file names the file and the fix: it never fails a real claim as a ref to a bundle item
+// that is not there, and never ends the run in a raw stack trace.
+export function readBundle(dir, id) {
+  const file = join(dir, 'bundle.md');
+  try { return readFileSync(file, 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') throw new UsageError(`the run's bundle ${file} is missing, so its evidence cannot be checked`, `learn-from-mistakes-axi rerun --resume --run ${id}   # rebuild it by finishing the run's steps again`);
+    throw new UsageError(`${file}: cannot read (${e.code})`, `chmod u+r ${file}   # the run's bundle`);
+  }
+}
 
 // The STE100 length rule on one free-text field; '' when it holds.
 export function plain(text, where, { words, sentences }) {
@@ -97,7 +108,7 @@ export function counts(cfg, db, id, { current_start }) {
 // It can run again: it first clears what it set.
 export function check(cfg, db, id, dir, window, log) {
   const { causes, findings } = counts(cfg, db, id, window);
-  const ids = bundleIds(readFileSync(join(dir, 'bundle.md'), 'utf8'));
+  const ids = bundleIds(readBundle(dir, id));
   // How far each metric this window misses its target; 0 when it meets it or has none.
   const gaps = new Map(db.prepare(`SELECT name, value, target FROM metrics WHERE run_id = ? AND window = 'current' AND target IS NOT NULL AND value IS NOT NULL`).all(id)
     .filter((m) => !meets(m.value, m.target)).map((m) => [m.name, Math.abs(m.value - Number(RULE.exec(m.target)[2]))]));
