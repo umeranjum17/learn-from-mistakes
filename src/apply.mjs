@@ -31,13 +31,13 @@ function targetFiles(top, target) {
 
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
 async function applyOne(cfg, db, run, fix, log, opts = {}) {
-  const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`;
+  const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`, message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\n${redact(fix.change)}`;
   if (fix.answer === 'skip') throw new UsageError(`fix ${at} was answered Skip, and a Skip is never applied`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its other kept fixes', opts));
   if (!recordableCauses(cfg).includes(fix.cause)) throw new InputError(`fix ${at} names cause ${fix.cause}, which is not a configured cause`, `add ${fix.cause} under causes in ${PROJECT_FILE}, then apply again`);
   const top = git(cfg.dir, ['rev-parse', '--show-toplevel']);
   if (git(top, ['status', '--porcelain', '--untracked-files=no'])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
   const head = git(top, ['rev-parse', '--verify', 'HEAD']); let commit = spawnSync(which('git'), ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: top, encoding: 'utf8' }).stdout.trim();
-  if (commit && !git(top, ['show', '-s', '--format=%s', commit]).startsWith(`learn-from-mistakes: fix ${at} for `)) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
+  if (commit && git(top, ['show', '-s', '--format=%B', commit]) !== message) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
   if (!commit) {
     const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
     if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);
@@ -62,7 +62,7 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
         git(top, ['update-index', '--cacheinfo', `${files.find((x) => x.path === f.path).mode},${blob},${f.path}`], { env });
       }
       const tree = git(top, ['write-tree'], { env });
-      commit = git(top, ['commit-tree', tree, '-p', head, '-m', `learn-from-mistakes: fix ${at} for ${fix.cause}\n\n${redact(fix.change)}`]);
+      commit = git(top, ['commit-tree', tree, '-p', head, '-m', message]);
       git(top, ['branch', branch, commit]);
     } finally { rmSync(env.GIT_INDEX_FILE, { force: true }); }
   }

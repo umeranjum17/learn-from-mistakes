@@ -1618,7 +1618,7 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(query(`SELECT role, runner, exit_status FROM invocations WHERE run_id = ? AND step = 'apply-1'`, run.id), [{ role: 'worker', runner: 'claude', exit_status: 'ok' }]);
   const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes; assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/${run.id}-1`]);
   assert.equal(lfm({}, 'apply').stdout, ok.stdout); assert.equal(calls().length, before + 1);
-  git('branch', '-f', `lfm/${run.id}-1`, git('commit-tree', `${head}^{tree}`, '-p', head, '-m', `learn-from-mistakes: fix ${run.id}:2 for shared-cache-lock`));
+  git('branch', '-f', `lfm/${run.id}-1`, git('commit-tree', `${head}^{tree}`, '-p', head, '-m', `learn-from-mistakes: fix ${run.id}:1 for slow-build\n\nRebuild the Go binary before the gate.`));
   const stale = lfm({}, 'apply', '--fix', '1'); assert.equal(stale.status, 1, stale.stderr); assert.match(stale.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
   for (const [n, code, error] of [[2, 2, `fix ${run.id}:2 was answered Skip, and a Skip is never applied`], [3, 1, `fix ${run.id}:3 names no tracked file in its target, so the worker has nothing to edit`], [9, 2, `run ${run.id} has no kept fix 9`]]) {
     const r = lfm({}, 'apply', '--fix', String(n)); assert.equal(r.status, code, r.stderr); assert.match(r.stderr, new RegExp(`^error: ${error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
