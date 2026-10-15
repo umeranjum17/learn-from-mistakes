@@ -31,7 +31,7 @@ You do not need it installed: run \`${npx} <command>\`. If its output shows a co
 2. Run \`${npx} doctor\`. Fix each \`fail\` line with the \`fix:\` line under it, then run doctor again.
 3. Run \`${npx} retro --wait 8m\`. While the run is still running, run \`${npx} attach\` (or \`status\`) until it ends.
 4. Read the run's \`report.txt\` (\`${npx} report\` prints its path as \`report_txt\`) and tell the user what it says in plain words.
-5. If sign-off is installed, use sign-off's skill on the run's decisions; else ask the user the questions in section 7 of \`report.txt\`.
+5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7 of \`report.txt\`.
 
 The user chooses the tool's agents and models; never choose one. When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role, then run the init command it printed with their answer, then run the stopped command again.
 
