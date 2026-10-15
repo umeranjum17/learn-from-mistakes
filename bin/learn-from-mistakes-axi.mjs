@@ -230,7 +230,7 @@ export async function ingest(cfg) {
       pushAll(events, got.events ?? []);
       pushAll(prs, got.prs ?? []);
     } catch (e) {
-      const count = got ? (got.records ?? got.rows ?? got.events ?? got.prs).length : records.length + rows.length + events.length + prs.length;
+      const count = got ? (got.records ?? got.rows ?? got.events ?? got.prs).length : 0;
       throw sourceError(id, e, count);
     }
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
