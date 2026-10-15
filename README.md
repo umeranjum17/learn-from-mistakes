@@ -81,7 +81,7 @@ agent_config:
 agent_timeout: "20m"
 ```
 
-A project config can override these choices and `allow_premium`. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Model names containing the separate word `opus`, `sonnet` or `sol` are blocked unless you explicitly set `allow_premium: true`. Permission is not a recommendation to upgrade.
+Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices and `allow_premium`. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Model names containing the separate word `opus`, `sonnet` or `sol` are blocked unless you explicitly set `allow_premium: true`. Permission is not a recommendation to upgrade.
 
 ## Cost and limits
 

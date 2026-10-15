@@ -288,7 +288,7 @@ try {
   assert.match(readFileSync(join(evidence, 'init-unset.stdout'), 'utf8'), /sessions: ask the user which agents' sessions to read \(local stores: claude, codex, opencode[^)]*\), then run learn-from-mistakes-axi init --sessions <agent>,<agent> --dir /, 'init without a terminal does not ask which agents\' sessions to read');
   assert.equal(parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8')).sources.sessions, undefined, 'init wrote a sessions source nobody named');
   rmSync(join(fresh, '.learn-from-mistakes.yaml'));
-  run('init', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'umer-worker-model', '--judge-agent', 'opencode', '--judge-model', 'umer-judge-model', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
+  run('init', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'umer-worker-model', '--judge-agent', 'opencode', '--judge-model', 'umer/umer-judge-model', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
   assert.deepEqual(['agent', 'judge_agent', 'sources'].map((k) => parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'))[k]).map((v) => v.sessions?.agents ?? v), ['claude', 'opencode', ['claude', 'pi']], 'init did not save the chosen agents and the named sessions agents');
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
