@@ -47,7 +47,7 @@ export function save(file, picks) {
 }
 
 // One reader for every question in the process: it buffers answers typed or pasted ahead of a later question, even
-// one another pick asks. Paused between questions, it never keeps the process alive.
+// one another pick asks. Paused between questions, closed when the command is done.
 let reader, lines, ended = false;
 const line = () => {
   if (!reader) {
@@ -58,6 +58,7 @@ const line = () => {
   return lines.next();
 };
 const rest = () => { if (!ended) reader?.pause(); };
+export const closeAsk = () => { reader?.close(); reader = lines = undefined; ended = false; };
 
 // A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
 // the model of that agent. A role whose agent is set only gets the model question; the agent key is then not written.

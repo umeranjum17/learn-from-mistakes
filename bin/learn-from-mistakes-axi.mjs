@@ -11,7 +11,7 @@ import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PRO
 import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init } from '../src/init.mjs';
-import { askError, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
+import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
@@ -753,7 +753,7 @@ async function initCommand(opts) {
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const ctx = {};
-  try { await main(ctx); } catch (raw) {
+  try { await main(ctx); closeAsk(); } catch (raw) {
     // SQLITE_BUSY: another process held the store past busy_timeout. The store is fine and keeps the run history.
     const busy = raw.code === 'ERR_SQLITE_ERROR' && (raw.errcode & 0xff) === 5 && ctx.state !== undefined;
     const e = busy ? new UsageError(`${join(ctx.state, 'lfm.sqlite')} is busy: another learn-from-mistakes-axi process is writing it`, withContext('learn-from-mistakes-axi status', 'wait a moment and check the running run; abort --run <id> stops it', ctx.opts)) : raw;
