@@ -77,14 +77,14 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
 const staged = join(scratch, 'project');
 try {
   config.name = 'verification'; // never let a caller config choose an output path
   // A retro needs the agents the user set (the steps here call none); a caller config's own choice is kept.
-  if (!config.agent) Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { ...config.agent_config, claude: { model: 'claude-haiku-5-5' }, codex: { model: 'gpt-6-luna' } } });
+  if (!config.agent) Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { ...config.agent_config, claude: { model: 'umer-worker-model' }, codex: { model: 'umer-judge-model' } } });
   for (const s of sources) {
     copyFileSync(s.path, join(staged, s.copy));
     config.sources[s.id].path = s.copy;
@@ -137,7 +137,7 @@ try {
   drive('rerun', 'rerun', '--wait', '1m'); // a new run with the current config
   // Config v2: every new key loads and the run completes the same steps; a bad agent exits 2 naming the key.
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
-  Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'gpt-6-luna' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
+  Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'umer-judge-model' }, claude: { model: 'umer-worker-model', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
     caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));
@@ -150,7 +150,7 @@ try {
   writeFileSync(stagedConfig, stringify({ ...config, judge_agent: 'claude' }));
   run('retro-judge-clash', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
   assert.match(readFileSync(join(evidence, 'retro-judge-clash.stderr'), 'utf8'), /^error: judge: agent_config holds one model per agent[^\n]*\nnext: ask the user which agent and model to use, then set judge_agent/m, 'retro started with the judge on the worker\'s identity');
-  Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'gpt-6-luna' } } }); // the drives below call the judge
+  Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'umer-judge-model' } } }); // the drives below call the judge
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
@@ -288,7 +288,7 @@ try {
   assert.match(readFileSync(join(evidence, 'init-unset.stdout'), 'utf8'), /sessions: ask the user which agents' sessions to read \(local stores: claude, codex, opencode[^)]*\), then run learn-from-mistakes-axi init --sessions <agent>,<agent> --dir /, 'init without a terminal does not ask which agents\' sessions to read');
   assert.equal(parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8')).sources.sessions, undefined, 'init wrote a sessions source nobody named');
   rmSync(join(fresh, '.learn-from-mistakes.yaml'));
-  run('init', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'claude-haiku-5-5', '--judge-agent', 'opencode', '--judge-model', 'opencode-go/muse-spark-1.3-contributor', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
+  run('init', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'umer-worker-model', '--judge-agent', 'opencode', '--judge-model', 'umer/umer-judge-model', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
   assert.deepEqual(['agent', 'judge_agent', 'sources'].map((k) => parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'))[k]).map((v) => v.sessions?.agents ?? v), ['claude', 'opencode', ['claude', 'pi']], 'init did not save the chosen agents and the named sessions agents');
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
@@ -323,6 +323,51 @@ try {
     const prefix = join(scratch, 'prefix');
     run('npm-install-pack', 'npm', ['install', '-g', '--prefix', prefix, tarball]);
     const installed = join(prefix, 'bin', 'learn-from-mistakes-axi');
+    // README quick start with explicit synthetic user choices, through the installed CLI.
+    // Reuse the real fixture runner processes; no credentials or sign-off peer are on PATH.
+    const readme = readFileSync(join(repo, 'README.md'), 'utf8');
+    for (const command of ['init --no-skill', 'doctor', 'retro --wait 8m', 'status', 'report', 'attach'])
+      assert.ok(readme.includes(`learn-from-mistakes-axi ${command}`), `README omits ${command}`);
+    assert.doesNotMatch(readme, /(?:labels|proposals)\.jsonl|--labels\b|--proposals\b|learn-from-mistakes-axi\s+(?:ingest|count)\b/, 'README teaches the removed manual flow');
+    const quick = join(scratch, 'readme-project'), quickBin = join(scratch, 'readme-agents');
+    mkdirSync(quick);
+    mkdirSync(quickBin);
+    for (const name of ['claude', 'codex', 'node', 'git']) symlinkSync(join(agentBin, name), join(quickBin, name));
+    writeFileSync(join(quick, 'defects.md'), `## ${new Date().toISOString().slice(0, 10)}\n- Umer: the test command failed.\n`);
+    const quickRun = (name, args, expected = 0, extra = {}) => run(`readme-${name}`, installed, [...args, '--dir', quick], expected, { PATH: quickBin, ...extra });
+    quickRun('init-missing-choice', ['init', '--no-skill'], 2);
+    assert.match(readFileSync(join(evidence, 'readme-init-missing-choice.stderr'), 'utf8'), /ask the user which agent to use/);
+    assert.equal(parse(readFileSync(join(quick, '.learn-from-mistakes.yaml'), 'utf8')).agent, undefined, 'init chose an agent');
+    quickRun('init', ['init', '--no-skill', '--agent', 'claude', '--model', 'umer-worker-model', '--judge-agent', 'codex', '--judge-model', 'umer-judge-model']);
+    const quickConfig = join(quick, '.learn-from-mistakes.yaml');
+    const choices = parse(readFileSync(quickConfig, 'utf8'));
+    assert.deepEqual([choices.agent_config.claude.model, choices.agent_config.codex.model], ['umer-worker-model', 'umer-judge-model']);
+    delete choices.agent_config.codex.model;
+    writeFileSync(quickConfig, stringify(choices));
+    quickRun('missing-model', ['retro', '--wait', '8m'], 2);
+    assert.match(readFileSync(join(evidence, 'readme-missing-model.stderr'), 'utf8'), /ask the user which agent to use/);
+    quickRun('save-model', ['init', '--no-skill', '--judge-agent', 'codex', '--judge-model', 'umer-judge-model']);
+    quickRun('doctor', ['doctor']);
+    assert.match(readFileSync(join(evidence, 'readme-doctor.stdout'), 'utf8'), /^warn sign-off /m);
+    quickRun('retro', ['retro', '--wait', '8m', '--json'], 0, { LFM_TEST_SLOW_STEP: 'report:2000', FAKE_ANALYSE: 'label', FAKE_CAUSE: 'test-failed' });
+    quickRun('status', ['status', '--json']);
+    quickRun('attach', ['attach']);
+    quickRun('report', ['report', '--json']);
+    const quickReport = JSON.parse(readFileSync(join(evidence, 'readme-report.stdout'), 'utf8'));
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'readme-status.stdout'), 'utf8')).run.status, 'completed');
+    assert.ok(inside(quick, quickReport.report_txt), 'README report escapes its project');
+    const reportText = readFileSync(quickReport.report_txt, 'utf8');
+    assert.match(reportText, /Questions for you/);
+    save('readme-report.txt', reportText);
+    quickRun('no-peer', ['signoff', 'answers']);
+    assert.match(readFileSync(join(evidence, 'readme-no-peer.stdout'), 'utf8'), /No answers read: sign-off-axi is not installed/);
+    // A short wait returning running is not a completed result; attach supplies the next step.
+    quickRun('slow-retro', ['retro', '--wait', '1s', '--json'], 0, { LFM_TEST_SLOW_STEP: 'report:3000' });
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'readme-slow-retro.stdout'), 'utf8')).run.status, 'running');
+    assert.match(readFileSync(join(evidence, 'readme-slow-retro.stderr'), 'utf8'), /next: .*attach .*still running/);
+    quickRun('slow-attach', ['attach']);
+    quickRun('slow-status', ['status', '--json']);
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'readme-slow-status.stdout'), 'utf8')).run.status, 'completed');
     run('packed-version', installed, ['--version']);
     run('packed-help', installed, ['--help']);
     run('packed-guide', installed, ['guide']);

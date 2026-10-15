@@ -2,260 +2,169 @@
 
 <h1 align="center">learn-from-mistakes</h1>
 
-<p align="center">Find the mistakes your coding agents keep repeating, with the evidence for each, and a short list of changes to stop them.</p>
+<p align="center">Find the mistakes your coding agents keep repeating, with evidence and a short list of changes to stop them.</p>
 
-`learn-from-mistakes-axi` is an [AXI](https://axi.md), which means -
+`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and proposes fixes. A separate judge checks the claims. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
 
-- It's just a CLI any capable agent can run without setup (`npx -y learn-from-mistakes-axi`).
-- It's built for agents: TOON output by default, `--json` and `--full` when asked, a contextual `next:` hint that names the likely next command, and the bare command shows the last run's status and its summary line.
-- The skill below only handles discovery; agents learn the tool by using it.
+You, or your calling agent, start the retro and read its report. **Do not label or judge records yourself.** Unread records stay unlabelled, not guessed. Recommendations do not change your project by default.
 
-## Quick Start
+## Quick start
 
-Install the skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
+Requires Node **22.13+**, project records to read, and two ready agents with models **you choose**. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
 
 ```sh
-npx -y skills add umeranjum17/learn-from-mistakes --skill learn-from-mistakes -g -a claude-code -y
+npm install -g learn-from-mistakes-axi
+cd /path/to/your/project
+learn-from-mistakes-axi init --no-skill
+learn-from-mistakes-axi doctor
+learn-from-mistakes-axi retro --wait 8m
+learn-from-mistakes-axi status
+learn-from-mistakes-axi report
 ```
 
-That is the entire setup - no npm install needed.
-`-a` names your agent (`claude-code`, `codex` or `opencode`; repeat it for several) and `-y` skips the installer's questions.
-The skill teaches your agent to run the tool through `npx -y learn-from-mistakes-axi`, so the CLI comes along on demand.
-It stays a short stub and sends the agent to `npx -y learn-from-mistakes-axi --help` and `guide` for the current procedure, so an installed copy cannot go stale against a newer CLI.
-Its frontmatter also includes Hermes Agent metadata, so Hermes-compatible harnesses can categorize and surface it.
+1. `init` asks for the worker, judge and their models in a terminal. It writes `.learn-from-mistakes.yaml` and a fully commented `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`). It detects supported sources, adds four editable starter causes, and asks which local agents' sessions you want read; none are preselected. Inspect the written sources before starting a retro.
+2. `doctor` checks config, sources, state, agents, login presence and model choices without calling a model. Follow each `fix:` under a `fail`, then run it again. A missing skill or sign-off peer is a warning, not a prerequisite.
+3. `retro --wait 8m` starts a background worker and waits up to eight minutes. **A return with `running` is not completion.** The worker continues after the terminal or calling agent ends. Run `learn-from-mistakes-axi attach` to follow it until it ends, or poll `status`. Do not start another retro while it runs.
+4. After `completed`, `report` prints the saved run's counts, verdicts and `report_txt` path. Open that file, normally `.lfm/runs/<id>/report.txt`, with your editor or `cat`. This is the report to read, not the compact stdout summary.
 
-Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
+The report contains a short answer, numbers, follow-ups on previous changes, repeated mistakes with evidence, checked fixes, what was not checked, and questions for you. An empty result is not proof that nothing went wrong: check its coverage and omissions.
 
-```
-/learn-from-mistakes what keeps going wrong here?
-```
+### No terminal, or no agent/model selected?
 
-Or just ask in plain words - "what keeps going wrong in this project? the log is defects.md", or "Start a retro and show me the report." - and the agent loads the skill on its own when it recognizes the task.
-It writes `.learn-from-mistakes.yaml` if the project has none and starts a retro. The tool runs its own agent to label the records: the worker, the `agent` you set with its `agent_config` model (`agent: <agent>` with `agent_config: { <agent>: { model: <model> } }`). Set your agents in the config; the run never picks one. Your agent only starts the retro and reads the result: the repeated causes with counts.
-A retro whose `agent` or `judge_agent`, or its model, is not set stops before it starts with the ask line (exit 2), and so does one whose judge resolves to the worker's agent and model, with the fix line (exit 2); one whose judge is not ready stops before it starts too (exit 1, its own problem and fix line), and one whose worker is not ready stops at `analyse` (exit 1): ask the user which agent and model to use, then set the key it names in the config file it names.
-The finding summaries stay out of stdout and `--json`; they are in `report.txt` (see [Privacy](#privacy)). The recommended changes are the run's kept fixes (`status --run <id>` lists them), or ask your agent to summarise them.
-
-`-g` installs the skill for all projects (`~/.claude/skills/`, for example); drop it to install into the current project only.
-
-## Other Ways to Use It
-
-### Zero setup
-
-Any capable agent can run the CLI directly with nothing installed at all. Just tell your agent:
-
-```
-Run `npx -y learn-from-mistakes-axi --help` and tell me what keeps going wrong in this project.
-```
-
-### With Firstmate
-
-Nothing in Firstmate changes; the tool only reads its records, and only when you turn it on:
+Without a terminal, missing choices stop with exit **2** and an `ask the user` / `next:` line. Ask for both roles and their model names; never pick a fallback. With the user's answers in `WORKER`, `WORKER_MODEL`, `JUDGE` and `JUDGE_MODEL`, replace the quick start's init command with:
 
 ```sh
-learn-from-mistakes-axi init --firstmate <home>   # adds home: { type: firstmate, path: <home> }, to an existing config too
+learn-from-mistakes-axi init --no-skill \
+  --agent "$WORKER" --model "$WORKER_MODEL" \
+  --judge-agent "$JUDGE" --judge-model "$JUDGE_MODEL"
 ```
 
-Or write a `type: firstmate` source by hand in `.learn-from-mistakes.yaml`; neither is detected from the home's files.
+Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. Each agent has one configured model, so choose another agent for the judge. The judge cannot resolve to the worker's binary and model; sign-in routes are also checked against their vendor's agent identity.
 
-A `firstmate` source reads, under the home: `state/*.status` status logs (`<state> [at=<epoch>]: <text>`; a line with no stamp takes the last one above it; a stamp that is not digits is no time), the `*.msg` files of `state/*.inbox` and its `handled/` (an `at=<epoch>` line and a `[tag]`), the `data/defects.md` defect log, and `config/targets.tsv` (`metric op target owner rule`, tab-separated), which overrides `targets:`. It gives `decisions` (`needs-decision` lines), `blocks` (`blocked` lines), `steers` (messages) and `interventions_per_merge` (their sum over `merged`, from a github source). It writes nothing in the home.
+`init -y --no-skill` can write config without asking, but it does **not** choose agents or make the project ready. Follow its gaps. A second `init` keeps existing choices; flags can fill missing project choices, not replace them. Edit existing keys explicitly if you want to change them.
 
-### Manual CLI
-
-Needs Node 22.13 or newer (22.18 or newer for `byokit:<route>`, see [Command line](#command-line)). To install from a checkout:
-
-```sh
-git clone https://github.com/umeranjum17/learn-from-mistakes
-cd learn-from-mistakes && npm install && npm link   # puts learn-from-mistakes-axi on your PATH
-```
-
-1. Run `learn-from-mistakes-axi init` in your project. It writes `.learn-from-mistakes.yaml` if the project has none (otherwise it prints `already set up` and any gaps), with the agents and models you choose (`--agent`/`--model` and `--judge-agent`/`--judge-model`, or a pick in a terminal), the sources it detects (a defect log, `reviews.md`, a no-mistakes store, GitHub PRs), the agents whose sessions you name (`--sessions claude,pi`, or a pick of the local session stores in a terminal, nothing selected; otherwise a gap says to ask you), 4 starter causes (only into a project file it creates, an existing file is never rewritten: its gaps say how to add causes; edit them), and excerpts on (`--no-excerpts` writes them off). With no agent chosen and no terminal it prints what it wrote, then exits 2 with the ask line; `init -y` writes the files without agents. It also installs the packaged skill (`learn-from-mistakes/SKILL.md`) into each configured agent's own skills dir, the way `npx skills` lays them out; `--project-skill` writes the project's `.claude/skills` and `.agents/skills` instead, and `--no-skill` writes none. Or write the file yourself:
-
-   ```yaml
-   name: my-project
-   sources:
-     log: { type: markdown-log, path: defects.md }   # each "- " bullet is a record; a YYYY-MM-DD in it dates it, else its "## 2026-03-02" heading
-     # gate: { type: no-mistakes, path: ~/.no-mistakes/state.sqlite }   # optional: no-mistakes store, this repo's failed steps read-only
-     # sessions: { type: sessions, agents: [claude, pi] }   # optional, one per config: this repo's sessions of the agents you name (claude, codex, opencode, pi, gemini), read-only
-     # prs: { type: github }   # optional: the PRs of origin's GitHub repo, read-only through your own gh login
-     # proof: { type: done-done, apps: [my-app] }   # optional: done-done's failed verify run steps, read-only
-   causes:
-     agent-exit-wait:   # a cause key: 1-64 of a-z, 0-9 and -
-       description: A pipeline step fails because the agent's output pipe stays open.
-       # match: { source: gate, error_contains: "wait delay expired" }  # optional: no-mistakes store, counts typed rows
-       # match: { source: sessions, signal: test_fail, tool: Bash, text_contains: "FIXTURES" }  # or a sessions source: any of signal, tool, text_contains
-   repeat: { min_incidents: 3, min_days: 2 }
-   # signoff: off   # optional, on (default) or off: off makes doctor's sign-off check ok and keeps questions in report.txt; an explicit `signoff post` or `signoff answers` still runs, because you asked for it
-   ```
-
-2. Run `learn-from-mistakes-axi retro --wait 8m --dir .`. It reads the configured sources (read-only) into the state dir: `.lfm/` next to `.learn-from-mistakes.yaml`. The tool writes `.lfm/.gitignore` (`*`) whenever it writes state there and finds none, so the state is never committed and you edit no `.gitignore` of your own. An existing `.lfm/.gitignore` is never overwritten: it must contain the line `*` with no line starting with `!`, or the write exits 2 before any state is written. To keep state outside the project instead, set `state_root: <dir>` in `$LFM_HOME/config.yaml` (`LFM_HOME` defaults to `~/.learn-from-mistakes`); the state then goes to `<dir>/<name>`.
-3. Ask your agent to start a retro (`learn-from-mistakes-axi retro --wait 15m`). The tool runs its own agent, the `agent` you set in the config, to label the records; the run never picks one. Your agent only starts it and reads the result. Or ask your agent to drive the whole retro: `learn-from-mistakes-axi guide` prints the steps.
-4. Read the result. A finished retro prints it: the causes its labels counted and the worker's findings, one line each (`status` prints it again). A person reads `.lfm/runs/<id>/report.txt`: the plain-text report with the evidence. A bare command prints the last run's status and its summary line. `report` prints `lfm-report.v2` for the last retro (`run: <id>`): the repeated causes, each finding's cause, counts and verdict, the run's metrics, follow-ups and kept fixes, and `report_txt`, the path of `report.txt` (never its text); with no completed run it exits 3. The recommended changes are the run's kept fixes (`status --run <id>` lists them), or ask your agent to summarise them.
-
-## Why
-
-Agent fleets write down what went wrong: a defect log, a pipeline's failed steps. The same cause turns up again and again, yet nobody counts it, so the fix never gets priority. Counting by keyword is wrong too: "database is locked" in one tool is not the same cause as in another.
-
-`learn-from-mistakes-axi` splits the work. Your agent reads each record and judges what happened, following the CLI's own `guide`. The CLI does the arithmetic: it merges duplicates, counts each source separately, checks that every recommendation cites real records, and lists what was never read.
-
-## Command line
-
-```
-learn-from-mistakes-axi           print the last run's status and its summary line
-learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y]   write ~/.learn-from-mistakes/config.yaml and .learn-from-mistakes.yaml, each once, with the sources found; save the agents the user chose (in a terminal, with none given, it asks), and check that the worker and a different judge resolve
-learn-from-mistakes-axi doctor [--live]   one ok/warn/fail line per check (node, git, config, .lfm ignored, each source, worker and judge: usable, login, model, a different identity; the skill per agent CLI; sign-off) with a fix: line under each that is not ok; --live makes one agents --test call per role (costs tokens); --json prints JSON
-learn-from-mistakes-axi guide     print the agent procedure: init, doctor, retro, then read report.txt to the user
-learn-from-mistakes-axi report    print lfm-report.v2 for the last retro: ids, counts, metrics, follow-ups, verdicts and the path of report.txt; --full adds evidence ids, --json prints JSON
-learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>]   record an applied change in the ledger
-learn-from-mistakes-axi changes   print every applied change (lfm-changes.v1) with its what and why
-learn-from-mistakes-axi signoff post [--run <id>]   post the latest completed run's kept fixes to sign-off as `finding` messages, only when you ask; without sign-off-axi it prints them and `npm i -g sign-off-axi`
-learn-from-mistakes-axi signoff answers   save each Apply/Skip answer to a posted finding (read once with `sign-off-axi wait`); it applies nothing
-learn-from-mistakes-axi apply [--run <id>] [--fix <n>]   your worker makes each kept fix answered Apply (or the one --fix names) on a new branch lfm/<run>-<n> from HEAD and records it in the ledger with that commit; it never touches your branch, index or work tree, never pushes, and refuses a dirty tree. With `auto_fix: <n>` a retro does this for its top n kept fixes, except any answered Skip
-learn-from-mistakes-axi retro [--wait [<time>] | --foreground]   read, label with the tool's own agent and count as one saved run, in a background worker
-learn-from-mistakes-axi status    print the last saved run and its steps (--run <id> for another)
-learn-from-mistakes-axi runs      list the saved runs, newest first (the last 10)
-learn-from-mistakes-axi attach    follow the run: its step lines and states as they come, until it ends
-learn-from-mistakes-axi logs --step <name>   print one step's log (--run <id> for another run)
-learn-from-mistakes-axi abort     stop the running run; it ends as cancelled
-learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait <time>]   start a new run with the current config (default: follows the last run); --run <id> names the run it follows; --resume finishes that run from its first step that is not completed
-learn-from-mistakes-axi agents    list the configured agents: usable, version, login presence, model, and the resolved worker and judge
-learn-from-mistakes-axi agents --test <runner>   one live call to that agent CLI, `acp:<target>` through acpx, or `byokit:<route>` through BYOKit (costs tokens): it must answer and write no file
-learn-from-mistakes-axi --help    show the commands and options
-learn-from-mistakes-axi --version show the version
-```
-
-Every command stays useful:
-
-- Default output is **TOON** (compact, token-lean). For `report`, `--json` prints the same data as JSON under the versioned `lfm-report.v2` schema (`changes --json` is `lfm-changes.v1`, below). `generated_at` is when the report ran; `ingested_at` is when the retro's collect step last read the sources; `run` is the counted retro and `report_txt` the path of its `report.txt`.
-- `--full` adds allow-listed evidence **ids** — non-content source row ids only, never a content-derived record id or record text.
-- `change applied` appends one versioned entry (`chg-<n>`, cause key, version id, time) to the append-only `<state dir>/changes.jsonl` ledger, and the report then shows per cause how many applied changes exist (`changes: { count, last_at }`, top-level `ledger: { entries }`; `--full` adds `change_ids`/`change_refs`). `<cause>` must be a cause key from the config (`other` is never recordable); `<ref>` is a git sha (7-40 hex) or `sha256:<64 hex>`; `--at` defaults to now. `--metric`, `--tripwire` and `--kind` record what will show whether the change worked: the metric to watch (a metric name, `cause_count:<cause>` for any configured cause, or `gate_failures:<step>`; default `cause_count:<cause>` of the change's own cause), the value it must reach (`"<op> <number>"` with `>=`, `<=`, `>`, `<` or `=`, as a target; default none) and what the change edited (`doc`, `rule` or `code`; default `doc`). A bad value exits 2 and names the allowed form. A ledger line written before these fields reads as the defaults. `--proposal <run>:<n>` records that run's kept fix `n` (the `fixes` that `status --run <run>` lists) in place of `--cause`: its cause, metric and tripwire go into the entry, and `--metric` or `--tripwire` override them; a fix the check step did not keep has no number and exits 2. `--what` and `--why` are optional owner-written text, one line of 1-200 characters each (trimmed; a newline or control character is rejected); the report never prints them.
-- `changes` prints every ledger entry in ledger order under the `lfm-changes.v1` schema (TOON by default, `--json` for JSON). It needs only the config.
-- `retro` saves a run in `<state dir>/lfm.sqlite`: a `runs` row with its status and the pid of the process that runs it, and one `steps` row each for `collect` (read the sources), `metrics` (the numbers, below), `followup` (did each applied change work, below), `bundle` (the file the run's agents read, below), `analyse` (the worker labels the records, below), `propose` (the worker's fixes, below), `verify` (the judge's verdict on each finding and fix, below), `check` (the rules the fixes must follow, below), `report` (the counts with the worker's labels from this run; then `report.txt`, the plain-text report for a person: short answer, numbers, last changes, repeated mistakes, fixes with the judge's verdict, what was not checked and the questions for you) and `apply` (with `auto_fix: <n>`, the worker commits the top n kept fixes on their own branches, as `apply` does; 0 applies nothing). A detached worker runs the steps, so the run goes on when the terminal or the calling agent ends; `retro` returns at once, `--wait 8m` waits up to that time and prints the outcome (a bare `--wait` waits 8 minutes); a completed run adds `result`: its summary line, its labelled and record counts, each counted cause with its incidents, days and store rows, and each worker finding as its cause, its count, days and the judge's verdict (or `not judged`). A run whose worker labelled nothing and found nothing says so on stderr, with `next:` the analyse log, and `--foreground` runs the steps in the same process. One run runs at a time: a second `retro` exits 2 and names the running run. A failed step fails the run and exits 1; `status` and `runs` show the saved runs, and `status` exits 3 before the first one.
-- A run whose worker stopped without ending it (a crash or a kill) shows as `interrupted` in `status` and `runs`, and no longer blocks a new `retro`. `rerun --resume [--run <id>]` runs an interrupted, cancelled or failed run again from its first step that is not completed; completed steps keep their output and do not run again. A SIGTERM or SIGINT to the worker ends the run as `cancelled`.
-- `attach` prints each step's state changes and log lines as they come and exits when the run ends (0 when it completed). Each step's log is `<state dir>/runs/<id>/<step>.log`, holding its latest attempt; a step that has not started in its run has no lines. `logs --step collect` prints one. `abort` sends SIGTERM to the run's worker (SIGKILL after 3 s) and marks the run `cancelled`. A plain `rerun --run <id>` starts a new run with the current config, names run `<id>` in its output, and leaves run `<id>` as it was; `rerun --resume --run <id>` is the one that finishes run `<id>`.
-- `agents` lists the configured agents (`agent` and `judge_agent`; never the others installed, so it offers none to pick from) among those the tool can start as its own workers (claude, codex, opencode, pi, gemini, and any ACP agent as `acp:<target>` through `acpx`): usable (found on an absolute PATH entry, and `--version` exits 0; relative PATH entries are skipped), version, tools (`off`, `read-only`, or `unconfirmed` for acp), login presence (file and variable names only, never their contents) and the model, `agent_config.<agent>.model`. A runner whose tool-off mode is not confirmed is listed with `not offered:` and the reason, and is never picked as worker or judge: gemini (its read-only `--approval-mode plan` is not yet confirmed in headless mode) and acp (`acpx --deny-all` only denies the permission requests an agent sends; pi and opencode run their tools without asking). It adds the resolved `worker` and `judge`; a judge that resolves to the worker's binary and model exits 1 with the fix. With no model set, `--test` and `doctor --live` are refused: an empty model never makes a call. `allow_premium: true` only permits a premium model name. `agents --test <runner>` (or `--test acp:<target>`, in `runs/test-acp-<target>/`) makes one live call in `<state dir>/runs/test-<runner>/` with tools off (Codex and Gemini: read-only) and no saved session, except OpenCode and Gemini, which keep theirs; it works on a runner that is not offered, to check it: it asks the agent to write `x.txt` and exits 1 if any file appears, if an attempt gets no answer within `agent_timeout` (each attempt has its own; a call makes at most 3 attempts), or with the agent's own error; a plain-text answer passes and prints as the reply.
-- The `collect` step also reads a `sessions` source: the Claude Code, Codex, OpenCode, Pi and Gemini CLI sessions run in this repo, a subdir or one of its git worktrees (`agents`: the ones you name, a list of `claude`, `codex`, `opencode`, `pi`, `gemini`; the tool never picks them: `init --sessions claude,pi` saves your choice, and a terminal `init` offers the agents whose local store exists, nothing selected), from `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`, the threads `${CODEX_HOME:-~/.codex}/state_5.sqlite` lists, every OpenCode database in `${XDG_DATA_HOME:-~/.local/share}/opencode`, `${PI_CODING_AGENT_SESSION_DIR:-${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions}` and the `${GEMINI_CLI_HOME:-~}/.gemini` chats of this repo's `projects.json` entry (each opened read-only; the tool never writes to a store), changed since the start of this window and the last (`window`, default `7d`), or earlier when an applied change needs before-numbers. It skips the tool's own agent runs and any session file it cannot read (counted in `skipped`). It saves one `events` row per session start, user message, tool call, tool result, correction and interrupt. Its run output carries each sessions source's `sessions` and `skipped`.
-- The `collect` step also reads a `proof` source of type `done-done`: for each app named, the failed, inconclusive or overridden verify runs in done-done's run store (`~/.done-done`, or `$DONE_DONE_HOME`; `path:` sets it), read-only. Each failed step of such a run is a `records` row with its reason (redacted) and the run file as its ref; passed and cancelled runs make no records. With no done-done installed nothing changes. Its record rules and failure modes are in the verify skill's `features/done-done.md`.
-- The `collect` step also reads a `github` source: the pull requests merged since the start of the read range in the GitHub repo that the project's git `origin` names, through your own `gh` (`gh api graphql`, read-only; `gh auth login` first). It saves one `records` row per PR, with its title and body (redacted as below; none with `excerpts: off`) and the facts its numbers count. One project takes one github source. A missing or logged-out `gh`, a failed query or an origin that is not on GitHub exits 2 with the fix; the origin URL is never printed. `init` adds the source when `origin` is on GitHub and `gh auth status` passes.
-- The `metrics` step saves the numbers for this window (`current`, from `window.current_start` on) and the last one (`previous`, the same length before it) in the store's `metrics` table, and the run output lists them (`metrics[]{name,current,previous,target,met}`). A metric with a `targets:` entry (defaults: `first_pass: ">= 70"`, `p90_hours_to_merge: "<= 8"`, `tool_error_rate: "<= 0.05"`, `corrections_per_session: "<= 0.3"`, `escaped: "<= 0"`) shows its target and whether this window `met` or `missed` it; an `n/a` number is neither, so it shows `n/a`, and a metric with no target shows both empty. The store keeps each window's `target` (NULL with none), so a later config change does not rewrite past runs; `met` or `missed` is computed from the unrounded stored value when the run is shown. Each source gives its own: a sessions source `tool_error_rate`, `corrections_per_session`, `interrupts` and `retries` over the events in the window; a defect log `defects`, its records dated in the window (a `reviews` log is not counted); a github source, over the PRs merged in the window, `merged`, `first_pass` (the percent of PRs by people, not bots, with no commit authored after the PR opened, not reverted and not escaped), `p50_hours_to_merge` and `p90_hours_to_merge` (open to merge), `rework_ci` and `rework_other` (commits after open, by whether the commit before had failing checks; base-branch merge commits are not rework), `reverted` (a later merged PR whose title starts with `Revert`, `Reverts` or `Reverted` names `#N`) and `escaped` (a later merged PR whose title starts with `fix`, `fixes` or `fixed`, so `fix:` and `fix(scope):` too, names `#N`); a no-mistakes source `gate_failures` and `gate_failures:<step>`; a firstmate source `decisions`, `blocks`, `steers` and `interventions_per_merge`, whose defect records are added to `defects`. A PR with more than 100 commits is read from its first 100. `cause_count:<cause>` counts the items a cause's `match` rule tagged in the window: gate rows whose error has `error_contains`, or session events with that `signal`, `tool` and `text_contains`. Each row takes one cause, the first matching rule in config order. `text_contains` matches the text of signal events only: failed tool results (tool errors, non-zero exits, failed tests), retries and corrections. A retry is matched on its call's input values as plain text (for Bash, the command). A successful call, its output or a plain message is never checked, so the rule matches nothing there. A rule tags signal events only, so `tool: Bash` alone tags failed Bash results and retries, never a successful call. The text is read whole, so it works with `excerpts: off`. Defect logs sum into one `defects`. A number with nothing to count is `n/a` (NULL in the store), never 0: a metric whose source type is not configured, a target no source measures, a cause with no `match` rule, session numbers with no session in the window, a defect log with no dates.
-- The `followup` step checks whether each applied change in the ledger worked. It computes the change's metric before the change (over one `window` up to it) and after it (from the change to the run), from what `collect` read, which reaches back far enough for the earliest change. It saves one `followups` row per change in the store (`before`, `after`, `tripwire`, `verdict`; NULL for an `n/a` number or no tripwire), and the run output lists them (`followups[]{change,metric,before,after,tripwire,verdict}`). The verdict comes from code, by the first rule that fits: `no-data` when the after range has fewer than `followup.min_sessions` sessions (default 3) or `followup.min_days` days (default 2), or the metric is `n/a` before or after, or a records-based metric (a cause whose match rule names a no-mistakes source, or `defects`, or `gate_failures`/`gate_failures:<step>`) has no record on or before the start of the before window, or a change added after `collect` read the ledger has a before or after range that starts before what `collect` read (`read_from`); `keep` when the after number meets the tripwire; `delete` for a `--kind rule` change whose metric moved less than 10% of its before number (or stayed 0) in this retro and the last, with or without a tripwire it misses; `no-data` when the change has no tripwire; `rollback` when it misses and the number did not improve (lower for `<`/`<=`, higher for `>`/`>=`, nearer for `=`), or it missed in the last retro too; `fix` when it improved but missed. "The last retro" is the change's row in the latest earlier run that measured it whose read time is at least `followup.min_days` before this run's (a rerun over the same data is not a second retro; a run that failed or was cancelled before its `followup` step has none); when that run had too few sessions or days after the change, or an `n/a` number, there is no last retro. The fleet sources have no rollback threshold, so these rules are this tool's own. Session counts come from a `sessions` source, so a project with none gets `no-data`.
-- `byokit:<route>` as `agent` or `judge_agent`, or in `agents --test byokit:<route>`, sends a plain model call through BYOKit, with no agent CLI and no tools. `byokit:chatgpt` and `byokit:claude` use the ChatGPT or Claude plan you signed in to, read from this computer's BYOKit store (member `lfm`, sealed under the `byokit` seal service that every BYOKit app shares). A plan key route in BYOKit's route list, such as `byokit:opencode-go`, takes the key from the variable the route names (`OPENCODE_API_KEY`), holds it in memory for the call and never saves it. A route's model is `agent_config."byokit:<route>".model`, which the user sets; with none set, the route is refused. It never reads an agent CLI's login. It needs Node 22.18 or later and the optional `@byokit/accounts`, `@byokit/secrets` and `@earendil-works/pi-ai` packages (installed with the CLI unless optional packages are omitted). As a role, its identity is its vendor's agent and model (`byokit:claude` is `claude`, `byokit:chatgpt` is `codex`), so a judge on the worker's model clashes; other routes are their own identity.
-- A no-mistakes source reads only this repo's failed steps: the store's runs of a repo whose checkout is this project or one of its git worktrees, or whose upstream URL is its `origin`. It gives `gate_failures`, the failed steps in the window, and `gate_failures:<step>` per step name. A store without a table or column the read uses exits 2 with `unknown store schema`.
-- The `bundle` step writes `<state dir>/runs/<id>/bundle.md`, the one file the run's own agents read: the metrics table with each target, the follow-ups (none yet), the signal clusters (this window's session events with a failure signal, grouped by tool and signal, largest first, each with its 3 latest events) and the records no `match` rule tagged (this window's and the undated ones). Each item has an id (`[c1]` a cluster, `[e<n>]` an event's store row id, for reference only and not for labels, and a record's id (its records.jsonl id, or `<source>:<step id>` for a gate row, `<source>:<number>` for a PR), its refs (session id and `file:line`, or the record's `file:line` or `db:step_results:<id>`) and, with `excerpts: on`, an excerpt of at most 300 characters. Every string in it goes through the same redaction as the session excerpts, except a record id, which is printed as the store keeps it so the worker can cite it. With `excerpts: off` it holds pointers and counts only, never record or session text. Items that would pass `caps.bundle_chars` (at least 1000) are dropped, and its last line counts them; the step log gives the items, dropped items and characters.
-- The `analyse` step gives `bundle.md` to the worker, the `agent` the user set (in the run dir, tools off) with the retro method: hunt hidden problems first, a shared keyword is not a shared cause, a consequence is not a repeat, label only what you read, the label rules of `guide`, and plain English (at most 20 words a sentence). The worker answers one JSON object: `findings` (a cause, a summary and refs to bundle ids) and `labels` (one per record in the bundle). They go to the store's `findings` and `labels` tables, and the `report` step counts with these labels. A bad answer goes back once with the problems; a second one fails the step, and `logs --step analyse` shows why. A ref or label that names no bundle item is logged as a `problem:` and not kept. Each agent call is one `invocations` row (agent, model, process group, how it ended, session id and tokens when the agent reports them); a run makes at most `caps.invocations` calls (default 12). A bundle with nothing to cite asks no agent. A worker that is not set (`agent`) or does not resolve to a ready agent fails the step with one fix line that names the config file and `agent`; the run never picks an agent.
-- The `propose` step gives the worker each cause with its incidents and days and whether it repeated, the findings it kept and each applied change whose follow-up verdict is not `keep`, then `bundle.md`. It asks for at most five fixes, each with a cause, a kind (`doc`, `rule` or `code`), a target, an owner, the change (at most 3 sentences), a metric, a tripwire and refs to bundle ids, and preferring a check, a script or a deleted rule over more prose, plus a reason (at most 25 words) for each of those follow-ups; the worker never sets a verdict. The fixes go to the store's `proposals` table and the reasons to `followups.reason`. A bad answer goes back once, as in `analyse`; on the second answer each proposal or reason that breaks a rule is dropped and logged as `dropped: ...`, and the valid ones are kept (only a top level that is not a `proposals` and `reasons` list fails the step). With no finding and no follow-up to explain it asks no agent.
-- The `verify` step gives the judge, the `judge_agent` the user set (not the same agent and model as the worker's), each finding and fix as a claim with its refs, then `bundle.md`. The worker's claims are not evidence: the judge checks each claim against the bundle items it cites and answers `confirmed`, `weakened` or `refuted`, with a reason (at most 25 words). The verdicts go to `verdict` and `judge_note` in the store's `findings` and `proposals` tables, and the step logs only the claim ids and verdicts. A bad answer goes back once, as in `analyse`; on the second answer each verdict that breaks a rule is dropped and logged, and a claim with no verdict stays not judged. With no finding and no fix it asks no agent.
-- The `check` step drops each finding and fix the judge refuted (a refuted finding counts nothing for its cause) and keeps only the fixes that follow the rules: the cause has counted events and repeated (`repeat:` over the run's labels, the items a `match` rule tagged, or the items a finding cites), the refs name bundle items, and it has a target, an owner, a metric (default `cause_count:<cause>`) and a tripwire. A fix that breaks a rule is logged as a `problem:` with the rule and is not kept. The kept fixes are ranked by the judge's verdict (a fix the judge did not confirm, weakened or not judged, after the confirmed ones), then by how often their cause came back, then by how far their metric misses its target, and numbered 1 to 5; a sixth is a problem. `status` lists the kept fixes as `fixes` (number, cause, metric, tripwire, verdict).
-- Each working command ends with a `next:` hint on stderr (`--help` and `guide` print theirs on stdout), so an agent can chain `retro → report → --full → --json` without reading the docs.
-
-Default TOON output, abridged to one cause on the example project:
-
-```
-schema: lfm-report.v2
-generated_at: "2026-10-12T09:00:00.000Z"
-run: 1
-report_txt: ".lfm/runs/1/report.txt"
-ingested_at: "2026-10-12T08:00:00.000Z"
-coverage:
-  labelled: 13
-  total_records: 13
-  unlabelled: 0
-problems: 0
-sources[2]{id,type,items}:
-  log,markdown-log,13
-  gate,no-mistakes,5
-causes[1]:
-  - cause: server-memory-kill
-    repeated: true
-    by[1]: log
-    log:
-      incidents: 4
-      records: 3
-      days: 3
-    store:
-      matched: false
-      rows: 0
-      days: 0
-    proposals:
-      count: 2
-      unchecked: 0
-```
-
-## For sign-off and other tools
-
-`signoff post` and `signoff answers` are the only hand-off to sign-off, and only when you run them; the tool works the same without it (see [sign-off](https://github.com/umeranjum17/sign-off) for its contract).
-
-`learn-from-mistakes-axi changes --json` is the machine contract for applied changes, so another tool can join its own results on a change (for example a "Helped? yes/no/unclear" sign-off, which this tool does not write; its followup verdicts are shown by `status`, not in this export):
-
-```json
-{
-  "schema": "lfm-changes.v1",
-  "generated_at": "2026-10-12T09:00:00.000Z",
-  "project": "my-project",
-  "changes": [
-    { "id": "chg-1", "cause": "server-memory-kill", "ref": "abc1234", "at": "2026-10-11T08:00:00.000Z",
-      "metric": "cause_count:server-memory-kill", "tripwire": "<= 0", "kind": "doc",
-      "what": "Run builds in their own memory group", "why": "The memory killer stopped the server three times" }
-  ]
-}
-```
-
-- Join on `project` + `id`. `id` is `chg-<n>` from the append-only ledger: never reused or rewritten.
-- `ref` is the accepted version (a git sha or `sha256:` of the changed file); `at` is when it was applied (ISO-8601).
-- `metric`, `tripwire` and `kind` are the change's `--metric`, `--tripwire` and `--kind`, or their defaults (`cause_count:<cause>`, `""` for no tripwire, `doc`), also for an entry written before these fields.
-- `what` and `why` are exactly the text the owner passed to `change applied`, or `""` when none was given.
-- Pin `schema: lfm-changes.v1`. An invalid ledger exits 1 and names `file:line` only, with nothing on stdout.
-
-## Privacy
-
-The report's `--json` output is **privacy-bounded**: identifiers, counts, metrics, follow-ups, each finding's and fix's judge verdict word and the path of `report.txt`, never record text. The default (TOON) and `--full` reports also print one `finding:` line per finding of the counted run, with its counts and verdict; `status` and `retro` print only ids, counts, metrics and verdicts, and the summaries are in `report.txt`. It never prints record text, a label's `why`, a proposal's `change`, a change's `what`/`why`, cause descriptions, source paths, branches or error text, and never turns a record's text into an id. Two outputs print free text. `changes` prints only the `what`/`why` the owner wrote with `change applied` to be shared; it never carries record text, label or proposal prose. A run's `report.txt` holds the text its own agents wrote from the bundle (redacted excerpts, or none with `excerpts: off`): finding summaries, fix changes and the judge's notes, redacted, never a label's `why`; it stays in `.lfm/`. That is why the default and `--full` report output can be logged, shared or handed to another tool without leaking the private records the counts came from. `--full` is not permission to print private evidence; it only adds non-content source row ids. Error diagnostics are the one exception: they may name a source by its config id (for example `source log: cannot read (ENOENT) (0 records read)`) rather than its path, and never echo record text.
-
-The state dir is not bounded: `.lfm/records.jsonl` holds the redacted text of every record with `excerpts: on` (and no text field with `excerpts: off`), `lfm.sqlite`'s `records` table holds the same text for defect bullets, the redacted error of each failed gate step and the redacted title and body of each PR, and a retro's worker `labels`, `findings` and `proposals` tables and its follow-up reasons in `lfm.sqlite`, and the `signoff` table keeps each message posted to sign-off (its proposed change). It stays in the project's `.lfm/`, which the tool git-ignores with its own `.lfm/.gitignore` (an existing one is never overwritten; it must contain the line `*` with no line starting with `!`, or `change applied` and `retro` exit 2 before writing any state), so none of it reaches a commit. Treat `.lfm/` as private as the sources it was read from. Each run's `bundle.md` holds redacted excerpts of those records and session events, or none with `excerpts: off`. With a `sessions` source, `lfm.sqlite` also keeps an excerpt of each session failure, retry and correction: at most 300 characters, with API keys, tokens, a password in a URL, private keys, Bearer and Basic credentials, `KEY=value`, `"key": "value"` and `--key value` secrets whose key name contains token, secret, password, key or auth, and email addresses, replaced by `[redacted]`; a wider key list comes in a later version. `excerpts: off` keeps none.
-
-## Exit codes
-
-| Code | Meaning | stderr |
-| --- | --- | --- |
-| `0` | ok | a `next:` hint |
-| `1` | an input problem: a run label or fix, or the existing change ledger, has a problem; for `agents`, and for a fresh `init`, a worker or judge problem; for `doctor`, any `fail` line; for `agents`, also a failed `--test` call | `error: <file>:<line>: not valid JSON`, or for the report one `problem: ...` line each (the rule broken, never record text, a record id or a ref) and `problems: N`; then `next:` |
-| `2` | bad usage or config: an unknown command or option, a flag the command does not take, a missing or invalid value, a bad `.learn-from-mistakes.yaml`, missing state | `error:` naming the flag or value (a value longer than 80 characters or with control characters shows as `(invalid value)`; file paths print whole, and a `--dir` path with a control character is rejected), then `next:` with the allowed form or a runnable command, never the whole usage |
-| `3` | the sources hold nothing | `next: learn-from-mistakes-axi retro --wait 8m` |
-
-A rejected `change applied` never touches the ledger. A missing prerequisite or empty source prints an actionable `next:` command; it never invents events.
-
-## Model
-
-The label/propose reading is agent work: the tool's own agent does it on the model the user set. The user chooses the models; never switch to Opus, Sonnet or Sol yourself.
-Every retro starts the tool's own agents, a worker and a judge. You set them: the tool never picks an agent or a model. They are set in `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`), which `init` writes once, fully commented, or in a project's `.learn-from-mistakes.yaml`; this is the same config shape as no-mistakes. For example:
+If no source was found, configure one before running retro. For a defect log:
 
 ```yaml
-# Agent that runs the retro's agent steps: one agent, and the tool never tries another when it is not ready.
-# Options: claude, codex, opencode, pi, acp:<target>, byokit:<route>
-agent: "<agent>"
-# Agent that checks the worker's output: another agent than the worker.
-judge_agent: "<judge agent>"
-# Model and effort (minimal, low, medium, high, xhigh, max) per agent.
-agent_config:
-  "<agent>":
-    model: "<model>"
-    effort: low
-  "<judge agent>":
-    model: "<model>"
-# Maximum wall-clock time for one agent call.
-agent_timeout: "20m"
-# allow_premium: false
-# auto_fix: 0   # kept fixes a run applies unless answered Skip, each on its own branch; 0 proposes only
-# agent_path_override: { claude: /usr/local/bin/claude }   # global only
-# agent_args_override: { codex: [-c, service_tier="priority"] }   # global only
-# acpx_path: acpx   # global only
-# state_root: ~/.learn-from-mistakes/state   # global only
+# In .learn-from-mistakes.yaml; keep the other keys init wrote.
+sources:
+  log: { type: markdown-log, path: defects.md }
 ```
 
-When `agent` or `judge_agent` is not set, or the agent it names has no `agent_config.<agent>.model`, `init`, `retro`, `rerun`, `doctor`, `agents` and `apply` ask: in a terminal, a pick list of the supported agents (only when the agent is not set) and then the model, saved to the config file; otherwise (an agent calling the CLI) they exit 2 with `ask the user which agent to use`, the choices, and `next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model>` to save the user's answer; then run the stopped command again. `init -y` asks nothing. `agent` and `judge_agent` each take one agent: a list is refused, and a set agent that is not ready stops with its own fix, never another agent. A judge is never the worker's agent and model, and `agent_config` holds one model per agent, so the judge is always another agent. A project's `.learn-from-mistakes.yaml` may override `agent`, `judge_agent`, `agent_config`, `agent_timeout` and `allow_premium`; `auto_fix` and the other keys are global only (a project file that sets `auto_fix` exits 2), so a cloned repo never picks the binary an agent runs or its flags. A premium model (a name with `opus`, `sonnet` or `sol` as a separate word in it) is refused by every call that would use it, retro, `agents --test` and `doctor --live` alike, unless `allow_premium: true`.
+Each `- ` bullet is a record. A `YYYY-MM-DD` in the bullet dates it; otherwise its dated `##` heading does. Use actual project records, not invented failures. `init` also detects `reviews.md` and supported local pipeline stores; GitHub needs a GitHub origin and a working `gh` login. Session stores are read only when you name their agents, for example `init --sessions claude,pi --no-skill`.
 
-## Releasing
+### Run through a calling agent
 
-A release is a version-bump PR: bump `version` in `package.json` and merge it to `main`. The `release` workflow then runs the tests and publishes `learn-from-mistakes-axi@<version>` to npm with trusted publishing (OIDC; no token) when that version is not on npm yet. Merging without a version bump publishes nothing.
+Without installing globally, use `npx -y learn-from-mistakes-axi <command>` for any command above. Ask your agent to run `guide`, then drive init → doctor → retro → report and read `report.txt` to you. The caller does not perform the retro's analysis.
 
-## What it does not do
+The optional discovery skill uses the [Agent Skills](https://agentskills.io) format. Omit `--no-skill` from init to install it for configured usable agent CLIs; `--project-skill` installs project-local copies instead. In harnesses with slash commands, invoke `/learn-from-mistakes`. The skill points to the installed CLI's `guide` and `--help`, not a separate manual workflow.
 
-`learn-from-mistakes-axi` never edits your sources or instructions in place (`apply` commits a fix only to its own new branch), writes only its own config (`init`, once), the skill file `init` installs, and its state dir (and `signoff post` hands messages to the sign-off board only when you run it), and makes no network or model calls itself; only the runs, `apply`, `agents --test` and `doctor --live` start your own agent CLI, which calls its model, or, for `byokit:<route>`, a BYOKit model call (`doctor` runs only their `--version` and login status commands, never prints the login output, and calls no model). It applies a recommended change only through `apply` (or `auto_fix`), never pushes or merges it, and `change applied` records a change you made yourself. Records nobody labelled are reported as unlabelled, never guessed.
+## Runners and user-chosen models
+
+Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use.
+
+The current CLI runners are `claude`, `codex`, `opencode` and `pi`. Claude, OpenCode and Pi run with tools off; Codex uses read-only mode. Each needs its own executable and login. `gemini` and `acp:<target>` (through `acpx`) have adapters, but are **not offered for retro roles**: their headless tool restrictions are not confirmed. `agents --test <runner>` can probe an adapter, including an unconfirmed one; it does not remove that restriction.
+
+`byokit:<route>` calls a model without an agent CLI and has no tools. It requires Node **22.18+**, the optional BYOKit packages and a ready plan route with its own sign-in or plan key. Routes include `byokit:chatgpt` and `byokit:claude`; other plan-key aliases depend on installed BYOKit support. Follow `doctor`'s readiness fixes; a route name alone is not a login or model choice.
+
+Example shape, with placeholders to replace with your own choices:
+
+```yaml
+agent: "<worker-agent>"
+judge_agent: "<judge-agent>"
+agent_config:
+  "<worker-agent>":
+    model: "<user-chosen-model>"
+    effort: low
+  "<judge-agent>":
+    model: "<user-chosen-model>"
+agent_timeout: "20m"
+```
+
+Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices and `allow_premium`. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Model names containing the separate word `opus`, `sonnet` or `sol` are blocked unless you explicitly set `allow_premium: true`. Permission is not a recommendation to upgrade.
+
+## Cost and limits
+
+The CLI has no per-retro fee, but the agents or BYOKit use **your** subscription or paid provider. Cost depends on your chosen models, record volume, retries and plan. No fixed price or hosted-model quality is promised.
+
+- `init`, ordinary `doctor`, `status` and `report` make no model calls. Login/version checks may run an agent's own status command.
+- `retro`, `rerun` and `apply` can call models. `agents --test <runner>` makes a live probe; `doctor --live` probes both roles. These cost tokens.
+- Defaults: `agent_timeout: "20m"` per attempt; `caps: { invocations: 12, bundle_chars: 60000 }`. A runner call can retry transient failures, up to three attempts. These are operational limits, **not a currency budget**.
+- Reduce the configured sources or `window` (default `30d`) to bound the work. Inspect the report's not-checked section for capped or unread evidence.
+
+## Follow a run and recover
+
+```sh
+learn-from-mistakes-axi attach                 # follow until the saved run ends
+learn-from-mistakes-axi status --run 1          # inspect a particular saved run
+learn-from-mistakes-axi logs --step analyse    # inspect why analysis failed
+learn-from-mistakes-axi runs                   # recent saved runs
+learn-from-mistakes-axi abort                  # cancel the current worker
+learn-from-mistakes-axi rerun --resume --wait 8m
+```
+
+Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
+
+`status` is an inspection command: exit 0 can describe a failed run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently.
+
+## Sources, state and privacy
+
+Supported source types are `markdown-log`, `no-mistakes`, `sessions`, `github`, `done-done` and opt-in `firstmate`. Source records are read-only. A sessions source supports explicitly named `claude`, `codex`, `opencode`, `pi` and `gemini` stores for this project; it excludes the retro's own marked invocations.
+
+State normally lives in `.lfm/` beside the project config: `lfm.sqlite`, collected records, bundles, step logs and `runs/<id>/report.txt`. The tool writes `.lfm/.gitignore` containing `*`. An existing ignore file is never overwritten; it must contain `*` and no line starting with `!`, or state writes stop. Treat state as private. Git ignore is not encryption or access control. To put it elsewhere, set global `state_root`; each project then uses `<state_root>/<name>`.
+
+**Excerpts are on by default.** The worker and judge providers receive redacted record excerpts in their bundle. Use `init --no-excerpts --no-skill` on a new config, or edit `excerpts: off` in an existing one, to send pointers and counts without record excerpts. This reduces the evidence available to analysis; it is not an offline mode.
+
+Redaction covers recognized API keys, tokens, URL passwords, private keys, Bearer/Basic credentials, secret-named assignments and email addresses. It is not a guarantee that all sensitive content is recognized. Do not point a hosted model at material you cannot share. Agent CLIs may retain their own sessions; this tool cannot promise provider-side deletion.
+
+`report`, `retro` and `status` output ids, counts, metrics and verdicts, not finding prose or record text. `report --json` uses `lfm-report.v2`; `--full` adds allow-listed non-content evidence ids, not private text. The `report_txt` path points to the human-readable report; the file's text is never embedded in the JSON. Read `report.txt` privately before sharing it. Step logs, bundles and the database can hold sensitive material too.
+
+Two explicit commands expose text beyond this compact projection: `changes` exports owner-written `what`/`why`; `signoff post` sends proposed-change text to the optional peer (or prints it without one). Diagnostics can name config files and state paths. Do not treat every command's stdout as a public report.
+
+## Optional integrations and changes
+
+### Firstmate
+
+Opt in with `learn-from-mistakes-axi init --firstmate <home> --no-skill`, or add a `type: firstmate` source. There is no private-marker auto-detection and no dependency on Firstmate to run a retro.
+
+The source reads `state/*.status`, inbox `*.msg` files including `handled/`, `data/defects.md` and `config/targets.tsv`. Status lines use `<state> [at=<epoch>]: <text>`; messages use an `at=<epoch>` line and bracketed tag. Targets use tab-separated `metric op target owner rule`. The reader writes nothing into that home. It can measure decisions, blocks, steers and interventions per merge when a GitHub source supplies merges.
+
+### Sign-off
+
+No peer is needed: questions stay in section 7 of `report.txt`. `doctor` warns if `sign-off-axi` is absent; `signoff: off` keeps that check quiet. A retro does not post automatically.
+
+Only when you want a handoff, run:
+
+```sh
+learn-from-mistakes-axi signoff post
+learn-from-mistakes-axi signoff answers
+```
+
+`post` sends the completed run's kept fixes as finding messages with Apply/Skip choices. Without the binary it prints those choices and an install hint; nothing was posted. `answers` saves received answers, or reports no peer/no new answers. It applies nothing. Setting `signoff: off` does not disable a command you explicitly run.
+
+### Apply only when requested
+
+Default `auto_fix: 0` proposes only. `apply` commits kept fixes answered Apply (or a particular `--fix <n>`) on separate `lfm/<run>-<n>` branches. It refuses a dirty tree, does not change your current branch/index/worktree, and never pushes or merges. Global `auto_fix: <n>` explicitly enables applying the top n kept fixes during retro, except those answered Skip.
+
+To track a change you made yourself, use `change applied --cause <configured-cause> --ref <commit>`; `--proposal <run>:<n>` can identify a kept fix instead. Optional `--metric`, `--tripwire`, `--kind`, `--what` and `--why` record how to evaluate it. `changes --json` exports `lfm-changes.v1`; the next retro measures follow-ups. See `--help` for accepted values.
+
+## Exit codes and automation
+
+| Code | Meaning and next step |
+| --- | --- |
+| `0` | Command succeeded, or a background run started/is still running. Inspect status before claiming completion. Doctor warnings do not fail it. |
+| `1` | Failed run, agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
+| `2` | Bad command/config, missing agent or model choice without a terminal, identity clash, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
+| `3` | No saved run to inspect, or no completed retro to report. Start or finish a retro first. |
+
+Use `--json` for structured output where supported; default output is compact TOON. A bare `learn-from-mistakes-axi` shows the latest run's status. `report` selects the latest completed retro, which may be older than the latest failed/running run. Check its `run` id. `--dir <project>` targets another project without changing directories. `guide` gives the current calling-agent procedure; `--help` is the installed version's command reference.
+
+## Development
+
+```sh
+npm ci
+npm test
+npm run build:skill -- --check
+```
+
+`.done-done.yaml` defines the existing `cli` and `package` verification journeys. `scripts/verify-journeys.mjs` drives synthetic CLI/process-boundary checks, including the README setup-to-report path; `--package` also installs and exercises the packed CLI. Synthetic agent replies prove orchestration, not hosted-model quality. Keep evidence outside the checkout.
