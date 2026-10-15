@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Public CLI proof; the existing e2e journeys own behavioral assertions.
+// Driven by done-done: journeys `cli` and `package` in .done-done.yaml run this with
+// DONE_DONE_EVIDENCE_ROOT set (the run's own folder); direct runs take the evidence dir as argv[0].
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -10,22 +12,25 @@ import { homedir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { parse, stringify } from 'yaml';
 
-const repo = realpathSync(fileURLToPath(new URL('../../..', import.meta.url)));
+const repo = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const raw = process.argv.slice(2);
 const packageProof = raw.includes('--package');
 const [destination, mode, sourceDir, labelsArg, proposalsArg, ...extra] = raw.filter((a) => a !== '--package');
-assert(destination && isAbsolute(destination), 'Provide an absolute private evidence directory');
+const fromEnv = process.env.DONE_DONE_EVIDENCE_ROOT;
+assert((destination && isAbsolute(destination)) || (fromEnv && isAbsolute(resolve(fromEnv))), 'Provide an absolute private evidence directory');
 assert(!extra.length && (!mode || (mode === '--private' && sourceDir && labelsArg && proposalsArg)),
-  'usage: node verify.mjs /absolute/evidence [--private /project /labels.jsonl /proposals.jsonl] [--package]');
+  'usage: node scripts/verify-journeys.mjs [/absolute/evidence] [--private /project /labels.jsonl /proposals.jsonl] [--package]');
 const inside = (parent, child) => { const r = relative(parent, child); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 // Resolve existing ancestors too: a symlinked output parent must not redirect into the repo.
 function canonical(path) {
   path = resolve(path);
   return existsSync(path) ? realpathSync(path) : join(canonical(dirname(path)), path.slice(dirname(path).length + 1));
 }
-const evidence = canonical(destination);
+const evidence = canonical(destination ?? fromEnv);
 assert(!inside(repo, evidence) && !inside(evidence, repo), 'Evidence must be outside, and not contain, the checkout');
-assert(!existsSync(evidence) || (statSync(evidence).isDirectory() && readdirSync(evidence).length === 0), 'Evidence must be new or empty; never overwrite a prior proof');
+// done-done hands the journey a fresh folder per run (the journey command may already
+// have written there); direct runs must name a new or empty folder, never overwrite a prior proof.
+assert((!destination && fromEnv) || !existsSync(evidence) || (statSync(evidence).isDirectory() && readdirSync(evidence).length === 0), 'Evidence must be new or empty; never overwrite a prior proof');
 const project = realpathSync(mode ? sourceDir : join(repo, 'examples'));
 const configFile = join(project, '.learn-from-mistakes.yaml');
 const config = parse(readFileSync(configFile, 'utf8'));
@@ -75,8 +80,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
-    '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
 const staged = join(scratch, 'project');
@@ -347,7 +351,7 @@ try {
   const after = hashes();
   save('inputs.after.json', after);
   save('result.json', { commandsPassed: passed, inputsUnchanged: JSON.stringify(before) === JSON.stringify(after),
-    limitation: 'Review output against the skill feature map; trusted no-mistakes prompt consumption is a separate proof.' });
+    limitation: 'Review output against the journey manifests; trusted no-mistakes prompt consumption is a separate proof.' });
   if (existsSync(join(staged, '.lfm'))) cpSync(join(staged, '.lfm'), join(evidence, 'state'), { recursive: true }); // retain the ingest artifacts
   rmSync(scratch, { recursive: true, force: true, maxRetries: 5 }); // retries ENOTEMPTY/EBUSY from late writers
   assert.deepEqual(after, before, 'Original inputs changed; proof fails');

@@ -3,12 +3,16 @@ commands:
   test: npm test
 test:
   instructions: |
-    Read CONSTRAINTS.md and .agents/skills/verify-learn-from-mistakes/SKILL.md.
-    Follow that skill's synthetic public CLI journey on this candidate, using a
-    caller-specified private evidence directory outside the checkout and inputs.
-    Reuse the existing npm test journeys; do not add per-function tests.
-    Private source verification requires explicit caller opt-in and private output.
-    Record candidate/source identities, input hashes, command exits and limitations.
+    Read CONSTRAINTS.md. Drive this candidate's done-done `cli` journey:
+    DONE_DONE_HOME=<caller-specified private evidence dir> npx -y done-done-axi@0.3.0 run cli
+    (model-free; the journey installs deps, runs the npm test journeys plus the
+    public CLI drives, and writes commands.json, result.json and identity.json
+    into its own run folder there). Reuse the existing npm test journeys; do not
+    add per-function tests. Private source verification requires explicit caller
+    opt-in and private output. Record candidate/source identities, input hashes,
+    command exits and limitations. This text is injected only from the trusted
+    default branch; report trusted consumption not proven until the emitted Test
+    prompt/agent logs show it.
   evidence:
     store_in_repo: false
     attach_media: false
