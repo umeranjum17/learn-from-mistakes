@@ -29,7 +29,7 @@ const STEPS = {
   // each with the cause its source tagged it with. It can run again: it first drops the run's events and records.
   collect: async (cfg, db, id, log) => {
     const { sources, events, records, rows, prs, read_from, current_start, previous_start } = await ingest(cfg);
-    for (const s of sources) log(sourceLine(s, false));
+    for (const s of sources) log(sourceLine(s));
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, cause, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, data, record_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -66,11 +66,10 @@ const STEPS = {
   verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), log),
   // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
   check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
-  // Counts with the labels the worker kept in this run when the worker was asked, else with labels.jsonl in the state dir;
-  // with none, coverage shows every record unlabelled. Then writes report.txt, the run's report for a person.
+  // Counts with the labels the worker kept in this run; with none, coverage shows every record unlabelled. Then writes report.txt for a person.
   report: (cfg, db, id, log) => {
-    const { model, problems } = buildReport(cfg, runResult(db, id), REPORT);
-    if (problems.length) throw new InputError(`${problems.length} problems in the labels, proposals or change ledger`, REPORT);
+    const { model, problems } = buildReport(cfg, runResult(db, id));
+    if (problems.length) throw new InputError(`${problems.length} problems in the labels or change ledger`, REPORT);
     log(summaryLine(model));
     const text = reportText(cfg, db, id, runDir(cfg, id), collected(db, id), show(db, id));
     log(`report.txt: ${text.lines} lines, ${text.questions} questions`);
@@ -78,22 +77,25 @@ const STEPS = {
   },
   apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
 };
-// The labels the worker kept in a run that asked it (as labels.jsonl takes them) and its findings; no labels when it was not asked.
+// The labels the worker kept in a run that asked it, its findings and its fixes; no labels when it was not asked.
 function runResult(db, id) {
   const analysed = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id)?.output_json;
   const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
     .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
-  return { run: id, runLabels, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })) };
+  const proposals = db.prepare('SELECT cause, refs_json, problem FROM proposals WHERE run_id = ? ORDER BY id').all(id)
+    .map((p) => ({ cause: p.cause, refs: JSON.parse(p.refs_json), ok: !p.problem }));
+  return { run: id, runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })) };
 }
-// The latest completed run that kept labels or findings: `report` counts them and shows its numbers, follow-ups, fixes and
-// report.txt. Undefined with none, so labels.jsonl counts.
+// The latest completed run that kept labels or findings, else the latest completed run: `report` counts it and shows its
+// numbers, follow-ups, fixes and report.txt. Undefined with no completed run.
 export async function lastRun(cfg) {
   const db = await openStore(cfg.state, false);
-  const id = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id;
-  if (id == null) return undefined;
+  const latest = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id;
+  if (latest == null) return undefined;
+  const id = db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id ?? latest;
   const reportFile = join(runDir(cfg, id), 'report.txt');
-  return { ...runResult(db, id), latest: db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id,
+  return { ...runResult(db, id), latest,
     shown: show(db, id), ...(existsSync(reportFile) && { reportFile }) };
 }
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
@@ -259,7 +261,7 @@ async function work(cfg, db, id) {
 
 function pick(cfg, db, opts) {
   const id = opts.run ? Number(opts.run) : db?.prepare('SELECT max(id) AS id FROM runs').get().id;
-  if (!db || id == null) throw new EmptyError(`no saved runs in ${cfg.state}`, withContext('learn-from-mistakes-axi retro --wait 8m', 'ingest and report as a saved run', opts));
+  if (!db || id == null) throw new EmptyError(`no saved runs in ${cfg.state}`, withContext('learn-from-mistakes-axi retro --wait 8m', 'read, label and count the sources as a saved run', opts));
   if (!db.prepare('SELECT 1 FROM runs WHERE id = ?').get(id)) throw new UsageError(`no run ${id}`, withContext('learn-from-mistakes-axi runs', 'the saved run ids', opts));
   return id;
 }
@@ -385,7 +387,7 @@ function show(db, id) {
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
-    ...(report && { result: { summary: summaryLine(report), labelled: report.coverage.labelled, records: report.coverage.total_records, labels_from: report.labels_from,
+    ...(report && { result: { summary: summaryLine(report), labelled: report.coverage.labelled, records: report.coverage.total_records,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
       findings: runResult(db, id).findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })) } }),
   };
