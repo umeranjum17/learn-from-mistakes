@@ -86,7 +86,7 @@ export function reportText(cfg, db, id, dir, window, run) {
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]
       .filter(([n]) => n).map(([n, what, word = 'item', many]) => `- ${what} ${plural(n, word, many)}.`)];
   lines.push('', '6. Not checked', ...(gaps.length ? gaps : ['- Nothing. The run read all sources and checked all items.']), '', '7. Questions for you');
-  const signoff = Boolean(which('sign-off-axi') && fixes.length); // sign-off asks Apply or Skip for each fix
+  const signoff = Boolean(cfg.signoff !== 'off' && which('sign-off-axi') && fixes.length); // sign-off asks Apply or Skip for each fix
   const asks = [...(signoff ? [] : fixes.map((f) => `Apply fix ${f.n}, for ${f.cause}? Answer Apply or Skip.`)),
     ...run.followups.filter((f) => ['rollback', 'delete'].includes(f.verdict)).map((f) => `${f.verdict === 'delete' ? 'Delete' : 'Roll back'} change ${f.change}? Answer yes or no.`)];
   if (signoff) lines.push('- Run learn-from-mistakes-axi signoff post. It sends each fix to sign-off as an Apply or Skip question.');
