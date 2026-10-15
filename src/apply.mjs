@@ -37,6 +37,7 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
   const top = git(cfg.dir, ['rev-parse', '--show-toplevel']);
   if (git(top, ['status', '--porcelain', '--untracked-files=no'])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
   const head = git(top, ['rev-parse', '--verify', 'HEAD']); let commit = spawnSync(which('git'), ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: top, encoding: 'utf8' }).stdout.trim();
+  if (commit && !git(top, ['show', '-s', '--format=%s', commit]).startsWith(`learn-from-mistakes: fix ${at} for `)) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
   if (!commit) {
     const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
     if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);
