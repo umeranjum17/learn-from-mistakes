@@ -69,7 +69,7 @@ output; an `invocations` session id (a row in the store's `invocations` table) i
 none; a sessions-only config with no sessions completes; a parent file older
 than the read range is read through its newer subagent file. The planted keys
 cover a key after a long whitespace run, quoted values with spaces, JSON-escaped
-pairs (a retried call's input is matched as its plain string values), Basic auth, URL passwords, npm and glpat
+pairs (a retried call's input is matched as its plain string values), Basic auth (doubled keywords redacted to the real token), Slack webhook URLs, URL passwords, npm and glpat
 tokens and comma-split values. A second journey reads synthetic Codex rollouts
 (`test/fixtures/sessions/codex/`, listed by a `state_5.sqlite` the test makes) and
 OpenCode databases the test makes (`opencode.db`, a `channel.db` with a worktree session,
