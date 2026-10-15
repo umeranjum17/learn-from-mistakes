@@ -4,7 +4,7 @@
 `src/steps/agent-step.mjs` is the harness every agent step runs through. Its role
 (`worker` or `judge`) is the agent the user set in the config, resolved by the
 identity rule ([agents.md](agents.md)); the run never picks one. It calls the agent in `.lfm/runs/<id>/` with the step's
-prompt and then `bundle.md` ([bundle.md](bundle.md)), behind the `lfm-run:<id>:<step>`
+prompt and then `bundle.md` ([bundle.md](bundle.md)) (the apply step reads its own files and takes none), behind the `lfm-run:<id>:<step>`
 marker. It checks the JSON answer with the step's own check. A bad answer (an empty one
 too) goes back once with the problems; a second bad answer fails the step (exit 1) with
 `the worker's answer is not valid after one retry: <problems>`. Each call is one

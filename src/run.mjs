@@ -9,6 +9,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReport, EmptyError, ingest, InputError, recordId, sourceLine, stateDir, summaryLine, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { autoApply } from './apply.mjs';
 import { bundle } from './bundle.mjs';
 import { analyse } from './steps/analyse.mjs';
 import { propose } from './steps/propose.mjs';
@@ -75,6 +76,7 @@ const STEPS = {
     log(`report.txt: ${text.lines} lines, ${text.questions} questions`);
     return model;
   },
+  apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
 };
 // The labels the worker kept in a run that asked it (as labels.jsonl takes them) and its findings; no labels when it was not asked.
 function runResult(db, id) {

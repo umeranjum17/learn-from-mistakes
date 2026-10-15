@@ -14,17 +14,17 @@ const iso = () => new Date().toISOString();
 
 // Returns the checked JSON object. `check(value, attempt)` returns the problems with the answer, each naming a field and the
 // rule it broke, never the agent's own text.
-export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log }) {
+export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log, bundle = true }) {
   const key = KEY[role];
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
   const fix = chooseFix(cfg, key, r.runner);
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);
-  const bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');
+  const data = bundle ? `\n\n${readFileSync(join(dir, 'bundle.md'), 'utf8')}` : '';
   const invalid = db.prepare(`UPDATE invocations SET exit_status = 'invalid' WHERE id = ?`);
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}\n\n${bundle}`, log);
+    const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}${data}`, log);
     problems = got.value ? check(got.value, attempt) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
     if (!problems.length) return got.value;
     invalid.run(got.row);

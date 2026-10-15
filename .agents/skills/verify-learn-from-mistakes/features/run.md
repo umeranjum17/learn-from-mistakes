@@ -5,7 +5,7 @@
 run store `<state dir>/lfm.sqlite` (node:sqlite, WAL, a migrations list counted
 by `PRAGMA user_version`): one `runs` row (status, owner pid, times, error) and one `steps` row each for `collect`
 (ingest), `metrics` (see [metrics.md](metrics.md)), `followup` (see [followup.md](followup.md)), `bundle` (see [bundle.md](bundle.md)), `analyse` (see [analyse.md](analyse.md)), `propose` (see [propose.md](propose.md)), `verify` (the judge, see [verify.md](verify.md)), `check` (see [propose.md](propose.md)) and `report` (the counts with the worker's labels from this run, else with the labels already in the state dir; with
-none, coverage shows every record unlabelled). A detached worker (the hidden
+none, coverage shows every record unlabelled) and `apply` (when `auto_fix: <n>`, see [apply.md](apply.md)). A detached worker (the hidden
 `_work <id>` command, stdio in `.lfm/runs/<id>/worker.log`) runs the steps, so
 the run goes on when the terminal or the calling agent ends. `retro` returns at
 once with the run `running`; `--wait <time>` (30s, 8m, 1h; a bare `--wait` is 8m) polls until the run
@@ -55,7 +55,7 @@ step with `logs --step collect`, stop it with `abort`, start it again with `reru
 ## Driving it with the public CLI
 `test/cli.test.mjs` owns three journeys and two reused-run-id checks.
 `retro --foreground saves a run and its steps in .lfm/; status and runs show it`:
-status before a run exits 3 and creates no `.lfm`; 9 completed
+status before a run exits 3 and creates no `.lfm`; 10 completed
 step rows read back from the store; collect saw 13 log and 5 gate items; report
 coverage 0 of 13 labelled; `status --json` equals the retro output; `runs` lists
 it; `git status` has no `.lfm`; a project with an empty log fails at `report`

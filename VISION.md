@@ -69,7 +69,7 @@ What it does today:
   It never guesses a label.
 - **Proposed rule changes with evidence.** Your agent proposes changes by following `guide`.
   The CLI checks that each proposal cites real records.
-- **A versioned ledger.** `change applied` records a change you already made, as one append-only entry (`chg-<n>`).
+- **A versioned ledger.** `change applied` records a change you already made, and `apply` records a kept fix committed to its own branch, as one append-only entry (`chg-<n>`).
   `changes --json` prints the ledger as a stable contract (`lfm-changes.v1`).
 - **Did the last fix help.** The `followup` step compares each change's metric before and after the change.
   Code, not a model, gives the verdict: `keep`, `fix`, `rollback`, `delete` or `no-data`.
@@ -79,13 +79,11 @@ What it does today:
 
 What it does not do:
 
-- It never edits your sources or instructions. The one file it writes outside .lfm/ is its own skill, when you run init.
-- It does not apply a change for you. You apply it, then record it.
-- It makes no model call itself. Only your own agent CLI, started by a run, calls a model.
+- It never edits your sources or instructions in your working tree. An accepted fix goes only to its own branch, `lfm/<run>-<n>`, from HEAD, and is recorded in the ledger. The one file it writes outside .lfm/ is its own skill, when you run init. It never pushes, merges, or touches your branch or uncommitted work.
+- It makes no model call itself. Only your own agent CLI, started by a run or by `apply`, calls a model.
 
 Planned:
 
-- The retro run writes proposals with its own agent. Today your agent writes them through `guide`.
 - sign-off shows a "Helped?" answer for each applied change, joined on the change id.
 
 ## Works with

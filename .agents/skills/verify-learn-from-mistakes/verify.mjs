@@ -75,7 +75,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources, labels, proposals,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'scripts/build-skill.mjs', 'skills/learn-from-mistakes/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.no-mistakes.yaml', 'CONSTRAINTS.md',
     '.agents/skills/verify-learn-from-mistakes/SKILL.md', '.agents/skills/verify-learn-from-mistakes/verify.mjs'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
@@ -230,7 +230,7 @@ try {
     assert.deepEqual(verdicts, [['chg-1', 'n/a', 'n/a', 'no-data'], ['chg-2', 1, 3, 'rollback']], 'the followup step does not give the verdicts');
     // Propose, verify and check: eight fixes for the gate's repeated cause; the judge refutes fix 2 (a problem) and weakens
     // fix 3 (ranked last of the five kept); three are problems; one goes into the ledger.
-    run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2', FAKE_WEAKEN: 'p3' });
+    run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2', FAKE_WEAKEN: 'p3', FAKE_TARGET: 'AGENTS.md' });
     const proposed = JSON.parse(readFileSync(join(evidence, 'retro-propose.stdout'), 'utf8'));
     assert.deepEqual(proposed.fixes.map((f) => [f.n, f.cause, f.tripwire, f.verdict]), [1, 2, 3, 4, 5].map((n) => [n, 'agent-exit-wait', '<= 0', n === 5 ? 'weakened' : 'confirmed']), 'check does not keep five ranked fixes, the weakened one last');
     const db = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite'), { readOnly: true });
@@ -258,6 +258,11 @@ try {
     writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [posted[0].key]: { answer: 'apply', label: 'Apply', close: 'done', at: '2026-10-13T22:00:52Z' }, [posted[1].key]: { answer: 'skip', label: 'Skip', close: 'done', at: '2026-10-13T22:00:52Z' } }));
     run('signoff-answers', process.execPath, [cli, 'signoff', 'answers', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });
     save('signoff-board.json', posted); save('signoff-calls.jsonl', readFileSync(join(signDir, 'calls.jsonl'), 'utf8'));
+    const git = (...a) => spawnSync(join(agentBin, 'git'), ['-C', staged, ...a], { encoding: 'utf8' }).stdout.trim(); writeFileSync(join(staged, 'AGENTS.md'), '# Rules\n');
+    for (const a of [['init', '-q'], ['config', 'user.name', 'Umer'], ['config', 'user.email', 'umer@example.com'], ['add', '-A'], ['commit', '-qm', 'start']]) git(...a);
+    drive('apply', 'apply');
+    assert.match(readFileSync(join(evidence, 'apply.stdout'), 'utf8'), new RegExp(`^applied: fix ${proposed.run.id}:1 on branch lfm/${proposed.run.id}-1, commit [0-9a-f]{12}, ledger chg-\\d+$`, 'm'), 'apply does not make fix 1');
+    assert.deepEqual([git('rev-parse', `lfm/${proposed.run.id}-1^`), git('status', '--porcelain')], [git('rev-parse', 'HEAD'), ''], 'apply moved HEAD or touched the work tree');
     drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', 'abc1234', '--json');
     assert.deepEqual((({ cause, metric, tripwire }) => [cause, metric, tripwire])(JSON.parse(readFileSync(join(evidence, 'change-proposal.stdout'), 'utf8'))),
       ['agent-exit-wait', 'cause_count:agent-exit-wait', '<= 0'], '--proposal does not copy the fix into the ledger');
