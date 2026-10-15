@@ -169,20 +169,20 @@ test('a missing or logged-out gh and a non-GitHub origin fail the source with th
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
   const out = lfm({ FAKE_GH: 'logged-out' }, 'ingest');
   assert.equal(out.status, 2, out.stderr);
-  assert.match(out.stderr, /^error: source prs: gh is not logged in to github\.com$/m);
+  assert.match(out.stderr, /^error: source prs: gh is not logged in to github\.com \(0 records read\)$/m);
   assert.match(out.stderr, /^next: remove sources\.prs from .*\/umer-app\/\.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/m);
 
   rmSync(join(bin, 'gh'));
   const missing = lfm({}, 'ingest');
   assert.equal(missing.status, 2, missing.stderr);
-  assert.match(missing.stderr, /^error: source prs: gh is not on PATH$/m);
+  assert.match(missing.stderr, /^error: source prs: gh is not on PATH \(0 records read\)$/m);
   assert.deepEqual(JSON.parse(lfm({}, 'init', '--json').stdout).skipped, ['github: origin is on GitHub, but gh is not on PATH: install the GitHub CLI, then gh auth login']);
 
   const token = `umer:${'T'.repeat(20)}`;
   execFileSync('git', ['-C', p, 'remote', 'set-url', 'origin', `https://${token}@gitlab.example.com/umer/umer-app.git`]);
   const other = lfm({}, 'ingest');
   assert.equal(other.status, 2, other.stderr);
-  assert.match(other.stderr, /^error: source prs: the project's git origin is not a GitHub repo$/m);
+  assert.match(other.stderr, /^error: source prs: the project's git origin is not a GitHub repo \(0 records read\)$/m);
   assert.ok(!other.stderr.includes('T'.repeat(20)));
   rmSync(join(p, '.learn-from-mistakes.yaml'));
   const init = lfm({}, 'init', '--json'); // not on GitHub: no github source, and nothing skipped

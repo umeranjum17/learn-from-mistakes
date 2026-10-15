@@ -190,6 +190,24 @@ export const recordId = (r) => `${r.source}:${r.id}`;
 
 export const sourceLine = (s, hash = true) => `${s.id.padEnd(12)} ${s.type.padEnd(13)} ${String(s.items).padStart(5)} items${hash ? `  sha256 ${s.hash.slice(0, 12)}` : ''}`;
 
+// Spreading an unbounded array overflows the call stack (RangeError: Maximum call stack size
+// exceeded), so sources stream into the store in chunks instead of one spread push.
+const PUSH_CHUNK = 8192;
+function pushAll(target, items) {
+  for (let i = 0; i < items.length; i += PUSH_CHUNK) target.push(...items.slice(i, i + PUSH_CHUNK));
+}
+const STACK_OVERFLOW_RE = /maximum call stack size exceeded/i;
+// A source that still throws names the source and how many records it had read, and a raw engine
+// RangeError becomes a fix line instead of an unnamed crash.
+function sourceError(id, e, count) {
+  const overflow = e instanceof RangeError || STACK_OVERFLOW_RE.test(e.message ?? '');
+  const tagged = /^source\s/.test(e.message ?? '') ? e.message : `source ${id}: ${e.message}`;
+  const next = overflow
+    ? `split source ${id} into smaller reads (fewer records in one read), then learn-from-mistakes-axi ingest again`
+    : e instanceof UsageError ? e.next : `fix source ${id} (see its message), then learn-from-mistakes-axi ingest again`;
+  return new UsageError(`${tagged} (${count} records read)`, next);
+}
+
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
 // The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
@@ -204,11 +222,17 @@ export async function ingest(cfg) {
   const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
   const records = [], rows = [], events = [], prs = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
-    const got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE) });
-    records.push(...(got.records ?? []));
-    rows.push(...(got.rows ?? []));
-    events.push(...(got.events ?? []));
-    prs.push(...(got.prs ?? []));
+    let got;
+    try {
+      got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE) });
+      pushAll(records, got.records ?? []);
+      pushAll(rows, got.rows ?? []);
+      pushAll(events, got.events ?? []);
+      pushAll(prs, got.prs ?? []);
+    } catch (e) {
+      const count = got ? (got.records ?? got.rows ?? got.events ?? got.prs).length : 0;
+      throw sourceError(id, e, count);
+    }
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
       ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
   }
