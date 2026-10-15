@@ -151,8 +151,8 @@ Default TOON output, abridged to one cause on the example project:
 ```
 schema: lfm-report.v2
 generated_at: "2026-10-12T09:00:00.000Z"
-run: null
-report_txt: ""
+run: 1
+report_txt: ".lfm/runs/1/report.txt"
 ingested_at: "2026-10-12T08:00:00.000Z"
 coverage:
   labelled: 13
