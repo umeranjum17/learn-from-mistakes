@@ -10,6 +10,14 @@ import { locked, openStore } from './store.mjs';
 
 const HELP = 'sign-off-axi --help   # read the refusal help; never edit the board file';
 const AGAIN = 'learn-from-mistakes-axi retro --wait 15m   # rerun retro to produce valid findings';
+// The peer minimum: 0.3.4 is the first sign-off-axi release that takes a finding (contract 1, kind finding, schema 1).
+export const SIGNOFF_MIN = '0.3.4';
+// Version order by number, part by part, so 0.3.10 reads as later than 0.3.4.
+export const atLeast = (v, min = SIGNOFF_MIN) => {
+  const a = v.split('.').map(Number), b = min.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return true;
+};
 const keyId = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(s);
 const WAIT = ['wait', '--filer', 'learn-from-mistakes', '--timeout', '1', '--json'];
 function peer(bin, args, cfg, input, noAnswer = false) {

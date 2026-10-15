@@ -9,6 +9,7 @@ import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
+import { atLeast, SIGNOFF_MIN } from './signoff.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
@@ -95,10 +96,16 @@ export async function doctor(dir, opts) {
     const at = [home, join(dir, '.claude', 'skills', 'learn-from-mistakes'), join(dir, '.agents', 'skills', 'learn-from-mistakes')].find((d) => existsSync(join(d, 'SKILL.md')));
     add(at ? 'ok' : 'warn', `skill ${a.runner}`, at ? join(at, 'SKILL.md') : `not installed in ${home}`, `mkdir -p ${shq(home)} && cp ${shq(SKILL)} ${shq(`${home}/`)}`);
   }
-  const signoff = cfg.signoff !== 'off' && which('sign-off-axi');
-  add(cfg.signoff === 'off' || signoff ? 'ok' : 'warn', 'sign-off', cfg.signoff === 'off' ? 'off: questions go in report.txt'
-    : signoff || 'sign-off-axi is not on PATH: questions go in report.txt (plain-text fallback)',
-  `npm i -g sign-off-axi   # or set signoff: off in ${file} to keep questions in report.txt`);
+  // The peer minimum: an older sign-off-axi takes no finding, so its questions stay in report.txt like an absent one.
+  const signoffBin = cfg.signoff !== 'off' && which('sign-off-axi');
+  const probe = signoffBin && spawnSync(signoffBin, ['--version'], { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+  const version = probe?.status === 0 ? probe.stdout.match(/\d+(?:\.\d+)+/)?.[0] ?? '' : '';
+  const signoffFix = `npm i -g sign-off-axi   # or set signoff: off in ${file} to keep questions in report.txt`;
+  if (cfg.signoff === 'off') add('ok', 'sign-off', 'off: questions go in report.txt');
+  else if (!signoffBin) add('warn', 'sign-off', 'sign-off-axi is not on PATH: questions go in report.txt (plain-text fallback)', signoffFix);
+  else if (!version) add('warn', 'sign-off', `sign-off-axi --version failed (${probe.error?.code ?? probe.signal ?? `exit ${probe.status}`}): questions go in report.txt (plain-text fallback)`, signoffFix);
+  else if (atLeast(version)) add('ok', 'sign-off', `sign-off-axi ${version}`);
+  else add('warn', 'sign-off', `sign-off-axi ${version} cannot post findings (${SIGNOFF_MIN} or later): questions go in report.txt (plain-text fallback)`, signoffFix);
 
   // --live: one call per role that asks the agent to write a file; it must answer and write nothing.
   if (opts.live) for (const name of ['worker', 'judge']) {

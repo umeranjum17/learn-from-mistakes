@@ -438,7 +438,10 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   assert.deepEqual(ok.out.checks.find((c) => c.label === 'sign-off'), { level: 'warn', label: 'sign-off', detail: 'sign-off-axi is not on PATH: questions go in report.txt (plain-text fallback)',
     fix: `npm i -g sign-off-axi   # or set signoff: off in ${config} to keep questions in report.txt` });
   fake('sign-off-axi', ''); // sign-off installs sign-off-axi
-  assert.equal(doctor().out.checks.find((c) => c.label === 'sign-off').detail, join(env.PATH, 'sign-off-axi'));
+  assert.equal(doctor().out.checks.find((c) => c.label === 'sign-off').detail, 'sign-off-axi 1.0.0');
+  writeFileSync(join(env.PATH, 'sign-off-axi'), '#!/bin/sh\necho "0.3.3"\n', { mode: 0o755 }); // an older peer takes no finding
+  const old = doctor().out.checks.find((c) => c.label === 'sign-off');
+  assert.deepEqual([old.level, old.detail], ['warn', `sign-off-axi 0.3.3 cannot post findings (0.3.4 or later): questions go in report.txt (plain-text fallback)`]);
   assert.match(lfm('doctor').stderr, /^next: learn-from-mistakes-axi retro --wait 8m/m);
 
   const yaml = readFileSync(config, 'utf8');
