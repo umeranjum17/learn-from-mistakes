@@ -30,8 +30,8 @@ else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
     : has('FAKE_WEAKEN', item) ? { item, verdict: 'weakened', reason: 'The cited items show this only once for Umer.' } : { item, verdict: 'confirmed', reason: 'The cited items show this for Umer.' })) }));
 }
 else if (/^lfm-run:\d+:apply-\d+\n/.test(stdin)) {
-  const [, path, text] = stdin.match(/^--- (.+)\n([\s\S]*?)\n--- end of \1$/m);
-  reply(JSON.stringify({ files: [{ path, content: `${text}- Give each worker its own cache directory, Umer.\n` }] })); }
+  const blocks = [...stdin.matchAll(/^--- (.+)\n([\s\S]*?)\n--- end of \1$/gm)];
+  reply(JSON.stringify({ files: blocks.map(([, path, text]) => ({ path, content: `${text}- Give each worker its own cache directory, Umer.\n` })) })); }
 else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);

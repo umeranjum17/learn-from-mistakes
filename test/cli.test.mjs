@@ -1589,6 +1589,7 @@ function applyRepo() {
 test('apply: the worker makes an accepted fix on its own branch from HEAD and records it; Skip, a dirty tree and no file refuse; auto_fix applies in the run', () => {
   const { p, global, lfm, query, calls, lines, git, fake, auto } = applyRepo();
   const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
+  const defects = readFileSync(join(p, 'defects.md'), 'utf8');
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   assert.deepEqual(lines('apply', run.id), ['auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply']);
   const none = lfm({}, 'apply'); assert.equal(none.status, 3, none.stderr);
@@ -1608,19 +1609,21 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('rev-parse', 'HEAD'), git('branch', '--show-current'), git('status', '--porcelain')], [head, head, 'main', '?? notes.txt']);
   rmSync(join(p, 'notes.txt')); assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules);
   assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
-  assert.deepEqual(git('diff', '--name-only', `HEAD..lfm/${run.id}-1`), 'AGENTS.md');
-  // One fresh tool-off call to the worker, never the judge, with the fix and the file: no bundle and no record text.
+  assert.equal(git('show', `lfm/${run.id}-1:defects.md`), `${defects}- Give each worker its own cache directory, Umer.`);
+  assert.deepEqual(git('diff', '--name-only', `HEAD..lfm/${run.id}-1`), 'AGENTS.md\ndefects.md');
+  // One fresh tool-off call to the worker, never the judge, with the fix and both files: no bundle and no record text beyond the files.
   const call = calls().at(-1); assert.equal(calls().length, before + 1);
   assert.ok(call.stdin.startsWith(`lfm-run:${run.id}:apply-1\nYou are the worker of a retro. The user accepted the fix below.`), call.stdin.slice(0, 200));
-  assert.ok(call.args.includes('--tools') && call.stdin.includes(`--- AGENTS.md\n${rules}\n--- end of AGENTS.md`) && !call.stdin.includes('# Retro bundle') && !call.stdin.includes('--- defects.md'));
-  for (const { text } of query('SELECT text FROM records WHERE run_id = ?', run.id)) assert.ok(!call.stdin.includes(text.trim()), 'record text reached the apply call');
+  assert.ok(call.args.includes('--tools') && call.stdin.includes(`--- AGENTS.md\n${rules}\n--- end of AGENTS.md`) && call.stdin.includes(`--- defects.md\n${defects}\n--- end of defects.md`) && !call.stdin.includes('# Retro bundle'));
+  // The log records live in defects.md, so they arrive with that target file; every other source's record text stays out.
+  for (const { text } of query(`SELECT text FROM records WHERE run_id = ? AND source != 'log'`, run.id)) assert.ok(!call.stdin.includes(text.trim()), 'record text reached the apply call');
   assert.ok(!calls('codex').some((c) => c.stdin.includes(':apply-')), 'the judge applied a fix');
   assert.deepEqual(query(`SELECT role, runner, exit_status FROM invocations WHERE run_id = ? AND step = 'apply-1'`, run.id), [{ role: 'worker', runner: 'claude', exit_status: 'ok' }]);
   const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes; assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/${run.id}-1`]);
   assert.equal(lfm({}, 'apply').stdout, ok.stdout); assert.equal(calls().length, before + 1);
   git('branch', '-f', `lfm/${run.id}-1`, git('commit-tree', `${head}^{tree}`, '-p', head, '-m', `learn-from-mistakes: fix ${run.id}:1 for slow-build\n\nRebuild the Go binary before the gate.`));
   const stale = lfm({}, 'apply', '--fix', '1'); assert.equal(stale.status, 1, stale.stderr); assert.match(stale.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
-  for (const [n, code, error] of [[2, 2, `fix ${run.id}:2 was answered Skip, and a Skip is never applied`], [3, 1, `fix ${run.id}:3 names no tracked file in its target, so the worker has nothing to edit`], [9, 2, `run ${run.id} has no kept fix 9`]]) {
+  for (const [n, code, error] of [[2, 2, `fix ${run.id}:2 was answered Skip, and a Skip is never applied`], [3, 1, `fix ${run.id}:3 names no tracked file in its target "the launch script", so the worker has nothing to edit`], [9, 2, `run ${run.id} has no kept fix 9`]]) {
     const r = lfm({}, 'apply', '--fix', String(n)); assert.equal(r.status, code, r.stderr); assert.match(r.stderr, new RegExp(`^error: ${error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
   }
   assert.ok(!git('branch', '--list', 'lfm/*').includes('-2') && JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length === 1);
