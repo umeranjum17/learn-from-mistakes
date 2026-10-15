@@ -146,7 +146,7 @@ try {
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'gpt-6-luna' }, claude: { model: 'claude-haiku-5-5', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
-    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'auto', allow_premium: false });
+    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on', allow_premium: false });
   writeFileSync(stagedConfig, stringify(config));
   drive('retro-v2', 'retro', '--foreground', '--json');
   const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id), 'bundle.md'), 'utf8');
@@ -189,7 +189,7 @@ try {
   oc.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?)').run('p2', 'm2', 'oc-verify', now + 1, JSON.stringify({ type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'npm test' }, metadata: { exit: 1 } } }));
   oc.close();
   const ocBefore = createHash('sha256').update(readFileSync(join(env.XDG_DATA_HOME, 'opencode', 'opencode.db'))).digest('hex');
-  writeFileSync(stagedConfig, stringify({ ...config, excerpts: 'on', sources: { ...config.sources, sessions: { type: 'sessions' } },
+  writeFileSync(stagedConfig, stringify({ ...config, excerpts: 'on', sources: { ...config.sources, sessions: { type: 'sessions', agents: ['claude', 'codex', 'opencode'] } },
     causes: { ...config.causes, 'test-fails': { description: 'The tests fail.', match: { source: 'sessions', signal: 'test_fail' } } },
     targets: { ...config.targets, 'tool_error_rate': '<= 0.05', 'cause_count:test-fails': '<= 3' } }));
   drive('retro-sessions', 'retro', '--foreground', '--json');
@@ -293,8 +293,11 @@ try {
   writeFileSync(join(fakes, 'opencode'), '#!/bin/sh\n[ "$1 $2" = "auth list" ] && { echo "1 credentials"; exit 0; }\necho "1.0.0"\n', { mode: 0o755 }); // logged in, for doctor
   run('init-unset', process.execPath, [cli, 'init', '-y', '--no-skill', '--dir', fresh], 0, { PATH: fakes }); // writes no agent: names the save command
   assert.match(readFileSync(join(evidence, 'init-unset.stderr'), 'utf8'), /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir /m, 'init with no agent chosen does not say to ask');
-  run('init', process.execPath, [cli, 'init', '--agent', 'claude', '--model', 'claude-haiku-5-5', '--judge-agent', 'opencode', '--judge-model', 'opencode-go/muse-spark-1.3-contributor', '--dir', fresh], 0, { PATH: fakes });
-  assert.deepEqual(['agent', 'judge_agent'].map((k) => parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'))[k]), ['claude', 'opencode'], 'init did not save the chosen agents');
+  assert.match(readFileSync(join(evidence, 'init-unset.stdout'), 'utf8'), /sessions: ask the user which agents' sessions to read \(local stores: claude, codex, opencode[^)]*\), then run learn-from-mistakes-axi init --sessions <agent>,<agent> --dir /, 'init without a terminal does not ask which agents\' sessions to read');
+  assert.equal(parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8')).sources.sessions, undefined, 'init wrote a sessions source nobody named');
+  rmSync(join(fresh, '.learn-from-mistakes.yaml'));
+  run('init', process.execPath, [cli, 'init', '--agent', 'claude', '--model', 'claude-haiku-5-5', '--judge-agent', 'opencode', '--judge-model', 'opencode-go/muse-spark-1.3-contributor', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
+  assert.deepEqual(['agent', 'judge_agent', 'sources'].map((k) => parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'))[k]).map((v) => v.sessions?.agents ?? v), ['claude', 'opencode', ['claude', 'pi']], 'init did not save the chosen agents and the named sessions agents');
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
   assert.deepEqual([Object.keys(parse(written).sources).slice(0, 2), Object.keys(parse(written).causes)], [['log', 'reviews'], ['test-failed', 'command-failed', 'tool-misused', 'user-corrected']], 'init did not write the review log or the starter causes');

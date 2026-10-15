@@ -134,7 +134,7 @@ sources:
     const type = mapping(s, null, where).type;
     if (typeof type !== 'string' || !Object.hasOwn(SOURCES, type)) throw new UsageError(`${where}.type must be one of ${Object.keys(SOURCES).join(', ')}`);
     const other = Object.keys(sources).find((k) => k !== id && sources[k]?.type === type);
-    if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads every agent's sessions; keep one and narrow it with agents`);
+    if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads sessions; keep one and list every agent in its agents`);
     if (type === 'github' && other) throw new UsageError(`${where}: sources.${other} already reads the PRs of origin's GitHub repo; keep one`);
     sources[id] = SOURCES[type].validate(s, where, dir);
   }
@@ -179,13 +179,14 @@ sources:
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
   const caps = block('caps', { invocations: 12, bundle_chars: 60000 });
   check(caps.bundle_chars >= 1000, `${file}: caps.bundle_chars`, 'at least 1000');
+  if (p.signoff === 'auto') throw new UsageError(`${file}: signoff: auto is not a value; use on (the default) or off`);
   const cfg = {
     dir,
     name: p.name ?? basename(dir), sources, causes, repeat: block('repeat', { min_incidents: 3, min_days: 2 }),
     window: p.window ?? '7d',
     targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets, ...Object.assign({}, ...Object.values(sources).map((s) => s.targets)) },
     followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps,
-    signoff: one('signoff', ['auto', 'off']), ...agentKeys(global, p, file),
+    signoff: one('signoff', ['on', 'off']), ...agentKeys(global, p, file),
   };
   if (global.state_root) return { ...cfg, state: join(expand(String(global.state_root), global.home), cfg.name) };
   return { ...cfg, state: join(dir, '.lfm'), ignore: true };

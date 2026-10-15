@@ -216,6 +216,8 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => raw('report', '--cause', 'x'), 2, 'report does not take --cause', /^next: learn-from-mistakes-axi report \[/m],
     [() => raw('--cause', 'x'), 2, 'learn-from-mistakes-axi does not take --cause', HELP], // bare: no command was typed, so --help
     [() => raw('report', '--dir', 'a\u001b[31m'), 2, '--dir (invalid value): a path must not contain control characters', /^next: learn-from-mistakes-axi report \[/m],
+    [() => raw('init', '--sessions', 'y'.repeat(81)), 2, /^error: --sessions \(invalid value\) must list agents by name: /, /^next: learn-from-mistakes-axi init --sessions claude,pi/m], // never echoes a long value
+    [() => raw('init', '--sessions', 'a\u001b[31m'), 2, /^error: --sessions \(invalid value\) must list agents by name: /, /^next: learn-from-mistakes-axi init --sessions claude,pi/m], // nor a control character
     [() => raw(), 2, /^error: no \.learn-from-mistakes\.yaml in .*\n(.*\n)*  log: \{ type: markdown-log, path: defects\.md \}/m, /^next: learn-from-mistakes-axi guide   # the full config/m], // a config to copy, then the guide
     [() => lfm('change', 'applied', '--cause', 'nope', '--ref', 'abc1234'), 2, `unknown cause "nope" ${known}`, CHANGE],
     [() => lfm('change', 'applied', '--cause', 'other', '--ref', 'abc1234'), 2, /^error: cause "other" is reserved and never recordable \(known: server-memory-kill,/m, CHANGE],
@@ -261,14 +263,15 @@ test('every rejected input names what was wrong and a next step, never the whole
     [() => withConfig('caps: { tokens: 5 }\n'), 2, bad('caps: unknown key tokens'), HELP],
     [() => withConfig('followup: { min_days: 0 }\n'), 2, bad('followup.min_days must be a positive integer'), HELP],
     [() => withConfig('excerpts: maybe\n'), 2, bad('excerpts must be on or off'), HELP],
+    [() => withConfig('signoff: auto\n'), 2, bad('signoff: auto is not a value; use on (the default) or off'), HELP],
     [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n  more: { type: sessions }\n')), 2,
-      bad("sources.s: sources.more already reads every agent's sessions; keep one and narrow it with agents"), HELP],
+      bad('sources.s: sources.more already reads sessions; keep one and list every agent in its agents'), HELP],
     [() => withConfig('', v1.replace('sources:\n', 'sources:\n  prs: { type: github }\n  more: { type: github }\n')), 2,
       bad("sources.prs: sources.more already reads the PRs of origin's GitHub repo; keep one"), HELP],
     ...[['source: log', 'causes.env.match.source must name a no-mistakes or sessions source'], ['source: gate, signal: test_fail', 'causes.env.match: unknown key signal'],
       ['source: s', 'causes.env.match needs a signal, tool or text_contains'], ['source: s, tool: ""', 'causes.env.match.tool must be a non-empty string'],
       ['source: s, signal: oops', 'causes.env.match.signal must be one of tool_error, nonzero_exit, test_fail, correction, interrupt, retry'],
-    ].map(([m, rule]) => [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions }\n').replace('causes:\n', `causes:\n  env: { description: x, match: { ${m} } }\n`)), 2, bad(rule), HELP]),
+    ].map(([m, rule]) => [() => withConfig('', v1.replace('sources:\n', 'sources:\n  s: { type: sessions, agents: [claude] }\n').replace('causes:\n', `causes:\n  env: { description: x, match: { ${m} } }\n`)), 2, bad(rule), HELP]),
     [() => withConfig('', v1.replace(/^name: .*$/m, 'name: 123')), 2, bad('name must be a string'), HELP],
     [() => withConfig('', v1.replace('causes:\n', 'causes:\n  Shared_Cache: { description: x }\n')), 2, bad('causes.Shared_Cache: a cause key must be 1-64 of a-z, 0-9 and - (rename it, for example to shared-cache)'), HELP],
     [() => lfm('count', '--labels', join(p, 'bad.jsonl')), 1, /^error: .*bad\.jsonl:2: not valid JSON$/m, /^next: learn-from-mistakes-axi count   # run again after fixing \(keep your --dir --labels\)$/m], // input problem, not usage
@@ -983,7 +986,7 @@ targets: { first_pass: ">= 70", p90_hours_to_merge: "<= 8", escaped: "<= 0", "ca
 followup: { min_sessions: 3, min_days: 2 }
 excerpts: off
 caps: { invocations: 12, bundle_chars: 60000 }
-signoff: auto
+signoff: on
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });

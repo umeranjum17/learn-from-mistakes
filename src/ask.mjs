@@ -46,15 +46,27 @@ export function save(file, picks) {
   writeFileSync(file, doc.toString());
 }
 
+// One reader for every question in the process: it buffers answers typed or pasted ahead of a later question, even
+// one another pick asks. Paused between questions, closed when the command is done.
+let reader, lines, ended = false;
+const line = () => {
+  if (!reader) {
+    reader = createInterface({ input: process.stdin, output: process.stderr }).on('close', () => { ended = true; });
+    lines = reader[Symbol.asyncIterator]();
+  }
+  if (!ended) reader.resume();
+  return lines.next();
+};
+const rest = () => { if (!ended) reader?.pause(); };
+export const closeAsk = () => { reader?.close(); reader = lines = undefined; ended = false; };
+
 // A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
 // the model of that agent. A role whose agent is set only gets the model question; the agent key is then not written.
 export async function pick(keys, cfg, dir) {
   if (cfg.agent && cfg.agent === cfg.judge_agent) throw new UsageError(`judge_agent and agent are both ${cfg.agent}: ${CLASH}; set judge_agent to another agent in ${shq(projectFile(dir))}, then run the command that stopped again`, saveCommand(['judge_agent'], dir));
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  const lines = rl[Symbol.asyncIterator](); // buffers answers typed or pasted ahead of their question
   const ask = async (q) => {
     process.stderr.write(q);
-    const { value, done } = await lines.next();
+    const { value, done } = await line();
     if (done) throw new UsageError(`no answer given: ${named(cfg, keys).join(' and ')} not saved`, saveCommand(keys, dir));
     return value.trim();
   };
@@ -85,8 +97,26 @@ export async function pick(keys, cfg, dir) {
       }
       picks[key] = { agent, model, set: !cfg[key] };
     }
-  } finally { rl.close(); }
+  } finally { rest(); }
   return picks;
+}
+
+// The sessions source is the user's choice too: init offers the agents whose local store exists, none selected, and
+// writes the ones named; any other caller gets this command to save the user's answer.
+export const sessionsCommand = (dir) => `learn-from-mistakes-axi init --sessions <agent>,<agent>${dir ? ` --dir ${shq(dir)}` : ''}   # with the user's answer`;
+export const sessionsAsk = (stores, dir) => `sessions: ask the user which agents' sessions to read${stores.length ? ` (local stores: ${stores.join(', ')})` : ''}, then run ${sessionsCommand(dir)}`;
+export async function pickSessions(stores, names) {
+  process.stderr.write(`Which agents' sessions should the retro read? Local session stores:\n${stores.map((a, i) => `  ${i + 1}) ${a}`).join('\n')}\n`);
+  try {
+    for (;;) {
+      process.stderr.write('numbers or names, comma-separated (empty: none): ');
+      const { value, done } = await line();
+      if (done || !value.trim()) return [];
+      const got = value.trim().split(/[\s,]+/).map((x) => stores[Number(x) - 1] ?? x);
+      if (got.every((a) => names.includes(a))) return [...new Set(got)];
+      process.stderr.write(`${value.trim()} is not one of ${names.join(', ')}\n`);
+    }
+  } finally { rest(); }
 }
 
 // Makes sure both roles are set: asks a terminal and saves to file, else throws the ask line. Returns whether it saved.
