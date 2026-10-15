@@ -417,7 +417,7 @@ test('a bad source is a config error or a failed collect step, never a crash', (
   const old = new DatabaseSync(join(p, 'old.sqlite'));
   old.exec('ALTER TABLE step_results DROP COLUMN step_name');
   old.close();
-  assert.equal(collect('sources:\n  gate: { type: no-mistakes, path: old.sqlite }\n'), 'collect: source gate: unknown store schema (no step_results.step_name)');
+  assert.equal(collect('sources:\n  gate: { type: no-mistakes, path: old.sqlite }\n'), 'collect: source gate: unknown store schema (no step_results.step_name) (0 records read)');
 });
   test('an oversized source streams into the store instead of overflowing the call stack', () => {
     const { p, lfm } = setup();

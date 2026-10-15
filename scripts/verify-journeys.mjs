@@ -59,7 +59,7 @@ const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch,
   XDG_CONFIG_HOME: join(scratch, 'xdg'), XDG_CACHE_HOME: join(scratch, 'xdg'), XDG_DATA_HOME: join(scratch, 'xdg'), XDG_RUNTIME_DIR: join(scratch, 'runtime'),
   npm_config_cache: join(scratch, 'npm-cache'), GIT_CEILING_DIRECTORIES: realpathSync(scratch) }; // the staged project is no part of a repo above it
 delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
-delete env.LFM_HOME; // no global config: the CLI keeps state in the staged project's own .lfm/
+env.LFM_HOME = join(env.HOME, '.learn-from-mistakes'); // explicit isolated global config; project state stays in .lfm/
 delete env.CLAUDE_CONFIG_DIR; // the sessions drive reads only the synthetic stores in the scratch HOME and XDG dir
 delete env.CODEX_HOME;
 const commands = [];
@@ -288,7 +288,7 @@ try {
   assert.match(readFileSync(join(evidence, 'init-unset.stdout'), 'utf8'), /sessions: ask the user which agents' sessions to read \(local stores: claude, codex, opencode[^)]*\), then run learn-from-mistakes-axi init --sessions <agent>,<agent> --dir /, 'init without a terminal does not ask which agents\' sessions to read');
   assert.equal(parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8')).sources.sessions, undefined, 'init wrote a sessions source nobody named');
   rmSync(join(fresh, '.learn-from-mistakes.yaml'));
-  run('init', process.execPath, [cli, 'init', '--agent', 'claude', '--model', 'claude-haiku-5-5', '--judge-agent', 'opencode', '--judge-model', 'opencode-go/muse-spark-1.3-contributor', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
+  run('init', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'claude-haiku-5-5', '--judge-agent', 'opencode', '--judge-model', 'opencode-go/muse-spark-1.3-contributor', '--sessions', 'claude,pi', '--dir', fresh], 0, { PATH: fakes });
   assert.deepEqual(['agent', 'judge_agent', 'sources'].map((k) => parse(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'))[k]).map((v) => v.sessions?.agents ?? v), ['claude', 'opencode', ['claude', 'pi']], 'init did not save the chosen agents and the named sessions agents');
   const written = readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8');
   save('init.yaml', written);
@@ -296,7 +296,7 @@ try {
   const globalWritten = readFileSync(join(env.HOME, '.learn-from-mistakes', 'config.yaml'), 'utf8'); // init writes the global agent config once
   assert.equal(parse(globalWritten), null, 'init set a key in the global file: every key there is commented');
   save('init-global.yaml', globalWritten);
-  run('init-again', process.execPath, [cli, 'init', '--json', '--dir', fresh], 0, { PATH: fakes });
+  run('init-again', process.execPath, [cli, 'init', '--no-skill', '--json', '--dir', fresh], 0, { PATH: fakes });
   assert.equal(readFileSync(join(fresh, '.learn-from-mistakes.yaml'), 'utf8'), written, 'a second init changed the config');
   assert.equal(readFileSync(join(env.HOME, '.learn-from-mistakes', 'config.yaml'), 'utf8'), globalWritten, 'a second init changed the global config');
   // doctor on the written config (ok and warn lines, exit 0), then with its defect log gone (a fail with its fix, exit 1).
@@ -305,8 +305,8 @@ try {
   rmSync(join(fresh, 'docs', 'defects.md'));
   run('doctor-missing-log', process.execPath, [cli, 'doctor', '--dir', fresh], 1, { PATH: fakes });
   assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: check sources\.log\.path in \S+\.learn-from-mistakes\.yaml, or create it: touch \S+\/docs\/defects\.md\n/m, 'doctor names no fix for the missing log');
-  run('init-pinned-clash', process.execPath, [cli, 'init', '--agent', 'claude', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
-  run('init-one-agent-two-models', process.execPath, [cli, 'init', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
+  run('init-pinned-clash', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
+  run('init-one-agent-two-models', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
   assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /both claude, and agent_config holds one model per agent.*\nnext: learn-from-mistakes-axi init --agent claude --model umer-a --judge-agent <another agent> --judge-model <model> /, 'the clash does not state the one-model rule');
   if (packageProof) {
     const pack = join(evidence, 'pack');

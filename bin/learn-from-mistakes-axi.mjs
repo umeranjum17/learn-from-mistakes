@@ -194,8 +194,8 @@ function sourceError(id, e, count) {
   const overflow = e instanceof RangeError || STACK_OVERFLOW_RE.test(e.message ?? '');
   const tagged = /^source\s/.test(e.message ?? '') ? e.message : `source ${id}: ${e.message}`;
   const next = overflow
-    ? `split source ${id} into smaller reads (fewer records in one read), then learn-from-mistakes-axi ingest again`
-    : e instanceof UsageError ? e.next : `fix source ${id} (see its message), then learn-from-mistakes-axi ingest again`;
+    ? `split source ${id} into smaller reads (fewer records in one read), then learn-from-mistakes-axi retro --wait 8m`
+    : e instanceof UsageError ? e.next : `fix source ${id} (see its message), then learn-from-mistakes-axi retro --wait 8m`;
   return new UsageError(`${tagged} (${count} records read)`, next);
 }
 
