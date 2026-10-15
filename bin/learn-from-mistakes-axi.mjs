@@ -240,7 +240,7 @@ function analyse(cfg, files) {
   }
   const list = repeats(cfg, records, labels, rows);
   // The run's fixes as its check step left them: a fix that broke a rule is unchecked.
-  const proposals = (files.proposals ?? []).map((p) => ({ ...p, refs: p.refs.filter((ref) => records.has(ref)) }));
+  const proposals = (files.proposals ?? []).map((p) => ({ ...p, refs: (Array.isArray(p.refs) ? p.refs : []).filter((ref) => records.has(ref)) }));
   return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length, changes,
     findings: files.findings ?? [], run: files.run, shown: files.shown ?? {}, reportFile: files.reportFile };
 }
