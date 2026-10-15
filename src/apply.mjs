@@ -25,8 +25,8 @@ function git(dir, args, { input, env } = {}) {
 // The tracked regular files the target names, by their path from the repo root, with their git mode.
 function targetFiles(top, target) {
   const tracked = new Map(git(top, ['ls-files', '-s', '-z']).split('\0').filter(Boolean).map((l) => [l.slice(l.indexOf('\t') + 1), l.slice(0, 6)]));
-  const word = target.split(/[\s,;`'"()]+/).map((w) => posix.normalize(w.replace(/:\d+$/, '').replace(/[.:]+$/, '')).replace(/^\.\//, '')).find((w) => ['100644', '100755'].includes(tracked.get(w)));
-  return word ? [{ path: word, mode: tracked.get(word) }] : [];
+  const paths = [...new Set(target.split(/[\s,;`'"()]+/).map((w) => posix.normalize(w.replace(/:\d+$/, '').replace(/[.:]+$/, '')).replace(/^\.\//, '')).filter((w) => ['100644', '100755'].includes(tracked.get(w))))];
+  return paths.map((path) => ({ path, mode: tracked.get(path) }));
 }
 
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
@@ -41,7 +41,7 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
   if (!commit) {
     const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
     if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);
-    if (!files.length) throw new InputError(`fix ${at} names no tracked file in its target, so the worker has nothing to edit`, withContext(`learn-from-mistakes-axi change applied --proposal ${at} --ref <sha>   # after you make the change by hand`, 'nothing was applied', opts));
+    if (!files.length) throw new InputError(`fix ${at} names no tracked file in its target ${JSON.stringify(fix.target)}, so the worker has nothing to edit`, withContext(`learn-from-mistakes-axi change applied --proposal ${at} --ref <sha>   # after you make the change by hand`, 'nothing was applied', opts));
     for (const f of files) if (git(top, ['hash-object', '--path', f.path, '--', f.path]) !== git(top, ['rev-parse', `HEAD:${f.path}`])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
     const text = new Map(files.map((f) => [f.path, readFileSync(join(top, f.path), 'utf8')])), fill = { cause: fix.cause, kind: fix.kind ?? 'doc', target: redact(fix.target), change: redact(fix.change), metric: fix.metric, tripwire: fix.tripwire,
       files: files.map((f) => `--- ${f.path}\n${text.get(f.path)}\n--- end of ${f.path}`).join('\n') };
