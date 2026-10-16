@@ -58,7 +58,7 @@ const MIGRATIONS = [
     CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
   // The key of a defect-log record's id, made once per store and never printed: the id is an HMAC of the record's text,
   // so whoever reads a bundle cannot hash a guessed text to it. A run from before this entry keeps its plain-hash ids.
-  `CREATE TABLE IF NOT EXISTS secret (salt BLOB NOT NULL); INSERT INTO secret VALUES (X'${randomBytes(32).toString('hex')}')`,
+  () => `CREATE TABLE IF NOT EXISTS secret (salt BLOB NOT NULL); INSERT INTO secret VALUES (X'${randomBytes(32).toString('hex')}')`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
@@ -70,7 +70,10 @@ export async function openStore(state, create) {
   db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL');
   // A current store needs no write lock to open; else re-read the version under it, so two first opens never apply an entry twice.
   if (db.prepare('PRAGMA user_version').get().user_version < MIGRATIONS.length) locked(db, () => {
-    for (let i = db.prepare('PRAGMA user_version').get().user_version; i < MIGRATIONS.length; i++) db.exec(`${MIGRATIONS[i]}; PRAGMA user_version = ${i + 1}`);
+    for (let i = db.prepare('PRAGMA user_version').get().user_version; i < MIGRATIONS.length; i++) {
+      const entry = MIGRATIONS[i];
+      db.exec(`${typeof entry === 'function' ? entry() : entry}; PRAGMA user_version = ${i + 1}`);
+    }
   });
   return db;
 }
