@@ -20,5 +20,6 @@ export function answer(out) {
   if (m?.stopReason === 'error') return { error: String(m.errorMessage || 'error with no message') };
   const u = m?.usage;
   return { text: m?.content?.filter((c) => c.type === 'text').map((c) => c.text).join(''),
+    stop: m?.stopReason ?? null, // pi reports one (stop, error, or a length cut); apply refuses a length stop
     ...(u && { tokens_in: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), tokens_out: u.output }) };
 }

@@ -16,5 +16,6 @@ export function answer(out) {
   try { r = JSON.parse(out); } catch { return {}; }
   if (r?.is_error) return { error: String(r.result || 'is_error with no message') };
   const u = r?.usage;
-  return { text: r?.result, session_id: r?.session_id, ...(u && { tokens_in: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), tokens_out: u.output_tokens }) };
+  return { text: r?.result, session_id: r?.session_id, stop: r?.stop_reason ?? null, // the Anthropic envelope's stop reason, when the result carries one (a length cut); apply refuses it
+    ...(u && { tokens_in: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), tokens_out: u.output_tokens }) };
 }
