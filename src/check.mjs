@@ -89,6 +89,32 @@ export function plain(text, where, { words, sentences }) {
   return '';
 }
 
+// A proposal must not quote record text: the proposal leaves the private run folder (report, sign-off, commit)
+// while the records stay in it. QUOTE_WORDS is the run of consecutive shared words that refuses a proposal's
+// free-text field: long enough that ordinary phrases do not trip it, short enough to catch a copied sentence.
+export const QUOTE_WORDS = 8;
+const wordsOf = (s) => String(s ?? '').toLowerCase().match(/[A-Za-z0-9]+/g) ?? [];
+// Every run of QUOTE_WORDS consecutive words in the record texts, as one string each, for the quote rule below.
+export function quoteRuns(recordTexts) {
+  const runs = new Set();
+  for (const text of recordTexts) {
+    const words = wordsOf(text);
+    for (let i = 0; i + QUOTE_WORDS <= words.length; i++) runs.add(words.slice(i, i + QUOTE_WORDS).join(' '));
+  }
+  return runs;
+}
+// The quote problem with one free-text field; '' when it holds. A run of QUOTE_WORDS shared words refuses it:
+// a longer shared run holds one, so only that length is checked. The refusal names the field but never echoes
+// the quoted words: they are the private text.
+export function quoteProblem(text, where, runs) {
+  if (!runs.size) return '';
+  const words = wordsOf(text);
+  for (let i = 0; i + QUOTE_WORDS <= words.length; i++) {
+    if (runs.has(words.slice(i, i + QUOTE_WORDS).join(' '))) return `${where} quotes a record; rewrite it without quoting record text`;
+  }
+  return '';
+}
+
 // records: id -> { date }; labels: id -> label; rows: the items a match rule tagged ({ source, id, cause, at }).
 export function repeats(cfg, records, labels, rows) {
   // A duplicate collapses into the record it repeats; that root is one incident, or `occurrences` of them.

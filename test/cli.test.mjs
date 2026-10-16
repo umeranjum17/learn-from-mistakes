@@ -1493,6 +1493,41 @@ test('propose: a rule-breaking fix is sent back once, then dropped on the second
   assert.match(reportOf(p, plainId), /^Fix 1, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory\.\n/m);
 });
 
+test('propose: a fix quoting record text is sent back once naming the field, then dropped, while a paraphrase is kept; with excerpts off the stored records still refuse it', () => {
+  const { p, lfm, query, calls, lines } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [cache] The nightly backlog queue filled and blocked the morning release workers -> 1 h -> OPEN.\n- [cache] The nightly backlog queue filled and blocked the morning release workers again -> 2 h -> OPEN.\n`);
+  const quoted = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'quote' };
+  const r = lfm(quoted, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run } = JSON.parse(r.stdout);
+  const asks = calls().filter((c) => c.stdin.startsWith(`lfm-run:${run.id}:propose\n`));
+  assert.equal(asks.length, 2, 'the worker is asked once more, with the problem');
+  assert.match(asks[1].stdin, /Your last answer was not valid: proposals\[0\]\.change quotes a record; rewrite it without quoting record text\./);
+  const refusal = asks[1].stdin.match(/^Your last answer was not valid: (.*)\. Answer again with one JSON object that fixes this\./m)[1];
+  assert.equal(refusal, 'proposals[0].change quotes a record; rewrite it without quoting record text');
+  assert.doesNotMatch(refusal, /nightly backlog/, 'the refusal never echoes the quoted words');
+  assert.deepEqual(query('SELECT target FROM proposals WHERE run_id = ?', run.id), [{ target: 'launch script 2' }]);
+  assert.ok(lines('propose', run.id).includes('dropped: proposals[0].change quotes a record; rewrite it without quoting record text'));
+  assert.deepEqual(lines('check', run.id), ['fixes: 1 kept of 1, problems: 0']);
+  const text = reportOf(p, run.id);
+  assert.match(text, /^Fix 1, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory for every lane\.\n/m);
+  assert.doesNotMatch(text, /nightly backlog/, 'no quoted record text reaches report.txt');
+
+  // With excerpts off the bundle holds no record text, but the stored records still refuse the quote.
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}excerpts: off\n`);
+  const off = lfm(quoted, 'retro', '--foreground', '--json');
+  assert.equal(off.status, 0, off.stderr);
+  const offId = JSON.parse(off.stdout).run.id;
+  assert.doesNotMatch(readFileSync(join(p, '.lfm', 'runs', String(offId), 'bundle.md'), 'utf8'), /^  > /m);
+  const retries = calls().filter((c) => c.stdin.startsWith(`lfm-run:${offId}:propose\n`));
+  assert.equal(retries.length, 2, 'the worker is asked once more, with the problem');
+  assert.match(retries[1].stdin, /Your last answer was not valid: proposals\[0\]\.change quotes a record; rewrite it without quoting record text\./);
+  assert.deepEqual(query('SELECT target FROM proposals WHERE run_id = ?', offId), [{ target: 'launch script 2' }]);
+  assert.doesNotMatch(reportOf(p, offId), /nightly backlog/);
+});
+
 test('a run id reused after the store is removed starts its step logs empty', () => {
   const { p, lfm } = setup();
   const first = JSON.parse(lfm('retro', '--wait', '1m', '--json').stdout);
