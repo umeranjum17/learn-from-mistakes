@@ -7,10 +7,12 @@ import { createInterface } from 'node:readline/promises';
 import { parseDocument } from 'yaml';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { AGENT_NAME, MODEL_RULE, modelOk, PROJECT_FILE } from './config.mjs';
+import { INSTALL, readyRoutes, routeModels } from './runners/byokit.mjs';
 import { CLASH } from './runners/index.mjs';
 
-// The fixed list a terminal picks from (never a PATH scan); a byokit:<route> can be typed as well.
-export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
+// The fixed agent CLIs a terminal picks from (never a PATH scan); the BYOKit entries come from BYOKit's own routes
+// listing, and a byokit:<route> can always be typed as well.
+export const CLIS = ['claude', 'codex', 'opencode', 'pi'];
 const LIST = 'claude, codex, opencode, pi or byokit:<route> (such as byokit:opencode-go)';
 const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--judge-model'] };
 // A role is unset when its agent is, or when the agent has no model: both are the user's to set. Only the keys named are
@@ -72,6 +74,10 @@ export async function pick(keys, cfg, dir) {
     return value.trim();
   };
   const picks = {};
+  // The BYOKit entries are the routes BYOKit reports as ready; with BYOKit not installed nothing is known, so the
+  // pick still offers the agent CLIs and says how to add a route, and never fails.
+  const choices = [...CLIS, ...(await readyRoutes()).map((r) => `byokit:${r}`)];
+  const noRoute = `\n  (no BYOKit route is ready: ${INSTALL})`;
   try {
     for (const key of keys) {
       let agent = cfg[key];
@@ -79,10 +85,10 @@ export async function pick(keys, cfg, dir) {
         const [role, other, otherRole] = key === 'agent'
           ? ['worker (agent)', cfg.judge_agent, 'judge']
           : ['judge (judge_agent)', picks.agent?.agent ?? cfg.agent, 'worker'];
-        process.stderr.write(`Which agent runs the ${role}?\n${CHOICES.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type byokit:<route>\n`);
+        process.stderr.write(`Which agent runs the ${role}?\n${choices.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type byokit:<route>${choices.length === CLIS.length ? noRoute : ''}\n`);
         for (;;) {
           const a = await ask('agent: ');
-          agent = CHOICES[Number(a) - 1] ?? a;
+          agent = choices[Number(a) - 1] ?? a;
           if (!AGENT_NAME.test(agent)) process.stderr.write(`${a || '(empty)'} is not one of the choices\n`);
           // agent_config holds one model per agent, so two roles on one agent would judge their own work.
           else if (agent === other) process.stderr.write(`the ${key === 'agent' ? 'worker' : 'judge'} must be another agent than the ${otherRole} (${other})\n`);
@@ -90,8 +96,13 @@ export async function pick(keys, cfg, dir) {
         }
       }
       let model;
+      // A BYOKit route lists the models BYOKit exposes for it when it exposes any; the user still types one or picks
+      // one by number, and nothing is chosen for them.
+      const offered = agent.startsWith('byokit:') ? await routeModels(agent.slice('byokit:'.length)) : undefined;
+      if (offered?.length) process.stderr.write(`Models for ${agent}:\n${offered.map((m, i) => `  ${i + 1}) ${m}`).join('\n')}\n`);
       for (;;) {
-        model = await ask(`model for ${agent}: `);
+        const typed = await ask(`model for ${agent}: `);
+        model = offered?.[Number(typed) - 1] ?? typed;
         if (!model) process.stderr.write('a model is needed\n');
         else if (!modelOk(agent, model)) process.stderr.write(`${model} is not ${MODEL_RULE}\n`);
         else break;
