@@ -216,5 +216,10 @@ export async function agents(cfg, opts) {
   const used = new Set(configuredRunners(cfg));
   const configured = [cfg.agent, cfg.judge_agent];
   const rows = list.filter((a) => used.has(a.runner)).map((a) => ({ ...a, model: agentModel(cfg, configured.find((n) => runnerKey(n) === a.runner)) }));
+  // A byokit:<route> role is not a RUNNERS key, so it gets its own row: its configured model and usable/problem from check().
+  for (const name of new Set(configured.filter((n) => typeof n === 'string' && byokit.routeOf(n)))) {
+    const p = await byokit.check(byokit.routeOf(name));
+    rows.push({ runner: name, model: agentModel(cfg, name), usable: !p, version: '', tools: byokit.tools, login: '', bin: name, problem: p ? `${p.problem}: ${p.fix}` : '' });
+  }
   return { agents: rows, ...(await resolveRoles(cfg, list)) };
 }

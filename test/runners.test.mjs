@@ -392,6 +392,11 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   const roles = await lfm('agents', '--json');
   assert.equal(roles.status, 0, roles.stderr);
   assert.deepEqual(JSON.parse(roles.stdout).judge, { runner: 'byokit:chatgpt', model: 'gpt-6-luna', bin: 'byokit:chatgpt', problem: '' });
+  const byokitRow = { runner: 'byokit:chatgpt', model: 'gpt-6-luna', usable: true, version: '', tools: 'none', login: '', bin: 'byokit:chatgpt', problem: '' };
+  assert.deepEqual(JSON.parse(roles.stdout).agents.find((a) => a.runner === 'byokit:chatgpt'), byokitRow);
+  const text = await lfm('agents'); // the text output lists the same byokit row
+  assert.equal(text.status, 0, text.stderr);
+  assert.deepEqual(decode(text.stdout).agents.find((a) => a.runner === 'byokit:chatgpt'), byokitRow);
   config('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\n'); // the same route judging itself
   const clash = await lfm('agents', '--json');
   assert.equal(clash.status, 1);
