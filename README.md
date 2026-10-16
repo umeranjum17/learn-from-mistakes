@@ -39,7 +39,7 @@ learn-from-mistakes-axi init --no-skill \
   --judge-agent "$JUDGE" --judge-model "$JUDGE_MODEL"
 ```
 
-Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. Each agent has one configured model, so choose another agent for the judge. The judge cannot resolve to the worker's binary and model; sign-in routes are also checked against their vendor's agent identity.
+Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. The judge must be a different agent than the worker (see `Runners and user-chosen models`).
 
 `init -y --no-skill` can write config without asking, but it does **not** choose agents or make the project ready. Follow its gaps. A second `init` keeps existing choices; flags can fill missing project choices, not replace them. Edit existing keys explicitly if you want to change them.
 
@@ -61,7 +61,7 @@ The optional discovery skill uses the [Agent Skills](https://agentskills.io) for
 
 ## Runners and user-chosen models
 
-Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use.
+Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The two roles must differ: `agent_config` holds one model per agent, so a judge on the worker's binary and model would judge its own work. A BYOKit sign-in route counts as its vendor's agent (`byokit:claude` is Claude, `byokit:chatgpt` is Codex).
 
 The current CLI runners are `claude`, `codex`, `opencode` and `pi`. Claude, OpenCode and Pi run with tools off; Codex uses read-only mode. Each needs its own executable and login. `gemini` and `acp:<target>` (through `acpx`) have adapters, but are **not offered for retro roles**: their headless tool restrictions are not confirmed. `agents --test <runner>` can probe an adapter, including an unconfirmed one; it does not remove that restriction.
 

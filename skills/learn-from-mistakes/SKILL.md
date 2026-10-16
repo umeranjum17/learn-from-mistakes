@@ -22,7 +22,7 @@ You do not need it installed: run `npx -y learn-from-mistakes-axi <command>`. If
 4. Read the run's `report.txt` (`npx -y learn-from-mistakes-axi report` prints its path as `report_txt`) and tell the user what it says in plain words.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7 of `report.txt`.
 
-The user chooses the tool's agents and models; never choose one. When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role, then run the init command it printed with their answer, then run the stopped command again.
+The user chooses the tool's agents and models; never choose one (full contract: the learn-from-mistakes README section `Runners and user-chosen models`). When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role, then run the init command it printed with their answer, then run the stopped command again.
 
 `npx -y learn-from-mistakes-axi guide` prints these steps for the installed version, and `npx -y learn-from-mistakes-axi --help` lists the commands.
 
