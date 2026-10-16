@@ -21,6 +21,29 @@ export function detect(dir) {
   return Object.fromEntries(found.map(([id, path]) => [id, { type: 'markdown-log', path, ...(id === REVIEWS ? { review: true } : {}) }]));
 }
 
+// A `##` heading's date: `YYYY-MM-DD` as before, now also `D Mon[th] [YYYY]` and `Mon[th] D, YYYY` — English month
+// names or their first three-plus letters, any case. A date with no year takes the latest year that leaves it on or
+// before today; a heading that is still not a date stays '' and its bullets stay skipped (no date).
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const monthOf = (word) => { const s = word.toLowerCase(); return MONTHS.findIndex((m) => s.length >= 3 && m.startsWith(s)); };
+function headingDate(line) {
+  const iso = line.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  if (iso) return iso;
+  const dmy = /(\d{1,2})(?!\d) ([A-Za-z]{3,9})(?![A-Za-z])(?: (\d{4})(?!\d))?(?!\w)/.exec(line);
+  const mdy = dmy ? null : /([A-Za-z]{3,9})(?![A-Za-z]) (\d{1,2})(?!\d),? (\d{4})(?!\d)/.exec(line);
+  const at = dmy ?? mdy;
+  if (!at) return '';
+  const mon = monthOf(dmy ? at[2] : at[1]);
+  const day = Number(dmy ? at[1] : at[2]);
+  if (mon < 0 || day < 1 || day > MONTH_DAYS[mon]) return '';
+  const fmt = (y) => `${y}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  if (at[3]) return fmt(Number(at[3]));
+  let y = new Date().getUTCFullYear();
+  while (Date.parse(fmt(y)) > Date.now()) y -= 1;
+  return fmt(y);
+}
+
 // Each record's id is an HMAC of its text keyed with the run store's salt: it survives line moves, and whoever reads a
 // bundle without the store cannot hash a guessed text to it.
 export function read(source, { path }, { project, salt }) {
@@ -29,7 +52,7 @@ export function read(source, { path }, { project, salt }) {
   let date = '';
   const records = [];
   text.split('\n').forEach((line, i) => {
-    if (line.startsWith('## ')) date = line.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '';
+    if (line.startsWith('## ')) date = headingDate(line);
     if (!line.startsWith('- ')) return;
     const body = line.slice(2).trim();
     let id = createHmac('sha256', salt).update(body.toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
