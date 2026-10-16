@@ -18,7 +18,7 @@ const FAKE_AGENT = new URL('fake-agent/claude', import.meta.url).pathname;
 const DAY = 86_400_000;
 const ago = (days) => new Date(Date.now() - days * DAY).toISOString();
 
-// A project with synthetic sessions, a defect log and eleven applied changes; returns its dir and the CLI runner.
+// A project with synthetic sessions, a defect log and twelve applied changes; returns its dir and the CLI runner.
 function journey() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-followup-'));
   after(() => rmSync(tmp, { recursive: true }));
@@ -62,8 +62,10 @@ causes:
   no-rule: { description: Nothing tags it. }
 followup: { min_sessions: 3, min_days: 1 }
 `);
-  // A defect log whose first record is 4 days ago: a change 6 days ago has no record on or before its before window's start.
-  writeFileSync(join(p, 'defects.md'), `## ${ago(4).slice(0, 10)}\n\n- A defect after the change.\n`);
+  // A defect log whose first record is 10 days ago: a change 6 days ago has no record on or before its before window's start.
+  // 4 defects 4 days ago and 3 today: a change 1 day ago has 3 records after it, though only one session.
+  const defects = (days, n) => `## ${ago(days).slice(0, 10)}\n\n${Array.from({ length: n }, (_, i) => `- Umer's defect ${days}-${i}.\n`).join('')}\n`;
+  writeFileSync(join(p, 'defects.md'), defects(10, 1) + defects(4, 4) + defects(0, 3));
   // PATH holds the fake agent (the analyse step's worker and the judge), node for its #! line, and git.
   const bin = join(tmp, 'bin');
   mkdirSync(bin);
@@ -91,6 +93,7 @@ followup: { min_sessions: 3, min_days: 1 }
   change('bad-glob', 3, '--kind', 'rule'); // chg-9: flat, no tripwire: no-data, then delete
   change('bad-write', 3, '--tripwire', '<= 4', '--kind', 'rule'); // chg-10: 4 -> 4, met: keep, also on the second retro
   change('no-rule', 6, '--metric', 'defects', '--tripwire', '<= 0'); // chg-11: the defect log has no record before its window: no-data
+  change('no-rule', 1, '--metric', 'defects', '--tripwire', '<= 1'); // chg-12: 4 -> 3 from its own 3 records, not sessions: fix
 
   const retro = () => {
     const r = lfm('retro', '--foreground', '--json');
@@ -111,7 +114,7 @@ function moveRunBack(p, id, days) {
   db.close();
 }
 
-test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data', () => {
+test('each applied change gets before and after numbers and a verdict; the second retro keeps a met rule change, deletes a flat one with or without a missed tripwire, and rolls back a second miss; a records source that does not cover the before window gives no-data, and a records-based metric counts its records, not sessions', () => {
   const { p, lfm, retro } = journey();
   const first = retro();
   assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed'], ['apply', 'completed']]);
@@ -127,14 +130,15 @@ test('each applied change gets before and after numbers and a verdict; the secon
     row('chg-8', 'cause_count:missing-file', 2, 4, '<= 0', 'rollback'),
     row('chg-9', 'cause_count:bad-glob', 2, 2, '', 'no-data'),
     row('chg-10', 'cause_count:bad-write', 4, 4, '<= 4', 'keep'),
-    row('chg-11', 'defects', 'n/a', 1, '<= 0', 'no-data'),
+    row('chg-11', 'defects', 'n/a', 7, '<= 0', 'no-data'),
+    row('chg-12', 'defects', 4, 3, '<= 1', 'fix'),
   ]);
   // The first run becomes an earlier retro: it read 2 days back, more than min_days before the second one.
   moveRunBack(p, first.run.id, 2);
   const second = retro();
   assert.deepEqual(second.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'delete'],
     ['chg-4', 'rollback'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'delete'],
-    ['chg-10', 'keep'], ['chg-11', 'no-data']]);
+    ['chg-10', 'keep'], ['chg-11', 'no-data'], ['chg-12', 'fix']]);
   assert.deepEqual(decode(lfm('status', '--run', String(first.run.id)).stdout).followups, first.followups); // each run keeps its own verdicts
 
   // The store keeps the unrounded numbers, NULL for n/a and for no tripwire; the follow-up step logs one line per change.
@@ -162,8 +166,8 @@ test('a change added after collect with an at older than what collect read gives
   const resumed = lfm('rerun', '--resume', '--run', String(first.run.id), '--wait', '1m', '--json');
   assert.equal(resumed.status, 0, resumed.stderr);
   const r = JSON.parse(resumed.stdout);
-  assert.deepEqual(r.followups.slice(0, 11), first.followups); // the changes collect read keep their numbers and verdicts
-  assert.deepEqual(r.followups.slice(11).map((f) => [f.change, f.before, f.after, f.verdict]), [['chg-12', 'n/a', 4, 'no-data'], ['chg-13', 'n/a', 'n/a', 'no-data']]);
+  assert.deepEqual(r.followups.slice(0, 12), first.followups); // the changes collect read keep their numbers and verdicts
+  assert.deepEqual(r.followups.slice(12).map((f) => [f.change, f.before, f.after, f.verdict]), [['chg-13', 'n/a', 4, 'no-data'], ['chg-14', 'n/a', 'n/a', 'no-data']]);
 });
 
 test('two retros within a minute: no delete, and no missed-twice rollback', () => {
@@ -172,5 +176,5 @@ test('two retros within a minute: no delete, and no missed-twice rollback', () =
   const again = retro();
   assert.deepEqual(again.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'rollback'],
     ['chg-4', 'fix'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'no-data'],
-    ['chg-10', 'keep'], ['chg-11', 'no-data']]);
+    ['chg-10', 'keep'], ['chg-11', 'no-data'], ['chg-12', 'fix']]);
 });
