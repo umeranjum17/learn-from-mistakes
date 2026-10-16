@@ -1579,6 +1579,53 @@ test('apply: a target that is not valid UTF-8 is refused before the worker is as
   assert.ok(!git('branch', '--list', 'lfm/*').includes(`lfm/${run.id}-1`), 'the refused fix must still have no branch');
 });
 
+test('apply: a target over caps.bundle_chars is refused before the worker is asked and before any branch', () => {
+  const { p, lfm, calls, lines, git, fake, auto } = applyRepo();
+  writeFileSync(join(p, 'big.txt'), 'line of target text\n'.repeat(4000)); // ~80k chars, over the 60000 cap
+  git('add', '-A'); git('commit', '-qm', 'big target');
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { db.prepare(`UPDATE proposals SET target = 'big.txt' WHERE run_id = ? AND n = 1`).run(run.id); } finally { db.close(); }
+  const size = readFileSync(join(p, 'big.txt'), 'utf8').length;
+  assert.ok(size > 60000, `the target must clear the cap, got ${size}`);
+  const before = calls().length;
+  const refused = lfm({}, 'apply', '--fix', '1'); assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, new RegExp(`^error: fix ${run.id}:1 names a file totalling ${size} characters, over the caps.bundle_chars cap of 60000: big.txt \\(${size}\\)$`, 'm'));
+  assert.match(refused.stderr, new RegExp(`^next: narrow the fix target to fewer files, or make the change by hand and record it with change applied --proposal ${run.id}:1 --ref <sha>, then apply again$`, 'm'));
+  assert.equal(git('branch', '--list', 'lfm/*'), '', 'a refused cap target must not create a branch');
+  assert.equal(calls().length, before, 'a refused cap target must not call the worker');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 0, 'a refused cap target must not record a ledger entry');
+  const reopen = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { reopen.exec(`UPDATE steps SET status = 'failed' WHERE run_id = ${run.id} AND name = 'apply'; UPDATE runs SET status = 'failed' WHERE id = ${run.id};`); } finally { reopen.close(); }
+  auto(1);
+  const r = lfm(fake, 'rerun', '--resume', '--run', String(run.id), '--wait', '1m', '--json'); assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).run.status, 'completed');
+  const logged = lines('apply', run.id); assert.equal(logged.length, 1, logged.join('\n'));
+  assert.match(logged[0], new RegExp(`^refused: fix ${run.id}:1 was not applied: fix ${run.id}:1 names a file totalling ${size} characters, over the caps.bundle_chars cap of 60000`));
+  assert.equal(git('branch', '--list', 'lfm/*'), '', 'a refused cap target must not create a branch in the run either');
+});
+
+test('apply: a worker that answers no JSON fails the fix in the run as failed:, with no branch', () => {
+  const { p, lfm, calls, lines, git, fake, auto } = applyRepo();
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { db.exec(`UPDATE steps SET status = 'failed' WHERE run_id = ${run.id} AND name = 'apply'; UPDATE runs SET status = 'failed' WHERE id = ${run.id};`); } finally { db.close(); }
+  auto(1);
+  const before = calls().length;
+  const r = lfm({ ...fake, FAKE_APPLY: 'nojson' }, 'rerun', '--resume', '--run', String(run.id), '--wait', '1m', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).run.status, 'completed');
+  const failed = lines('apply', run.id); assert.equal(failed.length, 5, failed.join('\n')); // two answers, two sent-back, one failed:
+  assert.match(failed.at(-1), new RegExp(`^failed: fix ${run.id}:1 was not applied: the worker's answer is not valid after one retry: the answer holds no JSON object$`));
+  assert.equal(calls().length, before + 2, 'a bad answer is sent back once, then the fix fails');
+  assert.equal(git('branch', '--list', 'lfm/*'), '', 'a failed worker call creates no branch');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 0, 'a failed worker call records no ledger entry');
+  const direct = lfm({ FAKE_APPLY: 'nojson' }, 'apply', '--fix', '2'); // direct apply keeps the usage error, not a crash
+  assert.equal(direct.status, 1, direct.stderr);
+  assert.match(direct.stderr, /^error: the worker's answer is not valid after one retry: the answer holds no JSON object$/m);
+  assert.match(direct.stderr, /^next: learn-from-mistakes-axi --help/m);
+});
+
 test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
   const { p, env, lfm } = agentSetup();
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);

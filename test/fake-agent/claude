@@ -37,16 +37,17 @@ else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
 }
 // The apply step (its marker line) appends its rule line to each named file. FAKE_APPLY=cut returns a reply cut off
 // mid-line (each file truncated to half, no stop reason reported), length returns whole file text with the result envelope
-// a length stop gives (stop_reason: max_tokens), shrink returns a big cut that ends on a line boundary, trailing returns
+// a length stop gives (stop_reason: max_tokens), shrink returns a big cut that ends on a line boundary, nojson answers in prose with no JSON object (sent back once, then the step fails), trailing returns
 // whole file text missing only the trailing newline, grown returns longer text missing the trailing newline, broken
 // returns a truncated JSON envelope with a length stop, and FAKE_STOP sets the envelope's stop_reason outright (a normal
 // stop such as end_turn skips the shape checks, a length stop always refuses): apply must refuse the cut, length and
-// shrink shapes and the length stop, and apply the trailing and normal-stop replies.
+// shrink shapes and the length stop, and apply the trailing and normal-stop replies. A nojson answer fails the step.
 // Grown and broken are refused too: grown by the mid-line shape check, broken at once with no retry.
 else if (/^lfm-run:\d+:apply-\d+\n/.test(stdin)) {
   const blocks = [...stdin.matchAll(/^--- (.+)\n([\s\S]*?)\n--- end of \1$/gm)];
   const mode = process.env.FAKE_APPLY;
-  if (mode === 'broken') { reply('{"files": [{"path": "cut off', { stop_reason: 'max_tokens' }); }
+  if (mode === 'nojson') { reply('I made the change. The files look good now.'); }
+  else if (mode === 'broken') { reply('{"files": [{"path": "cut off', { stop_reason: 'max_tokens' }); }
   else {
   const files = blocks.map(([, path, text]) => ({ path, content: mode === 'cut' ? text.slice(0, Math.max(1, Math.floor(text.length / 2)))
     : mode === 'shrink' ? `${text.slice(0, 1)}\n` : mode === 'trailing' ? text.replace(/\n$/, '') : mode === 'grown' ? `${text}- Give each worker its own cache directory, Umer.` : `${text}- Give each worker its own cache directory, Umer.\n` }));
