@@ -490,6 +490,13 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   assert.match(broken.fix, /^done-done status --run r5   # in the notes repo/);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [../x] }\n');
   assert.match(lfm('changes').stderr, /^error: .*: sources\.dd\.apps must be a list of done-done app names$/m);
+
+  // A malformed run between one and two windows ago: the retro reads it, so doctor checks it too.
+  run('bad-old', { result: 'fail', updated: ago(10), steps: [null] });
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes], path: dd-home }\n');
+  const stale = source();
+  assert.equal(stale.level, 'fail');
+  assert.equal(stale.detail, `done-done: ${file('bad-old')} is not done-done run state (steps)`);
 });
 
 test('change applied appends an append-only ledger the report counts and changes exports', () => {

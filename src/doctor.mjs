@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import { ingestReadFrom, shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
@@ -41,7 +41,8 @@ export async function doctor(dir, opts) {
   }
 
   // Each source's own doctor hook: readable, its count in the window, and the entries it skipped.
-  const since = Date.now() - parseInt(cfg.window, 10) * 86_400_000;
+  // The read start is the retro's own: what the next retro reads, doctor checks.
+  const since = ingestReadFrom(cfg);
   if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', `learn-from-mistakes-axi init --dir ${shq(dir)}   # lists the sources it finds as gaps`);
   for (const [id, s] of Object.entries(cfg.sources)) {
     let r;
