@@ -14,7 +14,7 @@ const DROPPED = 80; // room kept for the dropped line
 
 // This window's events with a failure signal, by tool and signal, biggest first: the cluster c<n> is entry n - 1.
 export function clusters(db, id, start) {
-  const events = inWindow(db.prepare('SELECT id, session_id, ts, tool, signal, cause, ref, excerpt FROM events WHERE run_id = ? AND signal IS NOT NULL ORDER BY ts DESC, id DESC').all(id), { start });
+  const events = inWindow(db.prepare('SELECT id, session_id, ts, tool, signal, cause, ref, excerpt, from_output FROM events WHERE run_id = ? AND signal IS NOT NULL ORDER BY ts DESC, id DESC').all(id), { start });
   const by = new Map();
   for (const e of events) {
     const key = `${e.tool ?? 'no tool'} ${e.signal}`;
@@ -40,7 +40,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     ['Follow-ups', 'No follow-ups yet.', []],
     ['Signal clusters', 'No session event has a failure signal in this window.', grouped.map(([key, es], i) => {
       const causes = [...new Set(es.map((e) => e.cause).filter(Boolean))].map(redact).join(', ') || 'none';
-      const lines = es.slice(0, SAMPLES).map((e) => `- [e${e.id}] ${redact(e.ts)} session ${redact(e.session_id)} at ${redact(e.ref)}${quote(e.excerpt)}`);
+      const lines = es.slice(0, SAMPLES).map((e) => `- [e${e.id}] ${redact(e.ts)} session ${redact(e.session_id)} at ${redact(e.ref)}${e.from_output ? ' (from output)' : ''}${quote(e.excerpt)}`);
       const more = es.length > SAMPLES ? [`- ${es.length - SAMPLES} more events`] : [];
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],

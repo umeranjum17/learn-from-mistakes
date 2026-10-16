@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { fresh, inputText, json, list, TEST, textOf } from './claude.mjs';
+import { failSignal, fresh, inputText, json, list, textOf } from './claude.mjs';
 
 export const STORE_VAR = 'PI_CODING_AGENT_SESSION_DIR';
 export const root = () => process.env[STORE_VAR] || join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions');
@@ -49,8 +49,8 @@ async function parse(file, { keep, excerpt }) {
         const exit = /Command exited with code (\d+)\s*$/.exec(text)?.[1]; // the bash tool's own last line
         // A call the user stopped is not a tool failure; the interrupt after it is counted. Pi itself writes these texts.
         const declined = error && /(?:Command|Operation) aborted\s*$/.test(text);
-        const signal = !error || declined ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
-        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? m.toolName ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, excerpt: signal ? excerpt(text) : '' });
+        const { signal, fromOutput } = failSignal(call?.command ?? '', text, { error, declined, exit });
+        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? m.toolName ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '' });
         if (call) { if (error && !declined) failed.add(call.key); else failed.delete(call.key); } // a later repeat after a success is no retry
         afterError ||= error;
       } else if (m.role === 'user') {

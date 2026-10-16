@@ -6,7 +6,7 @@ import { createReadStream, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { fresh, inputText, json, list, TEST, textOf } from './claude.mjs';
+import { failSignal, fresh, inputText, json, list, textOf } from './claude.mjs';
 
 export const STORE_VAR = 'GEMINI_CLI_HOME';
 export const root = () => join(process.env[STORE_VAR] || homedir(), '.gemini');
@@ -57,8 +57,8 @@ async function parse(file, { session, excerpt }) {
         if (tc?.status === 'cancelled') { events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' }); afterError = false; continue; }
         const text = resultText(tc?.result), exit = command ? Number(/(?:^|\n)Exit Code: (\d+)\s*$/.exec(text)?.[1] ?? 0) || null : null;
         const error = tc?.status === 'error' || Boolean(exit);
-        const signal = !error ? null : TEST.test(command) ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
-        events.push({ ...at, kind: 'tool_result', tool: tc?.name ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(text) : '' });
+        const { signal, fromOutput } = failSignal(command, text, { error, exit });
+        events.push({ ...at, kind: 'tool_result', tool: tc?.name ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '' });
         if (error) failed.add(key); else failed.delete(key); // a later repeat after a success is no retry
         afterError ||= error;
       }

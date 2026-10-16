@@ -414,6 +414,10 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
     msg({ role: 'user', content: [{ type: 'text', text: `Umer: use the other script, ${secrets(-12)} END` }] }),
     call('c2', 'bash', { command: 'npm test' }), result('c2', 'ok', false), call('c3', 'read', { path: 'a.js' }), result('c3', 'ENOENT', true),
     call('c4', 'bash', { command: 'npm test' }), result('c4', 'Command aborted', true), // stopped by the user: no failure
+    call('c5', 'bash', { command: 'npm test | tail -20' }),
+    result('c5', `ℹ tests 2\nℹ pass 1\nℹ fail 1\n\nCommand exited with code 0`, false), // the pipe exits 0: only the node --test summary line shows the tests failed
+    call('c6', 'bash', { command: 'npm test' }),
+    result('c6', `npm warn cleanup 3 failed to download\n\nCommand exited with code 0`, false), // a stray "N failed" that is no runner summary line stays invisible
     msg({ role: 'assistant', content: [], stopReason: 'aborted' }), msg({ role: 'user', content: 'Umer: wait.' }), 'not json']);
   const failing = [msg({ role: 'user', content: 'lfm-run:9:analyse Follow the bundle.' }), call('c1', 'read', {}), result('c1', 'no', true)];
   put(join(pi, 'b_pi-marker.jsonl'), [head('pi-marker', p), ...failing]);
@@ -444,13 +448,16 @@ test('a retro reads this repo\'s Pi and Gemini CLI sessions and keeps planted se
   assert.equal(r.status, 0, r.stderr);
   const run = decode(r.stdout), id = run.run.id;
   // this repo's sessions with a Gemini subagent and a Pi fork with none of its parent's copied entries; not the marker runs, .lfm/, the other project or slug, or old files; a replaced, rewritten, rewound or command message is not an event; bad records: a non-JSON line in each kept file.
-  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 25, sessions: 3, skipped: 2 });
+  assert.deepEqual(run.sources.find((s) => s.type === 'sessions'), { id: 'sessions', type: 'sessions', items: 29, sessions: 3, skipped: 2 });
   assert.deepEqual(query(p, 'SELECT agent, session_id, count(*) AS n FROM events WHERE run_id = ? GROUP BY 1, 2 ORDER BY 1, 2', id),
-    [{ agent: 'gemini', session_id: 'gm000001-main', n: 11 }, { agent: 'pi', session_id: 'pi-fork', n: 1 }, { agent: 'pi', session_id: 'pi-main', n: 13 }]);
+    [{ agent: 'gemini', session_id: 'gm000001-main', n: 11 }, { agent: 'pi', session_id: 'pi-fork', n: 1 }, { agent: 'pi', session_id: 'pi-main', n: 17 }]);
   const signals = query(p, 'SELECT agent, signal, count(*) AS n FROM events WHERE run_id = ? AND signal IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2', id);
-  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`), ['correction', 'interrupt', 'retry', 'test_fail', 'tool_error'].flatMap((s) => [`gemini ${s} 1`, `pi ${s} 1`]).sort());
-  assert.deepEqual(query(p, `SELECT tool, exit_code FROM events WHERE run_id = ? AND signal = 'test_fail' ORDER BY agent`, id),
-    [{ tool: 'run_shell_command', exit_code: 1 }, { tool: 'bash', exit_code: 1 }]); // a shell exit of 1 is a failure even with status success
+  assert.deepEqual(signals.map((e) => `${e.agent} ${e.signal} ${e.n}`),
+    ['correction', 'interrupt', 'retry', 'tool_error'].flatMap((s) => [`gemini ${s} 1`, `pi ${s} 1`]).concat(['gemini test_fail 1', 'pi test_fail 2']).sort());
+  assert.deepEqual(query(p, `SELECT tool, exit_code, from_output FROM events WHERE run_id = ? AND signal = 'test_fail' ORDER BY agent, exit_code`, id),
+    [{ tool: 'run_shell_command', exit_code: 1, from_output: 0 }, { tool: 'bash', exit_code: 0, from_output: 1 }, { tool: 'bash', exit_code: 1, from_output: 0 }]); // a shell exit of 1 is a failure even with status success; a piped exit of 0 is one only from the output
+  // The bundle shows where the failure signal came from: this one only the output's summary line proved.
+  assert.equal(readFileSync(join(p, '.lfm', 'runs', String(id), 'bundle.md'), 'utf8').split(' (from output)').length - 1, 1);
   for (const [{ excerpt }] of ['test_fail', 'correction'].flatMap((s) => ['pi', 'gemini'].map((a) => query(p, 'SELECT excerpt FROM events WHERE run_id = ? AND agent = ? AND signal = ?', id, a, s)))) {
     assert.ok(excerpt.includes(' END') && excerpt.includes('[redacted]') && excerpt.length <= 300, excerpt);
   }
