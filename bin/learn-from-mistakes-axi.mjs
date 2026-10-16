@@ -530,7 +530,7 @@ async function main(ctx) {
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
   // An acp target or a byokit route names the run dir, so it is a plain name: no path, no leading dot.
   for (const k of ['test', 'agent', 'judge-agent']) {
-    if (opts[k] !== undefined && !/^(acp|byokit):[a-z0-9][\w.-]*$/.test(opts[k]) && (opts[k] === 'acp' || !Object.hasOwn(RUNNERS, opts[k].replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
+    if (opts[k] !== undefined && !/^(acp|byokit):[a-z0-9][\w.:-]*$/.test(opts[k]) && (opts[k] === 'acp' || !Object.hasOwn(RUNNERS, opts[k].replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
       const list = Object.keys(RUNNERS).filter((r) => r !== 'acp').join(', ');
       throw new UsageError(`--${k} ${shown(opts[k])} must be an agent: ${list}, acp:<target> or byokit:<route>`, form);
     }

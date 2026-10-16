@@ -57,7 +57,7 @@ const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a posi
 // The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent each, which the user sets: the
 // tool never picks an agent (no auto, no detection) and never tries another when the one set is not ready.
 export const AGENTS = ['claude', 'codex', 'opencode', 'pi', 'gemini']; // the native agent CLIs
-export const AGENT_NAME = /^(claude|codex|opencode|pi|gemini|(acp|byokit):[a-z0-9][\w.-]*)$/;
+export const AGENT_NAME = /^(claude|codex|opencode|pi|gemini|(acp|byokit):[a-z0-9][\w.:-]*)$/; // a byokit route may carry colons: byokit:zai:plan_key
 const NAME = AGENT_NAME;
 export const AGENT_RULE = 'claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>';
 const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
