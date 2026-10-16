@@ -129,13 +129,14 @@ export async function init(dir, opts) {
     found.home = { type: 'firstmate', path: opts.firstmate };
   }
   // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
-  // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override.
+  // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override -- unless
+  // --reconfigure says the flags re-apply: they replace those keys in the existing config, every other key and comment stays.
   const before = written ? loadGlobal() : loadConfig(dir), here = (k) => before.from[k] === file;
   const chosen = {}, ignored = [];
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
-    const agent = opts[flag], takeAgent = written || !here(key);
-    const takeModel = !!opts[model] && !here(`agent_config.${agent}.model`) && (takeAgent || before[key] === agent);
+    const agent = opts[flag], takeAgent = written || opts.reconfigure || !here(key);
+    const takeModel = !!opts[model] && (opts.reconfigure || (!here(`agent_config.${agent}.model`) && (takeAgent || before[key] === agent)));
     if (takeAgent || takeModel) chosen[key] = { agent, model: takeModel ? opts[model] : undefined, set: takeAgent };
     if (!takeAgent) ignored.push(`--${flag}`);
     if (opts[model] && !takeModel) ignored.push(`--${model}`);
@@ -146,7 +147,7 @@ export async function init(dir, opts) {
   const has = !written && Object.values(before.sources).some((s) => s.type === 'sessions');
   let reads = opts.sessions?.split(',').map((a) => a.trim()), asked = opts.sessionsAsked === true;
   if (reads && !reads.every((a) => names.includes(a))) throw new UsageError(`--sessions ${shown(opts.sessions)} must list agents by name: ${names.join(', ')}`, 'learn-from-mistakes-axi init --sessions claude,pi   # the agents whose sessions the user wants read');
-  if (reads && has) { ignored.push('--sessions'); reads = undefined; }
+  if (reads && has && !opts.reconfigure) { ignored.push('--sessions'); reads = undefined; }
   if (!reads && !has && local.length && !opts.y && interactive() && !asked) { reads = await pickSessions(local, names); asked = true; opts.sessionsAsked = true; }
   // Only the roles the user set now need probing: the config's, plus the agents these flags choose. No other
   // agent CLI is run and no other login store is read.
@@ -203,7 +204,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   if (reads?.length) {
     const doc = parseDocument(readFileSync(file, 'utf8'));
     if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
-    doc.setIn(['sources', before.sources?.sessions ? 'agent-sessions' : 'sessions'], doc.createNode({ type: 'sessions', agents: [...new Set(reads)] }, { flow: true }));
+    doc.setIn(['sources', before.sources?.sessions && !opts.reconfigure ? 'agent-sessions' : 'sessions'], doc.createNode({ type: 'sessions', agents: [...new Set(reads)] }, { flow: true }));
     try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
     catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
