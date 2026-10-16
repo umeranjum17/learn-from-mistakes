@@ -1,6 +1,7 @@
 // The run store: <state dir>/lfm.sqlite. node:sqlite is loaded on first open, so commands that never
 // open the store never load it. The schema is an ordered list of migrations; PRAGMA user_version counts
 // the applied ones, so a later change appends an entry and never edits an earlier one.
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -32,7 +33,7 @@ const MIGRATIONS = [
   // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
   `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,
     before NUMERIC, after NUMERIC, tripwire TEXT, verdict TEXT NOT NULL, PRIMARY KEY (run_id, change_id))`,
-  // The id the labels and proposals take: a content hash for a defect-log record, source:id for a gate row or PR.
+  // The id the labels and proposals take: a store-salted HMAC of the text for a defect-log record, source:id for a gate row or PR.
   'ALTER TABLE records ADD COLUMN record_id TEXT',
   // Each call to the run's own agent: its step and role, the agent CLI and model, its process group while it runs, how it
   // ended (ok, invalid, error, or the run's cancelled or interrupted), and the session id and tokens the agent reported.
@@ -55,6 +56,9 @@ const MIGRATIONS = [
   'ALTER TABLE proposals ADD COLUMN verdict TEXT; ALTER TABLE proposals ADD COLUMN judge_note TEXT',
   `ALTER TABLE proposals ADD COLUMN kind TEXT;
     CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
+  // The key of a defect-log record's id, made once per store and never printed: the id is an HMAC of the record's text,
+  // so whoever reads a bundle cannot hash a guessed text to it. A run from before this entry keeps its plain-hash ids.
+  () => `CREATE TABLE IF NOT EXISTS secret (salt BLOB NOT NULL); INSERT INTO secret VALUES (X'${randomBytes(32).toString('hex')}')`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
@@ -66,7 +70,10 @@ export async function openStore(state, create) {
   db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL');
   // A current store needs no write lock to open; else re-read the version under it, so two first opens never apply an entry twice.
   if (db.prepare('PRAGMA user_version').get().user_version < MIGRATIONS.length) locked(db, () => {
-    for (let i = db.prepare('PRAGMA user_version').get().user_version; i < MIGRATIONS.length; i++) db.exec(`${MIGRATIONS[i]}; PRAGMA user_version = ${i + 1}`);
+    for (let i = db.prepare('PRAGMA user_version').get().user_version; i < MIGRATIONS.length; i++) {
+      const entry = MIGRATIONS[i];
+      db.exec(`${typeof entry === 'function' ? entry() : entry}; PRAGMA user_version = ${i + 1}`);
+    }
   });
   return db;
 }

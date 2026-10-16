@@ -1,5 +1,5 @@
 // markdown-log: a defect log in Markdown. Each top-level "- " bullet is one record.
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readText, shq } from '../../bin/learn-from-mistakes-axi.mjs';
@@ -15,8 +15,9 @@ export function detect(dir) {
   return Object.fromEntries(found.map(([id, path]) => [id, { type: 'markdown-log', path }]));
 }
 
-// Each record's id comes from its text, so it survives line moves.
-export function read(source, { path }, { project }) {
+// Each record's id is an HMAC of its text keyed with the run store's salt: it survives line moves, and whoever reads a
+// bundle without the store cannot hash a guessed text to it.
+export function read(source, { path }, { project, salt }) {
   const text = readText(path, `source ${source}`, `check sources.${source}.path in ${shq(project)}, or create it: touch ${shq(path)}`);
   const seen = new Map();
   let date = '';
@@ -25,7 +26,7 @@ export function read(source, { path }, { project }) {
     if (line.startsWith('## ')) date = line.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '';
     if (!line.startsWith('- ')) return;
     const body = line.slice(2).trim();
-    let id = createHash('sha256').update(body.toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
+    let id = createHmac('sha256', salt).update(body.toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
     const n = (seen.get(id) ?? 0) + 1;
     seen.set(id, n);
     if (n > 1) id += `~${n}`;
@@ -35,8 +36,8 @@ export function read(source, { path }, { project }) {
 }
 
 // doctor: readable, the records dated in the window, and the bullets with no date, which the window cannot place.
-export function doctor(source, entry, { readFrom, project }) {
-  const { records } = read(source, entry, { project });
+export function doctor(source, entry, { readFrom, project, salt }) {
+  const { records } = read(source, entry, { project, salt });
   const undated = records.filter((r) => !r.date).length;
   const inWin = records.filter((r) => Date.parse(r.date) >= readFrom).length;
   return { level: 'ok', detail: `${records.length} records, ${inWin} in the window, ${undated} skipped (no date)` };

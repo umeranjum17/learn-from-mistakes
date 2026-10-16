@@ -28,7 +28,7 @@ const STEPS = {
   // Reads the sources: session events go to the `events` table, defect-log bullets, failed gate and verify steps and PRs to `records`,
   // each with the cause its source tagged it with. It can run again: it first drops the run's events and records.
   collect: async (cfg, db, id, log) => {
-    const { sources, events, records, rows, prs, read_from, current_start, previous_start } = await ingest(cfg);
+    const { sources, events, records, rows, prs, read_from, current_start, previous_start } = await ingest(cfg, db);
     for (const s of sources) log(sourceLine(s));
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, cause, ref, excerpt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
