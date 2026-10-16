@@ -341,10 +341,19 @@ async function byokitSetup() {
   const lfm = (...args) => node(env, CLI, ...args, '--dir', s.p);
   const hook = async (route, file = BYOKIT) => { const r = await node(env, '--input-type=module', '-e', HOOK, file, route); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout); };
   const signIn = async () => {
-    const seed = node(env, '--input-type=module', '-e', SEED, mock.base);
-    while (!mock.lastCode()) await new Promise((ok) => setTimeout(ok, 50));
+    let err = '';
+    const seed = execFile(process.execPath, ['--input-type=module', '-e', SEED, mock.base], { encoding: 'utf8', cwd: ROOT, env });
+    seed.stderr.on('data', (d) => { err += d; });
+    after(() => { try { seed.kill('SIGKILL'); } catch {} }); // a failed assertion must not leave the seed polling
+    const exited = new Promise((ok) => seed.once('close', (code, signal) => ok(code ?? (signal ? 1 : 0))));
+    // Both waits are bounded: the seed shows the mock a device code and exits, or the test names why. An unbounded
+    // wait here pins the file open (and the runner cancels every still-running file with the pending-promise failure).
+    for (let i = 0; i < 1200 && !mock.lastCode(); i++) await new Promise((ok) => setTimeout(ok, 50)); // up to 60 s
+    assert.ok(mock.lastCode(), `the sign-in never showed the mock a device code:\n${err}`);
     mock.approve(mock.lastCode());
-    assert.equal((await seed).status, 0);
+    let timer;
+    try { assert.equal(await Promise.race([exited, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`the seed did not exit in 60 s:\n${err}`)), 60_000); })]), 0, err); }
+    finally { clearTimeout(timer); }
   };
   return { ...s, env, mock, lfm, hook, signIn };
 }
