@@ -839,12 +839,12 @@ test('a source id of reviews without the flag is still not counted as defects', 
   assert.match(bundle, /^\| defects \| 3 \|/m);
 });
 
-test('a markdown-log heading dates its bullets in the log\'s date forms: ISO, D Mon[th] [YYYY], Mon[th] D, YYYY; no year is the latest year on or before today', () => {
+test('a markdown-log heading dates its bullets in the log\'s date forms: ISO, D Mon[th] [YYYY], Mon[th] D, YYYY; no year is the latest year on or before today, and 29 Feb the latest leap year', () => {
   const { p, env } = setup();
   execFileSync('git', ['-C', p, 'init', '-q']);
   // The acceptance finding's own file: before the heading parser read the log's other date forms, only the ISO heading
   // dated its bullet and the other three bullets were skipped (no date); now every bullet carries its heading's date.
-  writeFileSync(join(p, 'defects.md'), '# Defects\n## 2026-10-14\n- Umer: tests failed\n## 12 Oct\n- Umer: lint failed on a stale import\n- Umer: the build broke on a missing type\n## 15 Oct 2026\n- Umer: wrong flag in the release script\n');
+  writeFileSync(join(p, 'defects.md'), '# Defects\n## 2026-10-14\n- Umer: tests failed\n## 12 Oct\n- Umer: lint failed on a stale import\n- Umer: the build broke on a missing type\n## 15 Oct 2026\n- Umer: wrong flag in the release script\n## 29 Feb\n- Umer: the leap-day migration ran twice\n');
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\ncauses: { flaky: { description: d } }\n');
   // PATH holds only the fake agent (the worker and the judge), so the run never calls a real, logged-in agent.
   const bin = join(p, '..', 'bin');
@@ -857,10 +857,12 @@ test('a markdown-log heading dates its bullets in the log\'s date forms: ISO, D 
   const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   let y = new Date().getUTCFullYear(); // the no-year rule: the latest `12 Oct` on or before today
   while (Date.parse(`${y}-10-12`) > Date.now()) y -= 1;
+  let leap = new Date().getUTCFullYear(); // `29 Feb` with no year: the latest leap year whose 29 Feb is on or before today
+  while (new Date(Date.UTC(leap, 1, 29)).getUTCDate() !== 29 || Date.UTC(leap, 1, 29) > Date.now()) leap -= 1;
   assert.deepEqual(records.map((x) => [x.line, x.date]).sort((a, b) => a[0] - b[0]), [
-    [3, '2026-10-14'], [5, `${y}-10-12`], [6, `${y}-10-12`], [8, '2026-10-15']]);
+    [3, '2026-10-14'], [5, `${y}-10-12`], [6, `${y}-10-12`], [8, '2026-10-15'], [10, `${leap}-02-29`]]);
   const doctor = JSON.parse(spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env }).stdout).checks.find((c) => c.label === 'source log');
-  assert.match(doctor.detail, /^markdown-log: 4 records, \d+ in the window, 0 skipped \(no date\)$/);
+  assert.match(doctor.detail, /^markdown-log: 5 records, \d+ in the window, 0 skipped \(no date\)$/);
 });
 
 test('retro --foreground saves a run and its steps in .lfm/; status and runs show it', () => {
