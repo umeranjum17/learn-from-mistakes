@@ -101,6 +101,9 @@ function assertNoPlanted(p, outputs) {
   }
 }
 
+// The TOON report's last stdout line is the `repeated:` summary, outside lfm-report.v2.
+const summaryOf = (stdout) => stdout.trimEnd().split('\n').at(-1);
+
 const query = (p, sql, ...args) => {
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try { return db.prepare(sql).all(...args).map((r) => ({ ...r })); } finally { db.close(); }
@@ -243,6 +246,40 @@ causes:
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(query(p, `SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND session_id = 's-fix' AND cause IS NOT NULL GROUP BY cause, signal ORDER BY cause`, decode(r.stdout).run.id),
     [{ cause: 'bash-fail', signal: 'nonzero_exit', tool: 'Bash', n: 1 }, { cause: 'quoted-grep', signal: 'retry', tool: 'Bash', n: 1 }]);
+});
+
+test('a match rule that tags session events counts once: the summary shows what the report shows', () => {
+  const { p, claude, lfm } = setup();
+  const at = (back) => new Date(Date.now() - back * 86_400_000).toISOString();
+  const call = (id, command, when) => ({ type: 'assistant', cwd: p, timestamp: when, message: { content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } });
+  const result = (id, when) => ({ type: 'user', cwd: p, timestamp: when, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'deploy lock held by another job\nExit code 1', is_error: true }] } });
+  writeFileSync(join(claude, 'projects', '-repo', 's-rep.jsonl'), [
+    call('a1', 'npm run deploy', at(0)), result('a1', at(0)),
+    call('a2', 'npm run deploy', at(0)), result('a2', at(0)),
+    call('a3', 'npm run deploy', at(1)), result('a3', at(1)),
+  ].map((r) => JSON.stringify(r)).join('\n'));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
+  sessions: { type: sessions, agents: [claude] }
+causes:
+  deploy-lock:
+    description: A deploy holds the lock.
+    match: { source: sessions, text_contains: 'deploy lock' }
+repeat: { min_incidents: 3, min_days: 2 }
+`);
+  const r = lfm('retro', '--foreground');
+  assert.equal(r.status, 0, r.stderr);
+  const id = decode(r.stdout).run.id;
+  assert.deepEqual(query(p, 'SELECT cause, count(*) AS n FROM events WHERE run_id = ? AND cause IS NOT NULL GROUP BY cause', id),
+    [{ cause: 'deploy-lock', n: 3 }]);
+  // The check step counts the tagged events, so the report's short answer, section 4 and the findings line all name the
+  // cause; the summary line must show the same cause with the same counts, never `none` next to them.
+  assert.equal(summaryOf(lfm('report').stdout), 'repeated: deploy-lock (3 times/2 days)');
+  const status = JSON.parse(lfm('status', '--json').stdout);
+  assert.equal(status.result.summary, 'repeated: deploy-lock (3 times/2 days)');
+  assert.deepEqual(status.result.findings, []);
+  const model = JSON.parse(lfm('report', '--json').stdout);
+  assert.deepEqual(model.repeated, [{ cause: 'deploy-lock', count: 3, days: 2 }]);
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(id), 'report.txt'), 'utf8'), /^- deploy-lock: 3 times on 2 days\.$/m);
 });
 
 test('a gate row takes one cause, the first in config order, in both the metrics and the report', () => {

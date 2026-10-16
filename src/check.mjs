@@ -73,7 +73,7 @@ function passive(sentence) {
 
 export function plain(text, where, { words, sentences }) {
   if (typeof text !== 'string' || !text.trim()) return `${where} must be a non-empty string`;
-  const parts = text.split(/(?<=[.!?])(?<!\b(?:e\.g|i\.e)\.)\s+/).filter((s) => s.trim()); // "e.g. the" does not end a sentence
+  const parts = splitSentences(text);
   const long = parts.findIndex((s) => s.trim().split(/\s+/).length > 20);
   if (long >= 0) return `${where}: sentence ${long + 1} has more than 20 words`;
   for (let i = 0; i < parts.length; i++) {
@@ -87,6 +87,21 @@ export function plain(text, where, { words, sentences }) {
   if (words && text.trim().split(/\s+/).length > words) return `${where} has more than ${words} words`;
   if (sentences && parts.length > sentences) return `${where} has more than ${sentences} sentences`;
   return '';
+}
+
+// The sentences of one free text, split where plain() splits them ("e.g. the" does not end a sentence), so the
+// report's trim and this rule always read the same sentence boundaries.
+const SENTENCE = /(?<=[.!?])(?<!\b(?:e\.g|i\.e)\.)\s+/;
+export const splitSentences = (text) => String(text ?? '').split(SENTENCE).filter((s) => s.trim());
+
+// The report's rule a person line adds to plain(): a line a person reads holds no path, file name, bundle id
+// (c3, e12), hash or session id — those go only on the Evidence lines. The first sentence of the text that holds
+// one, named for the retry to rewrite it; '' when the text holds none. propose checks it against the redacted
+// text, the same read report.txt's said() makes, so a change that would be hidden there is sent back instead.
+export const RAW = /(?:^|[\s(])[~.]{0,2}\/\S|\w\/\w|\b[\w-]+\.(?:[cm]js|ts|md|json|ya?ml|sqlite|db|sh|py)\b|\b[ce]\d+\b|\b[0-9a-f]{12,}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-/i;
+export function rawProblem(text, where) {
+  const i = splitSentences(text).findIndex((s) => RAW.test(s));
+  return i < 0 ? '' : `${where}: sentence ${i + 1} names a path, file name or id; put the file in target and ids in refs`;
 }
 
 // A proposal must not quote record text: the proposal leaves the private run folder (report, sign-off, commit)

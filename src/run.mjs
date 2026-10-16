@@ -14,7 +14,7 @@ import { bundle } from './bundle.mjs';
 import { analyse } from './steps/analyse.mjs';
 import { propose } from './steps/propose.mjs';
 import { verify } from './steps/verify.mjs';
-import { check } from './check.mjs';
+import { check, counts } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { startTime } from './proc.mjs';
@@ -70,7 +70,7 @@ const STEPS = {
   apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
   // Counts with the labels the worker kept in this run; with none, coverage shows every record unlabelled. Then writes report.txt for a person.
   report: (cfg, db, id, log) => {
-    const { model, problems } = buildReport(cfg, runResult(db, id));
+    const { model, problems } = buildReport(cfg, runResult(db, id, cfg));
     if (problems.length) throw new InputError(`${problems.length} problems in the labels or change ledger`, REPORT);
     log(summaryLine(model));
     const text = reportText(cfg, db, id, runDir(cfg, id), collected(db, id), show(db, id));
@@ -79,14 +79,24 @@ const STEPS = {
   },
 };
 // The labels the worker kept in a run that asked it, its findings and its fixes; no labels when it was not asked.
-function runResult(db, id) {
+// With the config, also the run's counted causes: the check step's own count (counts()), the one the report's
+// section 4 shows, so the summary line and the report can never disagree about what repeated.
+function runResult(db, id, cfg) {
   const analysed = db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`).get(id)?.output_json;
   const runLabels = analysed && JSON.parse(analysed).asked ? db.prepare('SELECT record_id, event, cause, why, duplicate_of, occurrences, confidence FROM labels WHERE run_id = ?').all(id)
     .map(({ record_id, event, ...r }, i) => ({ id: record_id, event: Boolean(event), _line: i + 1,
       ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) })) : undefined; // NULL is an unset field
   const proposals = db.prepare('SELECT cause, refs_json, problem FROM proposals WHERE run_id = ? ORDER BY id').all(id)
     .map((p) => ({ cause: p.cause, refs: JSON.parse(p.refs_json), ok: !p.problem }));
-  return { run: id, runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })) };
+  let counted;
+  if (cfg) {
+    // A label that names a record the store no longer has is the report's problem line, never a count: counted
+    // stays out, so the summary cannot crash on inputs the report refuses.
+    const known = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id));
+    if (!runLabels || runLabels.every((l) => known.has(l.id))) counted = Object.fromEntries(counts(cfg, db, id, collected(db, id)).causes);
+  }
+  return { run: id, runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })),
+    ...(counted && { counted }) };
 }
 // The latest completed run that kept labels or findings, else the latest completed run: `report` counts it and shows its
 // numbers, follow-ups, fixes and report.txt. Undefined with no completed run.
@@ -96,7 +106,7 @@ export async function lastRun(cfg) {
   if (latest == null) return undefined;
   const id = db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id ?? latest;
   const reportFile = join(runDir(cfg, id), 'report.txt');
-  return { ...runResult(db, id), latest,
+  return { ...runResult(db, id, cfg), latest,
     shown: show(db, id), ...(existsSync(reportFile) && { reportFile }) };
 }
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);

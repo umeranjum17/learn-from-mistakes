@@ -328,7 +328,8 @@ test('report is lfm-report.v2 for the last run in TOON and JSON with one summary
   assert.equal(bare.status, 0, bare.stderr);
   const toon = decode(toonBodyOf(bare.stdout)); // invalid TOON throws; the summary line is outside the report
   assert.deepEqual([toon.schema, toon.run, toon.report_txt], ['lfm-report.v2', run.id, join(p, '.lfm', 'runs', String(run.id), 'report.txt')]);
-  assert.equal(summaryOf(bare.stdout), 'repeated: agent-exit-wait (4 rows/3 days)');
+  assert.equal(summaryOf(bare.stdout), 'repeated: agent-exit-wait (4 times/3 days)');
+  assert.deepEqual(toon.repeated, [{ cause: 'agent-exit-wait', count: 4, days: 3 }]); // the summary's one count, the report's section 4
   assert.match(bare.stderr, new RegExp(`^next: learn-from-mistakes-axi status --run ${run.id}   # the run and its steps`, 'm'));
   const json = lfm('report', '--json');
   const model = JSON.parse(json.stdout); // no summary line in JSON
@@ -399,10 +400,31 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   }
   assert.equal(run.query(`SELECT count(*) AS n FROM labels WHERE run_id = ? AND why LIKE '%${CANARY}%'`, id)[0].n, 3);
   assert.ok(reportOf(run.p, id).includes(`  Give each worker its own cache directory ${CANARY}.\n`), 'report.txt shows the change');
-  // Agent text that names a path is left out of report.txt.
-  const pathy = JSON.parse(run.lfm({ ...agents, FAKE_CANARY: `${CANARY} in src/cache.mjs` }, 'retro', '--foreground', '--json').stdout).run.id;
-  const hidden = reportOf(run.p, pathy);
-  assert.ok(!hidden.includes('cache.mjs') && hidden.includes('- Change:\n  This text breaks the report rules, so the report hides it.\n'), hidden);
+  // A change that names a path is refused at propose on the report's no-ids rule and sent back once; the fake agent
+  // answers the same, so the second answer's proposals are dropped and none is stored: nothing is hidden either.
+  const pathyRet = run.lfm({ ...agents, FAKE_CANARY: `${CANARY} in src/cache.mjs` }, 'retro', '--foreground', '--json');
+  assert.equal(pathyRet.status, 0, pathyRet.stderr);
+  assert.doesNotMatch(pathyRet.stdout + pathyRet.stderr, new RegExp(CANARY));
+  const pathy = JSON.parse(pathyRet.stdout).run.id;
+  const pathyLog = readFileSync(join(run.p, '.lfm', 'runs', String(pathy), 'propose.log'), 'utf8');
+  assert.match(pathyLog, /^worker answer 1 is not valid: proposals\[0\]\.change: sentence 1 names a path, file name or id; put the file in target and ids in refs/m);
+  assert.match(pathyLog, /^dropped: proposals\[0\]\.change: sentence 1 names a path, file name or id/m);
+  const pathyReport = reportOf(run.p, pathy);
+  assert.ok(!pathyReport.includes('cache.mjs') && pathyReport.includes('- No fix passed the rules.'), pathyReport);
+  // A change that still breaks a rule at report time shows trimmed, with the proposal that holds the rest.
+  const w = new DatabaseSync(join(run.p, '.lfm', 'lfm.sqlite'));
+  w.prepare('UPDATE proposals SET change = ? WHERE run_id = ? AND n = 1').run(`Give each worker its own cache directory. Edit src/cache.mjs to add the lock ${CANARY}.`, id);
+  w.prepare('UPDATE proposals SET change = ? WHERE run_id = ? AND n = 2').run('Edit src/cache.mjs to add the lock.', id);
+  w.prepare("UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND name = 'report'").run(id);
+  w.prepare("UPDATE runs SET status = 'interrupted', error = NULL WHERE id = ?").run(id);
+  w.close();
+  const again = run.lfm({}, 'rerun', '--resume', '--run', String(id), '--wait', '1m', '--json');
+  assert.equal(again.status, 0, again.stderr);
+  assert.doesNotMatch(again.stdout + again.stderr, new RegExp(CANARY));
+  const trimmed = reportOf(run.p, id);
+  assert.ok(trimmed.includes('  Give each worker its own cache directory.\n   Proposal ' + id + ':1: the rest of this text breaks the report rules.\n'), trimmed);
+  assert.ok(trimmed.includes('  This text breaks the report rules, so the report hides it.\n   Proposal ' + id + ':2 holds the text.\n'), trimmed);
+  assert.ok(!trimmed.includes('cache.mjs'), trimmed);
   // excerpts: off: no defect record id is the plain sha256 of its text, which anyone who guesses a bullet could compute. A bullet
   // keeps its id from run to run, each label names the record its bundle line points at, report.txt's Evidence opens those
   // lines, and the store's salt reaches no output.
@@ -674,7 +696,7 @@ test('change applied appends an append-only ledger the report counts and changes
   const bare = lfm('report');
   assert.equal(bare.status, 0, bare.stderr);
   assert.deepEqual({ ...decode(toonBodyOf(bare.stdout)), generated_at: model.generated_at }, model); // TOON decodes equal to JSON
-  assert.equal(summaryOf(bare.stdout), 'repeated: agent-exit-wait (4 rows/3 days)');
+  assert.equal(summaryOf(bare.stdout), 'repeated: agent-exit-wait (4 times/3 days)');
   const fullRun = lfm('report', '--full', '--json');
   assert.equal(fullRun.status, 0, fullRun.stderr);
   const fullMem = JSON.parse(fullRun.stdout).causes.find((c) => c.cause === 'server-memory-kill');
@@ -928,7 +950,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(first.run.status, 'completed');
   assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
   // A run whose worker labelled nothing and found nothing says so in one plain line, with where to see why.
-  assert.deepEqual(first.result, { summary: 'repeated: agent-exit-wait (4 rows/3 days)', labelled: 0, records: 18, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
+  assert.deepEqual(first.result, { summary: 'repeated: agent-exit-wait (4 times/3 days)', labelled: 0, records: 18, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
   assert.match(waited.stderr, /^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run 1   # why/m);
 
   // Without --wait, retro returns while the worker runs: spawnSync ends only when no process holds its pipes.
@@ -1123,7 +1145,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
   // retro --wait shows the result: the counted causes and the worker's findings, each one line; then where the evidence is.
   const finding = { cause: 'umer-fixtures-unset', count: 1, days: 1, verdict: 'confirmed' };
-  assert.deepEqual(result, { summary: 'repeated: agent-exit-wait (4 rows/3 days)', labelled: 2, records: 20, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
+  assert.deepEqual(result, { summary: 'repeated: agent-exit-wait (4 times/3 days)', labelled: 2, records: 20, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }, { cause: 'shared-cache-lock', repeated: false, incidents: 2, days: 1, rows: 0 }], findings: [finding] });
   assert.match(lfm({}, 'status').stdout, /^ {2}findings\[1\]\{cause,count,days,verdict\}:\n {4}umer-fixtures-unset,1,1,confirmed$/m);
   assert.match(reportOf(p, run.id), /^5\. Fixes\n- No fix passed the rules\.$/m);
   assert.match(r.stderr, /^next: learn-from-mistakes-axi report --full   # the evidence ids/m);

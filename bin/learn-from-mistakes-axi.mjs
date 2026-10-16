@@ -273,7 +273,7 @@ function analyse(cfg, files) {
   // The run's fixes as its check step left them: a fix that broke a rule is unchecked.
   const proposals = (files.proposals ?? []).map((p) => ({ ...p, refs: (Array.isArray(p.refs) ? p.refs : []).filter((ref) => records.has(ref)) }));
   return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length, changes,
-    findings: files.findings ?? [], run: files.run, shown: files.shown ?? {}, reportFile: files.reportFile };
+    counted: files.counted, findings: files.findings ?? [], run: files.run, shown: files.shown ?? {}, reportFile: files.reportFile };
 }
 
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
@@ -335,6 +335,10 @@ function project(a, full) {
     ledger: { entries: a.changes?.length ?? 0 },
     sources: a.meta.sources.map((s) => ({ id: s.id, type: s.type, items: s.items })),
     causes,
+    // The causes the run's check step counted as repeated, its own counts: the same numbers section 4 of
+    // report.txt shows and the summary line prints. The `causes` block above stays the per-cause detail
+    // (labels against store rows); this is the one count for what repeated.
+    repeated: Object.entries(a.counted ?? {}).filter(([, c]) => c.repeated).map(([cause, c]) => ({ cause, count: c.count, days: c.days })),
     findings: a.findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })), // the run worker's, counted by its check step; the summaries print as lines after the TOON report
     // The run's numbers, each applied change's follow-up and the kept fixes, as `status` shows them; empty with no run.
     metrics: a.shown.metrics ?? [],
@@ -345,17 +349,13 @@ function project(a, full) {
 
 const render = (model, json) => (json ? JSON.stringify(model, null, 2) : toonEncode(model));
 
-// One stdout line after the TOON report, before the stderr hints: which causes
-// repeated, in report order, with the same incidents/days the report shows.
-// A cause repeated only through store rows says rows, never incidents.
+// One stdout line after the TOON report, before the stderr hints: which causes repeated, in the report's own
+// order, with the same counts section 4 of report.txt shows. The model's `repeated` is the run's check-step
+// count (counts() in src/check.mjs), so a cause the report names never reads as `none` here.
 // Identifiers and counts only, never record text.
 export function summaryLine(model) {
-  const parts = [];
-  for (const c of model.causes) {
-    if (!c.repeated) continue;
-    if (c.by.includes('log')) parts.push(`${c.cause} (${c.log.incidents} incidents/${c.log.days} days)`);
-    else parts.push(`${c.cause} (${c.store.rows} rows/${c.store.days} days)`);
-  }
+  const n = (v, word) => `${v} ${word}${v === 1 ? '' : 's'}`;
+  const parts = (model.repeated ?? []).map((c) => `${c.cause} (${n(c.count, 'time')}/${n(c.days, 'day')})`);
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
