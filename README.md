@@ -119,7 +119,7 @@ Redaction covers recognized API keys, tokens, Slack incoming-webhook URLs (inclu
 
 `report`, `retro` and `status` output ids, counts, metrics and verdicts, not finding prose or record text. `report --json` uses `lfm-report.v2`; `--full` adds allow-listed non-content evidence ids, not private text. The `report_txt` path points to the human-readable report; the file's text is never embedded in the JSON. Read `report.txt` privately before sharing it. Step logs, bundles and the database can hold sensitive material too.
 
-Two explicit commands expose text beyond this compact projection: `changes` exports owner-written `what`/`why`; `signoff post` sends proposed-change text to the optional peer (without one it prints only kept fix keys and points to `report.txt`). Diagnostics can name config files and state paths. Do not treat every command's stdout as a public report.
+Two explicit commands expose text beyond this compact projection: `changes` exports owner-written `what`/`why`; `signoff post` sends proposed-change text to the optional peer (without one it prints one `kept: <key>` line per fix the run did not apply, names fixes the run applied as applied, and points to `report.txt`). Diagnostics can name config files and state paths. Do not treat every command's stdout as a public report.
 
 ## Optional integrations and changes
 
