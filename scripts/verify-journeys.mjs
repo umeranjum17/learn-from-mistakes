@@ -5,10 +5,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { parse, stringify } from 'yaml';
 
@@ -52,8 +52,12 @@ const before = hashes();
 mkdirSync(evidence, { recursive: true, mode: 0o700 });
 chmodSync(evidence, 0o700);
 const save = (name, value) => writeFileSync(join(evidence, name), typeof value === 'string' ? value : JSON.stringify(value, null, 2), { mode: 0o600 });
-const scratch = join(evidence, 'scratch');
-mkdirSync(scratch, { mode: 0o700 });
+// The run's private scratch, in the tests' temp pattern (a fresh mkdtemp dir) so it stays out of the evidence
+// folder. Every exit path removes it, so a killed or failed run never leaves leftover files behind.
+const scratch = mkdtempSync(join(tmpdir(), 'lfm-verify-'));
+const cleanupScratch = () => rmSync(scratch, { recursive: true, force: true, maxRetries: 5 }); // retries ENOTEMPTY/EBUSY from late writers
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { cleanupScratch(); process.exit(1); });
+process.on('exit', cleanupScratch);
 for (const dir of ['home', 'tmp', 'xdg', 'runtime', 'project']) mkdirSync(join(scratch, dir));
 const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch, 'tmp'),
   XDG_CONFIG_HOME: join(scratch, 'xdg'), XDG_CACHE_HOME: join(scratch, 'xdg'), XDG_DATA_HOME: join(scratch, 'xdg'), XDG_RUNTIME_DIR: join(scratch, 'runtime'),
@@ -140,10 +144,29 @@ try {
   Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'umer-judge-model' }, claude: { model: 'umer-worker-model', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
     caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on', allow_premium: false });
+  // In-window canary records, one sentence per source type this journey configures, so the excerpts: off check
+  // has in-window records to hide: the run must count them, and none of their text may reach the bundle, the
+  // report or the drive's own output. Seeded only for this run - later journeys read the same staged sources.
+  const logCopy = sources.find((s) => s.type === 'markdown-log').copy, dbCopy = sources.find((s) => s.type === 'no-mistakes').copy;
+  const canary = { log: 'lfm-canary-log-text', gate: 'lfm-canary-gate-text' }, seedLog = `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] ${canary.log}\n`;
+  appendFileSync(join(staged, logCopy), seedLog);
+  const seed = new DatabaseSync(join(staged, dbCopy)), nowSec = Math.floor(Date.now() / 1000), repoRow = seed.prepare('SELECT id FROM repos ORDER BY id LIMIT 1').get();
+  seed.prepare('INSERT INTO runs VALUES (?, ?, ?)').run('canary-run', repoRow.id, 'canary');
+  seed.prepare('INSERT INTO step_results VALUES (?, ?, ?, ?, ?, ?, ?)').run('canary-step', 'canary-run', 'test', 'failed', canary.gate, nowSec - 60, nowSec);
+  seed.close();
   writeFileSync(stagedConfig, stringify(config));
   drive('retro-v2', 'retro', '--foreground', '--json');
-  const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id), 'bundle.md'), 'utf8');
+  const runId = (name) => JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')).run.id;
+  const bundle = (name) => readFileSync(join(staged, '.lfm', 'runs', String(runId(name)), 'bundle.md'), 'utf8');
+  const v2run = JSON.parse(readFileSync(join(evidence, 'retro-v2.stdout'), 'utf8')), counted = (name) => v2run.metrics.find((m) => m.name === name)?.current;
+  for (const [where, text] of [['bundle.md', bundle('retro-v2')], ['report.txt', readFileSync(join(staged, '.lfm', 'runs', String(runId('retro-v2')), 'report.txt'), 'utf8')],
+    ['stdout', readFileSync(join(evidence, 'retro-v2.stdout'), 'utf8')], ['stderr', readFileSync(join(evidence, 'retro-v2.stderr'), 'utf8')]])
+    for (const line of Object.values(canary)) assert.ok(!text.includes(line), `the excerpts-off ${where} holds the canary record text`);
+  assert.ok(counted('defects') >= 1 && counted('gate_failures') >= 1, 'the excerpts-off window did not count the seeded canary records');
   assert.ok(bundle('retro-v2').includes('## Metrics') && !/^  > /m.test(bundle('retro-v2')), 'the excerpts: off bundle is missing or holds an excerpt');
+  writeFileSync(join(staged, logCopy), readFileSync(join(staged, logCopy), 'utf8').replace(seedLog, ''));
+  const unseed = new DatabaseSync(join(staged, dbCopy));
+  try { unseed.exec("DELETE FROM step_results WHERE id = 'canary-step'; DELETE FROM runs WHERE id = 'canary-run'"); } finally { unseed.close(); }
   writeFileSync(stagedConfig, stringify({ ...config, agent: 3 }));
   run('config-bad-agent', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
   // A judge on the worker's agent and model stops retro before the run starts.
@@ -396,7 +419,7 @@ try {
   save('result.json', { commandsPassed: passed, inputsUnchanged: JSON.stringify(before) === JSON.stringify(after),
     limitation: 'Review output against the journey manifests; trusted no-mistakes prompt consumption is a separate proof.' });
   if (existsSync(join(staged, '.lfm'))) cpSync(join(staged, '.lfm'), join(evidence, 'state'), { recursive: true }); // retain the run artifacts
-  rmSync(scratch, { recursive: true, force: true, maxRetries: 5 }); // retries ENOTEMPTY/EBUSY from late writers
+  cleanupScratch();
   assert.deepEqual(after, before, 'Original inputs changed; proof fails');
 }
 console.log(`CLI commands and existing e2e suite passed. Review private evidence: ${evidence}`);
