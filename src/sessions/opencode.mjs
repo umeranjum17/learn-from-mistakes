@@ -4,7 +4,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { inputText, json, TEST } from './claude.mjs';
+import { failSignal, inputText, json } from './claude.mjs';
 
 export const STORE_VAR = 'XDG_DATA_HOME';
 export const root = () => join(process.env[STORE_VAR] || join(homedir(), '.local', 'share'), 'opencode');
@@ -53,8 +53,8 @@ function parse(q, file, { id, session, sub, excerpt }) {
     // A call the user turned down or interrupted is not a tool failure; the interrupt or correction after it is counted.
     // "Tool execution aborted" and "The user rejected permission" are fixed error strings OpenCode itself writes, not model output.
     const declined = s.status === 'error' && /^(?:Tool execution aborted|The user rejected permission)/.test(String(s.error));
-    const signal = !error || declined ? null : TEST.test(String(s.input?.command ?? '')) ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
-    events.push({ ...at, kind: 'tool_result', tool: p.tool, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(s.error ?? s.output ?? '') : '' });
+    const { signal, fromOutput } = failSignal(String(s.input?.command ?? ''), s.error ?? s.output ?? '', { error, declined, exit });
+    events.push({ ...at, kind: 'tool_result', tool: p.tool, status: error ? 'error' : 'ok', exit_code: exit, signal, from_output: fromOutput, excerpt: signal ? excerpt(s.error ?? s.output ?? '') : '' });
     if (error && !declined) failed.add(key);
     else if (!error) failed.delete(key); // a later repeat is no longer a retry
     afterError ||= error;

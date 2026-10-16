@@ -4,7 +4,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { inputText, json, TEST, textOf } from './claude.mjs';
+import { failSignal, inputText, json, textOf } from './claude.mjs';
 
 export const STORE_VAR = 'CODEX_HOME';
 export const root = () => join(process.env[STORE_VAR] || join(homedir(), '.codex'), 'state_5.sqlite');
@@ -62,8 +62,8 @@ async function parse(file, { session, sub, excerpt }) {
         const call = calls.get(p.call_id), text = textOf(p.output);
         const exit = exitOf(text, call?.tool);
         const error = Boolean(exit) || badPatch.has(p.call_id);
-        const signal = !error ? null : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
-        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, excerpt: signal ? excerpt(text) : '' });
+        const { signal, fromOutput } = failSignal(call?.command ?? '', text, { error, exit });
+        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '' });
         if (error && call) failed.add(call.key);
         else if (call) failed.delete(call.key); // a later repeat is no longer a retry
         afterError ||= error;

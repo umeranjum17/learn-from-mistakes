@@ -11,6 +11,28 @@ export const root = () => join(process.env[STORE_VAR] || join(homedir(), '.claud
 
 // A command that runs tests, at its start or after ;, &&, || or a pipe (env assignments before it are fine).
 export const TEST = /(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*(?:(?:npm|pnpm|yarn|bun|deno|go|cargo|make|mix|dotnet)\s+(?:run\s+)?test\b|(?:npx\s+)?(?:jest|vitest|pytest|mocha|rspec|phpunit)\b|node\s+--test\b|python3?\s+-m\s+(?:pytest|unittest)\b)/;
+// A pipe's exit code is its last command's, so `npm test | tail -5` exits 0 with red tests and no error flag. When
+// neither the error flag nor the exit code shows the failure, the output's own summary line of a common runner does,
+// each anchored to its line shape, with N above zero: node --test (`ℹ fail N` / `# fail N`), jest (`Tests: N failed`),
+// vitest (`Tests  N failed`) and pytest (`N failed` in its ===== summary line). Other runner text (a stray "3 failed
+// to download"), and output cut before the summary line (for example `npm test | head`), stay invisible.
+const RUNNER_FAILS = [
+  /^\s*[ℹ#] fail [1-9]\d*\s*$/m, // node --test: the spec reporter prints ℹ, the TAP reporter #
+  /^Tests:.*\b[1-9]\d* failed\b/m, // jest
+  /^\s*Tests\s+[1-9]\d* failed/m, // vitest
+  /^=+.*\b[1-9]\d* failed\b.*=+\s*$/m, // pytest
+];
+
+// A tool result's failure signal from its command, output text and flags; `exit` is the parsed exit code (a number or
+// numeric string) or null. A stopped (declined) or interrupted call is no tool failure; a TEST command fails on its
+// error flag or a nonzero exit, else on its output's own runner summary line, and only such an event reads as from the
+// output (fromOutput). Any other failure is a nonzero exit or a tool error.
+export function failSignal(command, text, { error, declined, exit, interrupted }) {
+  if (interrupted) return { signal: 'interrupt', fromOutput: false };
+  if (error && !declined) return { signal: TEST.test(command) ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error', fromOutput: false };
+  return TEST.test(command) && !(exit > 0) && RUNNER_FAILS.some((r) => r.test(text))
+    ? { signal: 'test_fail', fromOutput: true } : { signal: null, fromOutput: false };
+}
 const WRAPPER = /^\s*<(?:command-name|command-message|command-args|local-command-stdout|local-command-stderr|system-reminder|user-prompt-submit-hook)>/;
 export const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
 export const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => b?.text ?? '').join('\n') : '');
@@ -55,8 +77,8 @@ async function parse(file, { session, keep, sub, excerpt }) {
         const exit = /^(?:Error: )?Exit code (\d+)/.exec(text)?.[1];
         // A tool use the user turned down is not a tool failure; the interrupt or correction after it is counted.
         const declined = ['user-rejected', 'interrupted'].includes(r.toolDenialKind);
-        const signal = !error || declined ? null : interrupted ? 'interrupt' : TEST.test(call?.command ?? '') ? 'test_fail' : exit ? 'nonzero_exit' : 'tool_error';
-        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, excerpt: signal ? excerpt(text) : '' });
+        const { signal, fromOutput } = failSignal(call?.command ?? '', text, { error, declined, exit, interrupted });
+        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '' });
         if (error && call && !declined) failed.add(call.key);
         else if (!error && call) failed.delete(call.key); // a later repeat is no longer a retry
         afterError ||= error;
