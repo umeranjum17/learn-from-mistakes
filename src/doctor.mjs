@@ -2,6 +2,7 @@
 // the exception: one agent call per role (it costs tokens) that writes its run dir under the state dir. Login checks read
 // a status and never print it, so no credential text reaches the output; they never refresh a token.
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,13 +41,14 @@ export async function doctor(dir, opts) {
       `echo '*' >> ${shq(join(cfg.state, '.gitignore'))}`);
   }
 
-  // Each source's own doctor hook: readable, its count in the window, and the entries it skipped.
+  // Each source's own doctor hook: readable, its count in the window, and the entries it skipped. It shows no record
+  // id, so a defect log's ids are keyed with a throwaway salt, not the run store's.
   // The read start is the retro's own: what the next retro reads, doctor checks.
   const since = ingestReadFrom(cfg);
   if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', `learn-from-mistakes-axi init --dir ${shq(dir)}   # lists the sources it finds as gaps`);
   for (const [id, s] of Object.entries(cfg.sources)) {
     let r;
-    try { r = await SOURCES[s.type].doctor(id, s, { readFrom: since, causes: cfg.causes, project: join(dir, PROJECT_FILE) }); }
+    try { r = await SOURCES[s.type].doctor(id, s, { readFrom: since, causes: cfg.causes, project: join(dir, PROJECT_FILE), salt: randomBytes(32) }); }
     catch (e) { if (!(e instanceof UsageError)) throw e; r = { level: 'fail', detail: e.message.replace(`source ${id}: `, ''), fix: e.next }; }
     add(r.level, `source ${id}`, `${s.type}: ${r.detail}`, r.fix);
   }

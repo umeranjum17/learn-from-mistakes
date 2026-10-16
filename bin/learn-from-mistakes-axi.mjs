@@ -209,13 +209,12 @@ export function ingestReadFrom(cfg, now = Date.now()) {
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
-// The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
-export async function ingest(cfg) {
+// The sessions the tool's own runs started (the run store's `invocations` table) are skipped, and a defect log's record
+// ids are keyed with the store's salt (its `secret` table).
+export async function ingest(cfg, db) {
   stateDir(cfg);
-  const db = await openStore(cfg.state, false);
-  const skip = new Set(db?.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'invocations'`).get()
-    ? db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id) : []);
-  db?.close();
+  const skip = new Set(db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id));
+  const { salt } = db.prepare('SELECT salt FROM secret').get();
   // This window and the last, and far enough back to have before-numbers for every applied change.
   const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
   const readFrom = ingestReadFrom(cfg);
@@ -223,7 +222,7 @@ export async function ingest(cfg) {
   for (const [id, s] of Object.entries(cfg.sources)) {
     let got;
     try {
-      got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE) });
+      got = await SOURCES[s.type].read(id, s, { readFrom, excerpts: cfg.excerpts === 'on', skip, causes: cfg.causes, project: join(cfg.dir, PROJECT_FILE), salt });
       pushAll(records, got.records ?? []);
       pushAll(rows, got.rows ?? []);
       pushAll(events, got.events ?? []);
@@ -316,7 +315,8 @@ function project(a, full) {
     if (full) {
       m.change_ids = applied.map((c) => c.id);
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
-      // Only non-content ids: a record id is a hash of its text, so emitting one would confirm private prose.
+      // Only non-content ids: a record id is a hash of its text (unkeyed in a run from before the store's salt), so
+      // emitting one could confirm private prose.
       m.store_row_ids = g.store.rows.map(recordId);
       // A content-hash record id (a defect-log bullet) is left out by the same rule.
       m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.records.has(ref)

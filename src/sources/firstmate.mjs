@@ -31,7 +31,7 @@ export function validate(s, where, dir) {
   return { type, path, targets, targets_file: file };
 }
 
-export function read(source, { path }, { readFrom = 0, excerpts = true, project }) {
+export function read(source, { path }, { readFrom = 0, excerpts = true, project, salt }) {
   const state = join(path, 'state'), records = [], text = (t) => (excerpts ? excerpt(t) : '');
   let files, skipped = 0;
   try { files = readdirSync(state, { recursive: true }).sort(); } catch (e) {
@@ -59,7 +59,7 @@ export function read(source, { path }, { readFrom = 0, excerpts = true, project 
   const log = join(path, 'data', 'defects.md');
   if (existsSync(log)) {
     // One push per record: spreading an unbounded array overflows the call stack.
-    for (const r of markdownLog.read(source, { path: log }, { project }).records)
+    for (const r of markdownLog.read(source, { path: log }, { project, salt }).records)
       records.push({ ...r, id: `defects:${r.id}`, ref: `${log}:${r.line}`, data: { kind: 'defect' } });
   }
   return { records, skipped, hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };

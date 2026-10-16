@@ -1,6 +1,7 @@
 // The run store: <state dir>/lfm.sqlite. node:sqlite is loaded on first open, so commands that never
 // open the store never load it. The schema is an ordered list of migrations; PRAGMA user_version counts
 // the applied ones, so a later change appends an entry and never edits an earlier one.
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -55,6 +56,9 @@ const MIGRATIONS = [
   'ALTER TABLE proposals ADD COLUMN verdict TEXT; ALTER TABLE proposals ADD COLUMN judge_note TEXT',
   `ALTER TABLE proposals ADD COLUMN kind TEXT;
     CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
+  // The key of a defect-log record's id, made once per store and never printed: the id is an HMAC of the record's text,
+  // so whoever reads a bundle cannot hash a guessed text to it. A run from before this entry keeps its plain-hash ids.
+  `CREATE TABLE IF NOT EXISTS secret (salt BLOB NOT NULL); INSERT INTO secret VALUES (X'${randomBytes(32).toString('hex')}')`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

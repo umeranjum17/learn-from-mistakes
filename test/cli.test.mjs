@@ -362,6 +362,23 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   const pathy = JSON.parse(run.lfm({ ...agents, FAKE_CANARY: `${CANARY} in src/cache.mjs` }, 'retro', '--foreground', '--json').stdout).run.id;
   const hidden = reportOf(run.p, pathy);
   assert.ok(!hidden.includes('cache.mjs') && hidden.includes('- Change:\n  This text breaks the report rules, so the report hides it.\n'), hidden);
+  // excerpts: off: no defect record id is the plain sha256 of its text, which anyone who guesses a bullet could compute. A bullet
+  // keeps its id from run to run, each label names the record its bundle line points at, report.txt's Evidence opens those
+  // lines, and the store's salt reaches no output.
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}excerpts: off\n`);
+  const off = run.lfm(agents, 'retro', '--foreground', '--json'), offId = JSON.parse(off.stdout).run.id;
+  const bundle = readFileSync(join(run.p, '.lfm', 'runs', String(offId), 'bundle.md'), 'utf8');
+  const at = new Map([...bundle.matchAll(/^- \[([^\]]+)\] log at (\S+), /gm)].map((m) => [m[1], m[2]]));
+  const logged = (r) => run.query(`SELECT record_id, ref, text FROM records WHERE run_id = ? AND source = 'log' ORDER BY record_id`, r);
+  assert.deepEqual(logged(offId).map((r) => r.record_id), logged(id).map((r) => r.record_id));
+  for (const r of logged(offId)) assert.notEqual(r.record_id.split('~')[0], createHash('sha256').update(r.text.toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12));
+  const labels = run.query('SELECT record_id FROM labels WHERE run_id = ? ORDER BY record_id', offId).map((l) => l.record_id);
+  assert.deepEqual(labels, [...at.keys()].toSorted());
+  for (const r of logged(offId).filter((x) => at.has(x.record_id))) assert.equal(r.ref, at.get(r.record_id));
+  const text = reportOf(run.p, offId);
+  assert.deepEqual(text.match(/^- shared-cache-lock: .+\n {3}Evidence: (.+)$/m)[1].split('; ').toSorted(), labels.map((l) => at.get(l).replace(/^.*\//, '')).toSorted());
+  const salt = Buffer.from(run.query('SELECT salt FROM secret')[0].salt);
+  for (const s of [bundle, text, ...[off, ...outs].map((o) => o.stdout + o.stderr)]) assert.ok(!s.includes(salt.toString('hex')) && !s.includes(salt.toString('base64')), 'the store salt in an output');
 });
 
 test('a fix shows the finding its refs cite, not the first finding with the same cause', () => {
