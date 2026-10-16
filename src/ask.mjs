@@ -83,8 +83,8 @@ export async function pick(keys, cfg, dir) {
       let agent = cfg[key];
       if (!agent) {
         const [role, other, otherRole] = key === 'agent'
-          ? ['worker (agent)', cfg.judge_agent, 'judge']
-          : ['judge (judge_agent)', picks.agent?.agent ?? cfg.agent, 'worker'];
+          ? ['worker', cfg.judge_agent, 'judge']
+          : ['judge', picks.agent?.agent ?? cfg.agent, 'worker'];
         process.stderr.write(`Which agent runs the ${role}?\n${choices.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type byokit:<route>${choices.length === CLIS.length ? noRoute : ''}\n`);
         for (;;) {
           const a = await ask('agent: ');

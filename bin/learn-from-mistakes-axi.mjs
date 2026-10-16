@@ -369,64 +369,102 @@ export function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change applied|changes|retro|status|
+                                runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
   (no command)        print the last run's status and its summary line
-  signoff post       explicitly post a completed run's kept fixes its apply step did not apply (optional sign-off-axi)
+  signoff post       explicitly post a completed run's kept fixes its apply step did not apply
+                     (optional sign-off-axi)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
-  apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch lfm/<run>-<n> from HEAD, and records it; never your branch or work tree
-  init                write $LFM_HOME/config.yaml (the agent keys, commented) and .learn-from-mistakes.yaml (the sources found, the agents the user chose)
-                      where each is missing, then print the resolved worker and judge and the gaps. Either way, make the state dir .lfm/ and its .gitignore
-  doctor              check node, git, the config, .lfm ignored, each source, the worker and judge (usable, login, model,
-                      a different identity), the skill per agent CLI and sign-off: ok, warn or fail, with a fix: line; exit 1 on a fail
-  guide               print how an agent drives a retro: init, doctor, retro, then read report.txt to the user
-  report              print lfm-report.v2 for the last retro: ids, counts, metrics, follow-ups, verdicts and the path of
-                      report.txt, never its text; --full adds evidence ids, --json prints JSON
+  apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch
+                      lfm/<run>-<n> from HEAD, and records it; never your branch or work tree
+  init                write $LFM_HOME/config.yaml (the agent keys, commented) and
+                      .learn-from-mistakes.yaml (the sources found, the agents the user chose)
+                      where each is missing, then print the resolved worker and judge and the gaps.
+                      Either way, make the state dir .lfm/ and its .gitignore
+  doctor              check node, git, the config, .lfm ignored, each source, the worker and judge
+                      (usable, login, model, a different identity), the skill per agent CLI and
+                      sign-off: ok, warn or fail, with a fix: line; exit 1 on a fail
+  guide               print how an agent drives a retro: init, doctor, retro, then read
+                      report.txt to the user
+  report              print lfm-report.v2 for the last retro: ids, counts, metrics, follow-ups,
+                      verdicts and the path of report.txt, never its text;
+                      --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, apply, report) in a background worker
-                      that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here. With auto_fix: <n>
-                      in the config, its apply step applies the top n kept fixes as apply does, and report.txt names them as applied
-                      instead of asking; 0 (the default) proposes only
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup,
+                      bundle, analyse, propose, verify, check, apply, report) in a background worker
+                      that goes on when this terminal ends; --wait <time> waits for it,
+                      --foreground runs it here. With auto_fix: <n> in the config, its apply
+                      step applies the top n kept fixes as apply does, and report.txt names them as
+                      applied instead of asking; 0 (the default) proposes only
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
   attach              print the run's step states and log lines as they come, until it ends
   logs --step <name>  print one step's log lines
   abort               stop the running run: its worker ends and the run is cancelled
-  rerun               start a new run with the current config; --run <id> names the run it follows (default: the last run), and say
-                      which run it started from; --resume finishes that interrupted, cancelled or failed run
-                      from its first step that is not completed
-  agents              list the agent CLIs the tool can start: usable, version, login presence, the configured model
+  rerun               start a new run with the current config; --run <id> names the run it
+                      follows (default: the last run), and say which run it started from; --resume
+                      finishes that interrupted, cancelled or failed run from its first step that
+                      is not completed
+  agents              list the agent CLIs the tool can start: usable, version, login presence,
+                      the configured model
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --cause <cause>     (change applied) cause key from the config, never \`other\`
-  --proposal <run>:<n>  (change applied) the run's kept fix n (status --run <run> lists them): its cause, metric and tripwire
+  --proposal <run>:<n>  (change applied) the run's kept fix n (status --run <run> lists them): its
+                        cause, metric and tripwire
   --ref <ref>         (change applied) version id: git sha (7-40 hex) or sha256:<64 hex>
-  --metric <metric>   (change applied) the metric that shows whether it worked (default: cause_count:<cause>)
-  --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as "<= 0" (default: none); each retro checks it
+  --metric <metric>   (change applied) the metric that shows whether it worked
+                      (default: cause_count:<cause>)
+  --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as
+                      "<= 0" (default: none); each retro checks it
   --kind <kind>       (change applied) what the change edited: doc, rule or code (default: doc)
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
-  --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
-  --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
-  --fix <n>           (apply) the kept fix to apply, which you accept, when no sign-off answer says so; a Skip is never applied
-  --run <id>          (status, attach, logs, abort, rerun, apply) the saved run (default: the last one; abort: the running one;
-                      apply: the last run with kept fixes)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check, apply or report
-  --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
+  --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by
+                      \`changes\`
+  --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by
+                      \`changes\`
+  --fix <n>           (apply) the kept fix to apply, which you accept, when no sign-off answer
+                      says so; a Skip is never applied
+  --run <id>          (status, attach, logs, abort, rerun, apply) the saved run
+                      (default: the last one; abort: the running one; apply: the last run with
+                      kept fixes)
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify,
+                      check, apply or report
+  --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then
+                      print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
-  --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file
-  --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never picked by the tool
+  --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or
+                      byokit:<route> through BYOKit (costs tokens): it must answer and write
+                      no file
+  --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never
+                      picked by the tool
   --model <model>     (init) save agent_config.<agent>.model for that agent
-  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's (one model per agent)
+  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's
+                         (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
-  --sessions <agent>,...  (init) read these agents' sessions (claude, codex, opencode, pi, gemini); the user's choice, never picked by the tool
-  --reconfigure       (init) re-apply --agent, --model, --judge-agent, --judge-model and --sessions to an existing config, replacing those keys; every other key and comment stays. Without it an existing config is never changed
-  --firstmate <home>  (init) add a firstmate source that reads that Firstmate home's status logs, inbox, defect log and targets (opt-in, never detected)
-  --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
-  --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's .claude/skills and .agents/skills instead of each agent's own skills dir; -y asks nothing, even in a terminal
-  --json (init, doctor, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents, no command)  print JSON instead of the default TOON (report: lfm-report.v2; changes: lfm-changes.v1)
+  --sessions <agent>,...  (init) read these agents' sessions (claude, codex, opencode, pi, gemini);
+                           the user's choice, never picked by the tool
+  --reconfigure       (init) re-apply --agent, --model, --judge-agent, --judge-model and --sessions
+                      to an existing config, replacing those keys; every other key and comment
+                      stays. Without it an existing config is never changed
+  --firstmate <home>  (init) add a firstmate source that reads that Firstmate home's status logs,
+                      inbox, defect log and targets (opt-in, never detected)
+  --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only,
+                      never record text
+  --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's
+                      .claude/skills and .agents/skills instead of each agent's own skills dir; -y
+                      asks nothing, even in a terminal
+  --json (init, doctor, report, change applied, changes, retro, status, runs,
+         attach, logs, abort, rerun, agents, no command)  print JSON instead of
+         the default text format (report: lfm-report.v2; changes: lfm-changes.v1)
   --full (report)     add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
   -v, --version       show the version
-the report --json output is privacy-bounded: identifiers, counts, metrics, follow-ups, fixes and each finding's judge verdict word (confirmed, weakened, refuted or not judged), plus the run's report.txt path; the default and --full reports also print one \`finding:\` line per finding with its counts and verdict, never the agent's summary (it is in report.txt only), record text, label/proposal prose or change what/why;
+the report --json output is privacy-bounded: identifiers, counts, metrics, follow-ups, fixes and
+  each finding's judge verdict word (confirmed, weakened, refuted or not judged), plus the run's
+  report.txt path; the default and --full reports also print one \`finding:\` line per finding with
+  its counts and verdict, never the agent's summary (it is in report.txt only), record text,
+  label/proposal prose or change what/why;
 \`changes\` prints only the what/why you wrote with \`change applied\``;
 const HELP = `${USAGE}
 
@@ -434,27 +472,40 @@ next: learn-from-mistakes-axi init           # write the config for the project 
 next: learn-from-mistakes-axi doctor         # what is wrong, and the fix for each
 next: learn-from-mistakes-axi guide          # how an agent drives a retro
 next: learn-from-mistakes-axi                # the last run's status and summary line
-next: learn-from-mistakes-axi report         # its ids, counts, metrics, verdicts and the path of report.txt
+next: learn-from-mistakes-axi report         # its ids, counts, metrics, verdicts and the path of
+                                             # report.txt
 next: learn-from-mistakes-axi --dir <project>   # point at a project with .learn-from-mistakes.yaml
 next: learn-from-mistakes-axi report --full  # add the evidence ids
-next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>   # record a change you already made
-next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date, what and why
-next: learn-from-mistakes-axi retro --wait 8m   # read, label and count the sources as a saved run, then status and runs show it
-next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start, their models and the resolved worker and judge`;
+next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>
+                                             # record a change you already made
+next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date,
+                                                # what and why
+next: learn-from-mistakes-axi retro --wait 8m   # read, label and count the sources as a saved
+                                                # run, then status and runs show it
+next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start, their models
+                                              # and the resolved worker and judge`;
 // The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
-const guideText = () => `learn-from-mistakes-axi guide: how an agent drives a retro. The tool reads the records, its own agents
-label and judge them, and it counts. Never judge a record yourself, and never edit the sources, AGENTS.md, CLAUDE.md or skills.
+const guideText = () => `learn-from-mistakes-axi guide: how an agent drives a retro. The tool reads the records, its own
+agents label and judge them, and it counts. Never judge a record yourself, and never edit the
+sources, AGENTS.md, CLAUDE.md or skills.
 
 1. No .learn-from-mistakes.yaml in the project? Run: npx -y learn-from-mistakes-axi init
-2. Run learn-from-mistakes-axi doctor. Fix each fail line with the fix: line under it, then run doctor again.
-3. Run learn-from-mistakes-axi retro --wait 8m. While the run is still running, run learn-from-mistakes-axi attach until it ends.
-4. Read the run's report.txt (report prints its path as report_txt) and tell the user what it says in plain words.
-5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7.
-6. Once the user has made a change: learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <git sha>
+2. Run learn-from-mistakes-axi doctor. Fix each fail line with the fix: line under it,
+   then run doctor again.
+3. Run learn-from-mistakes-axi retro --wait 8m. While the run is still running, run
+   learn-from-mistakes-axi attach until it ends.
+4. Read the run's report.txt (report prints its path as report_txt) and tell the user what it
+   says in plain words.
+5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions;
+   else ask the user the questions in section 7.
+6. Once the user has made a change: learn-from-mistakes-axi change applied
+   --proposal <run>:<n> --ref <git sha>
 
-The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model); the tool never picks one.
-When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role,
-never choose for them, then run the init command it prints with their answer, then run the stopped command again.
+The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model);
+the tool never picks one.
+When a command stops with "ask the user which agent to use", ask the user which agent and model
+to use for each role, never choose for them, then run the init command it prints with their
+answer, then run the stopped command again.
 
 next: learn-from-mistakes-axi doctor`;
 
@@ -612,6 +663,13 @@ function storeError(e, cfg, opts, cmd) {
   if ([8, 10, 13, 14].includes(e.errcode & 0xff)) return new UsageError(`${file}: ${e.message}`, withContext(`learn-from-mistakes-axi${cmd ? ` ${cmd}` : ''}`, 'after the disk or the file permissions are fixed', opts));
   return new UsageError(`${file}: not a usable run store (${e.message})`, `mv ${file} <elsewhere>   # if it is not a run store; the next retro starts a new one`);
 }
+// A run's pid is the owner process the stale-worker check reads: --json keeps it (a schema key),
+// the human output of status, runs, attach, abort, retro and rerun hides it.
+const humanModel = (out) => ({
+  ...out,
+  ...(out.run && typeof out.run === 'object' && { run: Object.fromEntries(Object.entries(out.run).filter(([k]) => k !== 'pid')) }),
+  ...(out.runs && { runs: out.runs.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'pid'))) }),
+});
 async function runCommand(cmd, cfg, opts) {
   quietSqlite();
   let out;
@@ -622,7 +680,7 @@ async function runCommand(cmd, cfg, opts) {
   }
   // Bare: the run's id, status and times and its summary line; never its error, whose text can hold an agent's output.
   const last = () => ({ run: { id: out.run.id, status: out.run.status, created_at: out.run.created_at, updated_at: out.run.updated_at }, summary: out.result?.summary ?? '' });
-  console.log(render(cmd === '' ? last() : out, opts.json));
+  console.log(render(cmd === '' ? last() : opts.json ? out : humanModel(out), opts.json));
   if (cmd === 'rerun' && out.from != null) console.error(`rerun: started run ${out.run.id} from run ${out.from}`);
   if (cmd === 'runs') hint(out.runs.length ? withContext(`learn-from-mistakes-axi status --run ${out.runs[0].id}`, 'the steps of the last run', opts)
     : withContext('learn-from-mistakes-axi retro --wait 8m', 'read, label and count the sources as a saved run', opts));
@@ -689,6 +747,10 @@ async function initCommand(opts) {
   const dir = opts.dir ?? resolve('.');
   let out = await init(dir, opts);
   const { skills, skills_updated, skills_skipped, skills_roots, ...shown } = out; // text shows the skill lines below, not these
+  if (!opts.json) { // workerBin/judgeBin are --json schema keys; the human output names them in plain words
+    shown['worker command'] = shown.workerBin; shown['judge command'] = shown.judgeBin;
+    delete shown.workerBin; delete shown.judgeBin;
+  }
   console.log(render(opts.json ? out : shown, opts.json));
   if (!opts.json && out.ignored.length) {
     // --reconfigure applies only its own flags: the ignored line names the flag for those, and when both kinds are

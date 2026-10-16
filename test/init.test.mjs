@@ -63,11 +63,14 @@ test('init writes the global agent config and a working project config once: the
   assert.equal(execFileSync('git', ['-C', p, 'status', '--short'], { encoding: 'utf8' }), '?? .learn-from-mistakes.yaml\n?? docs/\n');
   const text = lfm('init');
   assert.match(text.stdout, /^excerpts on: the worker \(claude\) and the judge \(opencode\) see redacted record excerpts/m);
+  assert.doesNotMatch(text.stdout, /\bworkerBin\b|\bjudgeBin\b|\bpid\b/); // the human output names plain words
+  for (const file of [global, config]) assert.ok(readFileSync(file, 'utf8').split('\n').every((l) => l.length <= 100), `${file}: a line is over 100 characters`);
 
   const bytes = readFileSync(config), globalBytes = readFileSync(global);
   const again = lfm('init', '--json');
   assert.equal(again.status, 0, again.stderr);
   assert.deepEqual([JSON.parse(again.stdout).status, JSON.parse(again.stdout).global_status], ['already set up', 'kept']);
+  assert.ok(['workerBin', 'judgeBin'].every((k) => k in JSON.parse(again.stdout)), 'the --json schema keeps its keys');
   assert.deepEqual(readFileSync(config), bytes);
   assert.deepEqual(readFileSync(global), globalBytes); // never overwritten
 
@@ -177,7 +180,7 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /Which agent runs the worker \(agent\)\?\r?\n {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode/);
+  assert.match(r.stdout, /Which agent runs the worker\?\r?\n {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode/);
   assert.match(r.stdout, /the judge must be another agent than the worker \(claude\)/);
   assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id \(letters/);
   assert.match(r.stdout, /saved: agent and judge_agent in /);
