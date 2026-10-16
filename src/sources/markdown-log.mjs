@@ -40,7 +40,8 @@ function headingDate(line) {
   const fmt = (y) => `${y}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   if (at[3]) return fmt(Number(at[3]));
   let y = new Date().getUTCFullYear();
-  while (Date.parse(fmt(y)) > Date.now()) y -= 1;
+  // A date the year lacks (29 Feb outside a leap year) parses as the next day, so the walk passes over it too.
+  while (Date.parse(fmt(y)) > Date.now() || new Date(fmt(y)).getUTCDate() !== day) y -= 1;
   return fmt(y);
 }
 
