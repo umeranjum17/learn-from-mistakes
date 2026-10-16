@@ -36,6 +36,20 @@ function targetFiles(top, target) {
   return paths.map((path) => ({ path, mode: tracked.get(path) }));
 }
 
+// An agent failure is not a refusal of the fix: the worker was asked and failed (timeout, no JSON, runner
+// error). The tool's own refusals stay UsageError — raised before any call (role, caps) or a cut-off reply —
+// while a failure becomes a plain Error carrying the CLI hint, so autoApply logs it as failed:. Only the existing
+// error classes are used; no new framework.
+function workerFailed(db, run, fix, made, e) {
+  if (!(e instanceof UsageError)) throw e;
+  if (e.message.includes('was cut off')) throw e; // a cut-off reply is refused, never committed
+  const called = db.prepare('SELECT count(*) AS n FROM invocations WHERE run_id = ? AND step = ?').get(run, `apply-${fix.n}`).n > made;
+  if (!called) throw e; // raised before the worker was asked: a refusal
+  const failed = new Error(e.message);
+  failed.next = e.next;
+  throw failed;
+}
+
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
 async function applyOne(cfg, db, run, fix, log, opts = {}) {
   const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`,
@@ -60,6 +74,11 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
       try { text.set(f.path, fatal.decode(readFileSync(join(top, f.path)))); }
       catch { throw new InputError(`fix ${at} names ${f.path}, which is not valid UTF-8, so the worker cannot edit it`, `convert ${f.path} to UTF-8, then apply again`); }
     }
+    // The worker's prompt carries the whole target files with no other size cap: a target over caps.bundle_chars
+    // would overflow it, so it is refused before the worker is asked and before any branch is made.
+    const total = files.reduce((n, f) => n + text.get(f.path).length, 0);
+    if (total > cfg.caps.bundle_chars) throw new InputError(`fix ${at} names ${files.length === 1 ? 'a file' : 'files'} totalling ${total} characters, over the caps.bundle_chars cap of ${cfg.caps.bundle_chars}: ${files.map((f) => `${f.path} (${text.get(f.path).length})`).join(', ')}`,
+      `narrow the fix target to fewer files, or make the change by hand and record it with change applied --proposal ${at} --ref <sha>, then apply again`);
     const fill = { cause: fix.cause, kind: fix.kind ?? 'doc', target: redact(fix.target), change: redact(fix.change), metric: fix.metric, tripwire: fix.tripwire,
       files: files.map((f) => `--- ${f.path}\n${text.get(f.path)}\n--- end of ${f.path}`).join('\n') };
     // The reply must be the whole new file. A reply the worker's output limit cut off — a length/max-tokens stop the
@@ -87,7 +106,11 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
       return [];
     };
     const dir = join(cfg.state, 'runs', String(run)); mkdirSync(dir, { recursive: true });
-    const answer = await agentStep(cfg, db, run, dir, { step: `apply-${fix.n}`, role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check, log, bundle: false });
+    const made = db.prepare('SELECT count(*) AS n FROM invocations WHERE run_id = ? AND step = ?').get(run, `apply-${fix.n}`).n;
+    let answer;
+    try {
+      answer = await agentStep(cfg, db, run, dir, { step: `apply-${fix.n}`, role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check, log, bundle: false });
+    } catch (e) { workerFailed(db, run, fix, made, e); }
     // A private index: the new tree is HEAD's with the worker's files, and the user's own index is never read or written.
     const env = { GIT_INDEX_FILE: join(dir, `apply-${fix.n}.index`) };
     try {
@@ -113,8 +136,9 @@ export async function autoApply(cfg, db, id, log) {
   const applied = [];
   for (const fix of db.prepare(KEPT).all(id).filter((f) => f.answer !== 'skip').slice(0, cfg.auto_fix)) {
     try { applied.push(await applyOne(cfg, db, id, fix, log)); log(line(id, applied.at(-1))); } catch (e) {
-      if (!(e instanceof UsageError)) throw e;
-      log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`);
+      if (e instanceof UsageError) { log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
+      if (e instanceof Error && typeof e.next === 'string') { log(`failed: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
+      throw e;
     }
   }
   return { applied };
@@ -133,7 +157,12 @@ export async function apply(cfg, opts) {
     if (!chosen.length) throw new EmptyError(`run ${run} has no fix answered Apply`, withContext(`learn-from-mistakes-axi apply --run ${run} --fix <n>`, 'apply a kept fix you accept; signoff answers reads the board first', opts));
     const done = [];
     for (const fix of chosen) {
-      done.push(await applyOne(cfg, db, run, fix, console.error, opts));
+      try {
+        done.push(await applyOne(cfg, db, run, fix, console.error, opts));
+      } catch (e) {
+        if (e instanceof Error && !(e instanceof UsageError) && typeof e.next === 'string') throw new InputError(e.message, e.next);
+        throw e;
+      }
       console.log(line(run, done.at(-1)));
     }
     console.error(`next: git diff HEAD...${done[0].branch}   # review it, then push the branch and open a PR the way you deliver`);
