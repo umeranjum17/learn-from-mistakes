@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
-import { counts, plain } from './check.mjs';
+import { counts, plain, RAW, splitSentences } from './check.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 
@@ -16,12 +16,25 @@ const EVIDENCE = 3; // pointers shown per item; the rest are counted
 const DO = { keep: 'Keep it.', fix: 'Change it. The metric got better, but it missed the tripwire.', rollback: 'Roll it back.',
   delete: 'Delete it. It did not change the metric.', 'no-data': 'Wait for more data.' };
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
-// A path, a file name, a bundle id (c3, e12), a hash or a session uuid: none goes on a line a person reads.
-const RAW = /(?:^|[\s(])[~.]{0,2}\/\S|\w\/\w|\b[\w-]+\.(?:[cm]js|ts|md|json|ya?ml|sqlite|db|sh|py)\b|\b[ce]\d+\b|\b[0-9a-f]{12,}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-/i;
 // Free text from an agent or the config, on its own line; text that breaks the sentence rule or names a RAW item is left out.
 const said = (text) => {
   const t = redact(text ?? '').replace(/\s+/g, ' ').trim();
   return t && !plain(t, '', {}) && !RAW.test(t) ? `  ${t}` : '  This text breaks the report rules, so the report hides it.';
+};
+
+// A fix's change must be readable: propose checked it against these rules and sent it back once, so one that still
+// breaks one shows trimmed — its leading sentences that follow the rules — and names the proposal that holds the
+// rest (`change applied --proposal <run>:<n>` takes that id). Nothing readable says so and still names the proposal.
+const changeLines = (text, at) => {
+  const t = redact(text ?? '').replace(/\s+/g, ' ').trim();
+  if (t && !plain(t, '', {}) && !RAW.test(t)) return [`  ${t}`];
+  let good = '';
+  for (const s of splitSentences(t)) {
+    if (plain(s, '', {}) || RAW.test(s)) break;
+    good = good ? `${good} ${s.trim()}` : s.trim();
+  }
+  return good ? [`  ${good}`, `   Proposal ${at}: the rest of this text breaks the report rules.`]
+    : [`  This text breaks the report rules, so the report hides it.`, `   Proposal ${at} holds the text.`];
 };
 
 // `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.
@@ -77,7 +90,8 @@ export function reportText(cfg, db, id, dir, window, run) {
     const finding = findings.find((x) => x.cause === f.cause && JSON.parse(x.refs_json).some((r) => refs.includes(r))) ?? findings.find((x) => x.cause === f.cause);
     const shown = run.fixes.find((x) => x.n === f.n);
     const target = run.metrics.find((m) => m.name === shown.metric)?.target;
-    lines.push(`Fix ${f.n}, for ${f.cause}:`, '- Finding:', said(finding?.summary ?? cfg.causes[f.cause]?.description), '- Owner:', said(f.owner), '- Change:', said(f.change),
+    lines.push(`Fix ${f.n}, for ${f.cause}:`, '- Finding:', said(finding?.summary ?? cfg.causes[f.cause]?.description), '- Owner:', said(f.owner), '- Change:',
+      ...changeLines(f.change, `${id}:${f.n}`),
       `- Metric: ${shown.metric}, ${target ? `target ${target}` : 'no target'}. Tripwire: ${shown.tripwire}.`, `- The judge's verdict: ${shown.verdict}.`);
     if (f.judge_note) lines.push(said(f.judge_note));
     lines.push(evidence(JSON.parse(f.refs_json)));

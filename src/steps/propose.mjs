@@ -12,7 +12,8 @@ import { readLedger } from '../../bin/learn-from-mistakes-axi.mjs';
 import { METRIC_RULE } from '../config.mjs';
 import { liveAt } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
-import { counts, plain, quoteProblem, quoteRuns } from '../check.mjs';
+import { redact } from '../redact.mjs';
+import { counts, plain, quoteProblem, quoteRuns, rawProblem } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/propose.md', import.meta.url), 'utf8');
@@ -26,6 +27,9 @@ function proposalProblems(f, i, runs) {
   for (const k of ['cause', 'target', 'owner']) if (!str(f[k])) p.push(`${at}.${k} must be a string`);
   if (!['doc', 'rule', 'code'].includes(f.kind)) p.push(`${at}.kind must be doc, rule or code`);
   p.push(plain(f.change, `${at}.change`, { sentences: 3 }));
+  // The report shows the change to a person, so it must also follow the report's no-ids rule on the redacted text:
+  // a change that would be hidden there is refused here and sent back once, with the field named.
+  if (str(f.change)) p.push(rawProblem(redact(f.change), `${at}.change`));
   for (const k of ['target', 'owner', 'change']) if (str(f[k])) p.push(quoteProblem(f[k], `${at}.${k}`, runs));
   for (const k of ['metric', 'tripwire']) if (f[k] != null && !str(f[k])) p.push(`${at}.${k} must be a string`);
   if (!Array.isArray(f.refs) || !f.refs.every(str)) p.push(`${at}.refs must be a list of bundle ids`);
