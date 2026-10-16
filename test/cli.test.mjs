@@ -196,6 +196,11 @@ test('help, guide and version work without a project file', () => {
   assert.match(g.stdout, /npx -y learn-from-mistakes-axi init.*doctor.*retro --wait 8m.*attach.*report\.txt.*sign-off's skill/s);
   assert.doesNotMatch(g.stdout, /\bingest\b|labels\.jsonl|proposals\.jsonl|claude-|gpt-/);
   assert.match(g.stdout.trim().split('\n').at(-1), /^next: learn-from-mistakes-axi doctor/);
+  // every help and guide line fits a 100-column terminal, and names no internal word
+  for (const r of [h, g]) {
+    assert.ok(r.stdout.split('\n').every((l) => l.length <= 100), `a line is over 100 characters:\n${r.stdout.split('\n').find((l) => l.length > 100)}`);
+    assert.doesNotMatch(r.stdout, /\bTOON\b|workerBin|judgeBin/);
+  }
   const bare = raw(); // no config: point the agent at init
   assert.equal(bare.status, 2);
   assert.match(bare.stderr, /no \.learn-from-mistakes\.yaml/);
@@ -813,8 +818,13 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.deepEqual(JSON.parse(steps[9].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
   const status = lfm('status', '--json');
   assert.equal(status.status, 0, status.stderr);
-  assert.deepEqual(JSON.parse(status.stdout), run);
+  const saved = JSON.parse(status.stdout);
+  assert.ok(saved.run.pid > 0, 'the run keeps its owner pid for --json');
+  delete saved.run.pid; // the human output hides the internal pid
+  assert.deepEqual(saved, run);
   assert.deepEqual(decode(lfm('runs').stdout), { runs: [run.run] });
+  assert.doesNotMatch(lfm('status').stdout, /\bpid\b/); // status and runs name no internal word in the human output
+  assert.doesNotMatch(lfm('runs').stdout, /\bpid\b/);
   assert.doesNotMatch(git('status', '--porcelain', '--untracked-files=all'), /\.lfm/);
 
   // A project config with every key, and a global config with the agent keys, loads and runs the same steps.
@@ -858,7 +868,9 @@ allow_premium: false
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
-  assert.deepEqual(JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout), run);
+  const later = JSON.parse(lfm('status', '--json', '--run', String(run.run.id)).stdout);
+  delete later.run.pid; // --json keeps the owner pid; the human retro output hides it
+  assert.deepEqual(later, run);
   const missing = lfm('status', '--run', '99');
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /^error: no run 99$/m);

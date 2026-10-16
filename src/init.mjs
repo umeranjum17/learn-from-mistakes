@@ -60,25 +60,26 @@ const STARTER = {
 };
 
 const globalText = `# learn-from-mistakes global configuration
-# A project's .learn-from-mistakes.yaml may override agent, judge_agent, agent_config, agent_timeout and
-# allow_premium; auto_fix and the other keys here are global-only.
+# A project's .learn-from-mistakes.yaml may override agent, judge_agent, agent_config,
+# agent_timeout and allow_premium; auto_fix and the other keys here are global-only.
 
-# Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never picks one, and asks
-# when it is not set (init --agent <agent> --model <model> saves the answer). It is one agent: the tool never
-# tries another when this one is not ready.
+# Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never
+# picks one, and asks when it is not set (init --agent <agent> --model <model> saves the answer).
+# It is one agent: the tool never tries another when this one is not ready.
 # Options: ${AGENT_RULE}
-# byokit:<route> calls a model through BYOKit with no agent CLI: a sign-in plan (chatgpt, claude) or a
-# plan key route such as opencode-go (learn-from-mistakes-axi agents --test byokit:<route> checks one)
+# byokit:<route> calls a model through BYOKit with no agent CLI: a sign-in plan (chatgpt, claude)
+# or a plan key route such as opencode-go (learn-from-mistakes-axi agents --test byokit:<route>
+# checks one)
 # agent: claude
 
-# Agent that checks the worker's output. Same values as agent; its agent must differ from the worker's (agent_config
-# holds one model per agent): the judge never judges its own work.
+# Agent that checks the worker's output. Same values as agent; its agent must differ from the
+# worker's (agent_config holds one model per agent): the judge never judges its own work.
 # judge_agent: codex
 
-# Model and reasoning effort per agent. Effort is one of minimal, low, medium, high, xhigh, max; it maps
-# to --effort for claude, -c model_reasoning_effort for codex, --variant for opencode and --thinking for
-# pi; gemini, acp:<target> and byokit:<route> take no effort. An agent with no model here is asked for one: the
-# tool never lets its CLI pick its own model.
+# Model and reasoning effort per agent. Effort is one of minimal, low, medium, high, xhigh, max; it
+# maps to --effort for claude, -c model_reasoning_effort for codex, --variant for opencode and
+# --thinking for pi; gemini, acp:<target> and byokit:<route> take no effort. An agent with no
+# model here is asked for one: the tool never lets its CLI pick its own model.
 # agent_config:
 #   <agent>:
 #     model: <model>
@@ -86,13 +87,15 @@ const globalText = `# learn-from-mistakes global configuration
 #   "byokit:<route>":
 #     model: <model>
 
-# Maximum wall-clock time for one agent call. A stalled agent is stopped and the step fails with its cause.
+# Maximum wall-clock time for one agent call. A stalled agent is stopped and the step fails with
+# its cause.
 # agent_timeout: "20m"
 
 # Premium models (Opus, Sonnet, Sol) are refused unless this is true.
 # allow_premium: false
 
-# auto_fix: 0   # kept fixes a run applies unless answered Skip, each on its own branch; 0 proposes only
+# auto_fix: 0   # kept fixes a run applies unless answered Skip, each on its own branch;
+#   0 proposes only
 # Override native agent binary paths (optional, global only)
 # agent_path_override:
 #   claude: /usr/local/bin/claude
@@ -107,7 +110,8 @@ const globalText = `# learn-from-mistakes global configuration
 # Optional path to the user-installed acpx binary for acp:<target> agents (global only)
 # acpx_path: acpx
 
-# Keep each project's run state here, one dir per project name, instead of <project>/.lfm (global only)
+# Keep each project's run state here, one dir per project name, instead of
+# <project>/.lfm (global only)
 # state_root: ~/.learn-from-mistakes/state
 `;
 
@@ -179,8 +183,9 @@ export async function init(dir, opts) {
     try {
       writeFileSync(file, `# written by learn-from-mistakes-axi init
 name: ${scalar(basename(dir))}
-# The agent keys come from $LFM_HOME/config.yaml (default ~/.learn-from-mistakes/config.yaml); set one here to
-# override it for this project. The tool never picks an agent: set agent and judge_agent, each with its model.
+# The agent keys come from $LFM_HOME/config.yaml (default ~/.learn-from-mistakes/config.yaml); set
+# one here to override it for this project. The tool never picks an agent: set agent and
+# judge_agent, each with its model.
 # agent: claude   # or codex, opencode, pi, gemini, acp:<target>, byokit:<route>
 # judge_agent: codex   # its agent must differ from the worker's (one model per agent)
 # agent_config: { <agent>: { model: <model>, effort: low } }
@@ -199,7 +204,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
       const doc = parseDocument(readFileSync(file, 'utf8'));
       if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
       doc.setIn(['sources', 'home'], doc.createNode({ type: 'firstmate', path: opts.firstmate }, { flow: true }));
-      try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+      try { writeFileSync(file, doc.toString({ lineWidth: 90 })); }
       catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     }
   }
@@ -207,7 +212,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     const doc = parseDocument(readFileSync(file, 'utf8'));
     if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
     doc.setIn(['sources', before.sources?.sessions && !opts.reconfigure ? 'agent-sessions' : 'sessions'], doc.createNode({ type: 'sessions', agents: [...new Set(reads)] }, { flow: true }));
-    try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+    try { writeFileSync(file, doc.toString({ lineWidth: 90 })); }
     catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
   let cfg = loadConfig(dir);
@@ -217,7 +222,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     const pair = doc.createPair('causes', Object.fromEntries(Object.entries(STARTER).map(([id, [signal, description]]) => [id, { description, ...(sessions && { match: { source: sessions, signal } }) }])));
     pair.key.commentBefore = ' Starter causes, written by init: the worker labels records with them. Edit, add or remove them.';
     doc.contents.items.push(pair);
-    try { writeFileSync(file, doc.toString({ lineWidth: 0 })); }
+    try { writeFileSync(file, doc.toString({ lineWidth: 90 })); }
     catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     cfg = loadConfig(dir);
   }
