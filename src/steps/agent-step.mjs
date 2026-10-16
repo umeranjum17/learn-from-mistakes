@@ -10,9 +10,13 @@ import { startTime } from '../proc.mjs';
 import { call, chooseFix, detect, KEY, resolveRoles } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
+const LENGTH_STOP = /\b(length|max[_-]?output[_-]?tokens?|max[_-]?tokens?|token[_-]?limit|truncated|incomplete)\b/i;
 
-// Returns the checked JSON object. `check(value, attempt)` returns the problems with the answer, each naming a field and the
-// rule it broke (the plain-language rule names the sentence and the single offending word, never a longer passage).
+// Returns the checked JSON object. `check(value, attempt, stop)` returns the problems with the answer, each naming a field and the
+// rule it broke (the plain-language rule names the sentence and the single offending word, never a longer passage);
+// `stop` is the runner's reported stop reason (null when none), so a step whose answer must be whole can refuse a reply
+// the output limit cut off. A problem a retry cannot fix (a cut reply: the same limit applies again) is thrown as a fatal
+// InputError instead, which ends the step at once.
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log, bundle = true }) {
   const key = KEY[role];
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
@@ -24,7 +28,9 @@ export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, l
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const got = await invoke(cfg, db, id, dir, { step, role, ...r }, `${ask}${data}`, log);
-    problems = got.value ? check(got.value, attempt) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
+    const stop = got.stop ?? null;
+    if (!got.value && stop && LENGTH_STOP.test(stop)) throw new InputError(`the ${role}'s reply was cut off (the reply stopped at ${JSON.stringify(stop)}); the ${role} hit its output limit`, `shorten the change or raise the model's output limit, then try again`);
+    problems = got.value ? check(got.value, attempt, stop) : [got.text.trim() ? 'the answer holds no JSON object' : 'the answer is empty'];
     if (!problems.length) return got.value;
     invalid.run(got.row);
     log(`${role} answer ${attempt} is not valid: ${problems.join('; ')}`);

@@ -142,7 +142,8 @@ function json(text) {
 const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.at(-1)];
 
 // Calls one runner in `dir`. Returns its answer's text, the JSON object in it (`value`, undefined when there is none),
-// and the session id and token counts the agent reported (null when it reports none). An empty answer is a failure.
+// the stop reason the agent reported (`stop`, null when it reports none), and the session id and token counts the agent
+// reported (null when it reports none). An empty answer is a failure.
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
@@ -179,7 +180,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
     if (cause) throw new InputError(`${runner}: ${cause}`, fix);
     const text = got.text ?? '';
     if (!text.trim() && !empty) throw new InputError(`${runner}: the answer holds no JSON object: empty`, fix);
-    return { value: json(text), text, session_id: got.session_id ?? null, tokens_in: got.tokens_in ?? null, tokens_out: got.tokens_out ?? null };
+    return { value: json(text), text, stop: got.stop ?? null, session_id: got.session_id ?? null, tokens_in: got.tokens_in ?? null, tokens_out: got.tokens_out ?? null };
   }
 }
 

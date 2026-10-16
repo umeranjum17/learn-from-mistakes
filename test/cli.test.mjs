@@ -1427,6 +1427,66 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.map((c) => [c.id, c.ref]), [['chg-1', commit], ['chg-2', commit2]]);
 });
 
+test('apply: a cut-off reply is refused with no branch and no ledger change; trailing-newline-only and normal-stop replies still apply', () => {
+  const { p, lfm, calls, git, fake } = applyRepo();
+  const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  // two ways a cut-off reply shows: FAKE_APPLY=cut returns text cut mid-line (no stop reason reported), length returns
+  // whole file text with the stop_reason a length cut carries. Both are refused: the file and reason are named, no branch
+  // is created or moved, changes.jsonl gets no row, and the worker is not sent back to try again (one call, then refused).
+  for (const mode of ['cut', 'length']) {
+    const before = calls().length;
+    const r = lfm({ FAKE_APPLY: mode }, 'apply', '--fix', '1');
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, new RegExp(`^error: fix ${run.id}:1: the worker's reply for .+ was cut off \\(.+; apply refuses to commit an incomplete file$`, 'm'));
+    assert.match(r.stderr, /^next: learn-from-mistakes-axi apply --fix 1   # the worker hit its output limit/m);
+    assert.equal(git('branch', '--list', 'lfm/*'), '', `${mode}: a cut-off reply creates no branch`);
+    assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 0, `${mode}: a cut-off reply records no ledger change`);
+    assert.equal(calls().length, before + 1, `${mode}: exactly one worker call, then refused, never sent back`);
+  }
+  // A whole-file reply is still applied on its branch from HEAD and recorded; the work tree is untouched.
+  const ok = lfm({}, 'apply', '--fix', '1'); assert.equal(ok.status, 0, ok.stderr);
+  const commit = git('rev-parse', `lfm/${run.id}-1`);
+  assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
+  assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules, 'the work tree is untouched');
+  assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'after two refusals, exactly one applied change is recorded');
+  // A whole reply that only removes the trailing newline still applies on a fresh branch.
+  const trail = lfm({ FAKE_APPLY: 'trailing' }, 'apply', '--fix', '2'); assert.equal(trail.status, 0, trail.stderr);
+  assert.equal(git('show', `lfm/${run.id}-2:AGENTS.md`), rules.replace(/\n$/, ''));
+  // A runner-reported normal stop is the runner's own word the reply is whole, so an oddly-shaped reply applies.
+  const normal = lfm({ FAKE_APPLY: 'cut', FAKE_STOP: 'end_turn' }, 'apply', '--fix', '3'); assert.equal(normal.status, 0, normal.stderr);
+  assert.ok(git('rev-parse', `lfm/${run.id}-3`).length > 0, 'a normal stop applies an oddly-shaped reply');
+  // A length stop always refuses, even with whole file text: no branch, no ledger change.
+  const len = lfm({ FAKE_STOP: 'max_tokens' }, 'apply', '--fix', '4');
+  assert.equal(len.status, 1, len.stderr);
+  assert.match(len.stderr, new RegExp(`^error: fix ${run.id}:4: the worker's reply for .+ was cut off \\(.+; apply refuses to commit an incomplete file$`, 'm'));
+  assert.equal(git('branch', '--list', `lfm/${run.id}-4`), '', 'a length stop creates no branch');
+  // A big shrink refuses with its honest next step: name the removal, or edit by hand and record it.
+  const shrink = lfm({ FAKE_APPLY: 'shrink' }, 'apply', '--fix', '5');
+  assert.equal(shrink.status, 1, shrink.stderr);
+  assert.match(shrink.stderr, new RegExp(`^error: fix ${run.id}:5: the worker's reply for .+ was cut off \\(the new text drops more than half the file`, 'm'));
+  assert.match(shrink.stderr, new RegExp(`^next: name the removal in the change text, or make the edit by hand and record it with change applied --proposal ${run.id}:5 --ref <sha>`, 'm'));
+  assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a big shrink creates no branch');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the two refused fixes record nothing');
+  const grownBefore = calls().length;
+  const grown = lfm({ FAKE_APPLY: 'grown' }, 'apply', '--fix', '4');
+  assert.equal(grown.status, 1, grown.stderr);
+  assert.match(grown.stderr, new RegExp(`^error: fix ${run.id}:4: the worker's reply for .+ was cut off \\(it ends mid-line where the file ended with a newline`, 'm'));
+  assert.equal(git('branch', '--list', `lfm/${run.id}-4`), '', 'a grown mid-line cut creates no branch');
+  assert.equal(calls().length, grownBefore + 1, 'a grown cut is refused without a retry');
+  const brokenBefore = calls().length;
+  const broken = lfm({ FAKE_APPLY: 'broken' }, 'apply', '--fix', '5');
+  assert.equal(broken.status, 1, broken.stderr);
+  assert.match(broken.stderr, /^error: the worker's reply was cut off \(the reply stopped at "max_tokens"\)/m);
+  assert.match(broken.stderr, /output limit/m);
+  assert.match(broken.stderr, /^next: shorten the change or raise the model's output limit/m);
+  assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a cut JSON envelope creates no branch');
+  assert.equal(calls().length, brokenBefore + 1, 'a cut envelope is refused without a retry');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the refused fixes record nothing');
+});
+
 test('auto_fix is a user setting: a project file that sets it exits 2 and a retro does not start', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}auto_fix: 3\n`);

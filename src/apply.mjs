@@ -13,6 +13,13 @@ import { openStore } from './store.mjs';
 
 const PROMPT = readFileSync(new URL('./prompts/apply.md', import.meta.url), 'utf8');
 const KEPT = 'SELECT p.*, s.answer FROM proposals p LEFT JOIN signoff s ON s.proposal_id = p.id WHERE p.run_id = ? AND p.n IS NOT NULL ORDER BY p.n';
+// A reply the worker's output limit cut off. It is seen one of two ways: a stop reason the runner reported (a length or
+// max-tokens cut), or, when the runner reported no stop reason, a shape change a whole-file reply never makes — a normal
+// small edit only trims a little, so a reply that ends mid-line (beyond a trailing newline) or drops more than half the
+// file (with no removal the change names) is refused, never committed, and never recorded. A runner-reported normal stop
+// is the runner's own word the reply is whole, so the shape checks are skipped; a length stop always refuses.
+const LENGTH_STOP = /\b(length|max[_-]?output[_-]?tokens?|max[_-]?tokens?|token[_-]?limit|truncated|incomplete)\b/i;
+const NAMES_REMOVAL = /\b(remov|delet|drop|dedup|prune|shrink|shrank|shorten|trim|consolidat)\w*/i;
 
 function git(dir, args, { input, env } = {}) {
   const bin = which('git');
@@ -48,11 +55,29 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     for (const f of files) if (git(top, ['hash-object', '--path', f.path, '--', f.path]) !== git(top, ['rev-parse', `HEAD:${f.path}`])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
     const text = new Map(files.map((f) => [f.path, readFileSync(join(top, f.path), 'utf8')])), fill = { cause: fix.cause, kind: fix.kind ?? 'doc', target: redact(fix.target), change: redact(fix.change), metric: fix.metric, tripwire: fix.tripwire,
       files: files.map((f) => `--- ${f.path}\n${text.get(f.path)}\n--- end of ${f.path}`).join('\n') };
-    const check = (v) => {
+    // The reply must be the whole new file. A reply the worker's output limit cut off — a length/max-tokens stop the
+    // runner reported, or a shape change a whole-file reply never makes — is refused here: it names the file and reason,
+    // commits nothing and records nothing. It is thrown, not sent back, because a length stop repeats on a retry.
+    const cutoff = (v, stop) => {
+      if (stop && LENGTH_STOP.test(stop)) return { file: v.files.map((f) => f.path).join(' and '), reason: `the reply stopped at ${JSON.stringify(stop)}` };
+      if (stop) return;
+      for (const f of v.files) {
+        const before = text.get(f.path), after = f.content;
+        if (before.endsWith('\n') && !after.endsWith('\n') && before.replace(/\n+$/, '') !== after.replace(/\n+$/, '')) return { file: f.path, reason: 'it ends mid-line where the file ended with a newline' };
+        if (after.length * 2 < before.length && !NAMES_REMOVAL.test(fix.change)) return { file: f.path, reason: 'the new text drops more than half the file, and the fix names no removal', shrink: true };
+      }
+    };
+    const check = (v, attempt, stop) => {
       if (!Array.isArray(v.files) || !v.files.length) return ['files must be a list of the files you changed'];
       const p = v.files.flatMap((f, i) => (!text.has(f?.path) ? [`files[${i}].path must be one of the listed files`] : typeof f.content !== 'string' ? [`files[${i}].content must be the whole new text`] : []));
       if (new Set(v.files.map((f) => f?.path)).size !== v.files.length) p.push('files names one file twice');
-      return !p.length && v.files.every((f) => f.content === text.get(f.path)) ? ['the answer changes no file'] : p;
+      if (p.length) return p;
+      if (v.files.every((f) => f.content === text.get(f.path))) return ['the answer changes no file'];
+      const cut = cutoff(v, stop);
+      if (cut) throw new InputError(`fix ${at}: the worker's reply for ${cut.file} was cut off (${cut.reason}); apply refuses to commit an incomplete file`, cut.shrink
+        ? `name the removal in the change text, or make the edit by hand and record it with change applied --proposal ${at} --ref <sha>, then apply again`
+        : `learn-from-mistakes-axi apply --fix ${fix.n}   # the worker hit its output limit; shorten the change or raise the model's output limit, then apply again`);
+      return [];
     };
     const dir = join(cfg.state, 'runs', String(run)); mkdirSync(dir, { recursive: true });
     const answer = await agentStep(cfg, db, run, dir, { step: `apply-${fix.n}`, role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check, log, bundle: false });
