@@ -1662,3 +1662,30 @@ test('doctor names the pinned runner\'s own install fix when it is not on PATH, 
   assert.equal(line.fix, `install ${missing}, or set agent_path_override.claude in ${join(env.LFM_HOME, 'config.yaml')}`);
   assert.doesNotMatch(line.fix, /\bcodex\b/);
 });
+
+// detect() probes only the configured roles: with one configured agent, doctor runs --version and reads the login
+// store of that agent alone. Every other agent CLI on PATH is recorded by its own shim and must stay untouched.
+test('doctor with one configured agent never starts another agent CLI', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'lfm-detect-'));
+  after(() => rmSync(tmp, { recursive: true, force: true }));
+  const p = join(tmp, 'p'), fakes = join(tmp, 'fakes'), log = join(tmp, 'log'), home = join(tmp, 'home');
+  cpSync(new URL('../examples', import.meta.url).pathname, p, { recursive: true });
+  own(p);
+  for (const d of [fakes, log, home, join(tmp, 'lfm-home')]) mkdirSync(d, { recursive: true });
+  // Each shim records its own name and argv, then answers --version; a login probe is never reached (claude has none).
+  const shim = `const fs = require('node:fs'), path = require('node:path');
+const name = path.basename(process.argv[1]), args = process.argv.slice(2);
+fs.appendFileSync(path.join(process.env.CALL_LOG, name + '.jsonl'), JSON.stringify(args) + '\\n');
+if (args[0] === '--version') { console.log('9.9.9 (fake ' + name + ')'); process.exit(0); }
+process.exit(0);`;
+  for (const name of ['claude', 'codex', 'gemini', 'opencode', 'pi', 'acpx']) {
+    writeFileSync(join(fakes, name), `#!${process.execPath}\n${shim}`);
+    chmodSync(join(fakes, name), 0o755);
+  }
+  // One configured agent: claude in both roles (a clash doctor reports). The tool probes no other runner.
+  writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), 'agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n');
+  const env = { ...process.env, PATH: fakes, HOME: home, LFM_HOME: join(tmp, 'lfm-home'), CALL_LOG: log };
+  const r = spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env });
+  assert.equal(r.status, 1, r.stderr); // the judge clash is the one fail; it does not widen the probe
+  assert.deepEqual(readdirSync(log).sort(), ['claude.jsonl']); // codex, gemini, opencode, pi and acpx were never started
+});
