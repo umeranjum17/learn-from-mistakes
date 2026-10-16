@@ -1,8 +1,9 @@
 // The propose step: the worker reads each cause with how often it came back, the findings the analyse step kept and the
 // follow-ups whose verdict is not keep, then the bundle. It proposes fixes (the `proposals` table, in its order), each with
 // a cause, a target, an owner, the change, a metric, a tripwire and refs to bundle items, and gives the reason for each
-// of those follow-ups (`followups.reason`); it never sets a verdict. The answer's shape and its free text (STE100) are
-// checked and a bad answer is sent back once; on the second answer only the proposals and reasons that break a rule are
+// of those follow-ups (`followups.reason`); it never sets a verdict. The answer's shape, its free text (STE100) and
+// its record quotes (no run of QUOTE_WORDS words from the stored record texts) are checked and a bad answer is sent
+// back once; on the second answer only the proposals and reasons that break a rule are
 // dropped (logged), and the check step then keeps only the fixes that follow the rules.
 // With no finding and no follow-up to explain it asks the worker nothing.
 import { readFileSync } from 'node:fs';
@@ -11,20 +12,21 @@ import { readLedger } from '../../bin/learn-from-mistakes-axi.mjs';
 import { METRIC_RULE } from '../config.mjs';
 import { liveAt } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
-import { counts, plain } from '../check.mjs';
+import { counts, plain, quoteProblem, quoteRuns } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/propose.md', import.meta.url), 'utf8');
 const str = (v) => typeof v === 'string';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function proposalProblems(f, i) {
+function proposalProblems(f, i, runs) {
   const at = `proposals[${i}]`;
   if (!f || typeof f !== 'object') return [`${at} must be an object`];
   const p = [];
   for (const k of ['cause', 'target', 'owner']) if (!str(f[k])) p.push(`${at}.${k} must be a string`);
   if (!['doc', 'rule', 'code'].includes(f.kind)) p.push(`${at}.kind must be doc, rule or code`);
   p.push(plain(f.change, `${at}.change`, { sentences: 3 }));
+  for (const k of ['target', 'owner', 'change']) if (str(f[k])) p.push(quoteProblem(f[k], `${at}.${k}`, runs));
   for (const k of ['metric', 'tripwire']) if (f[k] != null && !str(f[k])) p.push(`${at}.${k} must be a string`);
   if (!Array.isArray(f.refs) || !f.refs.every(str)) p.push(`${at}.refs must be a list of bundle ids`);
   return p.filter(Boolean);
@@ -40,10 +42,10 @@ function reasonProblems(r, i, changes) {
 }
 
 // Keeps the proposals and reasons that follow the rules; `bad` names each one that does not, with its problem.
-function sift(v, changes) {
+function sift(v, changes, runs) {
   const bad = [];
   const proposals = v.proposals.filter((f, i) => {
-    const p = proposalProblems(f, i);
+    const p = proposalProblems(f, i, runs);
     bad.push(...p);
     return !p.length;
   });
@@ -60,12 +62,12 @@ function sift(v, changes) {
 }
 
 // The first answer must be fully valid; on the second only a list that is not a list fails the step.
-function check(v, changes, attempt) {
+function check(v, changes, attempt, runs) {
   const p = [];
   if (!Array.isArray(v.proposals)) p.push('proposals must be a list');
   if (!Array.isArray(v.reasons)) p.push('reasons must be a list');
   if (p.length || attempt > 1) return p;
-  const { reasons, bad } = sift(v, changes);
+  const { reasons, bad } = sift(v, changes, runs);
   for (const c of changes) if (!reasons.some((r) => r.change === c)) bad.push(`reasons has no reason for ${c}`);
   return bad;
 }
@@ -99,8 +101,13 @@ export async function propose(cfg, db, id, dir, window, log) {
     followups: list(pending.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
   };
   const changes = pending.map((f) => f.change_id);
-  const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt), log });
-  const { proposals, reasons, bad } = sift(answer, changes);
+  // The stored record texts this run read: with excerpts off the bundle holds no record text, so the quote rule
+  // checks these, not the bundle.
+  const recordTexts = [...db.prepare('SELECT text FROM records WHERE run_id = ?').all(id).map((r) => r.text),
+    ...db.prepare('SELECT excerpt FROM events WHERE run_id = ?').all(id).map((e) => e.excerpt)];
+  const runs = quoteRuns(recordTexts);
+  const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt, runs), log });
+  const { proposals, reasons, bad } = sift(answer, changes, runs);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
   const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const reason = db.prepare('UPDATE followups SET reason = ? WHERE run_id = ? AND change_id = ?');

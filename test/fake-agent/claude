@@ -9,6 +9,8 @@
 // three fixes: one in plain active words, one with a non-plain word (utilize) and one in the passive voice, on every
 // answer. FAKE_PROPOSE=twin gives one
 // fix for FAKE_CAUSE citing only the second record; with FAKE_FINDINGS=twins, label names two findings under FAKE_CAUSE, one per record.
+// FAKE_PROPOSE=quote gives two fixes: one whose change copies a record sentence word for word (the quote rule
+// refuses it) and one that paraphrases it (kept), on every answer.
 // FAKE_DUP=1 makes every label after the first a duplicate of the first record; FAKE_OCC=n gives the first label n occurrences.
 // The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
@@ -43,6 +45,8 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const fix = (target, more) => ({ cause: process.env.FAKE_CAUSE || 'other', target: process.env.FAKE_TARGET || target, kind: process.env.FAKE_KIND || 'code', owner: 'maintainer', change: 'Give each worker its own cache directory.', metric: null, tripwire: '<= 0', refs, ...more });
   const proposals = process.env.FAKE_PROPOSE === 'long' ? [fix('launch script 1'), fix('launch script 2', { change: 'Give each worker its own cache directory. Keep the lock out of it. Run the launch script alone. Check the result.' })]
     : process.env.FAKE_PROPOSE === 'plain' ? [fix('launch script 1'), fix('launch script 2', { change: 'We will utilize the cache.' }), fix('launch script 3', { change: 'The lock was held by us.' })]
+    : process.env.FAKE_PROPOSE === 'quote' ? [fix('launch script 1', { change: 'Give each worker its own cache directory. The nightly backlog queue filled and blocked the morning release workers.' }),
+      fix('launch script 2', { change: 'Give each worker its own cache directory for every lane.' })]
     : process.env.FAKE_PROPOSE === 'twin' ? [fix('launch script 1', { refs: records.slice(1, 2) })]
     : process.env.FAKE_PROPOSE !== 'eight' ? [] :[...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
     fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })];
