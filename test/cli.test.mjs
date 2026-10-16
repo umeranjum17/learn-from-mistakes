@@ -1446,6 +1446,26 @@ test('apply: a kept fix naming a cause that is not configured is refused in the 
   assert.equal(git('branch', '--list', 'lfm/*'), '');
 });
 
+test('apply: a target that is not valid UTF-8 is refused before the worker is asked; a valid UTF-8 target still applies', () => {
+  const { p, lfm, calls, git, fake } = applyRepo();
+  writeFileSync(join(p, 'notes-latin.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a, 0x6c, 0x69, 0x6e, 0x65, 0x32, 0x0a]));
+  git('add', '-A'); git('commit', '-qm', 'latin-1 target');
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { db.prepare(`UPDATE proposals SET target = 'notes-latin.txt' WHERE run_id = ? AND n = 1`).run(run.id); } finally { db.close(); }
+  const before = calls().length;
+  const refused = lfm({}, 'apply', '--fix', '1'); assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, new RegExp(`^error: fix ${run.id}:1 names notes-latin.txt, which is not valid UTF-8, so the worker cannot edit it$`, 'm'));
+  assert.match(refused.stderr, /^next: convert notes-latin\.txt to UTF-8, then apply again$/m);
+  assert.equal(git('branch', '--list', 'lfm/*'), '', 'a refused UTF-8 target must not create a branch');
+  assert.equal(calls().length, before, 'a refused UTF-8 target must not call the worker');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 0, 'a refused UTF-8 target must not record a ledger entry');
+  const ok = lfm({}, 'apply', '--fix', '2'); assert.equal(ok.status, 0, ok.stderr);
+  const commit = git('rev-parse', `lfm/${run.id}-2`);
+  assert.equal(ok.stdout, `applied: fix ${run.id}:2 on branch lfm/${run.id}-2, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  assert.ok(!git('branch', '--list', 'lfm/*').includes(`lfm/${run.id}-1`), 'the refused fix must still have no branch');
+});
+
 test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
   const { p, env, lfm } = agentSetup();
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);

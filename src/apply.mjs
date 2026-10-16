@@ -46,7 +46,14 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);
     if (!files.length) throw new InputError(`fix ${at} names no tracked file in its target ${JSON.stringify(fix.target)}, so the worker has nothing to edit`, withContext(`learn-from-mistakes-axi change applied --proposal ${at} --ref <sha>   # after you make the change by hand`, 'nothing was applied', opts));
     for (const f of files) if (git(top, ['hash-object', '--path', f.path, '--', f.path]) !== git(top, ['rev-parse', `HEAD:${f.path}`])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
-    const text = new Map(files.map((f) => [f.path, readFileSync(join(top, f.path), 'utf8')])), fill = { cause: fix.cause, kind: fix.kind ?? 'doc', target: redact(fix.target), change: redact(fix.change), metric: fix.metric, tripwire: fix.tripwire,
+    // The worker edits UTF-8 text: a target that is not valid UTF-8 would decode to replacement
+    // characters and commit corrupted text, so it is refused before the worker is asked.
+    const fatal = new TextDecoder('utf-8', { fatal: true }), text = new Map();
+    for (const f of files) {
+      try { text.set(f.path, fatal.decode(readFileSync(join(top, f.path)))); }
+      catch { throw new InputError(`fix ${at} names ${f.path}, which is not valid UTF-8, so the worker cannot edit it`, `convert ${f.path} to UTF-8, then apply again`); }
+    }
+    const fill = { cause: fix.cause, kind: fix.kind ?? 'doc', target: redact(fix.target), change: redact(fix.change), metric: fix.metric, tripwire: fix.tripwire,
       files: files.map((f) => `--- ${f.path}\n${text.get(f.path)}\n--- end of ${f.path}`).join('\n') };
     const check = (v) => {
       if (!Array.isArray(v.files) || !v.files.length) return ['files must be a list of the files you changed'];
