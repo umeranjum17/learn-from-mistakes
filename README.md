@@ -155,7 +155,7 @@ To track a change you made yourself, use `change applied --cause <configured-cau
 | Code | Meaning and next step |
 | --- | --- |
 | `0` | Command succeeded, or a background run started/is still running. Inspect status before claiming completion. Doctor warnings do not fail it. |
-| `1` | Failed or interrupted run shown by `retro --wait`, `status`, the bare command, `attach` or `logs`; agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
+| `1` | Failed or interrupted run shown by `retro --wait`, `status`, the bare command, `attach` or `rerun`; agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
 | `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, identity clash, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
 | `3` | No saved run to inspect, no completed retro to report, or no run with kept fixes to `apply`. Start or finish a retro first. |
 
