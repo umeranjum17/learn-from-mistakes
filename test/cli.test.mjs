@@ -1389,6 +1389,33 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.map((c) => [c.id, c.ref]), [['chg-1', commit], ['chg-2', commit2]]);
 });
 
+test('apply: a reply the worker\'s output limit cut off is refused with no branch and no ledger change, once for the reported stop and once for an obvious shape cut; a whole-file reply still applies', () => {
+  const { p, lfm, calls, git, fake } = applyRepo();
+  const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  // two ways a cut-off reply shows: FAKE_APPLY=cut returns text cut mid-line (no stop reason reported), length returns
+  // whole file text with the stop_reason a length cut carries. Both are refused: the file and reason are named, no branch
+  // is created or moved, changes.jsonl gets no row, and the worker is not sent back to try again (one call, then refused).
+  for (const mode of ['cut', 'length']) {
+    const before = calls().length;
+    const r = lfm({ FAKE_APPLY: mode }, 'apply', '--fix', '1');
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, new RegExp(`^error: fix ${run.id}:1: the worker's reply for .+ was cut off \\(.+; apply refuses to commit an incomplete file$`, 'm'));
+    assert.match(r.stderr, /^next: learn-from-mistakes-axi apply --fix 1   # the worker hit its output limit/m);
+    assert.equal(git('branch', '--list', 'lfm/*'), '', `${mode}: a cut-off reply creates no branch`);
+    assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 0, `${mode}: a cut-off reply records no ledger change`);
+    assert.equal(calls().length, before + 1, `${mode}: exactly one worker call, then refused, never sent back`);
+  }
+  // A whole-file reply is still applied on its branch from HEAD and recorded; the work tree is untouched.
+  const ok = lfm({}, 'apply', '--fix', '1'); assert.equal(ok.status, 0, ok.stderr);
+  const commit = git('rev-parse', `lfm/${run.id}-1`);
+  assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
+  assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules, 'the work tree is untouched');
+  assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'after two refusals, exactly one applied change is recorded');
+});
+
 test('auto_fix is a user setting: a project file that sets it exits 2 and a retro does not start', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `${readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')}auto_fix: 3\n`);
