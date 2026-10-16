@@ -165,6 +165,43 @@ test('in a terminal, init asks for each agent and model and saves the answer', (
   assert.equal(lfm('agents', '--json').status, 0); // the saved config loads
 });
 
+// The agent pick offers the routes BYOKit's own listing reports as ready (past the old fixed three), and the model
+// question for a BYOKit route lists the models BYOKit exposes for it; the user still types or picks one by number.
+test('in a terminal, the pick lists BYOKit routes and the model question lists the route models', async () => {
+  const { tmp, p, env, config } = setup(['claude', 'opencode']);
+  const { readyRoutes, routeModels } = await import('../src/runners/byokit.mjs');
+  assert.ok((await readyRoutes()).includes('zai-coding-cn'));
+  const models = await routeModels('opencode-go');
+  assert.ok(models?.length > 1);
+  // sessions, a typed byokit:<route>, its first listed model by number, then the judge and its typed model
+  const answers = ['1', 'byokit:opencode-go', '1', '1', MODELS.claude].join('\n') + '\n';
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /\) byokit:opencode-go/);
+  assert.match(r.stdout, /\) byokit:zai-coding-cn/); // from BYOKit's listing, never in the fixed list
+  assert.match(r.stdout, /Models for byokit:opencode-go:/);
+  assert.ok(r.stdout.includes(models[0]) && r.stdout.includes(models[1]));
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.judge_agent], ['byokit:opencode-go', 'claude']);
+  assert.equal(yaml.agent_config['byokit:opencode-go'].model, models[0]); // picked by number, never chosen by the tool
+});
+
+// With BYOKit not installed the pick still offers the agent CLIs, says how to add a route, and never fails.
+test('in a terminal without BYOKit, the pick offers the agent CLIs and says how to add a route', () => {
+  const { tmp, p, env, config } = setup(['claude', 'codex']);
+  const loader = new URL('./byokit-missing-loader.mjs', import.meta.url).pathname;
+  const answers = ['1', '1', MODELS.claude, '2', MODELS.codex].join('\n') + '\n';
+  const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} --import ${loader} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, / {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode\r?\n {2}4\) pi\r?\n/);
+  assert.doesNotMatch(r.stdout, /\) byokit:/);
+  assert.match(r.stdout, /\(no BYOKit route is ready: npm install -g learn-from-mistakes-axi/);
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.judge_agent], ['claude', 'codex']);
+});
+
 // The sessions question is asked once: an empty answer (none) is carried into the rerun that saves the roles, so the
 // prompt is printed once and no sessions source is written.
 test('in a terminal, init asks which sessions to read once, and an empty answer writes no sessions source', () => {

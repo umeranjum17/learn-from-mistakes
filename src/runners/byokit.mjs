@@ -17,9 +17,27 @@ const NODE = '22.18';
 export const routeOf = (runner) => runner.match(/^byokit:(.+)/)?.[1];
 
 // The routes a person can name: the sign-in plans, then BYOKit's plan key aliases whose readiness is ready.
-async function readyRoutes() {
-  const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => r.aliases ?? []);
-  return [...ROUTES, ...keys];
+// Never throws: with BYOKit not installed nothing is known, so no route is offered.
+export async function readyRoutes() {
+  try {
+    const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => r.aliases ?? []);
+    return [...new Set([...ROUTES, ...keys])];
+  } catch { return []; }
+}
+
+// The models BYOKit exposes for a route, or undefined when it exposes none: a sign-in plan's catalogue models, else a
+// plan key route's pi-ai builtin models. Never throws; the caller leaves its model question as is without a list.
+export async function routeModels(route) {
+  try {
+    if (ROUTES.includes(route)) {
+      const ids = Object.values((await import('@byokit/accounts')).provider(route)?.models ?? {}).filter((m) => typeof m === 'string');
+      return ids.length ? [...new Set(ids)] : undefined;
+    }
+    const key = await planKey(route);
+    if (!key) return undefined;
+    const ids = (await import('@earendil-works/pi-ai/providers/all')).getBuiltinModels(key.upstream.id).map((m) => m.id).filter(Boolean);
+    return ids.length ? ids : undefined;
+  } catch { return undefined; }
 }
 
 // BYOKit's row for a plan key route, or undefined for a sign-in plan or an unknown name.
