@@ -78,7 +78,7 @@ function agentKeys(cfg, g, file) {
   }
   for (const [a, c] of Object.entries(mapping(g.agent_config ?? {}, null, `${file}: agent_config`))) {
     const where = `${file}: agent_config.${a}`;
-    check(NAME.test(a), `${file}: agent_config: ${a}`, 'an agent name: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>');
+    check(NAME.test(a), `${file}: agent_config: ${a}`, `an agent name: ${AGENT_RULE}`);
     mapping(c, ['model', 'effort'], where);
     check(c.model === undefined || (typeof c.model === 'string' && modelOk(a, c.model)), `${where}.model`, MODEL_RULE);
     if (c.effort !== undefined && !EFFORT_AGENTS.includes(a)) throw new UsageError(`${where}.effort: ${a} has no effort setting; remove it`);

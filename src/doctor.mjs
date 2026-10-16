@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ingestReadFrom, shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
+import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, premiumBlocked, resolveRoles, runnerKey, RUNNERS, which } from './runners/index.mjs';
 import { atLeast, SIGNOFF_MIN } from './signoff.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
@@ -57,7 +57,7 @@ export async function doctor(dir, opts) {
   const roles = await resolveRoles(cfg, list);
   const failedModel = new Set(); // a role whose model check failed gets no --live call
   for (const name of ['worker', 'judge']) {
-    const r = roles[name], key = r.runner.replace(/^acp:.*/, 'acp'), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
+    const r = roles[name], key = runnerKey(r.runner), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
     if (r.problem === CLASH) { add('fail', name, r.problem, chooseFix(cfg, 'judge_agent', cfg.judge_agent)); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one

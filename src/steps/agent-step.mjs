@@ -7,7 +7,7 @@
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { readBundle } from '../check.mjs';
 import { startTime } from '../proc.mjs';
-import { call, chooseFix, detect, KEY, resolveRoles } from '../runners/index.mjs';
+import { call, chooseFix, detect, KEY, resolveRoles, runnerKey } from '../runners/index.mjs';
 
 const iso = () => new Date().toISOString();
 const LENGTH_STOP = /\b(length|max[_-]?output[_-]?tokens?|max[_-]?tokens?|token[_-]?limit|truncated|incomplete)\b/i;
@@ -49,7 +49,7 @@ async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, l
   const target = runner.match(/^acp:(.+)/)?.[1];
   let got;
   try {
-    got = await call(cfg, { runner: target ? 'acp' : runner, target, model, dir, runId: id, step, prompt, empty: true, // an empty answer is a bad answer: sent back once
+    got = await call(cfg, { runner: runnerKey(runner), target, model, dir, runId: id, step, prompt, empty: true, // an empty answer is a bad answer: sent back once
       onSpawn: (pgid) => db.prepare('UPDATE invocations SET child_pgid = ?, child_started_at = ? WHERE id = ?').run(pgid, startTime(pgid), row) });
   } catch (e) {
     end.run(iso(), 'error', null, null, null, row);
