@@ -199,6 +199,14 @@ function sourceError(id, e, count) {
   return new UsageError(`${tagged} (${count} records read)`, next);
 }
 
+// The start of the range a retro reads: this window and the last, back to the
+// before-numbers of the earliest applied change. Doctor checks this same range,
+// so a record the retro reads is never one doctor skipped.
+export function ingestReadFrom(cfg, now = Date.now()) {
+  const w = parseInt(cfg.window, 10) * 86_400_000, since = now - w;
+  return Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
+}
+
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
 // The sessions the tool's own runs started (the run store's `invocations` table, when there is one) are skipped.
@@ -210,7 +218,7 @@ export async function ingest(cfg) {
   db?.close();
   // This window and the last, and far enough back to have before-numbers for every applied change.
   const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
-  const readFrom = Math.min(since - w, ...readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => Date.parse(c.at) - w));
+  const readFrom = ingestReadFrom(cfg);
   const records = [], rows = [], events = [], prs = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     let got;
