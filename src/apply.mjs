@@ -48,7 +48,7 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     for (const f of files) if (git(top, ['hash-object', '--path', f.path, '--', f.path]) !== git(top, ['rev-parse', `HEAD:${f.path}`])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
     // The worker edits UTF-8 text: a target that is not valid UTF-8 would decode to replacement
     // characters and commit corrupted text, so it is refused before the worker is asked.
-    const fatal = new TextDecoder('utf-8', { fatal: true }), text = new Map();
+    const fatal = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }), text = new Map();
     for (const f of files) {
       try { text.set(f.path, fatal.decode(readFileSync(join(top, f.path)))); }
       catch { throw new InputError(`fix ${at} names ${f.path}, which is not valid UTF-8, so the worker cannot edit it`, `convert ${f.path} to UTF-8, then apply again`); }
