@@ -622,13 +622,13 @@ async function runCommand(cmd, cfg, opts) {
     if (cmd !== '') console.error(`error: ${out.run.error}`);
     const step = out.steps.find((s) => s.status === 'failed')?.name;
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it after fixing ${step ? `the ${step} step` : 'the cause'}; completed steps are not run again`, opts));
-    if (!['status', ''].includes(cmd)) process.exitCode = 1;
+    process.exitCode = 1; // the same code retro --wait uses: status and the bare command show the failed run too
   } else if (out.run.status !== 'completed') { // interrupted or cancelled
     if (cmd !== '') console.error(`error: ${out.run.error}`);
     const log = join(cfg.state, 'runs', String(out.run.id), 'worker.log');
     const output = existsSync(log) ? `; the worker's output: ${log}` : '';
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));
-    if (!['status', ''].includes(cmd)) process.exitCode = 1;
+    process.exitCode = 1;
   } else if (!out.result.labelled && !out.result.findings.length) {
     console.error('result: the worker labelled no record and named no finding');
     hint(withContext(`learn-from-mistakes-axi logs --step analyse --run ${out.run.id}`, 'why: nothing new in this window, or the problems with its answer', opts));
