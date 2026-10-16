@@ -25,7 +25,12 @@ function git(dir, args, { input, env } = {}) {
   const bin = which('git');
   if (!bin) throw new InputError('git is not on PATH', 'install git   # apply puts each fix on a new branch');
   const r = spawnSync(bin, args, { cwd: dir, input, encoding: 'utf8', env: { ...process.env, ...env } });
-  if (r.status !== 0) throw new InputError(`git ${args[0]}: ${(r.stderr || r.error?.message || `exit ${r.status}`).trim().split('\n')[0]}`, 'git status   # apply needs a git repo with a commit');
+  if (r.status !== 0) {
+    const why = (r.stderr || r.error?.message || `exit ${r.status}`).trim().split('\n')[0];
+    throw new InputError(`git ${args[0]}: ${why}`, /identity unknown/i.test(why)
+      ? 'git config user.name "<name>" && git config user.email "<email>"   # apply signs each fix commit'
+      : 'git status   # apply needs a git repo with a commit');
+  }
   return r.stdout.trim();
 }
 
@@ -135,15 +140,16 @@ export const appliedFixes = (db, id) => new Map((JSON.parse(db.prepare(`SELECT o
 // The run's apply step: with auto_fix: n, the top n kept fixes, without an answer; 0 (the default) proposes only.
 export async function autoApply(cfg, db, id, log) {
   if (!cfg.auto_fix) { log('auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply'); return { applied: [] }; }
-  const applied = [];
+  const applied = [], refused = [];
   for (const fix of db.prepare(KEPT).all(id).filter((f) => f.answer !== 'skip').slice(0, cfg.auto_fix)) {
     try { applied.push(await applyOne(cfg, db, id, fix, log)); log(appliedLine(id, applied.at(-1))); } catch (e) {
-      if (e instanceof UsageError) { log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
-      if (e instanceof Error && typeof e.next === 'string') { log(`failed: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
+      // A refusal or a failed fix is named in the step's output, so the retro output and report carry it, not only the log.
+      if (e instanceof UsageError) { refused.push({ fix: fix.n, why: e.message, next: e.next }); log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
+      if (e instanceof Error && typeof e.next === 'string') { refused.push({ fix: fix.n, why: e.message, next: e.next }); log(`failed: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
       throw e;
     }
   }
-  return { applied };
+  return { applied, ...(refused.length && { refused }) };
 }
 
 // The run apply works on: --run, else the last run with kept fixes. The one lookup apply and the CLI's ask-ahead check

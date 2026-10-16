@@ -376,6 +376,7 @@ export async function runs(cfg) {
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics'), report = out('report') && JSON.parse(out('report'));
+  const applyOut = out('apply') && JSON.parse(out('apply')); // a fix the apply step refused, with why and next
   const metrics = new Map();
   // A metric with a target shows it and whether this window met it; one without has both empty.
   for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
@@ -392,6 +393,7 @@ function show(db, id) {
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
+    ...(applyOut?.refused?.length && { refused: applyOut.refused }),
     ...(report && { result: { summary: summaryLine(report), labelled: report.coverage.labelled, records: report.coverage.total_records,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
       findings: runResult(db, id).findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })) } }),
