@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { counts } from './check.mjs';
 import { redact } from './redact.mjs';
@@ -31,19 +32,21 @@ function peer(bin, args, cfg, input, noAnswer = false) {
   throw e;
 }
 
+// The run's kept fixes as sign-off messages, and the applied lines of the fixes its apply step applied: those are never asked.
 function messages(cfg, db, opts) {
   const run = opts.run ? db.prepare('SELECT id, status FROM runs WHERE id = ?').get(Number(opts.run))
     : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get();
   if (run?.status !== 'completed') throw new UsageError('signoff post needs a completed run', AGAIN);
-  const fixes = db.prepare('SELECT * FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(run.id);
-  if (!fixes.length) return [];
+  const applied = appliedFixes(db, run.id), done = [...applied.values()].map((a) => appliedLine(run.id, a));
+  const fixes = db.prepare('SELECT * FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(run.id).filter((f) => !applied.has(f.n));
+  if (!fixes.length) return { rows: [], done };
   const window = JSON.parse(db.prepare("SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'").get(run.id).output_json);
   const { causes } = counts(cfg, db, run.id, window);
   const recordIds = new Map(db.prepare('SELECT id, record_id FROM records WHERE run_id = ?').all(run.id)
     .map((r) => [r.record_id, keyId(r.record_id) ? r.record_id : `rec-${r.id}`]));
   const eventIds = new Set(db.prepare('SELECT id FROM events WHERE run_id = ?').all(run.id).map((e) => `e${e.id}`));
   const groups = clusters(db, run.id, Date.parse(window.current_start));
-  return fixes.map((f) => {
+  return { done, rows: fixes.map((f) => {
     if (!['doc', 'rule', 'code'].includes(f.kind) || !/^[a-z0-9-]{1,64}$/.test(f.cause)) throw new UsageError(`proposal ${run.id}:${f.n}: missing or invalid kind or cause`, AGAIN);
     const saved = db.prepare('SELECT message FROM signoff WHERE proposal_id = ?').get(f.id);
     if (saved) return { id: f.id, message: JSON.parse(saved.message) };
@@ -60,7 +63,7 @@ function messages(cfg, db, opts) {
       proposal, options: [{ value: 'apply', label: 'Apply' }, { value: 'skip', label: 'Skip' }], recommend_value: 'apply' };
     const key = `lfm-${run.id}-${f.n}-${createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 8)}`;
     return { id: f.id, message: { ...body, key } };
-  });
+  }) };
 }
 
 export async function signoff(action, cfg, opts) {
@@ -69,7 +72,8 @@ export async function signoff(action, cfg, opts) {
   try {
     const bin = which('sign-off-axi');
     if (action === 'post') {
-      const rows = messages(cfg, db, opts); // validate every fix before sending any
+      const { rows, done } = messages(cfg, db, opts); // validate every fix before sending any
+      for (const line of done) console.log(line);
       for (const { id, message: m } of rows) {
         if (bin) {
           peer(bin, ['post', '--kind', 'finding', '--from', '-'], cfg, JSON.stringify(m));
@@ -77,7 +81,7 @@ export async function signoff(action, cfg, opts) {
           console.log(`posted: ${m.key}`);
         } else console.log(`${m.title}\n${m.about}\n${m.change_kind}: ${m.proposal}\nApply or Skip\n`);
       }
-      if (!rows.length) console.log('No kept fixes.');
+      if (!rows.length && !done.length) console.log('No kept fixes.');
     } else if (bin) {
       const updates = locked(db, () => {
         let answers = {};

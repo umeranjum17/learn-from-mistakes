@@ -742,7 +742,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.doesNotMatch(r.stderr, /ExperimentalWarning/); // the examples read a store, so node:sqlite loads
   const run = decode(r.stdout);
   assert.equal(run.run.status, 'completed');
-  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed'], ['apply', 'completed']]);
+  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   // The bundle: the metrics; the example's records and gate rows are all from March, before this window.
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8');
   assert.match(bundle, /^\| defects \| 0 \| 0 \|  \|$/m);
@@ -753,7 +753,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
   assert.deepEqual(JSON.parse(steps[0].output_json).sources.map((s) => s.items), [13, 5]);
-  assert.deepEqual(JSON.parse(steps[8].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
+  assert.deepEqual(JSON.parse(steps[9].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
   const status = lfm('status', '--json');
   assert.equal(status.status, 0, status.stderr);
   assert.deepEqual(JSON.parse(status.stdout), run);
@@ -777,7 +777,7 @@ allow_premium: false
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
-  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed'], ['apply', 'completed']]);
+  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent_args_override: { codex: --profile }\n');
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
@@ -797,7 +797,7 @@ allow_premium: false
   assert.equal(failed.status, 1, failed.stderr);
   const f = JSON.parse(failed.stdout);
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
-  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'failed', 'pending']);
+  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
@@ -885,10 +885,10 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   let steps;
   for (let i = 0; i < 100; i++) { // up to 20 s for the worker to reach the slow step
     steps = (await statusJson(() => lfm('status', '--json'))).steps;
-    if (steps[8].status === 'running') break;
+    if (steps[9].status === 'running') break;
     await new Promise((r) => setTimeout(r, 200));
   }
-  assert.deepEqual(steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'running', 'pending']);
+  assert.deepEqual(steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'running']);
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -900,7 +900,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const k = JSON.parse(killed.stdout);
   assert.equal(k.run.status, 'interrupted');
   assert.equal(k.run.error, 'report: the worker stopped before the step ended');
-  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'interrupted', 'pending']);
+  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'interrupted']);
   assert.match(killed.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
 
   const next = lfm('retro', '--wait', '--json'); // the interrupted run blocks nothing; a bare --wait waits 8 minutes
@@ -913,7 +913,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(r.run.status, 'completed');
   assert.equal(r.run.error, null);
   assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
-  assert.deepEqual(r.steps.slice(0, 8), k.steps.slice(0, 8), 'the completed collect, metrics, followup, bundle, analyse, propose, verify and check steps were not run again');
+  assert.deepEqual(r.steps.slice(0, 9), k.steps.slice(0, 9), 'the completed collect, metrics, followup, bundle, analyse, propose, verify, check and apply steps were not run again');
   assert.deepEqual(r.metrics, k.metrics);
   const again = lfm('rerun', '--resume', '--run', String(run.id));
   assert.equal(again.status, 2, again.stderr);
@@ -951,13 +951,13 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.doesNotMatch(log.stdout, /sha256/);
   const nope = lfm('logs', '--step', 'judge');
   assert.equal(nope.status, 2, nope.stderr);
-  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "judge" \\(steps: collect, metrics, followup, bundle, analyse, propose, verify, check, report, apply\\)$`, 'm'));
+  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "judge" \\(steps: collect, metrics, followup, bundle, analyse, propose, verify, check, apply, report\\)$`, 'm'));
 
   // abort stops a running run: its worker ends and the run is cancelled; a new retro is not blocked.
   const slow = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'report' } });
   const { run } = JSON.parse(slow.stdout);
   after(() => { try { process.kill(run.pid, 'SIGKILL'); } catch {} });
-  for (let i = 0; i < 100 && (await statusJson(() => lfm('status', '--json'))).steps[8].status !== 'running'; i++) await new Promise((r) => setTimeout(r, 200)); // up to 20 s
+  for (let i = 0; i < 100 && (await statusJson(() => lfm('status', '--json'))).steps[9].status !== 'running'; i++) await new Promise((r) => setTimeout(r, 200)); // up to 20 s
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -966,7 +966,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const a = JSON.parse(aborted.stdout);
   assert.equal(a.run.status, 'cancelled');
   assert.equal(a.run.error, 'report: cancelled by SIGTERM'); // the worker's own trap ended it
-  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'cancelled', 'pending']);
+  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'cancelled']);
   assert.throws(() => process.kill(run.pid, 0), { code: 'ESRCH' }, 'the worker is gone');
   assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
   const idle = lfm('abort');
@@ -1011,6 +1011,8 @@ function reportOf(p, id) {
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }), gate = new DatabaseSync(join(p, 'gate.sqlite'), { readOnly: true });
   try {
     for (const line of text.split('\n')) {
+      const ap = /^ {3}applied: fix \d+:\d+ on branch lfm\/\d+-\d+, commit ([0-9a-f]{12}), ledger (chg-\d+)$/.exec(line); // a fix the run applied: its ledger entry opens
+      if (ap) { assert.ok(readFileSync(join(p, '.lfm', 'changes.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).some((e) => e.id === ap[2] && e.ref.startsWith(ap[1])), line); continue; }
       const ev = /^ {3}Evidence: (.+)$/.exec(line);
       if (!ev) {
         for (const s of line.split(/(?<=[.!?])\s+/)) assert.ok(s.split(/\s+/).filter(Boolean).length <= 20, `more than 20 words: ${s}`);
@@ -1036,7 +1038,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--wait', '1m', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run, steps, result } = JSON.parse(r.stdout);
-  assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['report', 'completed'], ['apply', 'completed']]);
+  assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8');
   const records = [...bundle.matchAll(/^- \[([^\]]+)\] log at /gm)].map((m) => m[1]);
   assert.equal(records.length, 2);
@@ -1388,6 +1390,8 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   const defects = readFileSync(join(p, 'defects.md'), 'utf8');
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   assert.deepEqual(lines('apply', run.id), ['auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply']);
+  const asked = (id) => reportOf(p, id).split('\n').filter((l) => /^\d\. Apply|^ {3}applied: /.test(l));
+  assert.deepEqual(asked(run.id), [1, 2, 3, 4, 5].map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`)); // auto_fix: 0 asks about every kept fix
   const none = lfm({}, 'apply'); assert.equal(none.status, 3, none.stderr);
   assert.match(none.stderr, new RegExp(`^error: run ${run.id} has no fix answered Apply\nnext: learn-from-mistakes-axi apply --run ${run.id} --fix <n>`, 'm'));
   const missing = lfm({}, 'apply', '--run', '99'); assert.equal(missing.status, 2, missing.stderr); assert.match(missing.stderr, /^error: no run 99$/m);
@@ -1438,6 +1442,18 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   const auto1 = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout), branch = `lfm/${auto1.run.id}-1`, commit2 = git('rev-parse', branch);
   assert.deepEqual([auto1.run.status, git('rev-parse', `${branch}^`), git('branch', '--show-current'), git('status', '--porcelain')], ['completed', head, 'main', '']);
   assert.deepEqual(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.map((c) => [c.id, c.ref]), [['chg-1', commit], ['chg-2', commit2]]);
+  // The run applies fix 1 before its report: report.txt and signoff post name it as applied and ask only about the rest.
+  const done = `applied: fix ${auto1.run.id}:1 on branch ${branch}, commit ${commit2.slice(0, 12)}, ledger chg-2`, report = reportOf(p, auto1.run.id);
+  assert.deepEqual(asked(auto1.run.id), [`   ${done}`, ...[2, 3, 4, 5].map((n, i) => `${i + 1}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`)]);
+  const post = lfm({}, 'signoff', 'post', '--run', String(auto1.run.id)); assert.equal(post.status, 0, post.stderr);
+  assert.deepEqual([post.stdout.split('\n')[0], post.stdout.match(/^Apply or Skip$/gm).length], [done, 4]);
+  // A run saved before apply moved ahead of report (report ord 8, apply ord 9) resumes in today's order: apply, then report again.
+  const old = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { old.exec(`UPDATE steps SET ord = 17 - ord, status = CASE name WHEN 'apply' THEN 'failed' ELSE status END WHERE run_id = ${auto1.run.id} AND name IN ('report', 'apply'); UPDATE runs SET status = 'failed' WHERE id = ${auto1.run.id}`); } finally { old.close(); }
+  rmSync(join(p, '.lfm', 'runs', String(auto1.run.id), 'report.txt')); const before2 = calls().length;
+  const resumed = lfm(fake, 'rerun', '--resume', '--run', String(auto1.run.id), '--wait', '1m', '--json'); assert.equal(resumed.status, 0, resumed.stderr);
+  assert.deepEqual(JSON.parse(resumed.stdout).steps.slice(-2).map((s) => [s.name, s.status]), [['apply', 'completed'], ['report', 'completed']]);
+  assert.deepEqual([reportOf(p, auto1.run.id), calls().length], [report, before2], 'the branch is kept, so the worker is not called again');
 });
 
 test('apply: a cut-off reply is refused with no branch and no ledger change; trailing-newline-only and normal-stop replies still apply', () => {

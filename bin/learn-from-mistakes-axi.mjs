@@ -361,7 +361,7 @@ export function summaryLine(model) {
 
 const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change applied|changes|retro|status|runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
   (no command)        print the last run's status and its summary line
-  signoff post       explicitly post a completed run's kept fixes (optional sign-off-axi)
+  signoff post       explicitly post a completed run's kept fixes its apply step did not apply (optional sign-off-axi)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
   apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch lfm/<run>-<n> from HEAD, and records it; never your branch or work tree
   init                write $LFM_HOME/config.yaml (the agent keys, commented) and .learn-from-mistakes.yaml (the sources found, the agents the user chose)
@@ -373,9 +373,10 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                       report.txt, never its text; --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
-  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, report, apply) in a background worker
+  retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup, bundle, analyse, propose, verify, check, apply, report) in a background worker
                       that goes on when this terminal ends; --wait <time> waits for it, --foreground runs it here. With auto_fix: <n>
-                      in the config, its apply step applies the top n kept fixes as apply does; 0 (the default) proposes only
+                      in the config, its apply step applies the top n kept fixes as apply does, and report.txt names them as applied
+                      instead of asking; 0 (the default) proposes only
   status              print the last saved run and its steps
   runs                list the saved runs, newest first
   attach              print the run's step states and log lines as they come, until it ends
@@ -398,7 +399,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --fix <n>           (apply) the kept fix to apply, which you accept, when no sign-off answer says so; a Skip is never applied
   --run <id>          (status, attach, logs, abort, rerun, apply) the saved run (default: the last one; abort: the running one;
                       apply: the last run with kept fixes)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check, report or apply
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check, apply or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or byokit:<route> through BYOKit (costs tokens): it must answer and write no file

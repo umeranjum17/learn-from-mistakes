@@ -66,6 +66,8 @@ const STEPS = {
   verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), log),
   // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
   check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
+  // With auto_fix: n, puts the top n kept fixes on their own branches. It runs before report, so report.txt names them as applied.
+  apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
   // Counts with the labels the worker kept in this run; with none, coverage shows every record unlabelled. Then writes report.txt for a person.
   report: (cfg, db, id, log) => {
     const { model, problems } = buildReport(cfg, runResult(db, id));
@@ -75,7 +77,6 @@ const STEPS = {
     log(`report.txt: ${text.lines} lines, ${text.questions} questions`);
     return model;
   },
-  apply: (cfg, db, id, log) => autoApply(cfg, db, id, log),
 };
 // The labels the worker kept in a run that asked it, its findings and its fixes; no labels when it was not asked.
 function runResult(db, id) {
@@ -171,8 +172,12 @@ export async function rerun(cfg, opts) {
     const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
     if (status === 'completed') throw new UsageError(`run ${id} already completed`, withContext('learn-from-mistakes-axi retro --wait 8m', 'a new run', opts));
     blockRunning(db, opts);
-    const reset = db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status != 'completed'`).all(id).map((s) => s.name);
-    db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND status != 'completed'`).run(id);
+    // A run saved before a step moved (report before apply) takes today's order, and every step from its first one that is
+    // not completed runs again: a report written before apply is written again after it.
+    Object.keys(STEPS).forEach((name, ord) => db.prepare('UPDATE steps SET ord = ? WHERE run_id = ? AND name = ?').run(ord, id, name));
+    const from = db.prepare(`SELECT min(ord) AS ord FROM steps WHERE run_id = ? AND status != 'completed'`).get(id).ord;
+    const reset = db.prepare('SELECT name FROM steps WHERE run_id = ? AND ord >= ?').all(id, from).map((s) => s.name);
+    db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND ord >= ?`).run(id, from);
     for (const name of reset) dropLog(cfg, id, name);
     db.prepare(`UPDATE runs SET status = 'running', error = NULL, pid = ?, pid_started_at = ?, updated_at = ? WHERE id = ?`).run(process.pid, startTime(process.pid), iso(Date.now()), id);
     return id;

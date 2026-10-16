@@ -1,9 +1,11 @@
 // The run's report for a person: <run dir>/report.txt, plain text in the seven sections of the plan. Each line a person
 // reads is STE100: sentences of at most 20 words in plain words and the active voice, with no record id, session id or path. Those go only on the
-// `Evidence:` lines, as pointers a person can open: file:line, `session <id> at <time>`, `PR #N` or a gate store row.
+// `Evidence:` lines, as pointers a person can open: file:line, `session <id> at <time>`, `PR #N` or a gate store row, and on the `applied:`
+// line of a fix the run's apply step applied: its branch, commit and ledger id.
 // Text an agent or the config wrote is redacted and shown only when it keeps the plain-language rule.
 import { writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
+import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { counts, plain } from './check.mjs';
 import { redact } from './redact.mjs';
@@ -41,6 +43,7 @@ export function reportText(cfg, db, id, dir, window, run) {
   const findings = all(`SELECT cause, summary, refs_json, verdict FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
   const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
   const reasons = new Map(all('SELECT change_id, reason FROM followups WHERE run_id = ?').map((f) => [f.change_id, f.reason]));
+  const applied = appliedFixes(db, id);
   const repeated = [...causes].filter(([, c]) => c.repeated);
   const missed = run.metrics.filter((m) => m.met === 'missed').length;
   const lines = ['Retro report', '', '1. Short answer',
@@ -75,6 +78,7 @@ export function reportText(cfg, db, id, dir, window, run) {
       `- Metric: ${shown.metric}, ${target ? `target ${target}` : 'no target'}. Tripwire: ${shown.tripwire}.`, `- The judge's verdict: ${shown.verdict}.`);
     if (f.judge_note) lines.push(said(f.judge_note));
     lines.push(evidence(JSON.parse(f.refs_json)));
+    if (applied.has(f.n)) lines.push(`   ${appliedLine(id, applied.get(f.n))}`);
   }
   if (!fixes.length) lines.push('- No fix passed the rules.');
   const step = (name) => JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, name)?.output_json ?? '{}');
@@ -86,10 +90,11 @@ export function reportText(cfg, db, id, dir, window, run) {
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]
       .filter(([n]) => n).map(([n, what, word = 'item', many]) => `- ${what} ${plural(n, word, many)}.`)];
   lines.push('', '6. Not checked', ...(gaps.length ? gaps : ['- Nothing. The run read all sources and checked all items.']), '', '7. Questions for you');
-  const signoff = Boolean(cfg.signoff !== 'off' && which('sign-off-axi') && fixes.length); // sign-off asks Apply or Skip for each fix
-  const asks = [...(signoff ? [] : fixes.map((f) => `Apply fix ${f.n}, for ${f.cause}? Answer Apply or Skip.`)),
+  const open = fixes.filter((f) => !applied.has(f.n)); // a fix the run applied is never asked about
+  const signoff = Boolean(cfg.signoff !== 'off' && which('sign-off-axi') && open.length); // sign-off asks Apply or Skip for each open fix
+  const asks = [...(signoff ? [] : open.map((f) => `Apply fix ${f.n}, for ${f.cause}? Answer Apply or Skip.`)),
     ...run.followups.filter((f) => ['rollback', 'delete'].includes(f.verdict)).map((f) => `${f.verdict === 'delete' ? 'Delete' : 'Roll back'} change ${f.change}? Answer yes or no.`)];
-  if (signoff) lines.push('- Run learn-from-mistakes-axi signoff post. It sends each fix to sign-off as an Apply or Skip question.');
+  if (signoff) lines.push(`- Run learn-from-mistakes-axi signoff post. It sends each fix${applied.size ? ' the run did not apply' : ''} to sign-off as an Apply or Skip question.`);
   lines.push(...asks.map((q, i) => `${i + 1}. ${q}`));
   if (!signoff && !asks.length) lines.push('- No questions.');
   writeFileSync(join(dir, 'report.txt'), `${lines.join('\n')}\n`);
