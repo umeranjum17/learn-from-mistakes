@@ -99,7 +99,9 @@ try {
   }
   writeFileSync(join(staged, '.learn-from-mistakes.yaml'), stringify(config));
   // Reuse, don't duplicate, negative/duplicate/occurrence/unread journey coverage.
-  run('npm-test', 'npm', ['test', '--ignore-scripts']);
+  // LFM_VERIFY_TESTS (space-separated test files) narrows this step to the changed parts' tests; unset runs the full suite.
+  const picked = process.env.LFM_VERIFY_TESTS?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (picked.length) run('npm-test', process.execPath, ['--test', ...picked]); else run('npm-test', 'npm', ['test', '--ignore-scripts']);
   const cli = join(repo, 'bin/learn-from-mistakes-axi.mjs');
   // The run's own agents are the repo's fake agent as Claude Code (the worker) and Codex (the judge): the drives' PATH holds
   // only them, node for its #! line, and git.
