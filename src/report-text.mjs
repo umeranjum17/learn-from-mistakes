@@ -1,7 +1,7 @@
 // The run's report for a person: <run dir>/report.txt, plain text in the seven sections of the plan. Each line a person
-// reads is STE100: sentences of at most 20 words, with no record id, session id or path. Those go only on the
+// reads is STE100: sentences of at most 20 words in plain words and the active voice, with no record id, session id or path. Those go only on the
 // `Evidence:` lines, as pointers a person can open: file:line, `session <id> at <time>`, `PR #N` or a gate store row.
-// Text an agent or the config wrote is redacted and shown only when it keeps the sentence rule.
+// Text an agent or the config wrote is redacted and shown only when it keeps the plain-language rule.
 import { writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { clusters } from './bundle.mjs';
@@ -18,7 +18,7 @@ const RAW = /(?:^|[\s(])[~.]{0,2}\/\S|\w\/\w|\b[\w-]+\.(?:[cm]js|ts|md|json|ya?m
 // Free text from an agent or the config, on its own line; text that breaks the sentence rule or names a RAW item is left out.
 const said = (text) => {
   const t = redact(text ?? '').replace(/\s+/g, ' ').trim();
-  return t && !plain(t, '', {}) && !RAW.test(t) ? `  ${t}` : '  This text breaks the report rules, so it is not shown.';
+  return t && !plain(t, '', {}) && !RAW.test(t) ? `  ${t}` : '  This text breaks the report rules, so the report hides it.';
 };
 
 // `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.

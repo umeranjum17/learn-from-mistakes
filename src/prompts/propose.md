@@ -13,7 +13,7 @@ Do the work in this order.
    - Give the metric that shows whether the fix worked: {{metrics}}.
    - Give the tripwire: the value that metric must reach, "<op> <number>" such as "<= 0".
    - Cite the bundle items that show the cause in refs, by their ids without brackets.
-2. Give a reason for each follow-up below. A follow-up is an applied change that did not clearly work.
+2. Give a reason for each follow-up below. A follow-up names a change that did not clearly work.
    Say in plain words why its verdict came out that way. Do not change the verdict.
 
 Write all free text in simple English. Use sentences of at most 20 words, in the active voice.

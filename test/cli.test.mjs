@@ -361,7 +361,7 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   // Agent text that names a path is left out of report.txt.
   const pathy = JSON.parse(run.lfm({ ...agents, FAKE_CANARY: `${CANARY} in src/cache.mjs` }, 'retro', '--foreground', '--json').stdout).run.id;
   const hidden = reportOf(run.p, pathy);
-  assert.ok(!hidden.includes('cache.mjs') && hidden.includes('- Change:\n  This text breaks the report rules, so it is not shown.\n'), hidden);
+  assert.ok(!hidden.includes('cache.mjs') && hidden.includes('- Change:\n  This text breaks the report rules, so the report hides it.\n'), hidden);
 });
 
 test('a fix shows the finding its refs cite, not the first finding with the same cause', () => {
@@ -1471,6 +1471,19 @@ test('propose: a rule-breaking fix is sent back once, then dropped on the second
   const badId = JSON.parse(badKind.stdout).run.id;
   assert.match(calls().at(-1).stdin, /Your last answer was not valid: proposals\[0\]\.kind must be doc, rule or code/);
   assert.equal(query('SELECT count(*) AS n FROM proposals WHERE run_id = ?', badId)[0].n, 0);
+
+  // A non-plain word names its replacement and passive voice is refused the same way: sent back once naming the
+  // field, the sentence and the offending word, then dropped while the plain fix is kept and reported.
+  const plainRun = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'plain' }, 'retro', '--foreground', '--json');
+  assert.equal(plainRun.status, 0, plainRun.stderr);
+  const plainId = JSON.parse(plainRun.stdout).run.id;
+  const retries = calls().filter((c) => c.stdin.startsWith(`lfm-run:${plainId}:propose\n`));
+  assert.equal(retries.length, 2, 'the worker is asked once more, with the problem');
+  assert.match(retries[1].stdin, /Your last answer was not valid: proposals\[1\]\.change: sentence 1 uses "utilize"; use "use" instead; proposals\[2\]\.change: sentence 1 is passive \("was held"\); rewrite it in the active voice\./);
+  assert.deepEqual(query('SELECT target FROM proposals WHERE run_id = ?', plainId), [{ target: 'launch script 1' }]);
+  assert.ok(lines('propose', plainId).includes('dropped: proposals[1].change: sentence 1 uses "utilize"; use "use" instead; proposals[2].change: sentence 1 is passive ("was held"); rewrite it in the active voice'));
+  assert.deepEqual(lines('check', plainId), ['fixes: 1 kept of 1, problems: 0']);
+  assert.match(reportOf(p, plainId), /^Fix 1, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory\.\n/m);
 });
 
 test('a run id reused after the store is removed starts its step logs empty', () => {

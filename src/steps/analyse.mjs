@@ -1,6 +1,6 @@
 // The analyse step: the worker reads the bundle, names the causes and hidden problems it finds (`findings`, each with
 // refs to bundle items) and labels each defect record in it by the v1 label rules (`labels`). The answer's shape and its
-// free text (STE100: at most 20 words a sentence) are checked, and a bad answer is sent back once. A label or a ref that
+// free text (STE100: short sentences, plain words, active voice) are checked, and a bad answer is sent back once. A label or a ref that
 // names no bundle item is a problem: it is counted and logged, and the label or finding that holds it is not kept.
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';

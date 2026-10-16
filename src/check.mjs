@@ -27,12 +27,63 @@ export function readBundle(dir, id) {
   }
 }
 
-// The STE100 length rule on one free-text field; '' when it holds.
+// The STE100 rule on one free-text field; '' when it holds. Sentences hold at most 20 words, use only plain
+// words from the bundled list (each names its replacement), and use the active voice: a form of "be" followed by
+// a past participle (a word ending in "ed", or one of the bundled irregulars) with at most two words between.
+// The bundled allow-list keeps state adjectives ("tired") and stative "supposed/accustomed to" out of the passive rule. A refusal names
+// the field, the sentence and the offending word, as the length rule does, so the retry can fix its own text.
+const PLAIN_WORDS = JSON.parse(readFileSync(new URL('./plain-words.json', import.meta.url), 'utf8'));
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const phraseKeys = Object.keys(PLAIN_WORDS.replacements).filter((k) => k.includes(' ')).sort((a, b) => b.length - a.length);
+const wordKeys = Object.keys(PLAIN_WORDS.replacements).filter((k) => !k.includes(' ')).sort((a, b) => b.length - a.length);
+const PHRASE = new RegExp(`\\b(?:${phraseKeys.map((k) => k.split(/\s+/).map(esc).join('\\s+')).join('|')})\\b`, 'i');
+const WORD = new RegExp(`\\b(?:${wordKeys.map(esc).join('|')})\\b`, 'i');
+const normPhrase = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+const BE = new Set(['am', 'is', 'are', 'was', 'were', 'be', 'been', 'being']);
+const IRREG = new Set(PLAIN_WORDS.passiveIrregulars);
+const ALLOW = new Set(PLAIN_WORDS.passiveAllow);
+const USED_TO = new Set(PLAIN_WORDS.stativeToWords);
+
+// The first non-plain word or phrase in one sentence, with its replacement; null when it holds. Phrases win over
+// words, so "in order to" names "to" rather than stopping at a word it holds.
+function nonPlain(sentence) {
+  const p = PHRASE.exec(sentence);
+  if (p) return { word: p[0], instead: PLAIN_WORDS.replacements[normPhrase(p[0])] };
+  const w = WORD.exec(sentence);
+  if (w) return { word: w[0], instead: PLAIN_WORDS.replacements[w[0].toLowerCase()] };
+  return null;
+}
+
+// The first passive span ("was never held") in one sentence; '' when it holds. Contractions ("it's fixed") split
+// apart, so the rule misses them; that is a known gap of this mechanical pattern, not a pass.
+function passive(sentence) {
+  const toks = sentence.match(/[A-Za-z]+/g) ?? [], lower = toks.map((t) => t.toLowerCase());
+  const participle = (t) => (t.endsWith('ed') || IRREG.has(t)) && !ALLOW.has(t);
+  for (let i = 0; i < lower.length; i++) {
+    if (!BE.has(lower[i])) continue;
+    for (let k = 1; k <= 2 && i + k < lower.length; k++) {
+      const t = lower[i + k];
+      if (BE.has(t)) continue;
+      if (USED_TO.has(t) && lower[i + k + 1] === 'to') continue;
+      if (participle(t)) return toks.slice(i, i + k + 1).join(' ');
+    }
+  }
+  return '';
+}
+
 export function plain(text, where, { words, sentences }) {
   if (typeof text !== 'string' || !text.trim()) return `${where} must be a non-empty string`;
   const parts = text.split(/(?<=[.!?])(?<!\b(?:e\.g|i\.e)\.)\s+/).filter((s) => s.trim()); // "e.g. the" does not end a sentence
   const long = parts.findIndex((s) => s.trim().split(/\s+/).length > 20);
   if (long >= 0) return `${where}: sentence ${long + 1} has more than 20 words`;
+  for (let i = 0; i < parts.length; i++) {
+    const hit = nonPlain(parts[i]);
+    if (hit) return `${where}: sentence ${i + 1} uses "${hit.word}"; use "${hit.instead}" instead`;
+  }
+  for (let i = 0; i < parts.length; i++) {
+    const hit = passive(parts[i]);
+    if (hit) return `${where}: sentence ${i + 1} is passive ("${hit}"); rewrite it in the active voice`;
+  }
   if (words && text.trim().split(/\s+/).length > words) return `${where} has more than ${words} words`;
   if (sentences && parts.length > sentences) return `${where} has more than ${sentences} sentences`;
   return '';
