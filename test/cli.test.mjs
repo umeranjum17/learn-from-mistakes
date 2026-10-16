@@ -880,7 +880,7 @@ allow_premium: false
   const busy = lfm('retro', '--foreground');
   hold.exec('ROLLBACK');
   hold.close();
-  assert.equal(read.status, 0, read.stderr);
+  assert.equal(read.status, 1, read.stderr); // status shows the failed run: the failed-run exit code
   assert.equal(JSON.parse(read.stdout).run.error, 'collect: source store: no such file (0 records read)');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, /^error: .*lfm\.sqlite is busy: another learn-from-mistakes-axi process is writing it\nnext: learn-from-mistakes-axi status   # wait a moment and check the running run; abort --run <id> stops it \(keep your --dir\)\n$/);
@@ -953,7 +953,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   process.kill(run.pid, 'SIGKILL'); // a crash: no trap runs, so only reconcile can see it
   for (let i = 0; i < 50 && (await statusJson(() => lfm('status', '--json'))).run.status === 'running'; i++) await new Promise((r) => setTimeout(r, 100));
   const killed = lfm('status', '--json');
-  assert.equal(killed.status, 0, killed.stderr);
+  assert.equal(killed.status, 1, killed.stderr); // an interrupted run is exit 1 for status too
   const k = JSON.parse(killed.stdout);
   assert.equal(k.run.status, 'interrupted');
   assert.equal(k.run.error, 'report: the worker stopped before the step ended');
@@ -1166,7 +1166,10 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'failed', 'pending', 'pending', 'pending', 'pending', 'pending']);
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
   const failed = lfm({}); // the bare command shows the failed run without its error text, which can hold an agent's output
-  assert.deepEqual([failed.status, decode(failed.stdout).run.status, 'error' in decode(failed.stdout).run, failed.stderr.includes(why)], [0, 'failed', false, false]);
+  // A failed run is exit 1 for the bare command, status and status --run alike: the same code retro --wait uses.
+  assert.deepEqual([failed.status, decode(failed.stdout).run.status, 'error' in decode(failed.stdout).run, failed.stderr.includes(why)], [1, 'failed', false, false]);
+  assert.equal(lfm({}, 'status').status, 1);
+  assert.equal(lfm({}, 'status', '--run', String(b.run.id)).status, 1);
   assert.deepEqual(lines(b.run.id).slice(1), ['worker answer 1 is not valid: the answer holds no JSON object', `worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`,
     'worker answer 2 is not valid: the answer holds no JSON object', `error: ${why}`]);
   assert.match(calls().at(-1).stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);

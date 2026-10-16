@@ -107,7 +107,7 @@ learn-from-mistakes-axi rerun --resume --wait 8m
 
 Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
 
-`status` is an inspection command: exit 0 can describe a failed run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently.
+`status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently.
 
 ## Sources, state and privacy
 
@@ -155,8 +155,8 @@ To track a change you made yourself, use `change applied --cause <configured-cau
 | Code | Meaning and next step |
 | --- | --- |
 | `0` | Command succeeded, or a background run started/is still running. Inspect status before claiming completion. Doctor warnings do not fail it. |
-| `1` | Failed run, agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
-| `2` | Bad command/config, missing agent or model choice without a terminal, identity clash, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
+| `1` | Failed or interrupted run shown by `retro --wait`, `status`, the bare command, `attach` or `rerun`; agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
+| `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, identity clash, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
 | `3` | No saved run to inspect, no completed retro to report, or no run with kept fixes to `apply`. Start or finish a retro first. |
 
 Use `--json` for structured output where supported; default output is compact TOON. A bare `learn-from-mistakes-axi` shows the latest run's status. `report` selects the latest completed retro, which may be older than the latest failed/running run. Check its `run` id. `--dir <project>` targets another project without changing directories. `guide` gives the current calling-agent procedure; `--help` is the installed version's command reference.
