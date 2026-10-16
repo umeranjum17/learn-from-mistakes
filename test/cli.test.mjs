@@ -72,8 +72,10 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
   const { p, lfm } = setup();
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
   git('init', '-q');
+  git('-c', 'user.name=umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'one');
+  const ref = git('rev-parse', 'HEAD').trim(); // in a git project only a ref that names a commit records
   const lfmDir = join(p, '.lfm');
-  const change = lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234'); // a ledger write on a fresh project
+  const change = lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', ref); // a ledger write on a fresh project
   assert.equal(change.status, 0, change.stderr);
   assert.equal(readFileSync(join(lfmDir, '.gitignore'), 'utf8'), '*\n');
   const retro = lfm('retro', '--foreground');
@@ -709,6 +711,25 @@ test('change applied appends an append-only ledger the report counts and changes
   // The default metric comes from the cause key as the config spells it; the ledger still reads.
   assert.equal(change('--cause', 'agent-exit-wait', '--ref', 'abc1234').status, 0);
   assert.deepEqual(JSON.parse(exported('--json').stdout).changes.slice(5).map((c) => c.metric), ['cause_count:agent-exit-wait']);
+
+  // This test's project is deliberately not a git repo: outside one today's behaviour stands and a hex ref records
+  // unverified. A git project, though, refuses a hex ref that names no commit, before anything is written.
+  const { p: g, lfm: lfmG } = setup();
+  execFileSync('git', ['-C', g, 'init', '-q']);
+  execFileSync('git', ['-C', g, '-c', 'user.name=umer', '-c', 'user.email=umer@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'one']);
+  const sha = execFileSync('git', ['-C', g, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const unknown = lfmG('change', 'applied', '--cause', 'server-memory-kill', '--ref', '1234567');
+  assert.equal(unknown.status, 1, unknown.stderr); // the README's input-problem exit code
+  assert.match(unknown.stderr, /^error: --ref "1234567" names no commit in this git project$/m);
+  assert.match(unknown.stderr, /^next: git log --oneline -5   # a commit id to pass as --ref$/m);
+  assert.deepEqual(JSON.parse(lfmG('changes', '--json').stdout).changes, []); // nothing reached the ledger
+  assert.ok(!existsSync(join(g, '.lfm'))); // not even the state dir was created
+  const real = lfmG('change', 'applied', '--cause', 'server-memory-kill', '--ref', sha);
+  assert.equal(real.status, 0, real.stderr);
+  assert.equal(decode(real.stdout).ref, sha); // the ref is stored as the user typed it
+  const sha256 = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'; // a version id, never a git ref
+  assert.equal(lfmG('change', 'applied', '--cause', 'server-memory-kill', '--ref', sha256).status, 0);
+  assert.deepEqual(JSON.parse(lfmG('changes', '--json').stdout).changes.map((c) => c.ref), [sha, sha256]);
 });
 
 test('change applied refuses a metric the ledger would not read back, and writes nothing', () => {
