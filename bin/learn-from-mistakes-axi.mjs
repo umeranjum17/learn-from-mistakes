@@ -463,17 +463,17 @@ next: learn-from-mistakes-axi doctor         # what is wrong, and the fix for ea
 next: learn-from-mistakes-axi guide          # how an agent drives a retro
 next: learn-from-mistakes-axi                # the last run's status and summary line
 next: learn-from-mistakes-axi report         # its ids, counts, metrics, verdicts and the path of
-                                             report.txt
+                                             # report.txt
 next: learn-from-mistakes-axi --dir <project>   # point at a project with .learn-from-mistakes.yaml
 next: learn-from-mistakes-axi report --full  # add the evidence ids
 next: learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>
                                              # record a change you already made
 next: learn-from-mistakes-axi changes --json    # every applied change with its id, version, date,
-                                                what and why
+                                                # what and why
 next: learn-from-mistakes-axi retro --wait 8m   # read, label and count the sources as a saved
-                                                run, then status and runs show it
+                                                # run, then status and runs show it
 next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start, their models
-                                              and the resolved worker and judge`;
+                                              # and the resolved worker and judge`;
 // The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
 const guideText = () => `learn-from-mistakes-axi guide: how an agent drives a retro. The tool reads the records, its own
 agents label and judge them, and it counts. Never judge a record yourself, and never edit the

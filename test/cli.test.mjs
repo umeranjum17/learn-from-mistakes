@@ -201,6 +201,11 @@ test('help, guide and version work without a project file', () => {
     assert.ok(r.stdout.split('\n').every((l) => l.length <= 100), `a line is over 100 characters:\n${r.stdout.split('\n').find((l) => l.length > 100)}`);
     assert.doesNotMatch(r.stdout, /\bTOON\b|workerBin|judgeBin/);
   }
+  // in the next: block, a wrapped comment's continuation is still a comment, never a bare command
+  const nextBlock = h.stdout.split('\n').slice(h.stdout.split('\n').findIndex((l) => l.startsWith('next:')));
+  for (const l of nextBlock) {
+    if (l && !l.startsWith('next:')) assert.match(l, /^ +# /, `a next: continuation is not a comment: ${l}`);
+  }
   const bare = raw(); // no config: point the agent at init
   assert.equal(bare.status, 2);
   assert.match(bare.stderr, /no \.learn-from-mistakes\.yaml/);
