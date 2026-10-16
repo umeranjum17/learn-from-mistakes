@@ -746,6 +746,44 @@ test('the defects metric counts the defect log, not reviews.md', () => {
   assert.match(bundle, /^\| defects \| 3 \|/m);
 });
 
+test('a review log under another id with review: true does not count as defects', () => {
+  const { p, env } = setup();
+  execFileSync('git', ['-C', p, 'init', '-q']);
+  const day = new Date().toISOString().slice(0, 10);
+  writeFileSync(join(p, 'defects.md'), `## ${day}\n- one\n- two\n- three\n`);
+  writeFileSync(join(p, 'notes.md'), `- ${day} umer: first review\n- ${day} umer: second review\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n  code-review: { type: markdown-log, path: notes.md, review: true }\ncauses: { flaky: { description: d } }\n');
+  // PATH holds only the fake agent (the worker and the judge), so the run never calls a real, logged-in agent.
+  const bin = join(p, '..', 'bin');
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  const r = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
+  assert.equal(r.status, 0, r.stderr);
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(decode(r.stdout).run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^\| defects \| 3 \|/m);
+});
+
+test('a source id of reviews without the flag is still not counted as defects', () => {
+  const { p, env } = setup();
+  execFileSync('git', ['-C', p, 'init', '-q']);
+  const day = new Date().toISOString().slice(0, 10);
+  writeFileSync(join(p, 'defects.md'), `## ${day}\n- one\n- two\n- three\n`);
+  writeFileSync(join(p, 'reviews.md'), `- ${day} umer: first review\n- ${day} umer: second review\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n  reviews: { type: markdown-log, path: reviews.md }\ncauses: { flaky: { description: d } }\n');
+  // PATH holds only the fake agent (the worker and the judge), so the run never calls a real, logged-in agent.
+  const bin = join(p, '..', 'bin');
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  const r = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
+  assert.equal(r.status, 0, r.stderr);
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(decode(r.stdout).run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^\| defects \| 3 \|/m);
+});
+
 test('retro --foreground saves a run and its steps in .lfm/; status and runs show it', () => {
   const { p, lfm } = setup();
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });

@@ -53,6 +53,8 @@ sources:
 
 Each `- ` bullet is a record. A `YYYY-MM-DD` in the bullet dates it; otherwise its dated `##` heading does. Use actual project records, not invented failures. `init` also detects `reviews.md` and supported local pipeline stores; GitHub needs a GitHub origin and a working `gh` login. Session stores are read only when you name their agents, for example `init --sessions claude,pi --no-skill`.
 
+A `markdown-log` source with `review: true` is a review log: its records do not count as `defects`; a source id of `reviews` without the flag keeps the old behavior and is still treated as a review log.
+
 ### Run through a calling agent
 
 Without installing globally, use `npx -y learn-from-mistakes-axi <command>` for any command above. Ask your agent to run `guide`, then drive init → doctor → retro → report and read `report.txt` to you. The caller does not perform the retro's analysis.

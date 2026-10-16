@@ -136,6 +136,8 @@ sources:
     const other = Object.keys(sources).find((k) => k !== id && sources[k]?.type === type);
     if (type === 'sessions' && other) throw new UsageError(`${where}: sources.${other} already reads sessions; keep one and list every agent in its agents`);
     if (type === 'github' && other) throw new UsageError(`${where}: sources.${other} already reads the PRs of origin's GitHub repo; keep one`);
+    if (s.review !== undefined && type !== 'markdown-log') throw new UsageError(`${where}: unknown key review`);
+    if (type === 'markdown-log' && s.review !== undefined) check(typeof s.review === 'boolean', `${where}.review`, 'true or false');
     sources[id] = SOURCES[type].validate(s, where, dir);
   }
   const causes = mapping(p.causes ?? {}, null, `${file}: causes`);
