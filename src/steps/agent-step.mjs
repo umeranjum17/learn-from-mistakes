@@ -20,7 +20,7 @@ const LENGTH_STOP = /\b(length|max[_-]?output[_-]?tokens?|max[_-]?tokens?|token[
 export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log, bundle = true }) {
   const key = KEY[role];
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
-  const fix = chooseFix(cfg, key, r.runner);
+  const fix = r.fix ?? chooseFix(cfg, key, r.runner);
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);
   const data = bundle ? `\n\n${readBundle(dir, id)}` : '';

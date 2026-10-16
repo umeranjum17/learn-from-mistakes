@@ -63,7 +63,7 @@ export function detect(cfg, only = configuredRunners(cfg)) {
   });
 }
 
-export const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
+const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
 export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
 
 // The identity rule: a role is the real path of its binary plus its model (a BYOKit sign-in route, identity below, counts as its vendor's agent). A role with no model is never compared: it is unset.
@@ -78,7 +78,7 @@ async function candidate(cfg, runner, agents) {
   const route = byokit.routeOf(runner);
   if (route) { // in process
     const p = await byokit.check(route);
-    if (p) return { runner, model, bin: runner, problem: `${p.problem}: ${p.fix}`, fix: p.fix };
+    if (p) return { runner, model, bin: runner, problem: p.problem, fix: p.fix };
     return { runner, model, bin: runner, problem: '' };
   }
   const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));

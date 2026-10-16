@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ingestReadFrom, shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, PREMIUM, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
+import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, premiumBlocked, resolveRoles, RUNNERS, which } from './runners/index.mjs';
 import { atLeast, SIGNOFF_MIN } from './signoff.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
@@ -90,7 +90,7 @@ export async function doctor(dir, opts) {
     if (premiumBlocked(cfg, model)) {
       failedModel.add(name);
       add('fail', `${name} model`, `${model} is a premium model`, `${chooseFix(cfg, KEY[name], r.runner)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
-    } else add('ok', `${name} model`, `${model}${PREMIUM.test(model) ? ' (allow_premium)' : ''}`);
+    } else add('ok', `${name} model`, model);
   }
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.
   const used = new Set([roles.worker.runner, roles.judge.runner]);

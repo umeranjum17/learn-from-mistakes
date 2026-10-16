@@ -222,7 +222,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   const { worker, judge } = await resolveRoles(cfg, agents);
   const { written: skills, updated: skills_updated, failed: skills_skipped, roots: skills_roots } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
-    ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}`),
+    ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}${r.fix ? `; ${r.fix}` : ''}`),
     ...(!has && !reads?.length && !asked ? [sessionsAsk(local, opts.dir)] : []),
     ...(Object.keys(cfg.causes).length ? [] : [`causes: none in ${PROJECT_FILE}, so every label is other: add a causes key with a description per cause`]),
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
