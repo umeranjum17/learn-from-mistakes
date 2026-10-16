@@ -9,7 +9,7 @@ import { encode as toonEncode } from '@toon-format/toon';
 import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
-import { init } from '../src/init.mjs';
+import { init, RECONFIGURABLE } from '../src/init.mjs';
 import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
@@ -680,7 +680,13 @@ async function initCommand(opts) {
   let out = await init(dir, opts);
   const { skills, skills_updated, skills_skipped, skills_roots, ...shown } = out; // text shows the skill lines below, not these
   console.log(render(opts.json ? out : shown, opts.json));
-  if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them, or init --reconfigure to apply them)`);
+  if (!opts.json && out.ignored.length) {
+    // --reconfigure applies only its own flags: the ignored line names the flag for those, and when both kinds are
+    // ignored, which flags each part covers.
+    const re = out.ignored.filter((f) => RECONFIGURABLE.includes(f)), rest = out.ignored.filter((f) => !RECONFIGURABLE.includes(f));
+    const edit = rest.length && re.length ? `edit ${rest.join(' ')} to change ${rest.length > 1 ? 'them' : 'it'}` : 'edit it to change them';
+    console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (${re.length ? `${edit}, or init --reconfigure to apply ${re.join(' ')}` : edit})`);
+  }
   for (const f of !opts.json ? out.skills ?? [] : []) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
   for (const f of !opts.json ? out.skills_skipped ?? [] : []) console.log(`skipped: ${f}`);
   if (!opts.json && !opts['no-skill'] && !out.skills_roots) console.log('skills: no configured agent has a skills dir');

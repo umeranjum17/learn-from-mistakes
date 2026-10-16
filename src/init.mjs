@@ -12,6 +12,8 @@ import { CLASH, configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS
 import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
+// The flags --reconfigure re-applies to an existing config; the ignored line names the flag only for these.
+export const RECONFIGURABLE = ['--agent', '--model', '--judge-agent', '--judge-model', '--sessions'];
 const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an installed agent CLI or byokit:<route>; agents --test <agent> checks one`;
 
 // Installs the packaged skill for the agents the user configured (agent and judge_agent), each into its own global
