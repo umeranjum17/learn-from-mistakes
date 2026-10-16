@@ -32,13 +32,18 @@ else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
     : has('FAKE_WEAKEN', item) ? { item, verdict: 'weakened', reason: 'The cited items show this only once for Umer.' } : { item, verdict: 'confirmed', reason: 'The cited items show this for Umer.' })) }));
 }
 // The apply step (its marker line) appends its rule line to each named file. FAKE_APPLY=cut returns a reply cut off
-// mid-line (each file truncated to half), and FAKE_APPLY=length returns whole file text with the result envelope a
-// length stop gives (stop_reason: max_tokens): apply must refuse both.
+// mid-line (each file truncated to half, no stop reason reported), length returns whole file text with the result envelope
+// a length stop gives (stop_reason: max_tokens), shrink returns a big cut that ends on a line boundary, trailing returns
+// whole file text missing only the trailing newline, and FAKE_STOP sets the envelope's stop_reason outright (a normal
+// stop such as end_turn skips the shape checks, a length stop always refuses): apply must refuse the cut, length and
+// shrink shapes and the length stop, and apply the trailing and normal-stop replies.
 else if (/^lfm-run:\d+:apply-\d+\n/.test(stdin)) {
   const blocks = [...stdin.matchAll(/^--- (.+)\n([\s\S]*?)\n--- end of \1$/gm)];
-  const cut = process.env.FAKE_APPLY === 'cut';
-  const files = blocks.map(([, path, text]) => ({ path, content: cut ? text.slice(0, Math.max(1, Math.floor(text.length / 2))) : `${text}- Give each worker its own cache directory, Umer.\n` }));
-  reply(JSON.stringify({ files }), process.env.FAKE_APPLY === 'length' ? { stop_reason: 'max_tokens' } : {}); }
+  const mode = process.env.FAKE_APPLY;
+  const files = blocks.map(([, path, text]) => ({ path, content: mode === 'cut' ? text.slice(0, Math.max(1, Math.floor(text.length / 2)))
+    : mode === 'shrink' ? `${text.slice(0, 1)}\n` : mode === 'trailing' ? text.replace(/\n$/, '') : `${text}- Give each worker its own cache directory, Umer.\n` }));
+  const stop = mode === 'length' ? 'max_tokens' : process.env.FAKE_STOP;
+  reply(JSON.stringify({ files }), stop ? { stop_reason: stop } : {}); }
 else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
