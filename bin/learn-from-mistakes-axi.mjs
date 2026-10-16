@@ -551,8 +551,8 @@ async function main(ctx) {
     if (judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
     if (judge.problem) throw new InputError(`judge: ${judge.problem}`, roleFix(cfg, 'judge_agent', judge));
   }
-  if (cmd.startsWith('signoff-')) { quietSqlite(); await signoff(cmd.slice(8), cfg, opts); return; }
-  if (cmd === 'change-applied') { console.log(render(await recordChange(cfg, opts), json)); hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts)); return; }
+  if (cmd.startsWith('signoff-')) { quietSqlite(); await signoff(cmd.slice(8), cfg, opts).catch((e) => { throw storeError(e, cfg, opts, name); }); return; }
+  if (cmd === 'change-applied') { quietSqlite(); console.log(render(await recordChange(cfg, opts).catch((e) => { throw storeError(e, cfg, opts, name); }), json)); hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts)); return; }
   if (cmd === 'apply') { quietSqlite(); await apply(cfg, opts).catch((e) => { throw storeError(e, cfg, opts, cmd); }); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
   if (['', 'retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }

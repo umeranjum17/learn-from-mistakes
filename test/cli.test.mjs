@@ -849,6 +849,19 @@ allow_premium: false
   assert.doesNotMatch(corrupt.stderr, /\n\s+at /); // no stack trace
 });
 
+test('signoff post, signoff answers and change applied --proposal map an unusable run store to one usage line, never a stack', () => {
+  const { p, lfm } = setup();
+  mkdirSync(join(p, '.lfm'));
+  writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database '.repeat(64));
+  for (const args of [['signoff', 'post'], ['signoff', 'answers'], ['change', 'applied', '--proposal', '1:1', '--ref', 'abc1234']]) {
+    const r = lfm(...args);
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
+    assert.match(r.stderr, /^error: .*lfm\.sqlite: not a usable run store/m);
+    assert.match(r.stderr, /^next: mv .*lfm\.sqlite <elsewhere>/m);
+    assert.doesNotMatch(r.stderr, /\n\s+at /); // no stack trace
+  }
+});
+
 test('retro runs in a detached worker; a killed worker is interrupted and rerun --resume finishes it', async () => {
   const { p, lfm, env } = setup();
   const waited = lfm('retro', '--wait', '1m', '--json');
