@@ -16,4 +16,4 @@ test:
   evidence:
     store_in_repo: false
     attach_media: false
-no_ci: true
+no_ci: false

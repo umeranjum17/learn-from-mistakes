@@ -171,4 +171,6 @@ npm test
 npm run build:skill -- --check
 ```
 
+CI (`.github/workflows/ci.yml`) runs the full suite on every PR and skips it for docs-only changes.
+
 `.done-done.yaml` defines the existing `cli` and `package` verification journeys. `scripts/verify-journeys.mjs` drives synthetic CLI/process-boundary checks, including the README setup-to-report path; `--package` also installs and exercises the packed CLI. Synthetic agent replies prove orchestration, not hosted-model quality. Keep evidence outside the checkout.

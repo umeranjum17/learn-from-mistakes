@@ -1,0 +1,54 @@
+name: ci
+
+# No paths/paths-ignore filter: `test` is a required check, so it must report on every PR.
+# A docs-only change skips the heavy steps inside the job instead.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Docs-only = every changed path is a doc no test or package reads. README.md
+      # (conformance test), skills/, src/prompts/ and examples/ always run the suite.
+      - name: Check for docs-only change
+        id: changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          docs_only=false
+          if files="$(git diff --name-only "$BASE"...HEAD 2>/dev/null)" && [ -n "$files" ]; then
+            docs_only=true
+            while IFS= read -r f; do
+              case "$f" in
+                README.md|skills/*|src/*|examples/*|test/*) docs_only=false ;;
+                *.md|docs/*|LICENSE|.github/ISSUE_TEMPLATE/*) ;;
+                *) docs_only=false ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = true ]; then echo "Docs-only change; skipping npm ci and npm test."; fi
+
+      - name: Set up Node
+        if: steps.changes.outputs.docs_only != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install
+        if: steps.changes.outputs.docs_only != 'true'
+        run: npm ci
+
+      - name: Test (full suite)
+        if: steps.changes.outputs.docs_only != 'true'
+        run: npm test
