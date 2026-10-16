@@ -128,14 +128,16 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     ?? (await recordChange(cfg, { proposal: at, ref: commit, kind: fix.kind ?? undefined, what: `fix ${at} on branch ${branch}` })).id;
   return { fix: fix.n, branch, commit, change };
 }
-const line = (run, a) => `applied: fix ${run}:${a.fix} on branch ${a.branch}, commit ${a.commit.slice(0, 12)}, ledger ${a.change}`;
+export const appliedLine = (run, a) => `applied: fix ${run}:${a.fix} on branch ${a.branch}, commit ${a.commit.slice(0, 12)}, ledger ${a.change}`;
+// The fixes the run's own apply step applied, by fix number: report.txt and signoff post name them and ask nothing about them.
+export const appliedFixes = (db, id) => new Map((JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'apply'`).get(id)?.output_json ?? '{}').applied ?? []).map((a) => [a.fix, a]));
 
 // The run's apply step: with auto_fix: n, the top n kept fixes, without an answer; 0 (the default) proposes only.
 export async function autoApply(cfg, db, id, log) {
   if (!cfg.auto_fix) { log('auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply'); return { applied: [] }; }
   const applied = [];
   for (const fix of db.prepare(KEPT).all(id).filter((f) => f.answer !== 'skip').slice(0, cfg.auto_fix)) {
-    try { applied.push(await applyOne(cfg, db, id, fix, log)); log(line(id, applied.at(-1))); } catch (e) {
+    try { applied.push(await applyOne(cfg, db, id, fix, log)); log(appliedLine(id, applied.at(-1))); } catch (e) {
       if (e instanceof UsageError) { log(`refused: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
       if (e instanceof Error && typeof e.next === 'string') { log(`failed: fix ${id}:${fix.n} was not applied: ${e.message}`); continue; }
       throw e;
@@ -170,7 +172,7 @@ export async function apply(cfg, opts) {
         if (e instanceof Error && !(e instanceof UsageError) && typeof e.next === 'string') throw new InputError(e.message, e.next);
         throw e;
       }
-      console.log(line(run, done.at(-1)));
+      console.log(appliedLine(run, done.at(-1)));
     }
     console.error(`next: git diff HEAD...${done[0].branch}   # review it, then push the branch and open a PR the way you deliver`);
   } finally { db?.close(); }

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { counts } from './check.mjs';
 import { redact } from './redact.mjs';
@@ -32,12 +33,14 @@ function peer(bin, args, cfg, input, noAnswer = false) {
   throw e;
 }
 
+// The run's kept fixes as sign-off messages, and the applied lines of the fixes its apply step applied: those are never asked.
 function messages(cfg, db, opts) {
   const run = opts.run ? db.prepare('SELECT id, status FROM runs WHERE id = ?').get(Number(opts.run))
     : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get();
   if (run?.status !== 'completed') throw new UsageError('signoff post needs a completed run', AGAIN);
-  const fixes = db.prepare('SELECT * FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(run.id);
-  if (!fixes.length) return { runId: run.id, rows: [] };
+  const applied = appliedFixes(db, run.id), done = [...applied.values()].map((a) => appliedLine(run.id, a));
+  const fixes = db.prepare('SELECT * FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(run.id).filter((f) => !applied.has(f.n));
+  if (!fixes.length) return { runId: run.id, rows: [], done };
   const window = JSON.parse(db.prepare("SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'").get(run.id).output_json);
   const { causes } = counts(cfg, db, run.id, window);
   const recordIds = new Map(db.prepare('SELECT id, record_id FROM records WHERE run_id = ?').all(run.id)
@@ -62,7 +65,7 @@ function messages(cfg, db, opts) {
     const key = `lfm-${run.id}-${f.n}-${createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 8)}`;
     return { id: f.id, message: { ...body, key } };
   });
-  return { runId: run.id, rows };
+  return { runId: run.id, rows, done };
 }
 
 export async function signoff(action, cfg, opts) {
@@ -72,7 +75,8 @@ export async function signoff(action, cfg, opts) {
     const bin = which('sign-off-axi');
     let reportHint = null;
     if (action === 'post') {
-      const { runId, rows } = messages(cfg, db, opts); // validate every fix before sending any
+      const { runId, rows, done } = messages(cfg, db, opts); // validate every fix before sending any
+      for (const line of done) console.log(line);
       for (const { id, message: m } of rows) {
         if (bin) {
           peer(bin, ['post', '--kind', 'finding', '--from', '-'], cfg, JSON.stringify(m));
@@ -80,7 +84,7 @@ export async function signoff(action, cfg, opts) {
           console.log(`posted: ${m.key}`);
         } else console.log(`kept: ${m.key}`);
       }
-      if (!rows.length) console.log('No kept fixes.');
+      if (!rows.length && !done.length) console.log('No kept fixes.');
       else if (!bin) reportHint = join(cfg.state, 'runs', String(runId), 'report.txt');
     } else if (bin) {
       const updates = locked(db, () => {
