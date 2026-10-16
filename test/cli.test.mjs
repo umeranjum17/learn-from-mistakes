@@ -1389,7 +1389,7 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.map((c) => [c.id, c.ref]), [['chg-1', commit], ['chg-2', commit2]]);
 });
 
-test('apply: a reply the worker\'s output limit cut off is refused with no branch and no ledger change, once for the reported stop and once for an obvious shape cut; a whole-file reply still applies', () => {
+test('apply: a cut-off reply is refused with no branch and no ledger change; trailing-newline-only and normal-stop replies still apply', () => {
   const { p, lfm, calls, git, fake } = applyRepo();
   const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
@@ -1414,6 +1414,24 @@ test('apply: a reply the worker\'s output limit cut off is refused with no branc
   assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules, 'the work tree is untouched');
   assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'after two refusals, exactly one applied change is recorded');
+  // A whole reply that only removes the trailing newline still applies on a fresh branch.
+  const trail = lfm({ FAKE_APPLY: 'trailing' }, 'apply', '--fix', '2'); assert.equal(trail.status, 0, trail.stderr);
+  assert.equal(git('show', `lfm/${run.id}-2:AGENTS.md`), rules.replace(/\n$/, ''));
+  // A runner-reported normal stop is the runner's own word the reply is whole, so an oddly-shaped reply applies.
+  const normal = lfm({ FAKE_APPLY: 'cut', FAKE_STOP: 'end_turn' }, 'apply', '--fix', '3'); assert.equal(normal.status, 0, normal.stderr);
+  assert.ok(git('rev-parse', `lfm/${run.id}-3`).length > 0, 'a normal stop applies an oddly-shaped reply');
+  // A length stop always refuses, even with whole file text: no branch, no ledger change.
+  const len = lfm({ FAKE_STOP: 'max_tokens' }, 'apply', '--fix', '4');
+  assert.equal(len.status, 1, len.stderr);
+  assert.match(len.stderr, new RegExp(`^error: fix ${run.id}:4: the worker's reply for .+ was cut off \\(.+; apply refuses to commit an incomplete file$`, 'm'));
+  assert.equal(git('branch', '--list', `lfm/${run.id}-4`), '', 'a length stop creates no branch');
+  // A big shrink refuses with its honest next step: name the removal, or edit by hand and record it.
+  const shrink = lfm({ FAKE_APPLY: 'shrink' }, 'apply', '--fix', '5');
+  assert.equal(shrink.status, 1, shrink.stderr);
+  assert.match(shrink.stderr, new RegExp(`^error: fix ${run.id}:5: the worker's reply for .+ was cut off \\(the new text drops more than half the file`, 'm'));
+  assert.match(shrink.stderr, new RegExp(`^next: name the removal in the change text, or make the edit by hand and record it with change applied --proposal ${run.id}:5 --ref <sha>`, 'm'));
+  assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a big shrink creates no branch');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the two refused fixes record nothing');
 });
 
 test('auto_fix is a user setting: a project file that sets it exits 2 and a retro does not start', () => {

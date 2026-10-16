@@ -14,9 +14,10 @@ import { openStore } from './store.mjs';
 const PROMPT = readFileSync(new URL('./prompts/apply.md', import.meta.url), 'utf8');
 const KEPT = 'SELECT p.*, s.answer FROM proposals p LEFT JOIN signoff s ON s.proposal_id = p.id WHERE p.run_id = ? AND p.n IS NOT NULL ORDER BY p.n';
 // A reply the worker's output limit cut off. It is seen one of two ways: a stop reason the runner reported (a length or
-// max-tokens cut), or a shape change a whole-file reply never makes — a normal small edit keeps the file's trailing
-// newline and only trims a little, so a reply that ends mid-line or drops more than half the file (with no removal the
-// change names) is refused, never committed, and never recorded. The check is conservative: it never refuses a small edit.
+// max-tokens cut), or, when the runner reported no stop reason, a shape change a whole-file reply never makes — a normal
+// small edit only trims a little, so a reply that ends mid-line (beyond a trailing newline) or drops more than half the
+// file (with no removal the change names) is refused, never committed, and never recorded. A runner-reported normal stop
+// is the runner's own word the reply is whole, so the shape checks are skipped; a length stop always refuses.
 const LENGTH_STOP = /\b(length|max[_-]?output[_-]?tokens?|max[_-]?tokens?|token[_-]?limit|truncated|incomplete)\b/i;
 const NAMES_REMOVAL = /\b(remov|delet|drop|dedup|prune|shrink|shrank|shorten|trim|consolidat)\w*/i;
 
@@ -59,10 +60,11 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     // commits nothing and records nothing. It is thrown, not sent back, because a length stop repeats on a retry.
     const cutoff = (v, stop) => {
       if (stop && LENGTH_STOP.test(stop)) return { file: v.files.map((f) => f.path).join(' and '), reason: `the reply stopped at ${JSON.stringify(stop)}` };
+      if (stop) return;
       for (const f of v.files) {
         const before = text.get(f.path), after = f.content;
-        if (before.endsWith('\n') && !after.endsWith('\n') && after.length < before.length) return { file: f.path, reason: 'it ends mid-line where the file ended with a newline' };
-        if (after.length * 2 < before.length && !NAMES_REMOVAL.test(fix.change)) return { file: f.path, reason: 'the new text drops more than half the file, and the fix names no removal' };
+        if (before.endsWith('\n') && !after.endsWith('\n') && after.length < before.length && before.replace(/\n+$/, '') !== after.replace(/\n+$/, '')) return { file: f.path, reason: 'it ends mid-line where the file ended with a newline' };
+        if (after.length * 2 < before.length && !NAMES_REMOVAL.test(fix.change)) return { file: f.path, reason: 'the new text drops more than half the file, and the fix names no removal', shrink: true };
       }
     };
     const check = (v, attempt, stop) => {
@@ -72,7 +74,9 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
       if (p.length) return p;
       if (v.files.every((f) => f.content === text.get(f.path))) return ['the answer changes no file'];
       const cut = cutoff(v, stop);
-      if (cut) throw new InputError(`fix ${at}: the worker's reply for ${cut.file} was cut off (${cut.reason}); apply refuses to commit an incomplete file`, `learn-from-mistakes-axi apply --fix ${fix.n}   # the worker hit its output limit; shorten the change or raise the model's output limit, then apply again`);
+      if (cut) throw new InputError(`fix ${at}: the worker's reply for ${cut.file} was cut off (${cut.reason}); apply refuses to commit an incomplete file`, cut.shrink
+        ? `name the removal in the change text, or make the edit by hand and record it with change applied --proposal ${at} --ref <sha>, then apply again`
+        : `learn-from-mistakes-axi apply --fix ${fix.n}   # the worker hit its output limit; shorten the change or raise the model's output limit, then apply again`);
       return [];
     };
     const dir = join(cfg.state, 'runs', String(run)); mkdirSync(dir, { recursive: true });
