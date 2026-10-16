@@ -1,6 +1,9 @@
 // The followup step: did each applied change work? For every change in the ledger it computes the change's metric
 // from the events and records collect saved: `before` over the window's length up to the change, `after` from the
-// change to the end of the run. The verdict is set by code, by the first rule that fits:
+// change to the end of the run. The change is measured from when its fix went live: an apply-recorded fix from when
+// its branch reached the default branch (features/followup.md), a hand-recorded change from its recorded time.
+// A fix whose branch has not reached the default branch is not live yet: n/a numbers, no-data, and a plain reason.
+// The verdict is set by code, by the first rule that fits:
 //   no-data   the after range has fewer than followup.min_days days, or fewer than followup.min_sessions sessions and,
 //             for a records-based metric, fewer than that many of the records it reads, the metric is
 //             n/a before or after it (nothing measures it), or a records-based metric's source has no record on or
@@ -18,6 +21,7 @@
 import { join } from 'node:path';
 import { measure, readLedger } from '../bin/learn-from-mistakes-axi.mjs';
 import { RULE, SOURCES } from './config.mjs';
+import { liveAt } from './merge-time.mjs';
 import { inWindow, meets, rounded, rowsOf, values } from './metrics.mjs';
 
 const DAY = 86_400_000;
@@ -58,9 +62,12 @@ export function followup(cfg, db, id, window, log) {
   const { min_sessions, min_days } = cfg.followup;
   const last = db.prepare(`SELECT f.before, f.after, f.tripwire, s.output_json FROM followups f JOIN steps s ON s.run_id = f.run_id AND s.name = 'collect'
     WHERE f.change_id = ? AND f.run_id < ? ORDER BY f.run_id DESC`);
-  const add = db.prepare('INSERT INTO followups (run_id, change_id, metric, before, after, tripwire, verdict) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const add = db.prepare('INSERT INTO followups (run_id, change_id, metric, before, after, tripwire, verdict, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const rows = readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => { // a bad ledger line is skipped: it gets no row
-    const { metric, tripwire, kind } = measure(c), at = Date.parse(c.at);
+    const { metric, tripwire, kind } = measure(c), live = liveAt(cfg.dir, c), at = live.live ? live.at : Date.parse(c.at);
+    // A fix whose branch has not reached the default branch is not live yet: no
+    // numbers, no verdict but no-data, and the plain reason instead.
+    if (!live.live) return { change_id: c.id, metric, before: null, after: null, tripwire: tripwire || null, enough: false, verdict: 'no-data', reason: live.reason };
     const value = (range) => values(cfg, events, records, range)[metric] ?? null; // a cause no longer in the config is n/a
     const of = recordsOf(cfg, metric);
     const covered = (ms) => from <= ms;
@@ -73,7 +80,7 @@ export function followup(cfg, db, id, window, log) {
       return r.before !== null && r.after !== null && (readTime - at) / DAY >= min_days
         && (new Set(inWindow(events, range).map((e) => e.session_id)).size >= min_sessions || (of && inWindow(records.filter(of), range).length >= min_sessions));
     };
-    const row = { change_id: c.id, metric, before, after: covered(at) ? value({ start: at }) : null, tripwire: tripwire || null };
+    const row = { change_id: c.id, metric, before, after: covered(at) ? value({ start: at }) : null, tripwire: tripwire || null, reason: null };
     row.enough = enough(row, end, Infinity);
     const prev = last.all(c.id, id).map((p) => ({ ...p, readTime: readAt(JSON.parse(p.output_json)) }))
       .find((p) => end - p.readTime >= min_days * DAY);
@@ -82,12 +89,12 @@ export function followup(cfg, db, id, window, log) {
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM followups WHERE run_id = ?').run(id);
-    for (const r of rows) add.run(id, r.change_id, r.metric, r.before, r.after, r.tripwire, r.verdict);
+    for (const r of rows) add.run(id, r.change_id, r.metric, r.before, r.after, r.tripwire, r.verdict, r.reason);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
-  for (const r of rows) log(`${r.change_id} ${r.metric}: ${rounded(r.before)} before, ${rounded(r.after)} after, ${r.verdict}`);
+  for (const r of rows) log(`${r.change_id} ${r.metric}: ${rounded(r.before)} before, ${rounded(r.after)} after, ${r.verdict}${r.reason ? `: ${r.reason}` : ''}`);
   return { changes: rows.length };
 }
