@@ -1594,3 +1594,49 @@ test('the CLI, its guide and the shipped skill say the user sets the agents: no 
   assert.match(raw('guide').stdout, /ask the user which agent to use[\s\S]*run the stopped command again/);
   assert.match(skill, /ask the user which agent to use[\s\S]*run the stopped command again/);
 });
+
+// A premium worker model names no replacement model, so the fix can never equal the judge's model and clash.
+test('doctor names no model for a premium worker: the fix cannot equal the judge\'s model', () => {
+  const { p, lfm } = setup();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker model');
+  assert.equal(line.level, 'fail');
+  assert.equal(line.detail, 'claude-opus-5-5 is a premium model');
+  assert.match(line.fix, /ask the user which agent and model to use, then set agent /);
+  assert.match(line.fix, /or set allow_premium: true in /);
+  assert.doesNotMatch(line.fix, /gpt-6-luna/); // the judge's model is never the suggestion
+  assert.doesNotMatch(line.fix, /set \S+ to \S/); // no value is named at all: nothing to clash with
+});
+
+// A pinned runner that is not offered names no other agent CLI, so the fix cannot lead to the judge's agent and model.
+test('doctor names no other agent CLI for a pinned runner that is not offered', () => {
+  const { p, lfm, env } = setup();
+  const fakes = env.PATH.split(delimiter)[0];
+  writeFileSync(join(fakes, 'gemini'), '#!/bin/sh\necho "1.0.0"\n');
+  chmodSync(join(fakes, 'gemini'), 0o755);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\nagent: gemini\nagent_config: { gemini: { model: umer-gem-1 } }\n');
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker');
+  assert.equal(line.level, 'fail');
+  assert.match(line.detail, /^gemini is not offered: /);
+  assert.match(line.fix, /ask the user which agent and model to use, then set agent and its agent_config model in /);
+  assert.doesNotMatch(line.fix, /\bclaude\b|\bcodex\b|\bopencode\b|\bpi\b/); // no other CLI is named
+});
+
+// A pinned runner that is not on PATH names its own install fix even when a usable alternative exists.
+test('doctor names the pinned runner\'s own install fix when it is not on PATH, not the usable alternative', () => {
+  const { p, lfm, env } = setup();
+  const missing = join(env.LFM_HOME, 'no-such-claude'); // codex stays usable: the alternative must not be named
+  appendFileSync(join(env.LFM_HOME, 'config.yaml'), `agent_path_override: { claude: ${missing} }\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\n');
+  const r = lfm('doctor', '--json');
+  assert.equal(r.status, 1, r.stderr);
+  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker');
+  assert.equal(line.level, 'fail');
+  assert.equal(line.detail, `claude is not usable: ${missing} is not on PATH`);
+  assert.equal(line.fix, `install ${missing}, or set agent_path_override.claude in ${join(env.LFM_HOME, 'config.yaml')}`);
+  assert.doesNotMatch(line.fix, /\bcodex\b/);
+});
