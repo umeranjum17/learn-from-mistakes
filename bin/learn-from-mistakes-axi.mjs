@@ -9,7 +9,7 @@ import { encode as toonEncode } from '@toon-format/toon';
 import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
 import { doctor } from '../src/doctor.mjs';
-import { init } from '../src/init.mjs';
+import { init, RECONFIGURABLE } from '../src/init.mjs';
 import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
 import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
@@ -408,6 +408,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
   --sessions <agent>,...  (init) read these agents' sessions (claude, codex, opencode, pi, gemini); the user's choice, never picked by the tool
+  --reconfigure       (init) re-apply --agent, --model, --judge-agent, --judge-model and --sessions to an existing config, replacing those keys; every other key and comment stays. Without it an existing config is never changed
   --firstmate <home>  (init) add a firstmate source that reads that Firstmate home's status logs, inbox, defect log and targets (opt-in, never detected)
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only, never record text
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's .claude/skills and .agents/skills instead of each agent's own skills dir; -y asks nothing, even in a terminal
@@ -455,7 +456,7 @@ const REMOVED = ['ingest', 'count', '--labels', '--proposals'];
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   '': 'learn-from-mistakes-axi [--dir <dir>] [--json]', // no command: the last run's status and summary line
-  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
+  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--reconfigure] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--json] [--full]',
@@ -477,7 +478,7 @@ const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
 const VALUE_FLAGS = ['--dir', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
-const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '-y'];
+const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -679,7 +680,13 @@ async function initCommand(opts) {
   let out = await init(dir, opts);
   const { skills, skills_updated, skills_skipped, skills_roots, ...shown } = out; // text shows the skill lines below, not these
   console.log(render(opts.json ? out : shown, opts.json));
-  if (!opts.json && out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it to change them)`);
+  if (!opts.json && out.ignored.length) {
+    // --reconfigure applies only its own flags: the ignored line names the flag for those, and when both kinds are
+    // ignored, which flags each part covers.
+    const re = out.ignored.filter((f) => RECONFIGURABLE.includes(f)), rest = out.ignored.filter((f) => !RECONFIGURABLE.includes(f));
+    const edit = rest.length && re.length ? `edit ${rest.join(' ')} to change ${rest.length > 1 ? 'them' : 'it'}` : 'edit it to change them';
+    console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (${re.length ? `${edit}, or init --reconfigure to apply ${re.join(' ')}` : edit})`);
+  }
   for (const f of !opts.json ? out.skills ?? [] : []) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
   for (const f of !opts.json ? out.skills_skipped ?? [] : []) console.log(`skipped: ${f}`);
   if (!opts.json && !opts['no-skill'] && !out.skills_roots) console.log('skills: no configured agent has a skills dir');

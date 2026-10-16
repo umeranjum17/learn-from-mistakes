@@ -70,9 +70,31 @@ test('init writes the global agent config and a working project config once: the
   assert.deepEqual([JSON.parse(again.stdout).status, JSON.parse(again.stdout).global_status], ['already set up', 'kept']);
   assert.deepEqual(readFileSync(config), bytes);
   assert.deepEqual(readFileSync(global), globalBytes); // never overwritten
+
   const run = lfm('retro', '--foreground', '--json'); // the written config runs: every detected source is read
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout).run.status, 'completed');
+
+  // --reconfigure applies new agent and session flags to the existing config: the roles are replaced, every other key
+  // and comment stays. Without it the same flags change nothing, and the ignored line names the flag.
+  const applied = ['--agent', 'opencode', '--model', MODELS.opencode, '--judge-agent', 'claude', '--judge-model', 'claude-sonnet-6', '--sessions', 'opencode', '--no-skill'];
+  const refused = lfm('init', ...applied);
+  assert.equal(refused.status, 0, refused.stderr);
+  assert.match(refused.stdout, /^--agent --model --judge-agent --judge-model --sessions not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them, or init --reconfigure to apply --agent --model --judge-agent --judge-model --sessions\)$/m);
+  assert.equal(readFileSync(config, 'utf8'), bytes.toString()); // without the flag: nothing changed
+  const rc = lfm('init', ...applied, '--reconfigure', '--json');
+  assert.equal(rc.status, 0, rc.stderr);
+  assert.deepEqual(JSON.parse(rc.stdout).ignored, []);
+  const reread = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([reread.agent, reread.judge_agent, reread.agent_config, reread.sources.sessions],
+    ['opencode', 'claude', { claude: { model: 'claude-sonnet-6' }, opencode: { model: MODELS.opencode } }, { type: 'sessions', agents: ['opencode'] }]); // the flags replaced those keys
+  assert.deepEqual([reread.name, reread.excerpts, Object.keys(reread.causes)], ['umer-app', 'on', STARTER.map(([id]) => id)]); // every other key stays
+  assert.match(readFileSync(config, 'utf8'), /^# written by learn-from-mistakes-axi init/m); // its comments stay too
+  // the ignored line names --reconfigure only for the flags it applies: --no-excerpts alone keeps the plain text,
+  // and when both kinds are ignored, the line says which flags each part covers.
+  assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m);
+  const mixed = lfm('init', '--no-excerpts', '--agent', 'opencode', '--model', MODELS.opencode);
+  assert.match(mixed.stdout, /^--agent --model --no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit --no-excerpts to change it, or init --reconfigure to apply --agent --model\)$/m);
 
   writeFileSync(config, 'sources: {}\n'); // an existing config is never rewritten: no starter causes, and its gaps say how to add them
   const gaps = JSON.parse(lfm('init', '-y', '--json').stdout).gaps;
@@ -432,7 +454,7 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
   assert.equal(pinned.status, 0, pinned.stderr);
   const { status, ignored } = JSON.parse(pinned.stdout);
   assert.deepEqual([status, ignored], ['already set up', ['--agent', '--judge-agent']]);
-  assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m);
+  assert.match(lfm('init', '--no-excerpts').stdout, /^--no-excerpts not applied: \.learn-from-mistakes\.yaml exists \(edit it to change them\)$/m); // --reconfigure does not apply it: not named
   assert.equal(readFileSync(config, 'utf8'), `agent: claude\njudge_agent: opencode\nsources: {}\ncauses: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`);
   const missing = spawnSync(process.execPath, [CLI, 'init', '--dir', join(config, 'nope')], { encoding: 'utf8', env: { PATH: '' } });
   assert.equal(missing.status, 2);
