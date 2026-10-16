@@ -16,7 +16,7 @@ import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 import { signoff } from '../src/signoff.mjs';
-import { apply } from '../src/apply.mjs';
+import { apply, applyRun } from '../src/apply.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -396,7 +396,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by \`changes\`
   --why <text>        (change applied) why it changed: one line, 1-200 characters, printed only by \`changes\`
   --fix <n>           (apply) the kept fix to apply, which you accept, when no sign-off answer says so; a Skip is never applied
-  --run <id>          (status, attach, logs, abort, rerun, apply) the saved run (default: the last one; abort: the running one)
+  --run <id>          (status, attach, logs, abort, rerun, apply) the saved run (default: the last one; abort: the running one;
+                      apply: the last run with kept fixes)
   --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify, check, report or apply
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
@@ -543,8 +544,17 @@ async function main(ctx) {
   if (cmd === 'doctor') { await doctorCommand(opts); return; }
   let cfg = loadConfig(opts.dir ?? resolve('.'));
   ctx.state = cfg.state;
-  // A run needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
-  if (['retro', 'rerun', 'apply'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
+  // A retro needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
+  if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
+  // apply starts only the worker, and only after the store shows a run with kept fixes; the check comes first, so a
+  // run with none stops before an agent it would never use is asked for or saved. Then only the worker role is asked.
+  if (cmd === 'apply') {
+    quietSqlite();
+    let db;
+    try { db = await openStore(cfg.state, false); applyRun(db, opts); } catch (e) { db?.close(); throw storeError(e, cfg, opts, cmd); }
+    db?.close();
+    if (await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir, ['agent'])) cfg = loadConfig(opts.dir ?? resolve('.'));
+  }
   // The judge is never the worker: a judge on the worker's agent and model, or one that is not ready, stops the run before it starts.
   if (['retro', 'rerun'].includes(cmd)) {
     const { judge } = await resolveRoles(cfg, detect(cfg));

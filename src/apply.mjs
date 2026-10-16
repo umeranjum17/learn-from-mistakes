@@ -120,14 +120,21 @@ export async function autoApply(cfg, db, id, log) {
   return { applied };
 }
 
+// The run apply works on: --run, else the last run with kept fixes. The one lookup apply and the CLI's ask-ahead check
+// share; a named run that is not saved, and no run with any kept fix, throw as apply reports them.
+export function applyRun(db, opts) {
+  const run = db && (opts.run ? Number(opts.run) : db.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL').get().id);
+  if (db && opts.run && !db.prepare('SELECT 1 FROM runs WHERE id = ?').get(run)) throw new UsageError(`no run ${run}`, withContext('learn-from-mistakes-axi runs', 'the saved run ids', opts));
+  if (run == null) throw new EmptyError('no retro run has kept fixes', withContext('learn-from-mistakes-axi retro --wait 15m', 'a run that proposes fixes', opts));
+  return run;
+}
+
 // `apply`: each kept fix of the run (default: the last run with kept fixes) the user answered Apply, or the one fix
 // --fix names (the plain-text fallback). Prints one line per fix as it is applied; the worker's call lines go to stderr.
 export async function apply(cfg, opts) {
   const db = await openStore(cfg.state, false);
-  const run = db && (opts.run ? Number(opts.run) : db.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL').get().id);
-  if (db && opts.run && !db.prepare('SELECT 1 FROM runs WHERE id = ?').get(run)) throw new UsageError(`no run ${run}`, withContext('learn-from-mistakes-axi runs', 'the saved run ids', opts));
-  if (run == null) throw new EmptyError('no retro run has kept fixes', withContext('learn-from-mistakes-axi retro --wait 15m', 'a run that proposes fixes', opts));
   try {
+    const run = applyRun(db, opts);
     const fixes = db.prepare(KEPT).all(run), chosen = opts.fix ? fixes.filter((f) => f.n === Number(opts.fix)) : fixes.filter((f) => f.answer === 'apply');
     if (opts.fix && !chosen.length) throw new UsageError(`run ${run} has no kept fix ${opts.fix}`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its kept fixes', opts));
     if (!chosen.length) throw new EmptyError(`run ${run} has no fix answered Apply`, withContext(`learn-from-mistakes-axi apply --run ${run} --fix <n>`, 'apply a kept fix you accept; signoff answers reads the board first', opts));
@@ -137,5 +144,5 @@ export async function apply(cfg, opts) {
       console.log(line(run, done.at(-1)));
     }
     console.error(`next: git diff HEAD...${done[0].branch}   # review it, then push the branch and open a PR the way you deliver`);
-  } finally { db.close(); }
+  } finally { db?.close(); }
 }

@@ -13,8 +13,9 @@ import { CLASH } from './runners/index.mjs';
 export const CHOICES = ['claude', 'codex', 'opencode', 'pi', 'byokit:opencode-go', 'byokit:chatgpt', 'byokit:claude'];
 const LIST = 'claude, codex, opencode, pi or byokit:<route> (such as byokit:opencode-go)';
 const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--judge-model'] };
-// A role is unset when its agent is, or when the agent has no model: both are the user's to set.
-export const unset = (cfg) => ['agent', 'judge_agent'].filter((k) => !cfg[k] || !cfg.agent_config?.[cfg[k]]?.model);
+// A role is unset when its agent is, or when the agent has no model: both are the user's to set. Only the keys named are
+// considered, so a command that starts one role (apply starts the worker) asks for that role alone.
+export const unset = (cfg, keys = ['agent', 'judge_agent']) => keys.filter((k) => !cfg[k] || !cfg.agent_config?.[cfg[k]]?.model);
 // The names of the unset keys as the user reads them: a role's agent, or the model of the agent it already names.
 // Two roles on one agent with no model share one name, so it is listed once.
 export const named = (cfg, keys) => [...new Set(keys.map((k) => (cfg[k] ? `agent_config.${cfg[k]}.model` : k)))];
@@ -119,12 +120,13 @@ export async function pickSessions(stores, names) {
   } finally { rest(); }
 }
 
-// Makes sure both roles are set: asks a terminal and saves to file, else throws the ask line. Returns whether it saved.
-export async function ensureAgents(cfg, file, dir) {
-  const keys = unset(cfg);
-  if (!keys.length) return false;
-  if (!interactive()) throw askError(cfg, keys, dir);
-  save(file, await pick(keys, cfg, dir));
-  process.stderr.write(`saved: ${named(cfg, keys).join(' and ')} in ${file}\n`);
+// Makes sure the named roles are set: asks a terminal and saves to file, else throws the ask line. Returns whether it
+// saved. The default asks for both; an apply asks for the worker alone, since apply never starts the judge.
+export async function ensureAgents(cfg, file, dir, keys = ['agent', 'judge_agent']) {
+  const missing = unset(cfg, keys);
+  if (!missing.length) return false;
+  if (!interactive()) throw askError(cfg, missing, dir);
+  save(file, await pick(missing, cfg, dir));
+  process.stderr.write(`saved: ${named(cfg, missing).join(' and ')} in ${file}\n`);
   return true;
 }

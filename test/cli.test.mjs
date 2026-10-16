@@ -1513,6 +1513,29 @@ test('apply: with no saved store, apply names the empty store and exits 3', () =
   assert.match(r.stderr, /^error: no retro run has kept fixes$/m);
 });
 
+test('apply: with the judge unset and no kept fixes, it checks the store first and asks nothing', () => {
+  const { p, env, lfm } = agentSetup();
+  const global = join(env.LFM_HOME, 'config.yaml'), agentOnly = 'agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n';
+  writeFileSync(global, agentOnly); // the worker is set; no judge_agent anywhere, and no run has kept fixes
+  const r = lfm({}, 'apply');
+  assert.equal(r.status, 3, r.stderr);
+  assert.match(r.stderr, /^error: no retro run has kept fixes$/m);
+  assert.doesNotMatch(r.stderr, /ask the user|saved:/, 'apply asked for an agent a store with no kept fixes never uses');
+  assert.equal(readFileSync(global, 'utf8'), agentOnly, 'apply saved the judge');
+  assert.ok(!existsSync(join(p, '.lfm')), 'apply wrote state before it checked the store');
+});
+
+test('apply: with kept fixes and both roles unset, its gap names only the worker, never the judge', () => {
+  const { global, lfm, fake } = applyRepo();
+  const retro = lfm(fake, 'retro', '--foreground', '--json'); assert.equal(retro.status, 0, retro.stderr);
+  writeFileSync(global, '{}\n'); // neither role is set anywhere, and the store already holds kept fixes
+  const r = lfm({}, 'apply');
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^error: ask the user which agent to use: agent is not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one\./m);
+  assert.match(r.stderr, /^next: learn-from-mistakes-axi init --agent <agent> --model <model> --dir \S+   # with the user's answer$/m);
+  assert.doesNotMatch(r.stderr, /judge/, 'apply asked for a judge it never starts');
+});
+
 test('apply: a refused apply in the run logs one line and the run stays ok with its proposals', () => {
   const { p, lfm, query, lines, git, fake, auto } = applyRepo(); auto(1);
   writeFileSync(join(p, 'AGENTS.md'), `${readFileSync(join(p, 'AGENTS.md'), 'utf8')}- Unfinished.\n`); // the user's uncommitted work refuses the apply
