@@ -2,17 +2,23 @@
 import { createHash, createHmac } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
-import { readText, shq } from '../../bin/learn-from-mistakes-axi.mjs';
-import { pathSource } from '../config.mjs';
+import { readText, shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
+import { expand, mapping } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 
-export const validate = pathSource;
+// A markdown-log source is a defect log, unless review: true marks it as a review log (its records do not count as
+// defects). The boolean itself is checked in config.mjs, with the other source keys; an unknown key stays an error.
+export function validate(s, where, dir) {
+  mapping(s, ['type', 'path', 'review'], where);
+  if (typeof s.path !== 'string') throw new UsageError(`${where}.path must be a string`);
+  return { ...s, path: expand(s.path, dir) };
+}
 const REVIEWS = 'reviews';
 // init: the first defect log at a usual place, as log, and a review log, as reviews.
 export function detect(dir) {
   const at = (...paths) => paths.find((f) => statSync(join(dir, f), { throwIfNoEntry: false })?.isFile());
   const found = Object.entries({ log: at('defects.md', 'docs/defects.md', 'DEFECTS.md', 'data/defects.md'), [REVIEWS]: at('reviews.md') }).filter(([, path]) => path);
-  return Object.fromEntries(found.map(([id, path]) => [id, { type: 'markdown-log', path }]));
+  return Object.fromEntries(found.map(([id, path]) => [id, { type: 'markdown-log', path, ...(id === REVIEWS ? { review: true } : {}) }]));
 }
 
 // Each record's id is an HMAC of its text keyed with the run store's salt: it survives line moves, and whoever reads a
@@ -43,10 +49,12 @@ export function doctor(source, entry, { readFrom, project, salt }) {
   return { level: 'ok', detail: `${records.length} records, ${inWin} in the window, ${undated} skipped (no date)` };
 }
 
-// defects: the records dated in the window, over the defect logs (not reviews); n/a when no defect record has a date.
+// defects: the records dated in the window, over the defect logs (not the review logs); n/a when no defect record has
+// a date. A source with review: true is a review log; without the flag, a source id of reviews keeps today's meaning,
+// so configs that already exist do not change their numbers.
 export const metricNames = ['defects'];
 export const metricRows = 'records';
-export const metrics = (rows, window) => {
-  const defects = rows.filter((r) => r.source !== REVIEWS);
+export const metrics = (rows, window, v, sources) => {
+  const defects = rows.filter((r) => !(sources ? (sources[r.source]?.review ?? r.source === REVIEWS) : r.source === REVIEWS));
   return { defects: defects.some((r) => r.ts) ? inWindow(defects, window).length : null };
 };

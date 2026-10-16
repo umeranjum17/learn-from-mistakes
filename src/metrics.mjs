@@ -1,5 +1,5 @@
 // The metrics step: the numbers for this window (current) and the last (previous), from the events and records
-// collect saved for the run. Each source type gives its numbers (its metrics(rows, window[, values so far]), over the rows of all its
+// collect saved for the run. Each source type gives its numbers (its metrics(rows, window[, values so far][, sources]), over the rows of all its
 // sources); cause_count:<cause> counts the items collect tagged with that cause. A metric whose source type is not
 // configured is n/a (NULL), never 0. A metric with a target saves the target with its value.
 import { RULE, SOURCES } from './config.mjs';
@@ -24,7 +24,7 @@ export function values(cfg, events, records, w) {
   for (const [type, src] of Object.entries(SOURCES)) {
     if (!src.metricNames) continue;
     if (!types.has(type)) for (const name of src.metricNames) v[name] = null;
-    else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w, v));
+    else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w, v, cfg.sources));
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {
     // n/a with no match rule, or when the rule's sessions source has no session in the window (as its other counts)
