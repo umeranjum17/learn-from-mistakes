@@ -8,7 +8,7 @@ import { parseDocument } from 'yaml';
 import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { interactive, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
-import { CLASH, detect, KEY, resolveRoles, RUNNERS } from './runners/index.mjs';
+import { CLASH, configuredRunners, detect, KEY, resolveRoles, RUNNERS } from './runners/index.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
@@ -130,8 +130,7 @@ export async function init(dir, opts) {
   }
   // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
   // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override.
-  const before = written ? loadGlobal() : loadConfig(dir), agents = detect(before);
-  const here = (k) => before.from[k] === file;
+  const before = written ? loadGlobal() : loadConfig(dir), here = (k) => before.from[k] === file;
   const chosen = {}, ignored = [];
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
@@ -149,6 +148,9 @@ export async function init(dir, opts) {
   if (reads && !reads.every((a) => names.includes(a))) throw new UsageError(`--sessions ${shown(opts.sessions)} must list agents by name: ${names.join(', ')}`, 'learn-from-mistakes-axi init --sessions claude,pi   # the agents whose sessions the user wants read');
   if (reads && has) { ignored.push('--sessions'); reads = undefined; }
   if (!reads && !has && local.length && !opts.y && interactive() && !asked) { reads = await pickSessions(local, names); asked = true; opts.sessionsAsked = true; }
+  // Only the roles the user set now need probing: the config's, plus the agents these flags choose. No other
+  // agent CLI is run and no other login store is read.
+  const agents = detect(before, [...new Set([...configuredRunners(before), ...configuredRunners({ agent: chosen.agent?.agent, judge_agent: chosen.judge_agent?.agent })])]);
   // A chosen role that is not usable, or a chosen judge on the worker's identity, is refused before any file is written.
   if (Object.keys(chosen).length) {
     const want = { ...before, agent_config: structuredClone(before.agent_config) };

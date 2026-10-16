@@ -40,10 +40,18 @@ export const chooseFix = (cfg, key, agent) => {
   return `ask the user which agent and model to use, then ${where}; the run never picks one`;
 };
 
+// The RUNNERS key of a configured agent name (`acp:<target>` names the acp runner; a byokit: route is not a runner).
+export const runnerKey = (name) => name?.replace(/^acp:.*/, 'acp');
+// The runners the configured roles need: the worker's and the judge's, deduped, less any that is not a RUNNERS key.
+export const configuredRunners = (cfg) => [...new Set([runnerKey(cfg.agent), runnerKey(cfg.judge_agent)].filter((k) => k && k in RUNNERS))];
+
 // A runner is usable when its binary is on PATH and `<bin> --version` exits 0 (a broken shim is not). It is offered
 // as worker or judge only when it has no problem: a runner whose tool-off mode is not confirmed names why.
-export function detect(cfg) {
-  return Object.entries(RUNNERS).map(([runner, mod]) => {
+// Only `only` is probed, so no command runs --version or reads the login store of an agent the user did not pick; a
+// caller that needs another runner (an explicit `agents --test`, init's chosen roles) names it. Default: the roles set.
+export function detect(cfg, only = configuredRunners(cfg)) {
+  const names = new Set(only);
+  return Object.entries(RUNNERS).filter(([runner]) => names.has(runner)).map(([runner, mod]) => {
     const found = which(binName(cfg, runner));
     const { files, vars } = mod.login(process.env);
     const login = [...files.filter((f) => existsSync(f)).map((f) => basename(f)), ...vars.filter((v) => process.env[v])].join(' ') || 'not found (it may be in the system keychain)';
@@ -183,7 +191,9 @@ Reply with one JSON object and nothing else: {"reply": "<one short sentence>"}`;
 // set; with a project config, the resolved worker and judge. `agents --test <runner>` makes one live call that asks
 // the agent to write a file, and fails when anything was written; a plain-text answer passes, the file scan is the check.
 export async function agents(cfg, opts) {
-  const list = detect(cfg);
+  // The configured roles, plus the one runner the user explicitly named with --test (an adapter is probed on ask).
+  const tested = opts.test && !byokit.routeOf(opts.test) ? runnerKey(opts.test) : undefined;
+  const list = detect(cfg, [...new Set([...configuredRunners(cfg), ...(tested && tested in RUNNERS ? [tested] : [])])]);
   if (opts.test) {
     const route = byokit.routeOf(opts.test);
     const [runner, target] = route ? [opts.test] : opts.test.split(/:(.*)/);
@@ -202,8 +212,8 @@ export async function agents(cfg, opts) {
     return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem } };
   }
   // Only the configured agents: the tool never lists others to pick from.
-  const used = new Set([cfg.agent, cfg.judge_agent].map((a) => a.replace(/^acp:.*/, 'acp')));
+  const used = new Set(configuredRunners(cfg));
   const configured = [cfg.agent, cfg.judge_agent];
-  const rows = list.filter((a) => used.has(a.runner)).map((a) => ({ ...a, model: agentModel(cfg, configured.find((n) => n.replace(/^acp:.*/, 'acp') === a.runner)) }));
+  const rows = list.filter((a) => used.has(a.runner)).map((a) => ({ ...a, model: agentModel(cfg, configured.find((n) => runnerKey(n) === a.runner)) }));
   return { agents: rows, ...(await resolveRoles(cfg, list)) };
 }
