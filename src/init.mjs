@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
 import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { interactive, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
-import { expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
-import { CLASH, configuredRunners, detect, KEY, resolveRoles, RUNNERS } from './runners/index.mjs';
+import { AGENT_RULE, expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
+import { CLASH, configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from './runners/index.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
@@ -23,7 +23,7 @@ export function installSkills(cfg, agents, dir, opts) {
   const roots = opts['project-skill']
     ? [join(dir, '.claude', 'skills'), join(dir, '.agents', 'skills')]
     : [...new Set([cfg.agent, cfg.judge_agent].filter(Boolean))].flatMap((name) => {
-      const key = name.replace(/^acp:.*/, 'acp');
+      const key = runnerKey(name);
       if (name.startsWith('byokit:') || !RUNNERS[key]?.skills) return [];
       return agents.find((x) => x.runner === key)?.usable ? [RUNNERS[key].skills(process.env)] : [];
     });
@@ -64,7 +64,7 @@ const globalText = `# learn-from-mistakes global configuration
 # Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never picks one, and asks
 # when it is not set (init --agent <agent> --model <model> saves the answer). It is one agent: the tool never
 # tries another when this one is not ready.
-# Options: claude, codex, opencode, pi, acp:<target>, byokit:<route>
+# Options: ${AGENT_RULE}
 # byokit:<route> calls a model through BYOKit with no agent CLI: a sign-in plan (chatgpt, claude) or a
 # plan key route such as opencode-go (learn-from-mistakes-axi agents --test byokit:<route> checks one)
 # agent: claude
@@ -178,7 +178,7 @@ export async function init(dir, opts) {
 name: ${scalar(basename(dir))}
 # The agent keys come from $LFM_HOME/config.yaml (default ~/.learn-from-mistakes/config.yaml); set one here to
 # override it for this project. The tool never picks an agent: set agent and judge_agent, each with its model.
-# agent: claude   # or codex, opencode, pi, acp:<target>, byokit:<route>
+# agent: claude   # or codex, opencode, pi, gemini, acp:<target>, byokit:<route>
 # judge_agent: codex   # its agent must differ from the worker's (one model per agent)
 # agent_config: { <agent>: { model: <model>, effort: low } }
 # agent_timeout: "20m"

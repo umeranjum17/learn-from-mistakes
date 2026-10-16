@@ -81,7 +81,7 @@ async function candidate(cfg, runner, agents) {
     if (p) return { runner, model, bin: runner, problem: p.problem, fix: p.fix };
     return { runner, model, bin: runner, problem: '' };
   }
-  const a = agents.find((x) => x.runner === runner.replace(/^acp:.*/, 'acp'));
+  const a = agents.find((x) => x.runner === runnerKey(runner));
   if (a.problem) return { runner, model, bin: '', problem: `${runner} ${a.usable ? 'is' : 'is not usable:'} ${a.problem}` };
   return { runner, model, bin: a.bin, problem: '' };
 }
@@ -161,7 +161,7 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   const marker = `lfm-run:${runId}:${step}`;
   const promptFile = join(dir, `prompt-${step}.md`);
   writeFileSync(promptFile, `${marker}\n${prompt}`);
-  const effort = cfg.agent_config?.[target ? `acp:${target}` : runner]?.effort;
+  const effort = cfg.agent_config?.[name]?.effort;
   const cmd = route ? {} : mod.command({ model, effort, dir, step, target, prompt: promptFile, marker, extra: cfg.agent_args_override?.[runner] ?? [] });
   const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
   const timeout = cfg.agent_timeout;
