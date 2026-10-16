@@ -2,6 +2,7 @@
 // learn-from-mistakes-axi: find repeated causes in the record of past work. Sources are only read; state goes to the state dir,
 // <project>/.lfm by default, which the tool git-ignores itself.
 // Judgement (is this line a failure, which cause, which earlier line it repeats) comes from a retro's worker; this file only parses, dedups and counts.
+import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +12,7 @@ import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from
 import { doctor } from '../src/doctor.mjs';
 import { init, RECONFIGURABLE } from '../src/init.mjs';
 import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
-import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS } from '../src/runners/index.mjs';
+import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS, which } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
@@ -141,6 +142,15 @@ export async function recordChange(cfg, opts) {
     throw new UsageError(opts.cause === 'other' ? `cause "other" is reserved and never recordable (${list})` : `unknown cause ${shown(opts.cause)} (${list}; "other" is reserved)`, form);
   }
   if (!REF_RE.test(opts.ref)) throw new UsageError(`--ref ${shown(opts.ref)} must be a 7-40 lowercase hex commit or sha256:<64 lowercase hex>`, 'git rev-parse HEAD   # a commit id to pass as --ref');
+  // A hex ref that names no commit would make the follow-up measure a change that never happened, so a git project
+  // verifies it before anything is written. A sha256:<hex> version id is never a git ref; no git binary verifies
+  // nothing (doctor already warns); outside a git repo there is nothing to check.
+  const gitBin = which('git');
+  if (/^[0-9a-f]{7,40}$/.test(opts.ref) && gitBin) {
+    const inRepo = (args) => spawnSync(gitBin, ['-C', cfg.dir, ...args], { encoding: 'utf8' }).status === 0;
+    if (inRepo(['rev-parse', '--show-toplevel']) && !inRepo(['rev-parse', '--verify', '--quiet', `${opts.ref}^{commit}`]))
+      throw new InputError(`--ref ${shown(opts.ref)} names no commit in this git project`, 'git log --oneline -5   # a commit id to pass as --ref');
+  }
   let at;
   if (opts.at === undefined) at = new Date().toISOString();
   else {
