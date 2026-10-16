@@ -190,7 +190,7 @@ function appendSession(p, id, days, tools) {
   writeFileSync(join(dirname(p), 'home', '.claude', 'projects', '-p', `${id}.jsonl`), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
 }
 
-test('an apply-branch fix is measured from its merge, not its apply commit: unmerged it is no-data with the plain reason, merged its window starts at the merge commit', () => {
+test('an apply-branch fix is measured from when it reaches the default branch, not its apply commit: unmerged it is no-data with the plain reason, merged or squashed its window starts at that commit', () => {
   const { p, lfm, retro } = journey();
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q', '-b', 'main');
@@ -200,31 +200,45 @@ test('an apply-branch fix is measured from its merge, not its apply commit: unme
   git('commit', '-qm', 'start');
   appendSession(p, 's-p1', 1, []);
   appendSession(p, 's-p2', 0.8, []);
-  // The fix, committed on its own branch four days ago, recorded as `apply` records it.
+  appendSession(p, 's-p3', 0.5, []);
+  // Two fixes, each committed on its own branch four days ago, recorded as `apply` records them.
   const backdated = { ...process.env, GIT_AUTHOR_DATE: ago(4), GIT_COMMITTER_DATE: ago(4) };
-  git('checkout', '-qb', 'lfm/1-1');
-  writeFileSync(join(p, 'notes.txt'), 'Umer finished writing this.\n');
-  git('add', '-A');
-  execFileSync('git', ['-C', p, 'commit', '-qm', 'learn-from-mistakes: fix 1:1 for bad-search'], { encoding: 'utf8', env: backdated });
-  const sha = git('rev-parse', 'HEAD');
-  git('checkout', '-q', 'main');
-  const recorded = lfm('change', 'applied', '--cause', 'bad-search', '--ref', sha, '--at', ago(4), '--tripwire', '<= 0', '--what', 'fix 1:1 on branch lfm/1-1');
-  assert.equal(recorded.status, 0, recorded.stderr);
+  const commitOn = (branch, file, text, n) => {
+    git('checkout', '-qb', branch);
+    writeFileSync(join(p, file), text);
+    git('add', '-A');
+    execFileSync('git', ['-C', p, 'commit', '-qm', `learn-from-mistakes: fix 1:${n} for bad-search`], { encoding: 'utf8', env: backdated });
+    const sha = git('rev-parse', 'HEAD');
+    git('checkout', '-q', 'main');
+    return sha;
+  };
+  const sha1 = commitOn('lfm/1-1', 'notes.txt', 'Umer finished writing this.\n', 1);
+  const sha2 = commitOn('lfm/1-2', 'guide.txt', 'Umer wrote a guide.\n', 2);
+  for (const [sha, n, tripwire] of [[sha1, 1, '<= 0'], [sha2, 2, '<= 1']]) {
+    const recorded = lfm('change', 'applied', '--cause', 'bad-search', '--ref', sha, '--at', ago(4), '--tripwire', tripwire, '--what', `fix 1:${n} on branch lfm/1-${n}`);
+    assert.equal(recorded.status, 0, recorded.stderr);
+  }
 
-  // While the branch is not merged the fix is not live: n/a numbers and no-data, never a verdict.
+  // While neither branch is merged the fixes are not live: n/a numbers and no-data, never a verdict.
   const first = retro();
   const row = (change, metric, before, after, tripwire, verdict) => ({ change, metric, before, after, tripwire, verdict });
-  assert.deepEqual(first.followups.find((f) => f.change === 'chg-13'), row('chg-13', 'cause_count:bad-search', 'n/a', 'n/a', '<= 0', 'no-data'));
+  for (const [change, tripwire] of [['chg-13', '<= 0'], ['chg-14', '<= 1']]) {
+    assert.deepEqual(first.followups.find((f) => f.change === change), row(change, 'cause_count:bad-search', 'n/a', 'n/a', tripwire, 'no-data'));
+  }
   const log = JSON.parse(lfm('logs', '--step', 'followup', '--json').stdout);
   assert.ok(log.log.some((l) => l.line === `chg-13 cause_count:bad-search: n/a before, n/a after, no-data: ${NOT_LIVE}`), JSON.stringify(log.log));
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  assert.deepEqual({ ...db.prepare(`SELECT reason FROM followups WHERE run_id = ? AND change_id = 'chg-13'`).get(first.run.id) }, { reason: NOT_LIVE });
+  assert.deepEqual({ ...db.prepare(`SELECT reason FROM followups WHERE run_id = ? AND change_id = 'chg-14'`).get(first.run.id) }, { reason: NOT_LIVE });
   db.close();
   assert.match(readFileSync(join(p, '.lfm', 'runs', String(first.run.id), 'report.txt'), 'utf8'), new RegExp(`^  ${NOT_LIVE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
 
-  // Merged a day and a half ago: the before window ends and the after window starts at the merge commit.
+  // One branch merged, the other squashed: each window starts at the commit that brought it in.
   execFileSync('git', ['-C', p, 'merge', '--no-ff', '-qm', 'merge fix 1:1', 'lfm/1-1'],
     { encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: ago(1.5) } });
+  git('merge', '--squash', 'lfm/1-2');
+  execFileSync('git', ['-C', p, 'commit', '-qm', 'squash fix 1:2'],
+    { encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: ago(1.2) } });
   const second = retro();
   assert.deepEqual(second.followups.find((f) => f.change === 'chg-13'), row('chg-13', 'cause_count:bad-search', 9, 0, '<= 0', 'keep'));
+  assert.deepEqual(second.followups.find((f) => f.change === 'chg-14'), row('chg-14', 'cause_count:bad-search', 9, 0, '<= 1', 'keep'));
 });

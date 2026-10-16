@@ -20,8 +20,8 @@ export function branchOf(change) {
 export const NOT_LIVE = 'The fix is not on the default branch yet, so there is no after window.';
 
 const branches = new Map(); // the default branch ref per project dir; its tip is read anew each time
-function git(dir, bin, args) {
-  const r = spawnSync(bin, args, { cwd: dir, encoding: 'utf8', timeout: 30_000 });
+function git(dir, bin, args, input) {
+  const r = spawnSync(bin, args, { cwd: dir, input, encoding: 'utf8', timeout: 30_000 });
   return r.status === 0 ? r.stdout.trim() : undefined;
 }
 
@@ -37,6 +37,35 @@ function defaultBranch(dir, bin) {
   return branches.get(dir);
 }
 
+// The patch-id of a commit's change; both sides are computed with the same git,
+// so versions never matter. Undefined for an empty or unreadable diff.
+function patchId(dir, bin, commit) {
+  const diff = git(dir, bin, ['show', commit, '--format=']);
+  if (!diff) return undefined;
+  const r = spawnSync(bin, ['patch-id'], { cwd: dir, input: diff, encoding: 'utf8', timeout: 30_000 });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim().split(/\s+/)[0] : undefined;
+}
+
+// A squash or rebase merge copies the fix instead of merging it, so the apply commit
+// never becomes an ancestor. Each apply branch holds one commit, so a default-branch
+// commit with the same patch-id is the fix going live: measure from the earliest such
+// commit. Only commits since the fix are candidates, oldest first and capped, so an
+// old branch never scans the whole history.
+function squashedAt(dir, bin, ref, tip) {
+  const want = patchId(dir, bin, ref), since = git(dir, bin, ['show', '-s', '--format=%cI', ref]);
+  if (!want || !since) return undefined;
+  const range = [`--since=${since}`, `${ref}...${tip}`], list = (extra) => (git(dir, bin, ['log', '--format=%H', '--no-merges', '--reverse', '--right-only', ...extra, ...range]) ?? '').split('\n').filter(Boolean);
+  const kept = new Set(list(['--cherry-pick']));
+  // The tip side minus its cherry-picked remainder: the default-branch commits
+  // equivalent to some commit on the branch side; only the fix's own patch-id counts.
+  for (const c of list([]).filter((h) => !kept.has(h)).slice(0, 100)) {
+    if (patchId(dir, bin, c) !== want) continue;
+    const at = git(dir, bin, ['show', '-s', '--format=%ct', c]);
+    if (/^\d+$/.test(at ?? '')) return Number(at) * 1000;
+  }
+  return undefined;
+}
+
 // The time to measure a change's windows from: `{ at, live }`, with `live: false`
 // and the plain reason while the fix's branch has not reached the default branch.
 export function liveAt(dir, change) {
@@ -50,7 +79,10 @@ export function liveAt(dir, change) {
     const tip = git(dir, bin, ['rev-parse', '--verify', '--quiet', `${def}^{commit}`]);
     const ref = /^[0-9a-f]{7,40}$/.test(change.ref ?? '') && git(dir, bin, ['rev-parse', '--verify', '--quiet', `${change.ref}^{commit}`]);
     if (!tip || !ref) return { at: recorded, live: true };
-    if (spawnSync(bin, ['merge-base', '--is-ancestor', ref, tip], { cwd: dir, timeout: 30_000 }).status !== 0) return { at: recorded, live: false, reason: NOT_LIVE };
+    if (spawnSync(bin, ['merge-base', '--is-ancestor', ref, tip], { cwd: dir, timeout: 30_000 }).status !== 0) {
+      const squash = squashedAt(dir, bin, ref, tip);
+      return squash ? { at: Math.max(squash, recorded), live: true } : { at: recorded, live: false, reason: NOT_LIVE };
+    }
     // The earliest merge commit on the path that brought the fix in (a fast-forward
     // leaves no merge commit: then the earliest default-branch commit after the fix,
     // or the fix itself when it is the tip, whose time is the only one git knows).

@@ -14,4 +14,6 @@ A change recorded by hand with `change applied` keeps its recorded time.
 The default branch is read from the repo itself: `refs/remotes/origin/HEAD` first, then `main`, `master`, and their `origin/` forms.
 The live time is the committer time of the earliest merge commit on the path that brought the fix in; a fast-forward leaves no merge commit, so it falls back to the earliest default-branch commit after the fix, or the fix commit itself when it is the tip.
 Anything git cannot answer (no git, a non-git project, an unknown ref, a `sha256:` ref, no resolvable default branch) keeps the recorded time, and the run never fails over it.
-A branch merged by squash or rebase leaves its apply commit off the default branch, so the change stays `no-data` until it is recorded by hand; only a true merge (or fast-forward) of the apply branch counts as going live.
+A branch merged by squash or rebase copies the fix instead of merging it, so the apply commit never becomes an ancestor.
+Each apply branch holds one commit, so a default-branch commit with the same patch-id is the fix going live: the window starts at the earliest such commit's committer time.
+Only then, when no equivalent commit exists on the default branch, the change stays `no-data` until it is recorded by hand.
