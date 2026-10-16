@@ -63,7 +63,7 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
       if (stop) return;
       for (const f of v.files) {
         const before = text.get(f.path), after = f.content;
-        if (before.endsWith('\n') && !after.endsWith('\n') && after.length < before.length && before.replace(/\n+$/, '') !== after.replace(/\n+$/, '')) return { file: f.path, reason: 'it ends mid-line where the file ended with a newline' };
+        if (before.endsWith('\n') && !after.endsWith('\n') && before.replace(/\n+$/, '') !== after.replace(/\n+$/, '')) return { file: f.path, reason: 'it ends mid-line where the file ended with a newline' };
         if (after.length * 2 < before.length && !NAMES_REMOVAL.test(fix.change)) return { file: f.path, reason: 'the new text drops more than half the file, and the fix names no removal', shrink: true };
       }
     };

@@ -1432,6 +1432,21 @@ test('apply: a cut-off reply is refused with no branch and no ledger change; tra
   assert.match(shrink.stderr, new RegExp(`^next: name the removal in the change text, or make the edit by hand and record it with change applied --proposal ${run.id}:5 --ref <sha>`, 'm'));
   assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a big shrink creates no branch');
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the two refused fixes record nothing');
+  const grownBefore = calls().length;
+  const grown = lfm({ FAKE_APPLY: 'grown' }, 'apply', '--fix', '4');
+  assert.equal(grown.status, 1, grown.stderr);
+  assert.match(grown.stderr, new RegExp(`^error: fix ${run.id}:4: the worker's reply for .+ was cut off \\(it ends mid-line where the file ended with a newline`, 'm'));
+  assert.equal(git('branch', '--list', `lfm/${run.id}-4`), '', 'a grown mid-line cut creates no branch');
+  assert.equal(calls().length, grownBefore + 1, 'a grown cut is refused without a retry');
+  const brokenBefore = calls().length;
+  const broken = lfm({ FAKE_APPLY: 'broken' }, 'apply', '--fix', '5');
+  assert.equal(broken.status, 1, broken.stderr);
+  assert.match(broken.stderr, /^error: the worker's reply was cut off \(the reply stopped at "max_tokens"\)/m);
+  assert.match(broken.stderr, /output limit/m);
+  assert.match(broken.stderr, /^next: shorten the change or raise the model's output limit/m);
+  assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a cut JSON envelope creates no branch');
+  assert.equal(calls().length, brokenBefore + 1, 'a cut envelope is refused without a retry');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the refused fixes record nothing');
 });
 
 test('auto_fix is a user setting: a project file that sets it exits 2 and a retro does not start', () => {
