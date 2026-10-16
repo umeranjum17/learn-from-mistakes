@@ -246,7 +246,10 @@ try {
     drive('logs-check', 'logs', '--step', 'check');
     assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[1\]: the judge refuted it[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
     run('signoff-fallback', process.execPath, [cli, 'signoff', 'post', '--run', String(proposed.run.id), '--dir', staged], 0, { PATH: agentBin });
-    assert.match(readFileSync(join(evidence, 'signoff-fallback.stdout'), 'utf8'), /Repeated cause: agent-exit-wait[\s\S]*npm i -g sign-off-axi/);
+    const fallbackOut = readFileSync(join(evidence, 'signoff-fallback.stdout'), 'utf8');
+    assert.match(fallbackOut, /kept: lfm-\d+-\d+-[0-9a-f]{8}[\s\S]*npm i -g sign-off-axi[\s\S]*report\.txt/);
+    assert.ok(!fallbackOut.includes('Repeated cause:'), 'fallback stdout carries the fix title');
+    assert.ok(!fallbackOut.includes('Give each worker its own cache directory'), 'fallback stdout carries the change text');
     const signDir = join(scratch, 'signoff'); mkdirSync(signDir);
     copyFileSync(join(repo, 'test', 'fake-agent', 'sign-off-axi'), join(agentBin, 'sign-off-axi')); chmodSync(join(agentBin, 'sign-off-axi'), 0o755);
     run('signoff-post', process.execPath, [cli, 'signoff', 'post', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });

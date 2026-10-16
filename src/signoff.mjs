@@ -1,6 +1,7 @@
 // Explicit, optional contract-v1 handoff. Freeze the first message so retrying a run keeps the same key and bytes.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { clusters } from './bundle.mjs';
 import { counts } from './check.mjs';
@@ -36,14 +37,14 @@ function messages(cfg, db, opts) {
     : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get();
   if (run?.status !== 'completed') throw new UsageError('signoff post needs a completed run', AGAIN);
   const fixes = db.prepare('SELECT * FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(run.id);
-  if (!fixes.length) return [];
+  if (!fixes.length) return { runId: run.id, rows: [] };
   const window = JSON.parse(db.prepare("SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'").get(run.id).output_json);
   const { causes } = counts(cfg, db, run.id, window);
   const recordIds = new Map(db.prepare('SELECT id, record_id FROM records WHERE run_id = ?').all(run.id)
     .map((r) => [r.record_id, keyId(r.record_id) ? r.record_id : `rec-${r.id}`]));
   const eventIds = new Set(db.prepare('SELECT id FROM events WHERE run_id = ?').all(run.id).map((e) => `e${e.id}`));
   const groups = clusters(db, run.id, Date.parse(window.current_start));
-  return fixes.map((f) => {
+  const rows = fixes.map((f) => {
     if (!['doc', 'rule', 'code'].includes(f.kind) || !/^[a-z0-9-]{1,64}$/.test(f.cause)) throw new UsageError(`proposal ${run.id}:${f.n}: missing or invalid kind or cause`, AGAIN);
     const saved = db.prepare('SELECT message FROM signoff WHERE proposal_id = ?').get(f.id);
     if (saved) return { id: f.id, message: JSON.parse(saved.message) };
@@ -61,6 +62,7 @@ function messages(cfg, db, opts) {
     const key = `lfm-${run.id}-${f.n}-${createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 8)}`;
     return { id: f.id, message: { ...body, key } };
   });
+  return { runId: run.id, rows };
 }
 
 export async function signoff(action, cfg, opts) {
@@ -68,16 +70,18 @@ export async function signoff(action, cfg, opts) {
   if (!db) throw new UsageError('no saved retro run', AGAIN);
   try {
     const bin = which('sign-off-axi');
+    let reportHint = null;
     if (action === 'post') {
-      const rows = messages(cfg, db, opts); // validate every fix before sending any
+      const { runId, rows } = messages(cfg, db, opts); // validate every fix before sending any
       for (const { id, message: m } of rows) {
         if (bin) {
           peer(bin, ['post', '--kind', 'finding', '--from', '-'], cfg, JSON.stringify(m));
           db.prepare('INSERT OR IGNORE INTO signoff (proposal_id, message) VALUES (?, ?)').run(id, JSON.stringify(m)); // freeze only what the board accepted
           console.log(`posted: ${m.key}`);
-        } else console.log(`${m.title}\n${m.about}\n${m.change_kind}: ${m.proposal}\nApply or Skip\n`);
+        } else console.log(`kept: ${m.key}`);
       }
       if (!rows.length) console.log('No kept fixes.');
+      else if (!bin) reportHint = join(cfg.state, 'runs', String(runId), 'report.txt');
     } else if (bin) {
       const updates = locked(db, () => {
         let answers = {};
@@ -101,5 +105,6 @@ export async function signoff(action, cfg, opts) {
       if (!updates.length) console.log('No new answers for posted findings.');
     } else console.log('No answers read: sign-off-axi is not installed.');
     if (!bin) console.log('npm i -g sign-off-axi');
+    if (reportHint) console.log(`fix text is in report.txt: ${reportHint}`);
   } finally { db.close(); }
 }

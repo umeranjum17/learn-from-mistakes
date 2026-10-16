@@ -1249,11 +1249,14 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(text.split('\n').filter((l) => /^\d\. Apply/.test(l)), [1, 2, 3, 4, 5].map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`));
   assert.match(lines('report', run.id).at(-1), /^report\.txt: \d+ lines, 5 questions$/);
 
-  // Explicit sign-off handoff: absent peer prints findings, a peer gets only contract-v1 fields.
+  // Explicit sign-off handoff: absent peer prints kept fix keys only (R1: ids, counts, verdicts), a peer gets only contract-v1 fields.
   assert.deepEqual(query('SELECT DISTINCT kind FROM proposals WHERE run_id = ?', run.id), [{ kind: 'code' }]);
   const fallback = lfm({}, 'signoff', 'post');
   assert.equal(fallback.status, 0, fallback.stderr);
-  assert.match(fallback.stdout, /Repeated cause: shared-cache-lock[\s\S]*2 incidents over 1 days\.[\s\S]*npm i -g sign-off-axi/);
+  assert.match(fallback.stdout, /kept: lfm-\d+-\d+-[0-9a-f]{8}[\s\S]*npm i -g sign-off-axi[\s\S]*report\.txt/);
+  assert.ok(!fallback.stdout.includes('Repeated cause:'));
+  assert.ok(!fallback.stdout.includes('2 incidents over 1 days.'));
+  assert.ok(!fallback.stdout.includes('Give each worker its own cache directory'));
   assert.ok(!fallback.stdout.includes('UMER_FIXTURES'));
   const signDir = join(p, '..', 'signoff'); mkdirSync(signDir);
   const signBin = join(p, '..', 'bin', 'sign-off-axi');
@@ -1370,6 +1373,23 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.match(reportOf(p, second.id), /^3\. Last changes\n- Change chg-1, metric defects: 2 before, 0 after\. The verdict is no-data\. Wait for more data\.\n {2}Too few sessions ran after the change for Umer\.\n\n4\.[\s\S]*^7\. Questions for you\n- No questions\.\n$/m);
   assert.deepEqual(lines('verify', second.id), ['nothing to verify: no finding and no fix']);
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
+});
+
+test('signoff post without the peer prints keys only: a canary change sentence reaches report.txt, never stdout', () => {
+  const { p, lfm } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const canary = 'CANARY-signoff-fallback-7q2x';
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_CANARY: canary }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run } = JSON.parse(r.stdout);
+  const fallback = lfm({}, 'signoff', 'post');
+  assert.equal(fallback.status, 0, fallback.stderr);
+  assert.match(fallback.stdout, /kept: lfm-\d+-\d+-[0-9a-f]{8}/);
+  assert.ok(!fallback.stdout.includes(canary), 'fallback stdout carries the change text');
+  assert.ok(!fallback.stdout.includes('Repeated cause:'));
+  assert.ok(!fallback.stdout.includes('Give each worker its own cache directory'));
+  assert.ok(readFileSync(join(p, '.lfm', 'runs', String(run.id), 'report.txt'), 'utf8').includes(canary), 'report.txt lost the fix text');
 });
 
 function applyRepo() {
