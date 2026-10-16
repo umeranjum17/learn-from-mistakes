@@ -25,4 +25,4 @@ Claims to judge:
 
 Reply with one JSON object and nothing else:
 {"verdicts": [{"item": "<claim id>", "verdict": "confirmed", "reason": "<why>"}]}
-Give one verdict for each claim. A verdict is "confirmed", "weakened" or "refuted".
+Give one verdict for each claim: "confirmed", "weakened" or "refuted".

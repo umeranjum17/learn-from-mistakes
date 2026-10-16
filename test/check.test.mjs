@@ -14,3 +14,11 @@ test('the sentence cap counts a sentence that starts lowercase, and e.g. does no
   assert.equal(plain('Retry failed, e.g. the cache. Then it stopped.', 'change', { sentences: 2 }), '');
   assert.equal(plain('Retry failed, i.e. the cache. Then it stopped.', 'change', { sentences: 2 }), '');
 });
+
+test('a non-plain word names its replacement, and passive voice names its span', () => {
+  assert.equal(plain('We will utilize the cache.', 'change', {}), 'change: sentence 1 uses "utilize"; use "use" instead');
+  assert.equal(plain('We met prior to the launch.', 'change', {}), 'change: sentence 1 uses "prior to"; use "before" instead');
+  assert.equal(plain('The lock was held by us.', 'change', {}), 'change: sentence 1 is passive ("was held"); rewrite it in the active voice');
+  assert.equal(plain('Give each worker its own cache directory.', 'change', {}), '');
+  assert.equal(plain('The worker was tired.', 'change', {}), '');
+});

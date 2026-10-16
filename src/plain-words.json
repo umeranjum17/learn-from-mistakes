@@ -1,0 +1,50 @@
+{
+  "replacements": {
+    "utilize": "use",
+    "utilizes": "use",
+    "utilized": "use",
+    "utilizing": "use",
+    "utilise": "use",
+    "utilises": "use",
+    "utilised": "use",
+    "utilising": "use",
+    "commence": "start",
+    "commences": "start",
+    "commenced": "start",
+    "commencing": "start",
+    "facilitate": "help",
+    "facilitates": "help",
+    "facilitated": "help",
+    "facilitating": "help",
+    "obtain": "get",
+    "obtains": "get",
+    "obtained": "get",
+    "obtaining": "get",
+    "demonstrate": "show",
+    "demonstrates": "show",
+    "demonstrated": "show",
+    "demonstrating": "show",
+    "sufficient": "enough",
+    "prior to": "before",
+    "in order to": "to"
+  },
+  "passiveIrregulars": [
+    "taken", "given", "shown", "written", "driven", "eaten", "fallen",
+    "forgotten", "hidden", "broken", "chosen", "frozen", "ridden", "risen",
+    "beaten", "bitten", "mistaken", "shaken", "grown", "drawn", "thrown",
+    "worn", "torn", "borne", "sworn", "spoken", "stolen", "slept", "kept",
+    "left", "lost", "sent", "spent", "built", "dealt", "felt", "meant",
+    "heard", "held", "sold", "told", "found", "thought", "brought",
+    "bought", "taught", "caught", "sought", "fought", "bound", "wound",
+    "hung", "swung", "stuck", "struck", "spun", "run", "begun", "sung",
+    "drunk", "sunk", "done", "set", "put", "cut", "hit", "shut", "split",
+    "spread", "upset", "cast", "quit", "read", "fed", "led", "fled",
+    "sped", "slid", "crept", "wept", "swept", "lent", "shot", "met",
+    "paid", "said", "laid", "made", "stood", "understood"
+  ],
+  "passiveAllow": [
+    "tired", "bored", "excited", "interested", "pleased", "satisfied",
+    "worried", "scared", "delighted"
+  ],
+  "stativeToWords": ["supposed", "accustomed"]
+}
