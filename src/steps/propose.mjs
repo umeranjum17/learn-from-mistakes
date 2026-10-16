@@ -6,7 +6,10 @@
 // dropped (logged), and the check step then keeps only the fixes that follow the rules.
 // With no finding and no follow-up to explain it asks the worker nothing.
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { readLedger } from '../../bin/learn-from-mistakes-axi.mjs';
 import { METRIC_RULE } from '../config.mjs';
+import { liveAt } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
 import { counts, plain } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
@@ -73,18 +76,29 @@ export async function propose(cfg, db, id, dir, window, log) {
   db.prepare('UPDATE followups SET reason = NULL WHERE run_id = ?').run(id);
   const findings = db.prepare('SELECT cause, summary, refs_json FROM findings WHERE run_id = ? ORDER BY id').all(id);
   const followups = db.prepare(`SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? AND verdict != 'keep' ORDER BY rowid`).all(id);
-  if (!findings.length && !followups.length) {
+  // A fix whose branch has not reached the default branch is not live yet: it keeps
+  // the followup step's plain reason, and the worker is never asked to explain it.
+  const ledger = new Map(readLedger(join(cfg.state, 'changes.jsonl')).entries.map((e) => [e.id, e]));
+  const unmerged = new Map();
+  for (const f of followups) {
+    const live = liveAt(cfg.dir, ledger.get(f.change_id) ?? {});
+    if (!live.live) unmerged.set(f.change_id, live.reason);
+  }
+  const setPlain = db.prepare('UPDATE followups SET reason = ? WHERE run_id = ? AND change_id = ?');
+  for (const [change, text] of unmerged) setPlain.run(text, id, change);
+  const pending = followups.filter((f) => !unmerged.has(f.change_id));
+  if (!findings.length && !pending.length) {
     log('nothing to propose: no finding and no follow-up to explain');
-    return { asked: false, fixes: 0, reasons: 0 };
+    return { asked: false, fixes: 0, reasons: unmerged.size };
   }
   const list = (lines) => (lines.length ? lines.join('\n') : 'None.');
   const fill = {
     metrics: METRIC_RULE,
     causes: list([...counts(cfg, db, id, window).causes].map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
     findings: list(findings.map((f) => `- ${f.cause}: ${f.summary} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
-    followups: list(followups.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
+    followups: list(pending.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
   };
-  const changes = followups.map((f) => f.change_id);
+  const changes = pending.map((f) => f.change_id);
   const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt), log });
   const { proposals, reasons, bad } = sift(answer, changes);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
