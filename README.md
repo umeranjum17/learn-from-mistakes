@@ -111,7 +111,7 @@ Use the run id from your output, not necessarily `1`. `rerun --resume` continues
 
 ## Sources, state and privacy
 
-Supported source types are `markdown-log`, `no-mistakes`, `sessions`, `github`, `done-done` and opt-in `firstmate`. Source records are read-only. A sessions source supports explicitly named `claude`, `codex`, `opencode`, `pi` and `gemini` stores for this project; it excludes the retro's own marked invocations.
+Supported source types are `markdown-log`, `no-mistakes`, `sessions`, `github`, `done-done` and opt-in `firstmate`. Source records are read-only. A sessions source supports explicitly named `claude`, `codex`, `opencode`, `pi` and `gemini` stores for this project; it excludes the retro's own marked invocations. A cause's `match` names the source whose records it counts and narrows them with `signal`, `tool` and `text_contains` (sessions) or `error_contains`; when several rules fit one record, the most specific rule wins — a rule naming `tool` or `text_contains` beats one naming only `signal` — and among equals the earlier rule in the config stays.
 
 State normally lives in `.lfm/` beside the project config: `lfm.sqlite`, collected records, bundles, step logs and `runs/<id>/report.txt`. The tool writes `.lfm/.gitignore` containing `*`. An existing ignore file is never overwritten; it must contain `*` and no line starting with `!`, or state writes stop. Treat state as private. Git ignore is not encryption or access control. To put it elsewhere, set global `state_root`; each project then uses `<state_root>/<name>`.
 

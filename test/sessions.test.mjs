@@ -228,10 +228,17 @@ test('a rule tags signal events only, and text_contains reads a retried call as 
     call('a1', 'ls'), result('a1', 'ok'),
     call('a2', quoted), result('a2', 'Exit code 1\nno match', true),
     call('a3', quoted), result('a3', 'ok'),
+    call('a4', 'npm test'), result('a4', 'Exit code 1\nFAIL s-fix.test.js: UMER_FIXTURES is unset', true),
   ].map((r) => JSON.stringify(r)).join('\n'));
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `sources:
   sessions: { type: sessions, agents: [claude] }
 causes:
+  test-failed:
+    description: A test or check failed.
+    match: { source: sessions, signal: test_fail }
+  umer-fixtures:
+    description: The test fixtures were not set.
+    match: { source: sessions, signal: test_fail, text_contains: UMER_FIXTURES }
   quoted-grep:
     description: A retried grep with quotes.
     match: { source: sessions, text_contains: 'grep "a b"' }
@@ -241,8 +248,10 @@ causes:
 `);
   const r = lfm('retro', '--foreground');
   assert.equal(r.status, 0, r.stderr);
+  // The generic test-failed rule is listed first, yet the specific umer-fixtures rule takes the failed test run; the
+  // generic signal-only rule loses the failed grep to bash-fail too, whose tool rule is the more specific one.
   assert.deepEqual(query(p, `SELECT cause, signal, tool, count(*) AS n FROM events WHERE run_id = ? AND session_id = 's-fix' AND cause IS NOT NULL GROUP BY cause, signal ORDER BY cause`, decode(r.stdout).run.id),
-    [{ cause: 'bash-fail', signal: 'nonzero_exit', tool: 'Bash', n: 1 }, { cause: 'quoted-grep', signal: 'retry', tool: 'Bash', n: 1 }]);
+    [{ cause: 'bash-fail', signal: 'nonzero_exit', tool: 'Bash', n: 1 }, { cause: 'quoted-grep', signal: 'retry', tool: 'Bash', n: 1 }, { cause: 'umer-fixtures', signal: 'test_fail', tool: 'Bash', n: 1 }]);
 });
 
 test('a gate row takes one cause, the first in config order, in both the metrics and the report', () => {
