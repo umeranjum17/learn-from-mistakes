@@ -45,6 +45,28 @@ function setup() {
 // The TOON report's last stdout line is the `repeated:` summary, outside lfm-report.v2.
 const summaryOf = (stdout) => stdout.trimEnd().split('\n').at(-1);
 const toonBodyOf = (stdout) => { const lines = stdout.trimEnd().split('\n'); lines.pop(); return lines.join('\n') + '\n'; };
+// A `status --json` read can lose one invocation while a worker starts: the store is busy mid-migration, or a spawn is
+// lost under load, and the empty stdout would otherwise reach JSON.parse in a poll. Read again until it parses, bounded,
+// so the wait is the read itself - never a fixed sleep - and a lost read is a retry, not a thrown parse error. The last
+// read's own error is rethrown once the tries are spent.
+async function statusJson(read, tries = 200) {
+  for (let i = 0; ; i++) {
+    let err;
+    try { return JSON.parse(read().stdout); } catch (e) { err = e; }
+    if (i >= tries) throw err;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+// Await a promise, but never forever. A child event that never comes - a 'close' whose stdio pipe a detached
+// process keeps open, or a spawn lost under load - would otherwise leave the promise pending with nothing to
+// settle it, and the file's event loop then drains and the multi-file runner cancels every running file with
+// "Promise resolution is still pending but the event loop has already resolved". On the deadline the wait fails
+// with what the caller can see, so the file always finishes.
+async function deadline(promise, ms, onTimeout) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(onTimeout())), ms); })]); }
+  finally { clearTimeout(timer); }
+}
 
 test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in a commit', () => {
   const { p, lfm } = setup();
@@ -832,7 +854,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.match(started.stderr, new RegExp(`^next: learn-from-mistakes-axi attach --run ${run.id}   # follow its steps while the run goes on in the background`, 'm'));
   let steps;
   for (let i = 0; i < 100; i++) { // up to 20 s for the worker to reach the slow step
-    steps = JSON.parse(lfm('status', '--json').stdout).steps;
+    steps = (await statusJson(() => lfm('status', '--json'))).steps;
     if (steps[8].status === 'running') break;
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -842,7 +864,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
 
   process.kill(run.pid, 'SIGKILL'); // a crash: no trap runs, so only reconcile can see it
-  for (let i = 0; i < 50 && JSON.parse(lfm('status', '--json').stdout).run.status === 'running'; i++) await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < 50 && (await statusJson(() => lfm('status', '--json'))).run.status === 'running'; i++) await new Promise((r) => setTimeout(r, 100));
   const killed = lfm('status', '--json');
   assert.equal(killed.status, 0, killed.stderr);
   const k = JSON.parse(killed.stdout);
@@ -871,7 +893,6 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
 
 test('attach follows a run to its end; logs prints one step; abort cancels a run and rerun starts it again', async () => {
   const { p, lfm, env } = setup();
-  const wait = async (cond) => { for (let i = 0; i < 100 && !cond(); i++) await new Promise((r) => setTimeout(r, 200)); }; // up to 20 s
   const none = lfm('attach');
   assert.equal(none.status, 3, none.stderr); // nothing to follow yet
 
@@ -906,7 +927,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const slow = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'report' } });
   const { run } = JSON.parse(slow.stdout);
   after(() => { try { process.kill(run.pid, 'SIGKILL'); } catch {} });
-  await wait(() => JSON.parse(lfm('status', '--json').stdout).steps[8].status === 'running');
+  for (let i = 0; i < 100 && (await statusJson(() => lfm('status', '--json'))).steps[8].status !== 'running'; i++) await new Promise((r) => setTimeout(r, 200)); // up to 20 s
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -1082,11 +1103,11 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const h = JSON.parse(started.stdout).run;
   after(() => { try { process.kill(h.pid, 'SIGKILL'); } catch {} });
   let pgid;
-  for (let i = 0; i < 100 && !pgid; i++) { await new Promise((ok) => setTimeout(ok, 200)); pgid = existsSync(join(p, '.lfm', 'lfm.sqlite')) && query('SELECT child_pgid FROM invocations WHERE run_id = ?', h.id)[0]?.child_pgid; }
+  for (let i = 0; i < 100 && !pgid; i++) { await new Promise((ok) => setTimeout(ok, 200)); try { pgid = existsSync(join(p, '.lfm', 'lfm.sqlite')) && query('SELECT child_pgid FROM invocations WHERE run_id = ?', h.id)[0]?.child_pgid; } catch { /* the store is mid-write: read it again */ } }
   assert.ok(pgid, 'the agent call never started');
   after(() => { try { process.kill(-pgid, 'SIGKILL'); } catch {} });
   process.kill(h.pid, 'SIGKILL');
-  for (let i = 0; i < 50 && JSON.parse(lfm({}, 'status', '--json').stdout).run.status === 'running'; i++) await new Promise((ok) => setTimeout(ok, 100));
+  for (let i = 0; i < 50 && (await statusJson(() => lfm({}, 'status', '--json'))).run.status === 'running'; i++) await new Promise((ok) => setTimeout(ok, 100));
   const k = JSON.parse(lfm({}, 'status', '--json').stdout);
   assert.deepEqual([k.run.status, k.run.error], ['interrupted', 'analyse: the worker stopped before the step ended']);
   assert.throws(() => process.kill(-pgid, 0), { code: 'ESRCH' }, 'the agent outlived the run');
@@ -1558,6 +1579,7 @@ test('a pending step of a reused run id shows no lines from the earlier run', ()
 test('a retro --wait poll that meets a write lock held past busy_timeout waits for the next poll and prints the run', async () => {
   const { p, env } = setup();
   const child = spawn(process.execPath, [CLI, 'retro', '--wait', '1m', '--json', '--dir', p], { env: { ...env, LFM_TEST_SLOW_STEP: 'collect:9000' } });
+  after(() => { try { child.kill('SIGKILL'); } catch {} }); // a failed assertion must not leave the child behind
   let out = '', err = '';
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { err += d; });
@@ -1572,7 +1594,7 @@ test('a retro --wait poll that meets a write lock held past busy_timeout waits f
   await new Promise((r) => setTimeout(r, 6500));
   hold.exec('ROLLBACK');
   hold.close();
-  const code = await closed;
+  const code = await deadline(closed, 90_000, () => `the retro --wait child did not exit in 90 s\nstdout: ${out}\nstderr: ${err}`);
   assert.equal(code, 0, err);
   assert.equal(JSON.parse(out).run.status, 'completed');
 });

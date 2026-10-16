@@ -177,7 +177,7 @@ test('a missing run evidence file names the file and the fix, never a broken cit
   let out = '', err = '';
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { err += d; });
-  for (let i = 0; i < 400 && !existsSync(bundle()); i++) await sleep(25); // the bundle step writes it before analyse sleeps
+  for (let i = 0; i < 1200 && !existsSync(bundle()); i++) await sleep(25); // up to 30 s: the bundle step writes it before analyse sleeps; under load the run can reach it late
   assert.ok(existsSync(bundle()), 'the run never wrote its bundle.md');
   rmSync(bundle()); // the evidence file briefly went missing
   await once(child, 'exit');
