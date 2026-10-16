@@ -171,6 +171,8 @@ test('in a terminal, the pick lists BYOKit routes and the model question lists t
   const { tmp, p, env, config } = setup(['claude', 'opencode']);
   const { readyRoutes, routeModels } = await import('../src/runners/byokit.mjs');
   assert.ok((await readyRoutes()).includes('zai-coding-cn'));
+  assert.ok((await readyRoutes()).includes('zai:plan_key')); // a ready route with no alias is offered by its full id
+  assert.ok((await routeModels('zai:plan_key'))?.includes('glm-4.7')); // the model question works for it too
   const models = await routeModels('opencode-go');
   assert.ok(models?.length > 1);
   // sessions, a typed byokit:<route>, its first listed model by number, then the judge and its typed model

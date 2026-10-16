@@ -16,11 +16,11 @@ const NODE = '22.18';
 // The route a runner names as byokit:<route>, or undefined.
 export const routeOf = (runner) => runner.match(/^byokit:(.+)/)?.[1];
 
-// The routes a person can name: the sign-in plans, then BYOKit's plan key aliases whose readiness is ready.
-// Never throws: with BYOKit not installed nothing is known, so no route is offered.
+// The routes a person can name: the sign-in plans, then each ready plan key route by its aliases, or by the full id
+// BYOKit itself prints when it ships no alias. Never throws: with BYOKit not installed nothing is known, so no route is offered.
 export async function readyRoutes() {
   try {
-    const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => r.aliases ?? []);
+    const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => (r.aliases?.length ? r.aliases : [r.id]));
     return [...new Set([...ROUTES, ...keys])];
   } catch { return []; }
 }
@@ -40,9 +40,10 @@ export async function routeModels(route) {
   } catch { return undefined; }
 }
 
-// BYOKit's row for a plan key route, or undefined for a sign-in plan or an unknown name.
+// BYOKit's row for a plan key route — by its full id (the name BYOKit itself prints) or one of its aliases — or
+// undefined for a sign-in plan or an unknown name.
 async function planKey(route) {
-  if (!ROUTES.includes(route)) return (await import('@byokit/accounts')).routes().find((r) => r.via === 'plan_key' && r.aliases?.includes(route));
+  if (!ROUTES.includes(route)) return (await import('@byokit/accounts')).routes().find((r) => r.via === 'plan_key' && (r.id === route || r.aliases?.includes(route)));
 }
 
 export async function signIn(route) {

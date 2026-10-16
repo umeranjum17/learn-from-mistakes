@@ -422,6 +422,15 @@ async function keyStandIn(text) {
     req.on('end', () => {
       seen.push({ path: req.url, headers: req.headers, body: JSON.parse(body) });
       const ev = (type, x) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...x })}\n\n`);
+      if (req.url.endsWith('/chat/completions')) { // a chat completions route such as zai:plan_key streams plain choice chunks
+        const chunk = (delta, finish) => res.write(`data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', model: 'glm-4.7', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        chunk({ role: 'assistant', content: text }, null);
+        chunk({}, 'stop');
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
       const item = { type: 'message', id: 'm1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] };
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       ev('response.output_item.added', { output_index: 0, item: { ...item, status: 'in_progress', content: [] } });
@@ -440,7 +449,7 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   const { p, tmp, env } = await byokitSetup();
   const standIn = await keyStandIn('{"reply":"hello from the fake key route"}');
   const run = (vars, ...args) => node({ ...env, LFM_TEST_BYOKIT_BASE: standIn.base, ...vars }, CLI, ...args, '--dir', p);
-  const hook = async (vars) => JSON.parse((await node({ ...env, ...vars }, '--input-type=module', '-e', HOOK, BYOKIT, 'opencode-go')).stdout);
+  const hook = async (vars, route = 'opencode-go') => JSON.parse((await node({ ...env, ...vars }, '--input-type=module', '-e', HOOK, BYOKIT, route)).stdout);
   const yaml = join(p, '.learn-from-mistakes.yaml');
   const base = readFileSync(yaml, 'utf8');
   const noModel = await run({ ZAI_CODING_CN_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:zai-coding-cn'); // no default model: never a guessed one
@@ -476,6 +485,23 @@ test('byokit: a plan key route answers with the key from its variable, held in m
   const bad = await run({ OPENCODE_API_KEY: 'fake-key' }, 'agents', '--test', 'byokit:opencode-go');
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /^error: byokit:opencode-go: pi-ai lists no model no-such-model for opencode-go$/m);
+
+  // A ready route with no alias names itself by its full id (zai:plan_key): the runner, doctor and the model list all
+  // take it, with readiness from a dummy key value and the call answered by the stand-in's chat completions stream.
+  writeFileSync(yaml, `${base}agent_config: { "byokit:zai:plan_key": { model: glm-4.7 } }\n`);
+  const zaiNoKey = await run({}, 'agents', '--test', 'byokit:zai:plan_key');
+  assert.equal(zaiNoKey.status, 1);
+  assert.match(zaiNoKey.stderr, /^error: byokit:zai:plan_key: ZAI_API_KEY is not set$/m);
+  assert.match(zaiNoKey.stderr, /^next: set ZAI_API_KEY to your Z\.AI key, then: learn-from-mistakes-axi agents --test byokit:zai:plan_key/m);
+  assert.deepEqual((await hook({}, 'zai:plan_key'))[0], { status: 'fail', label: 'byokit:zai:plan_key', detail: 'ZAI_API_KEY is not set',
+    fix: 'set ZAI_API_KEY to your Z.AI key, then: learn-from-mistakes-axi agents --test byokit:zai:plan_key' });
+  assert.deepEqual((await hook({ ZAI_API_KEY: 'fake-zai-key' }, 'zai:plan_key'))[0], { status: 'ok', label: 'byokit:zai:plan_key', detail: 'ZAI_API_KEY is set' });
+  const zai = await run({ ZAI_API_KEY: 'fake-zai-key' }, 'agents', '--test', 'byokit:zai:plan_key', '--json');
+  assert.equal(zai.status, 0, zai.stderr);
+  assert.deepEqual(JSON.parse(zai.stdout).test, { runner: 'byokit:zai:plan_key', tools: 'none', model: 'glm-4.7', dir: join(p, '.lfm', 'runs', 'test-byokit-zai:plan_key'), reply: 'hello from the fake key route', offered: true });
+  const zaiAsk = standIn.seen.find((s) => s.path.endsWith('/chat/completions'));
+  assert.equal(zaiAsk.headers.authorization, 'Bearer fake-zai-key');
+  assert.equal(zaiAsk.body.model, 'glm-4.7');
 });
 
 test('byokit: a name that is not a plan route, a route with no model set and a missing package each name the fix', async () => {
