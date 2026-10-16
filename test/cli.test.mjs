@@ -1606,6 +1606,31 @@ test('apply: with no saved store, apply names the empty store and exits 3', () =
   assert.match(r.stderr, /^error: no retro run has kept fixes$/m);
 });
 
+// A refused auto_fix must not hide in apply.log: the retro output and report.txt carry the refusal and its next.
+test('auto_fix with no git identity: the retro output and report name the refusal and its next', () => {
+  const s = applyRepo(); const { p, lfm, lines, git, fake, auto } = s;
+  const lonely = join(p, '..', 'git-home'); mkdirSync(lonely); // a throwaway HOME and XDG: the host's git config must not answer here
+  Object.assign(s.env, { HOME: lonely, XDG_CONFIG_HOME: lonely, GIT_CONFIG_NOSYSTEM: '1' });
+  git('config', '--unset', 'user.name'); git('config', '--unset', 'user.email');
+  auto(1);
+  const out = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  assert.equal(out.run.status, 'completed', out.run.error);
+  assert.deepEqual(out.refused, [{ fix: 1, why: 'git commit-tree: Author identity unknown', next: 'git config user.name "<name>" && git config user.email "<email>"   # apply signs each fix commit' }]);
+  assert.deepEqual(JSON.parse(lfm({}, 'status', '--run', String(out.run.id), '--json').stdout).refused, out.refused);
+  const report = reportOf(p, out.run.id);
+  assert.match(report, new RegExp(`^ {3}refused: fix ${out.run.id}:1 was not applied: git commit-tree: Author identity unknown$`, 'm'));
+  assert.match(report, /^ {3}next: git config user\.name "<name>" && git config user\.email "<email>"   # apply signs each fix commit$/m);
+  assert.match(lines('apply', out.run.id).join('\n'), new RegExp(`^refused: fix ${out.run.id}:1 was not applied: git commit-tree: Author identity unknown$`, 'm'));
+  // With the identity back the refused fix applies by hand, and a fresh auto_fix run applies inside the run again.
+  git('config', 'user.name', 'Umer'); git('config', 'user.email', 'umer@example.com');
+  const byHand = lfm({}, 'apply', '--run', String(out.run.id), '--fix', '1');
+  assert.equal(byHand.status, 0, byHand.stderr);
+  assert.match(byHand.stdout, new RegExp(`^applied: fix ${out.run.id}:1 on branch lfm/${out.run.id}-1`, 'm'));
+  const again = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  assert.equal(again.refused, undefined);
+  assert.match(lines('apply', again.run.id).join('\n'), /^applied: fix \d+:1 on branch lfm\/\d+-1, commit /m);
+});
+
 test('apply: with the judge unset and no kept fixes, it checks the store first and asks nothing', () => {
   const { p, env, lfm } = agentSetup();
   const global = join(env.LFM_HOME, 'config.yaml'), agentOnly = 'agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n';
@@ -1934,6 +1959,60 @@ test('doctor names the pinned runner\'s own install fix when it is not on PATH, 
   assert.equal(line.detail, `claude is not usable: ${missing} is not on PATH`);
   assert.equal(line.fix, `install ${missing}, or set agent_path_override.claude in ${join(env.LFM_HOME, 'config.yaml')}`);
   assert.doesNotMatch(line.fix, /\bcodex\b/);
+});
+
+// An opencode custom provider can keep its key in the environment ({env:VAR} in opencode.json): auth list counts no
+// credential for it, so doctor reads the config instead. The variable set is logged in; unset is still a real fail.
+test('doctor counts an opencode env-key provider as logged in and keeps the fail for a real missing login', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'lfm-oc-'));
+  after(() => rmSync(tmp, { recursive: true, force: true }));
+  const p = join(tmp, 'p'), fakes = join(tmp, 'fakes'), home = join(tmp, 'home'), lfmHome = join(tmp, 'lfm-home'), log = join(tmp, 'log');
+  cpSync(new URL('../examples', import.meta.url).pathname, p, { recursive: true });
+  own(p);
+  for (const d of [fakes, lfmHome, log, join(home, '.config', 'opencode')]) mkdirSync(d, { recursive: true });
+  symlinkSync(FAKE_AGENT, join(fakes, 'claude'));
+  writeFileSync(join(fakes, 'opencode'), `#!${process.execPath}\nconst a = process.argv.slice(2);\nrequire('node:fs').appendFileSync(process.env.CALL_LOG, JSON.stringify(a) + '\\n');\nif (a[0] === '--version') console.log('9.9.9 (fake opencode)');\nelse if (a[0] === 'auth') console.log('0 credentials');\n`);
+  for (const name of ['claude', 'opencode']) chmodSync(join(fakes, name), 0o755);
+  writeFileSync(join(lfmHome, 'config.yaml'), 'agent: claude\njudge_agent: opencode\nagent_config: { claude: { model: claude-haiku-5-5 }, opencode: { model: zai/glm-flash } }\n');
+  const config = join(home, '.config', 'opencode', 'opencode.json');
+  const provider = (at) => writeFileSync(at, JSON.stringify({ provider: { zai: { options: { baseURL: 'https://provider.example/v4', apiKey: '{env:LFM_TEST_PROVIDER_KEY}' }, models: { 'glm-flash': {} } } } }));
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), LFM_HOME: lfmHome, CALL_LOG: join(log, 'opencode.jsonl') };
+  const login = (over = {}) => JSON.parse(spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, ...over } }).stdout).checks.find((c) => c.label === 'judge login');
+  assert.equal(login().level, 'fail'); // no config, no variable: the real missing login
+  provider(config);
+  const unset = login();
+  assert.equal(unset.level, 'fail'); // the config names the variable but it is unset
+  assert.equal(unset.detail, 'opencode auth list: not logged in');
+  assert.equal(unset.fix, 'opencode auth login');
+  const ok = login({ LFM_TEST_PROVIDER_KEY: 'dummy-value-never-a-real-key' }); // a dummy value is enough: only its presence is read
+  assert.equal(ok.level, 'ok');
+  assert.ok(ok.detail.endsWith(`provider zai key from env LFM_TEST_PROVIDER_KEY (${config}))`), ok.detail);
+  // A project-level opencode.json decides the same way once the global one is gone.
+  rmSync(config); provider(join(p, 'opencode.json'));
+  assert.equal(login({ LFM_TEST_PROVIDER_KEY: 'dummy-value-never-a-real-key' }).level, 'ok');
+  rmSync(join(p, 'opencode.json'));
+  // The model itself is never called: the shim only ever saw --version and auth list.
+  const calls = readFileSync(join(log, 'opencode.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(calls.every((a) => a[0] === '--version' || (a[0] === 'auth' && a[1] === 'list')), JSON.stringify(calls));
+});
+
+// With auto_fix the run's apply step commits each fix: doctor checks the author identity and names the git config fix.
+test('doctor with auto_fix checks the git author identity and names git config user.name/user.email', () => {
+  const { p, env } = setup();
+  appendFileSync(join(env.LFM_HOME, 'config.yaml'), 'auto_fix: 1\n');
+  const home2 = join(env.LFM_HOME, 'h'); mkdirSync(home2); // a throwaway HOME: the host's ~/.gitconfig must not answer here
+  const gitEnv = { ...env, HOME: home2, GIT_CONFIG_NOSYSTEM: '1' }; // nor a system-wide identity
+  const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8', env: gitEnv });
+  const line = () => JSON.parse(spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env: gitEnv }).stdout).checks.find((c) => c.label === 'git identity');
+  assert.equal(line(), undefined, 'no identity check outside a git repo');
+  git('init', '-q', '-b', 'main');
+  assert.equal(line().level, 'fail');
+  assert.equal(line().detail, 'no git author identity: the apply step cannot commit a fix');
+  assert.match(line().fix, /git config user\.name .*git config user\.email /);
+  git('config', 'user.name', 'Umer'); git('config', 'user.email', 'umer@example.com');
+  assert.equal(line().level, 'ok');
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), readFileSync(join(env.LFM_HOME, 'config.yaml'), 'utf8').replace('auto_fix: 1', 'auto_fix: 0'));
+  assert.equal(line(), undefined, 'no identity check without auto_fix');
 });
 
 // detect() probes only the configured roles: with one configured agent, doctor runs --version and reads the login

@@ -41,6 +41,13 @@ export async function doctor(dir, opts) {
       `echo '*' >> ${shq(join(cfg.state, '.gitignore'))}`);
   }
 
+  // With auto_fix the run's apply step commits each fix itself: git refuses every commit without an author identity.
+  if (cfg.auto_fix && git && repo) {
+    const ident = spawnSync(git, ['-C', dir, 'var', 'GIT_AUTHOR_IDENT'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    add(ident.status === 0 ? 'ok' : 'fail', 'git identity', ident.status === 0 ? 'a git author identity' : 'no git author identity: the apply step cannot commit a fix',
+      'git config user.name "<name>" && git config user.email "<email>"   # --global covers every project');
+  }
+
   // Each source's own doctor hook: readable, its count in the window, and the entries it skipped. It shows no record
   // id, so a defect log's ids are keyed with a throwaway salt, not the run store's.
   // The read start is the retro's own: what the next retro reads, doctor checks.
@@ -72,11 +79,11 @@ export async function doctor(dir, opts) {
     } else {
       add('ok', name, `${r.runner} ${a.version}, tools ${a.tools}`);
       // Login: the agent's own status command where it has one, else whether its login file or key variable exists.
-      const probe = mod.loginStatus?.(r.model);
+      const probe = mod.loginStatus?.(r.model, dir);
       if (probe) {
         const p = spawnSync(which(binName(cfg, key)), probe.args, { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] });
         const shown = `${r.runner} ${probe.args.join(' ')}`;
-        if (probe.ok(p)) add('ok', `${name} login`, `${shown}: logged in`);
+        if (probe.ok(p)) add('ok', `${name} login`, `${shown}: logged in${probe.note ? ` (${probe.note})` : ''}`);
         else if (probe.file) {
           // The probe failed for any reason: the login file decides, checked for existence only.
           const why = p.error?.code ?? p.signal ?? `exit ${p.status}`;

@@ -1,7 +1,8 @@
 // The run's report for a person: <run dir>/report.txt, plain text in the seven sections of the plan. Each line a person
 // reads is STE100: sentences of at most 20 words in plain words and the active voice, with no record id, session id or path. Those go only on the
 // `Evidence:` lines, as pointers a person can open: file:line, `session <id> at <time>`, `PR #N` or a gate store row, and on the `applied:`
-// line of a fix the run's apply step applied: its branch, commit and ledger id.
+// line of a fix the run's apply step applied (its branch, commit and ledger id) and the `refused:` line of one it could not apply
+// (the refusal and its `next:`).
 // Text an agent or the config wrote is redacted and shown only when it keeps the plain-language rule.
 import { writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
@@ -44,6 +45,8 @@ export function reportText(cfg, db, id, dir, window, run) {
   const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
   const reasons = new Map(all('SELECT change_id, reason FROM followups WHERE run_id = ?').map((f) => [f.change_id, f.reason]));
   const applied = appliedFixes(db, id);
+  const step = (name) => JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, name)?.output_json ?? '{}');
+  const refused = new Map((step('apply').refused ?? []).map((r) => [r.fix, r]));
   const repeated = [...causes].filter(([, c]) => c.repeated);
   const missed = run.metrics.filter((m) => m.met === 'missed').length;
   const lines = ['Retro report', '', '1. Short answer',
@@ -79,9 +82,9 @@ export function reportText(cfg, db, id, dir, window, run) {
     if (f.judge_note) lines.push(said(f.judge_note));
     lines.push(evidence(JSON.parse(f.refs_json)));
     if (applied.has(f.n)) lines.push(`   ${appliedLine(id, applied.get(f.n))}`);
+    else if (refused.get(f.n)) lines.push(`   refused: fix ${id}:${f.n} was not applied: ${refused.get(f.n).why}`, `   next: ${refused.get(f.n).next}`);
   }
   if (!fixes.length) lines.push('- No fix passed the rules.');
-  const step = (name) => JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, name)?.output_json ?? '{}');
   const judged = (verdict) => [...fixes, ...findings].filter((x) => x.verdict === verdict).length; // the kept fixes and the findings counted above
   const gaps = [...run.sources.filter((s) => !s.items).map((s) => `- Source ${s.id} gave no records.`),
     ...run.sources.filter((s) => s.skipped).map((s) => `- Source ${s.id} skipped ${plural(s.skipped, 'session')}.`),

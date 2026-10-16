@@ -1,13 +1,30 @@
 // OpenCode: the prompt is the one attached file; every permission is denied through the env (its plan agent is not read-only).
 // It saves the session; later retros skip it by the marker on the message and the .lfm/ run dir.
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export const tools = 'off';
 export const login = (env) => ({ files: [join(env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'auth.json')], vars: [] });
 export const skills = (env) => join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode', 'skills');
-// Counts the stored credentials and the provider keys set in the environment; only the counts are read.
-export const loginStatus = () => ({ args: ['auth', 'list'], ok: (r) => /\b[1-9]\d* (credentials?|environment variables?)\b/.test(r.stdout), fix: 'opencode auth login' });
+// Counts the stored credentials and the provider keys set in the environment; only the counts are read. A custom provider
+// can keep its key in the environment (`{env:VAR}` in the opencode config) and store no credential, so the configured
+// model's provider is looked up too: its variable set counts as logged in, and the model itself is never called.
+export const loginStatus = (model, dir) => {
+  const id = model?.includes('/') ? model.split('/')[0] : '';
+  const envKey = () => {
+    if (!id) return null;
+    for (const f of [join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode', 'opencode.json'), join(dir ?? '.', 'opencode.json')]) {
+      let provider; try { provider = JSON.parse(readFileSync(f, 'utf8'))?.provider?.[id]; } catch { continue; }
+      const key = provider && /\{env:([A-Za-z_][A-Za-z0-9_]*)\}/.exec(JSON.stringify(provider));
+      if (key && process.env[key[1]]) return { key: key[1], from: f };
+    }
+    return null;
+  };
+  const from = envKey();
+  return { args: ['auth', 'list'], ok: (r) => /\b[1-9]\d* (credentials?|environment variables?)\b/.test(r.stdout) || Boolean(from),
+    ...(from && { note: `provider ${id} key from env ${from.key} (${from.from})` }), fix: 'opencode auth login' };
+};
 // `--` ends the -f file list, which would otherwise take the message as a second file.
 export const command = ({ model, effort, dir, prompt, marker, extra }) => ({
   args: ['run', ...(model ? ['-m', model] : []), ...(effort ? ['--variant', effort] : []), '--format', 'json', '--dir', dir, '-f', prompt, ...extra, '--', `${marker} Follow the instructions in the attached file.`],
