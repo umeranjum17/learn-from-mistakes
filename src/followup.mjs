@@ -1,7 +1,8 @@
 // The followup step: did each applied change work? For every change in the ledger it computes the change's metric
 // from the events and records collect saved: `before` over the window's length up to the change, `after` from the
 // change to the end of the run. The verdict is set by code, by the first rule that fits:
-//   no-data   the after range has fewer than followup.min_sessions sessions or followup.min_days days, the metric is
+//   no-data   the after range has fewer than followup.min_days days, or fewer than followup.min_sessions sessions and,
+//             for a records-based metric, fewer than that many of the records it reads, the metric is
 //             n/a before or after it (nothing measures it), or a records-based metric's source has no record on or
 //             before the start of the before window (it does not cover that window), or collect's read started after the
 //             before window's start, or after the change (a change added after collect with an older `at`: n/a)
@@ -65,9 +66,13 @@ export function followup(cfg, db, id, window, log) {
     const covered = (ms) => from <= ms;
     // A records-based metric's before is n/a unless its source has a record on or before the window's start.
     const before = !covered(at - w) || (of && !records.some((r) => of(r) && Date.parse(r.ts) <= at - w)) ? null : value({ start: at - w, end: at });
-    // The first no-data rule over the after range up to `upTo` (this run's has no end, as the current window).
-    const enough = (r, readTime, upTo) => r.before !== null && r.after !== null && (readTime - at) / DAY >= min_days
-      && new Set(inWindow(events, { start: at, end: upTo }).map((e) => e.session_id)).size >= min_sessions;
+    // The first no-data rule over the after range up to `upTo` (this run's has no end, as the current window). A
+    // records-based metric's own records count too, so a project with no sessions source can pass it.
+    const enough = (r, readTime, upTo) => {
+      const range = { start: at, end: upTo };
+      return r.before !== null && r.after !== null && (readTime - at) / DAY >= min_days
+        && (new Set(inWindow(events, range).map((e) => e.session_id)).size >= min_sessions || (of && inWindow(records.filter(of), range).length >= min_sessions));
+    };
     const row = { change_id: c.id, metric, before, after: covered(at) ? value({ start: at }) : null, tripwire: tripwire || null };
     row.enough = enough(row, end, Infinity);
     const prev = last.all(c.id, id).map((p) => ({ ...p, readTime: readAt(JSON.parse(p.output_json)) }))
