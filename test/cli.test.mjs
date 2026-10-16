@@ -138,6 +138,25 @@ test('state lives in the project\'s own .lfm/, git-ignored by the tool, never in
   assert.doesNotMatch(stray.stderr, /\n\s+at /);
 });
 
+test('the state-dir fix lines name the resolved global config, never a literal $LFM_HOME', () => {
+  const { p, lfm, env } = setup();
+  const global = join(env.LFM_HOME, 'config.yaml');
+  writeFileSync(join(p, '.lfm'), 'a stray file where the state dir should be');
+  const inner = lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234');
+  assert.equal(inner.status, 2, inner.stderr);
+  assert.match(inner.stderr, /cannot create the state dir \(EEXIST\)/);
+  assert.equal(inner.stderr.match(/^next: (.*)$/m)[1], `mv <project>/.lfm <elsewhere>   # free .lfm for the state dir, or set state_root in ${global}`);
+  rmSync(join(p, '.lfm'));
+  const blocker = join(env.LFM_HOME, 'blocker'); // a file stands where the configured state_root's parent dir would go
+  writeFileSync(blocker, '');
+  appendFileSync(global, `state_root: ${join(blocker, 'root')}\n`);
+  const outer = lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234');
+  assert.equal(outer.status, 2, outer.stderr);
+  assert.match(outer.stderr, /cannot create the state dir \(ENOTDIR\)/);
+  assert.equal(outer.stderr.match(/^next: (.*)$/m)[1], `edit state_root in ${global}   # a dir lfm can create and write`);
+  assert.doesNotMatch(outer.stderr, /\$LFM_HOME/);
+});
+
 test('same-named projects keep separate state; a global state_root still wins', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
   after(() => rmSync(tmp, { recursive: true }));

@@ -38,8 +38,8 @@ export const shq = (p) => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replaceAll("'"
 export function stateDir(cfg) {
   try { mkdirSync(cfg.state, { recursive: true }); } catch (e) {
     throw new UsageError(`${cfg.state}: cannot create the state dir (${e.code})`, cfg.ignore
-      ? 'mv <project>/.lfm <elsewhere>   # free .lfm for the state dir, or set state_root in $LFM_HOME/config.yaml'
-      : 'edit state_root in $LFM_HOME/config.yaml   # a dir lfm can create and write');
+      ? `mv <project>/.lfm <elsewhere>   # free .lfm for the state dir, or set state_root in ${shq(cfg.globalPath)}`
+      : `edit state_root in ${shq(cfg.globalPath)}   # a dir lfm can create and write`);
   }
   if (!cfg.ignore) return;
   const file = join(cfg.state, '.gitignore');

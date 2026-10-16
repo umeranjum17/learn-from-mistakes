@@ -245,6 +245,16 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);
 });
 
+test('doctor\'s ok model line is the bare model, with no "(allow_premium)" suffix', () => {
+  const { lfm, config } = setup();
+  config('allow_premium: true\nagent_config: { claude: { model: claude-opus-5-5 } }\n'); // a premium name the user allowed
+  const r = lfm({}, 'doctor', '--json');
+  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker model');
+  assert.equal(line.level, 'ok', r.stderr);
+  assert.equal(line.detail, 'claude-opus-5-5');
+  assert.doesNotMatch(line.detail, /allow_premium/);
+});
+
 test('the skill row looks where the agent CLI reads skills: its login check\'s config dir, not the home default', () => {
   const { lfm, tmp, config } = setup();
   config('agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 } }\n');
@@ -499,7 +509,8 @@ test('byokit: a role that is not installed says to install it or choose another;
   writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}agent: "byokit:grok"\nagent_config: { "byokit:grok": { model: umer-cheap-1 } }\n`);
   const r = await lfm('agents');
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /^problem: worker: byokit:grok is not a BYOKit plan route: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
+  assert.match(r.stderr, /^problem: worker: byokit:grok is not a BYOKit plan route$/m);
+  assert.match(r.stderr, /^next: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
 });
 
 test('byokit: a route the user set with BYOKit not installed gives BYOKit\'s own fix', () => {
@@ -512,7 +523,7 @@ test('byokit: a route the user set with BYOKit not installed gives BYOKit\'s own
   for (const e of readdirSync(join(ROOT, 'node_modules'))) if (!e.startsWith('@byokit') && e !== '@earendil-works') symlinkSync(join(ROOT, 'node_modules', e), join(app, 'node_modules', e));
   const r = spawnSync(process.execPath, [join(app, 'bin', 'learn-from-mistakes-axi.mjs'), 'agents', '--dir', p], { encoding: 'utf8', env });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /^problem: worker: BYOKit is not installed: /m);
+  assert.match(r.stderr, /^problem: worker: BYOKit is not installed$/m);
   assert.match(r.stderr, /^next: npm install -g learn-from-mistakes-axi /m);
 });
 

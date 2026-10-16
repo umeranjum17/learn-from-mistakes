@@ -494,14 +494,15 @@ test('init prints a BYOKit worker problem with the route list in its error', () 
   const { lfm } = setup(['claude']);
   const r = lfm('init', '-y', '--no-skill', '--agent', 'byokit:nope');
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /worker: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
+  assert.match(r.stderr, /^error: worker: byokit:nope is not a BYOKit plan route$/m);
+  assert.match(r.stderr, /^next: use one of: byokit:/m);
 });
 
 test('init refuses a judge on a BYOKit route that is not a plan route, with the route list as the fix', () => {
   const { lfm, config } = setup(['claude']);
   const r = lfm('init', '-y', '--no-skill', '--agent', 'claude', '--judge-agent', 'byokit:nope');
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /judge: byokit:nope is not a BYOKit plan route: use one of: byokit:/);
+  assert.match(r.stderr, /^error: judge: byokit:nope is not a BYOKit plan route$/m);
   assert.match(r.stderr, /^next: use one of: byokit:chatgpt, /m);
   assert.equal(existsSync(config), false);
 });
@@ -566,7 +567,7 @@ test('doctor fails a BYOKit worker on a route that is not a plan route, before a
   const checks = JSON.parse(r.stdout).checks;
   const role = checks.find((c) => c.label === 'worker');
   assert.equal(role.level, 'fail');
-  assert.match(role.detail, /^byokit:nope is not a BYOKit plan route/);
+  assert.equal(role.detail, 'byokit:nope is not a BYOKit plan route'); // the bare problem: the fix is in fix: only
   assert.match(role.fix, /^use one of: byokit:/);
   assert.equal(checks.some((c) => c.label === 'worker login'), false);
 });
