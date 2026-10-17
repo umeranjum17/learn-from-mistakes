@@ -33,7 +33,7 @@ const MIGRATIONS = [
   // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
   `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,
     before NUMERIC, after NUMERIC, tripwire TEXT, verdict TEXT NOT NULL, PRIMARY KEY (run_id, change_id))`,
-  // The id the labels and proposals take: a store-salted HMAC of the text for a defect-log record, source:id for a gate row or PR.
+  // The id the labels and proposals take: a store-salted HMAC for a defect-log or done-done record, source:id for a gate row or PR.
   'ALTER TABLE records ADD COLUMN record_id TEXT',
   // Each call to the run's own agent: its step and role, the agent CLI and model, its process group while it runs, how it
   // ended (ok, invalid, error, or the run's cancelled or interrupted), and the session id and tokens the agent reported.
