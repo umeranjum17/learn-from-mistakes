@@ -461,7 +461,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   -h, --help          show this help and the supported commands
   -v, --version       show the version
 the report --json output is privacy-bounded: identifiers, counts, metrics, follow-ups, fixes and
-  each finding's judge verdict word (confirmed, weakened, refuted or not judged), plus the run's
+  each finding's judge verdict word (confirmed, weakened or refuted), plus the run's
   report.txt path; the default and --full reports also print one \`finding:\` line per finding with
   its counts and verdict, never the agent's summary (it is in report.txt only), record text,
   label/proposal prose or change what/why;
@@ -502,7 +502,8 @@ sources, AGENTS.md, CLAUDE.md or skills.
    --proposal <run>:<n> --ref <git sha>
 
 The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model);
-the tool never picks one.
+the tool never picks one. Both always run: there is no mode without them. A run whose worker or
+judge fails keeps no verdict; fix the agent, then run the command again.
 When a command stops with "ask the user which agent to use", ask the user which agent and model
 to use for each role, never choose for them, then run the init command it prints with their
 answer, then run the stopped command again.
@@ -618,9 +619,11 @@ async function main(ctx) {
     db?.close();
     if (await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir, ['agent'])) cfg = loadConfig(opts.dir ?? resolve('.'));
   }
-  // The judge is never the worker: a judge on the worker's agent and model, or one that is not ready, stops the run before it starts.
+  // Both agents always run: a worker that is not ready, a judge on the worker's agent and model, or a judge that is not
+  // ready, stops the run before it starts.
   if (['retro', 'rerun'].includes(cmd)) {
-    const { judge } = await resolveRoles(cfg, detect(cfg));
+    const { worker, judge } = await resolveRoles(cfg, detect(cfg));
+    if (worker.problem) throw new InputError(`worker: ${worker.problem}`, roleFix(cfg, 'agent', worker));
     if (judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
     if (judge.problem) throw new InputError(`judge: ${judge.problem}`, roleFix(cfg, 'judge_agent', judge));
   }

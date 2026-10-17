@@ -193,10 +193,10 @@ export function counts(cfg, db, id, { current_start }) {
   return { causes, findings };
 }
 
-// The check step. A fix is kept when the judge did not refute it, its cause has counted events and repeated, its refs
+// The check step. A fix is kept when the judge confirmed or weakened it, its cause has counted events and repeated, its refs
 // name bundle items, it has a target, an owner, a metric (default cause_count:<cause>) and a tripwire; a fix that breaks
-// a rule is a problem: it is logged and saved with the rule. The kept fixes are ranked, a fix the judge did not confirm
-// (weakened, or not judged) after the others, and numbered 1 to 5 (proposals.n); one past five is a problem.
+// a rule is a problem: it is logged and saved with the rule. The kept fixes are ranked, a weakened fix after the others,
+// and numbered 1 to 5 (proposals.n); one past five is a problem.
 // It can run again: it first clears what it set.
 export function check(cfg, db, id, dir, window, log) {
   const { causes, findings } = counts(cfg, db, id, window);
@@ -207,7 +207,7 @@ export function check(cfg, db, id, dir, window, log) {
   const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json, verdict FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
     const refs = JSON.parse(f.refs_json), missing = refs.filter((r) => !ids.has(r)).length, c = causes.get(f.cause);
     const metric = f.metric?.trim() || `cause_count:${f.cause}`, trip = RULE.exec(f.tripwire?.trim() ?? '');
-    const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !c?.count ? 'its cause has no counted events'
+    const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !f.verdict ? 'the judge gave it no verdict' : !c?.count ? 'its cause has no counted events'
       : !refs.length ? 'no evidence refs' : missing ? `${missing} of ${refs.length} refs name no bundle item`
       : !c.repeated ? 'its cause did not repeat; propose only for repeated causes'
       : !f.target.trim() ? 'no target' : !f.owner.trim() ? 'no owner'

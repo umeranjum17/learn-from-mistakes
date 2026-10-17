@@ -104,7 +104,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     ...run.sources.filter((s) => s.skipped).map((s) => `- Source ${s.id} skipped ${plural(s.skipped, 'session')}.`),
     ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],
-      [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]
+      [judged('weakened'), 'The judge weakened']]
       .filter(([n]) => n).map(([n, what, word = 'item', many]) => `- ${what} ${plural(n, word, many)}.`)];
   lines.push('', '6. Not checked', ...(gaps.length ? gaps : ['- Nothing. The run read all sources and checked all items.']), '', '7. Questions for you');
   const open = fixes.filter((f) => !applied.has(f.n)); // a fix the run applied is never asked about

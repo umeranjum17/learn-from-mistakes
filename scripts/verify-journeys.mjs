@@ -267,7 +267,7 @@ try {
     assert.match(reportTxt, /^6\. Roll back change chg-2\? Answer yes or no\.$/m, 'report.txt does not ask to roll back chg-2');
     assert.ok(!reportTxt.includes(staged), 'report.txt shows a path outside its evidence lines');
     drive('logs-verify', 'logs', '--step', 'verify');
-    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted, 0 not judged/, 'logs do not show the judge\'s verdicts');
+    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted/, 'logs do not show the judge\'s verdicts');
     drive('logs-check', 'logs', '--step', 'check');
     assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[1\]: the judge refuted it[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
     run('signoff-fallback', process.execPath, [cli, 'signoff', 'post', '--run', String(proposed.run.id), '--dir', staged], 0, { PATH: agentBin });

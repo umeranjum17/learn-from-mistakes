@@ -8,6 +8,8 @@
 
 You, or your calling agent, start the retro and read its report. **Do not label or judge records yourself.** Unread records stay unlabelled, not guessed. Recommendations do not change your project by default.
 
+**The worker and the judge always run.** There is no judge-less or agent-less mode. With no agent set, the command stops and asks you to set one. If an agent is not ready, the retro does not start. If the worker or the judge fails, or the judge leaves a claim without a verdict, the run fails with an error and a `next:` line. A run that does not complete keeps no verdict, label, finding or fix.
+
 ## Quick start
 
 Requires Node **22.13+**, project records to read, and two ready agents with models **you choose**. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
@@ -105,9 +107,9 @@ learn-from-mistakes-axi abort                  # cancel the current worker
 learn-from-mistakes-axi rerun --resume --wait 8m
 ```
 
-Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
+Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Such a run kept no verdict, label, finding or fix, so the resume runs again from its `followup` step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
 
-`status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently.
+`status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently or to run without one.
 
 ## Sources, state and privacy
 

@@ -3,7 +3,7 @@ name: learn-from-mistakes
 description: "Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro, or wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills."
 license: MIT
 metadata:
-  version: 0.2.0
+  version: 0.3.0
   argument-hint: <what keeps going wrong, or the log to read>
   hermes-tags: retrospective, defects, agents, instructions
   hermes-category: productivity
@@ -21,7 +21,7 @@ You do not need it installed: run `npx -y learn-from-mistakes-axi <command>`. If
 4. Read the run's `report.txt` (`npx -y learn-from-mistakes-axi report` prints its path as `report_txt`) and tell the user what it says in plain words.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7 of `report.txt`.
 
-The user chooses the tool's agents and models; never choose one (full contract: the learn-from-mistakes README section `Runners and user-chosen models`). When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role, then run the init command it printed with their answer, then run the stopped command again.
+The user chooses the tool's agents and models; never choose one (full contract: the learn-from-mistakes README section `Runners and user-chosen models`). When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role, then run the init command it printed with their answer, then run the stopped command again. The worker and the judge always run: there is no mode without them, and a run whose agent fails keeps no verdict. Never answer in their place; fix the agent the error names, then run the command again.
 
 `npx -y learn-from-mistakes-axi guide` prints these steps for the installed version, and `npx -y learn-from-mistakes-axi --help` lists the commands.
 

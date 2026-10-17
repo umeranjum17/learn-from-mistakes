@@ -917,7 +917,7 @@ signoff: on
 allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ~/bin/claude }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ' + FAKE_AGENT + ' }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
@@ -1045,7 +1045,8 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const k = JSON.parse(killed.stdout);
   assert.equal(k.run.status, 'interrupted');
   assert.equal(k.run.error, 'report: the worker stopped before the step ended');
-  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'interrupted']);
+  // An interrupted run keeps no verdict: its steps from followup on are pending again.
+  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', ...Array(7).fill('pending'), 'interrupted']);
   assert.match(killed.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
 
   const next = lfm('retro', '--wait', '--json'); // the interrupted run blocks nothing; a bare --wait waits 8 minutes
@@ -1058,7 +1059,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(r.run.status, 'completed');
   assert.equal(r.run.error, null);
   assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
-  assert.deepEqual(r.steps.slice(0, 9), k.steps.slice(0, 9), 'the completed collect, metrics, followup, bundle, analyse, propose, verify, check and apply steps were not run again');
+  assert.deepEqual(r.steps.slice(0, 2), k.steps.slice(0, 2), 'the completed collect and metrics steps were not run again');
   assert.deepEqual(r.metrics, k.metrics);
   const again = lfm('rerun', '--resume', '--run', String(run.id));
   assert.equal(again.status, 2, again.stderr);
@@ -1111,7 +1112,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const a = JSON.parse(aborted.stdout);
   assert.equal(a.run.status, 'cancelled');
   assert.equal(a.run.error, 'report: cancelled by SIGTERM'); // the worker's own trap ended it
-  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'cancelled']);
+  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', ...Array(7).fill('pending'), 'cancelled']); // a cancelled run keeps no verdict either
   assert.throws(() => process.kill(run.pid, 0), { code: 'ESRCH' }, 'the worker is gone');
   assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
   const idle = lfm('abort');
@@ -1148,6 +1149,11 @@ function agentSetup() {
   const calls = (name = 'claude') => readFileSync(join(log, `${name}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const lines = (step, id) => JSON.parse(lfm({}, 'logs', '--step', step, '--run', String(id), '--json').stdout).log.map((l) => l.line);
   return { p, env, bin, lfm, query, calls, lines };
+}
+// True when a run stored no verdict, label, finding, fix or follow-up, and wrote no report.txt.
+function nothingJudged(query, id) {
+  return ['labels', 'findings', 'proposals', 'followups'].every((t) => query(`SELECT count(*) AS n FROM ${t} WHERE run_id = ?`, id)[0].n === 0)
+    && query(`SELECT count(*) AS n FROM steps WHERE run_id = ? AND name IN ('followup', 'analyse', 'propose', 'verify', 'check', 'report') AND output_json IS NOT NULL`, id)[0].n === 0;
 }
 // A run's report.txt: the seven sections in order; each line a person reads has sentences of at most 20 words and no
 // path or store id; each pointer on an Evidence line opens: a line of a project file, a gate store row or a session.
@@ -1253,7 +1259,9 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const b = JSON.parse(bad.stdout);
   const why = "the worker's answer is not valid after one retry: the answer holds no JSON object";
   assert.equal(b.run.error, `analyse: ${why}`);
-  assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'failed', 'pending', 'pending', 'pending', 'pending', 'pending']);
+  // A failed worker leaves nothing verdict-shaped: the followup step's verdicts go too, and it is pending again for a resume.
+  assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'pending', 'pending', 'failed', 'pending', 'pending', 'pending', 'pending', 'pending']);
+  assert.equal(nothingJudged(query, b.run.id), true);
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
   const failed = lfm({}); // the bare command shows the failed run without its error text, which can hold an agent's output
   // A failed run is exit 1 for the bare command, status and status --run alike: the same code retro --wait uses.
@@ -1264,7 +1272,6 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
     'worker answer 2 is not valid: the answer holds no JSON object', `error: ${why}`]);
   assert.match(calls().at(-1).stdin, /\nYour last answer was not valid: the answer holds no JSON object\. Answer again with one JSON object that fixes this\.\n/);
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', b.run.id), [{ exit_status: 'invalid' }, { exit_status: 'invalid' }]);
-  assert.deepEqual(query('SELECT count(*) AS n FROM labels WHERE run_id = ?', b.run.id), [{ n: 0 }]);
   // An empty answer is a bad answer too: sent back once, then the step fails with the same line.
   const blank = lfm({ FAKE_ANALYSE: 'blank' }, 'retro', '--foreground', '--json');
   assert.equal(blank.status, 1, blank.stderr);
@@ -1295,17 +1302,20 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.throws(() => process.kill(-pgid, 0), { code: 'ESRCH' }, 'the agent outlived the run');
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', h.id), [{ exit_status: 'interrupted' }]);
 
-  // A worker that is not set, or set to an agent that is not ready, stops the run with the fix: the run never picks one.
+  // A worker that is not set, or set to an agent that is not ready, stops the retro before any run, with the fix: the run
+  // never picks one and never goes on without it.
   const nobin = join(p, '..', 'nobin');
   mkdirSync(nobin);
   symlinkSync(process.execPath, join(nobin, 'node'));
   symlinkSync(join(bin, 'git'), join(nobin, 'git'));
-  symlinkSync(FAKE_AGENT, join(nobin, 'codex')); // a ready judge, so the run starts; claude is missing, the worker's problem
+  symlinkSync(FAKE_AGENT, join(nobin, 'codex')); // a ready judge; claude is missing, the worker's problem
   const fix = `ask the user which agent and model to use, then set agent and its agent_config model in ${global}; the run never picks one`;
+  const runs = query('SELECT count(*) AS n FROM runs')[0].n, set = readFileSync(global, 'utf8');
   const missing = lfm({ PATH: nobin }, 'retro', '--foreground', '--json');
   assert.equal(missing.status, 1, missing.stderr);
-  assert.match(JSON.parse(missing.stdout).run.error, new RegExp(`^analyse: worker: .+; ${fix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
-  const runs = query('SELECT count(*) AS n FROM runs')[0].n, set = readFileSync(global, 'utf8');
+  assert.match(missing.stderr, /^error: worker: .*claude.*$/m);
+  assert.ok(missing.stderr.includes(`next: install claude, or ${fix}`), missing.stderr);
+  assert.equal(query('SELECT count(*) AS n FROM runs')[0].n, runs);
   writeFileSync(global, set.replace(/^agent: .*\n/m, '')); // the worker not set: the retro asks before any run or agent call
   const unset = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(unset.status, 2, unset.stderr);
@@ -1373,7 +1383,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(query(`SELECT role, runner, model, exit_status FROM invocations WHERE run_id = ? AND step = 'verify'`, run.id), [{ role: 'judge', runner: 'codex', model: 'gpt-6-luna', exit_status: 'ok' }]);
   assert.deepEqual(query('SELECT verdict, judge_note FROM findings WHERE run_id = ?', run.id), [{ verdict: 'confirmed', judge_note: 'The cited items show this for Umer.' }]);
   assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => f.verdict), ['confirmed', 'refuted', 'weakened', ...Array(5).fill('confirmed')]);
-  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'weakened: p3', 'verdicts: 7 confirmed, 1 weakened, 1 refuted, 0 not judged']);
+  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'weakened: p3', 'verdicts: 7 confirmed, 1 weakened, 1 refuted']);
   // The worker got the causes with their counts, the kept finding and the propose method, then the bundle.
   const call = calls().at(-1);
   assert.ok(call.stdin.startsWith(`lfm-run:${run.id}:propose\nYou are the worker of a retro.`), call.stdin.slice(0, 200));
@@ -1854,20 +1864,37 @@ test('retro and rerun stop before a run when the judge resolves to the worker\'s
   assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a run started');
 });
 
-test('a fix the judge leaves out is not judged: it ranks after the confirmed fixes and status reads not judged', () => {
+test('a judge that leaves a claim without a verdict, or fails, fails the run: it keeps no verdict, label, finding, fix or report; a resume runs from followup', () => {
   const { p, lfm, query, lines } = agentSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_REFUTE: 'p2', FAKE_UNJUDGED: 'p1' }, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const { run } = JSON.parse(r.stdout);
-  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'judge answer 1 is not valid: verdicts has no verdict for p1', 'judge codex gpt-6-luna: answered',
-    'refuted: p2', 'verdicts: 7 confirmed, 0 weakened, 1 refuted, 1 not judged']);
-  assert.deepEqual(query('SELECT target, n, verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n', run.id), [
-    { target: 'launch script 6', n: 1, verdict: 'confirmed' }, { target: 'launch script 3', n: 2, verdict: 'confirmed' }, { target: 'launch script 4', n: 3, verdict: 'confirmed' },
-    { target: 'launch script 5', n: 4, verdict: 'confirmed' }, { target: 'launch script 1', n: 5, verdict: null }]);
-  const { fixes } = JSON.parse(lfm({}, 'status', '--json', '--run', String(run.id)).stdout);
-  assert.deepEqual(fixes.map((f) => [f.n, f.verdict]), [[1, 'confirmed'], [2, 'confirmed'], [3, 'confirmed'], [4, 'confirmed'], [5, 'not judged']]);
+  const agents = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' };
+  const why = "the judge's answer is not valid after one retry: verdicts has no verdict for p1";
+  const left = lfm({ ...agents, FAKE_UNJUDGED: 'p1' }, 'retro', '--foreground', '--json');
+  assert.equal(left.status, 1, left.stderr);
+  const l = JSON.parse(left.stdout);
+  assert.equal(l.run.error, `verify: ${why}`);
+  assert.deepEqual(lines('verify', l.run.id), ['judge codex gpt-6-luna: answered', 'judge answer 1 is not valid: verdicts has no verdict for p1', 'judge codex gpt-6-luna: answered',
+    'judge answer 2 is not valid: verdicts has no verdict for p1', `error: ${why}`]);
+  assert.equal(nothingJudged(query, l.run.id), true);
+  assert.deepEqual([l.followups, l.fixes, l.result, existsSync(join(p, '.lfm', 'runs', String(l.run.id), 'report.txt'))], [undefined, undefined, undefined, false]);
+  assert.match(left.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${l.run.id}   # finish it after fixing the verify step`, 'm'));
+  // A judge whose call fails: the same, with the agent's own error as the cause.
+  const crashed = lfm({ ...agents, FAKE_JUDGE: 'fail' }, 'retro', '--foreground', '--json');
+  assert.equal(crashed.status, 1, crashed.stderr);
+  const c = JSON.parse(crashed.stdout);
+  assert.match(c.run.error, /^verify: .*the judge crashed for Umer/);
+  assert.equal(nothingJudged(query, c.run.id), true);
+  const report = lfm({}, 'report'); // no run completed, so there is no report to show
+  assert.equal(report.status, 3, report.stderr);
+  assert.match(report.stderr, /^error: no completed runs in /m);
+  // With the judge working again, the resume runs from the followup step and every kept fix carries a verdict.
+  const resumed = lfm(agents, 'rerun', '--resume', '--run', String(c.run.id), '--wait', '1m', '--json');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const r = JSON.parse(resumed.stdout);
+  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', ...Array(10).fill('completed')]);
+  assert.deepEqual(r.fixes.map((f) => f.verdict), Array(5).fill('confirmed'));
+  assert.equal(query('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND verdict IS NULL', c.run.id)[0].n, 0);
 });
 
 test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept; check counts nothing for a refuted finding', () => {

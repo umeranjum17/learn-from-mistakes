@@ -2,8 +2,8 @@
 // of the analyse step and each fix of the propose step. The worker's claims are not evidence: the judge checks each claim
 // against the bundle items it cites and answers confirmed, weakened or refuted, with a reason (`verdict` and `judge_note`
 // in the findings and proposals tables). The answer's shape and its reasons (STE100) are checked and a bad answer is sent
-// back once; on the second answer only the verdicts that break a rule are dropped (logged), and a claim with no verdict
-// stays unjudged (NULL). The step logs ids and verdicts only, never the judge's text. With no claim it asks no agent.
+// back once; a second one fails the step, so no finding or fix goes on without the judge's verdict. The step logs ids
+// and verdicts only, never the judge's text. With no claim it asks no agent.
 import { readFileSync } from 'node:fs';
 import { plain } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
@@ -35,10 +35,9 @@ function sift(v, claims) {
   return { verdicts, bad };
 }
 
-// The first answer must judge every claim by the rules; on the second only a verdicts value that is not a list fails the step.
-function check(v, claims, attempt) {
+// Each answer must judge every claim by the rules.
+function check(v, claims) {
   if (!Array.isArray(v.verdicts)) return ['verdicts must be a list'];
-  if (attempt > 1) return [];
   const { verdicts, bad } = sift(v, claims);
   for (const k of claims.keys()) if (!verdicts.some((x) => x.item === k)) bad.push(`verdicts has no verdict for ${k}`);
   return bad;
@@ -55,15 +54,14 @@ export async function verify(cfg, db, id, dir, log) {
       .map((f, i) => [`p${i + 1}`, { table: 'proposals', id: f.id, text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
         + `Metric: ${f.metric?.trim() || `cause_count:${f.cause}`}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]),
   ]);
-  const none = { asked: false, confirmed: 0, weakened: 0, refuted: 0, unjudged: 0 };
+  const none = { asked: false, confirmed: 0, weakened: 0, refuted: 0 };
   if (!claims.size) {
     log('nothing to verify: no finding and no fix');
     return none;
   }
   const items = [...claims].map(([k, c]) => `- ${k}: ${c.text}`).join('\n');
-  const answer = await agentStep(cfg, db, id, dir, { step: 'verify', role: 'judge', prompt: PROMPT.replace('{{items}}', () => items), check: (x, attempt) => check(x, claims, attempt), log });
-  const { verdicts, bad } = sift(answer, claims);
-  if (bad.length) log(`dropped: ${bad.join('; ')}`);
+  const answer = await agentStep(cfg, db, id, dir, { step: 'verify', role: 'judge', prompt: PROMPT.replace('{{items}}', () => items), check: (x) => check(x, claims), log });
+  const { verdicts } = sift(answer, claims);
   db.exec('BEGIN');
   try {
     for (const v of verdicts) {
@@ -75,11 +73,11 @@ export async function verify(cfg, db, id, dir, log) {
     db.exec('ROLLBACK');
     throw e;
   }
-  const out = { ...none, asked: true, unjudged: claims.size - verdicts.length };
+  const out = { ...none, asked: true };
   for (const v of verdicts) {
     out[v.verdict]++;
     if (v.verdict !== 'confirmed') log(`${v.verdict}: ${v.item}`);
   }
-  log(`verdicts: ${out.confirmed} confirmed, ${out.weakened} weakened, ${out.refuted} refuted, ${out.unjudged} not judged`);
+  log(`verdicts: ${out.confirmed} confirmed, ${out.weakened} weakened, ${out.refuted} refuted`);
   return out;
 }
