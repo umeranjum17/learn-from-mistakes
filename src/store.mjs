@@ -52,7 +52,7 @@ const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), n INTEGER, cause TEXT NOT NULL,
     target TEXT NOT NULL, owner TEXT NOT NULL, change TEXT NOT NULL, metric TEXT, tripwire TEXT, refs_json TEXT NOT NULL, problem TEXT);
     ALTER TABLE followups ADD COLUMN reason TEXT`,
-  // The verify step's judge verdict on each fix (confirmed, weakened or refuted; NULL when not judged) and its reason.
+  // The verify step's judge verdict on each fix (confirmed, weakened or refuted) and its reason.
   'ALTER TABLE proposals ADD COLUMN verdict TEXT; ALTER TABLE proposals ADD COLUMN judge_note TEXT',
   `ALTER TABLE proposals ADD COLUMN kind TEXT;
     CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
@@ -62,6 +62,10 @@ const MIGRATIONS = [
   // A session event whose test_fail only the tool output's own test-runner summary line showed: the error flag and the
   // exit code had stayed green (`npm test | tail` exits 0), so the output is the proof. See src/sessions/claude.mjs.
   'ALTER TABLE events ADD COLUMN from_output INTEGER NOT NULL DEFAULT 0',
+  // When a run last discarded: a failed or cancelled attempt keeps no verdict, and the cap counts the attempt's agent
+  // calls only, so a resume is never refused for the calls a discarded attempt made. The rows stay: a source that reads
+  // sessions skips the ones the run's own agents held.
+  'ALTER TABLE runs ADD COLUMN discarded_at TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

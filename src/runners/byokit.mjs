@@ -1,5 +1,5 @@
-// BYOKit: a plain model call in this process, with no agent CLI and no tools. The optional packages load only for this
-// runner. Two kinds of plan route:
+// BYOKit: a plain model call in this process, with no agent CLI and no tools. Its packages are dependencies of the tool
+// and load only for this runner. Two kinds of plan route:
 // - a sign-in plan (chatgpt, claude): the person's sign-in, read from the machine's BYOKit store (the one every BYOKit
 //   app shares under the seal service "byokit");
 // - a plan key route in BYOKit's route list, such as opencode-go: the key comes from the variable BYOKit's route names
@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 
 export const tools = 'none';
-export const INSTALL = 'npm install -g learn-from-mistakes-axi   # with its optional dependencies (not --omit=optional): the BYOKit packages install beside it';
+export const INSTALL = 'npm install -g learn-from-mistakes-axi   # reinstall: the BYOKit packages are its dependencies';
 // The two sign-in plans BYOKit's respond() answers in one plain call (BYOKit's API); every other route comes from routes().
 export const ROUTES = ['chatgpt', 'claude'];
 const MEMBER = 'lfm';
@@ -17,7 +17,7 @@ const NODE = '22.18';
 export const routeOf = (runner) => runner.match(/^byokit:(.+)/)?.[1];
 
 // The routes a person can name: the sign-in plans, then each ready plan key route by its aliases, or by the full id
-// BYOKit itself prints when it ships no alias. Never throws: with BYOKit not installed nothing is known, so no route is offered.
+// BYOKit itself prints when it ships no alias. Never throws: when BYOKit cannot load nothing is known, so no route is offered.
 export async function readyRoutes() {
   try {
     const keys = (await import('@byokit/accounts')).routes().filter((r) => r.via === 'plan_key' && r.readiness === 'ready').flatMap((r) => (r.aliases?.length ? r.aliases : [r.id]));
@@ -57,7 +57,7 @@ export async function signIn(route) {
 export function problem() {
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major < 22 || (major === 22 && minor < 18)) return { problem: `BYOKit needs Node ${NODE} or later; this is ${process.version}`, fix: `install Node ${NODE} or later` };
-  try { for (const p of ['@byokit/accounts', '@byokit/secrets', '@earendil-works/pi-ai']) import.meta.resolve(p); } catch { return { problem: 'BYOKit is not installed', fix: INSTALL }; }
+  try { for (const p of ['@byokit/accounts', '@byokit/secrets', '@earendil-works/pi-ai']) import.meta.resolve(p); } catch { return { problem: 'the BYOKit packages are missing from this install', fix: INSTALL }; }
 }
 
 // problem(), then a route that is not a BYOKit plan route.

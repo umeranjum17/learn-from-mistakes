@@ -145,7 +145,7 @@ try {
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'umer-judge-model' }, claude: { model: 'umer-worker-model', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
-    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on', allow_premium: false });
+    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on' });
   // In-window canary records, one sentence per source type this journey configures, so the excerpts: off check
   // has in-window records to hide: the run must count them, and none of their text may reach the bundle, the
   // report or the drive's own output. Seeded only for this run - later journeys read the same staged sources.
@@ -171,10 +171,10 @@ try {
   try { unseed.exec("DELETE FROM step_results WHERE id = 'canary-step'; DELETE FROM runs WHERE id = 'canary-run'"); } finally { unseed.close(); }
   writeFileSync(stagedConfig, stringify({ ...config, agent: 3 }));
   run('config-bad-agent', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
-  // A judge on the worker's agent and model stops retro before the run starts.
+  // A judge on the worker's agent and model is the user's choice: the retro runs, and the judge still answers.
   writeFileSync(stagedConfig, stringify({ ...config, judge_agent: 'claude' }));
-  run('retro-judge-clash', process.execPath, [cli, 'retro', '--foreground', '--dir', staged], 2, lab);
-  assert.match(readFileSync(join(evidence, 'retro-judge-clash.stderr'), 'utf8'), /^error: judge: agent_config holds one model per agent[^\n]*\nnext: ask the user which agent and model to use, then set judge_agent/m, 'retro started with the judge on the worker\'s identity');
+  run('retro-judge-same-agent', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, lab);
+  assert.equal(JSON.parse(readFileSync(join(evidence, 'retro-judge-same-agent.stdout'), 'utf8')).run.status, 'completed', 'a judge on the worker\'s agent did not complete the retro');
   Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'umer-judge-model' } } }); // the drives below call the judge
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
@@ -267,7 +267,7 @@ try {
     assert.match(reportTxt, /^6\. Roll back change chg-2\? Answer yes or no\.$/m, 'report.txt does not ask to roll back chg-2');
     assert.ok(!reportTxt.includes(staged), 'report.txt shows a path outside its evidence lines');
     drive('logs-verify', 'logs', '--step', 'verify');
-    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted, 0 not judged/, 'logs do not show the judge\'s verdicts');
+    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted/, 'logs do not show the judge\'s verdicts');
     drive('logs-check', 'logs', '--step', 'check');
     assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[1\]: the judge refuted it[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
     run('signoff-fallback', process.execPath, [cli, 'signoff', 'post', '--run', String(proposed.run.id), '--dir', staged], 0, { PATH: agentBin });
@@ -333,9 +333,10 @@ try {
   rmSync(join(fresh, 'docs', 'defects.md'));
   run('doctor-missing-log', process.execPath, [cli, 'doctor', '--dir', fresh], 1, { PATH: fakes });
   assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: check sources\.log\.path in \S+\.learn-from-mistakes\.yaml, or create it: touch \S+\/docs\/defects\.md\n/m, 'doctor names no fix for the missing log');
-  run('init-pinned-clash', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
   run('init-one-agent-two-models', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
-  assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /both claude, and agent_config holds one model per agent.*\nnext: learn-from-mistakes-axi init --agent claude --model umer-a --judge-agent <another agent> --judge-model <model> /, 'the clash does not state the one-model rule');
+  assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /^error: --model umer-a and --judge-model umer-b both set the model of claude, and agent_config holds one model per agent\nnext: learn-from-mistakes-axi init --agent claude --model <model> --judge-agent claude /m, 'two models for one agent do not state the one-model rule');
+  run('init-one-agent-both-roles', process.execPath, [cli, 'init', '--no-skill', '--json', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 0, { PATH: fakes });
+  assert.deepEqual(parse(readFileSync(join(fresh, 'docs', '.learn-from-mistakes.yaml'), 'utf8')).agent_config, { claude: { model: 'umer-a' } }, 'one agent in both roles did not save its one model');
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });

@@ -1,6 +1,6 @@
 {
   "name": "learn-from-mistakes-axi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AXI CLI that finds the causes your coding agents keep repeating in defect logs and failed pipeline runs, with the evidence for each and evidence-backed change recommendations.",
   "license": "MIT",
   "keywords": ["axi", "agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
@@ -12,8 +12,7 @@
   "files": ["bin", "src", "skills"],
   "engines": { "node": ">=22.13" },
   "scripts": { "pretest": "npm ci", "test": "npm run build:skill -- --check && node --test", "build:skill": "node scripts/build-skill.mjs" },
-  "dependencies": { "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" },
-  "optionalDependencies": { "@byokit/accounts": "^0.22.0", "@byokit/secrets": "^0.5.1", "@earendil-works/pi-ai": "0.87.1" },
+  "dependencies": { "@byokit/accounts": "^0.22.0", "@byokit/secrets": "^0.5.1", "@earendil-works/pi-ai": "0.87.1", "@toon-format/toon": "^4.4.0", "yaml": "^2.9.1" },
   "peerDependencies": { "sign-off-axi": ">=0.3.4" },
   "peerDependenciesMeta": { "sign-off-axi": { "optional": true } }
 }

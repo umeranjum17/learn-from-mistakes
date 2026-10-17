@@ -127,7 +127,17 @@ function stop(db, id, status, why) {
   }
   db.prepare('UPDATE invocations SET completed_at = ?, exit_status = ? WHERE run_id = ? AND completed_at IS NULL').run(now, status, id);
   db.prepare(`UPDATE steps SET status = ?, completed_at = ? WHERE run_id = ? AND status = 'running'`).run(status, now, id);
-  db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(status, `${step}: ${why}`, now, id);
+  if (db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(status, `${step}: ${why}`, now, id).changes) discard(db, id);
+}
+
+// A run that does not complete keeps no verdict, label, finding or fix: what its followup step and its agents wrote is
+// removed, and those steps are pending again, so a resume runs them from the followup step.
+function discard(db, id) {
+  db.prepare('UPDATE runs SET discarded_at = ? WHERE id = ?').run(iso(Date.now()), id);
+  db.prepare('DELETE FROM signoff WHERE proposal_id IN (SELECT id FROM proposals WHERE run_id = ?)').run(id);
+  for (const t of ['labels', 'findings', 'proposals', 'followups']) db.prepare(`DELETE FROM ${t} WHERE run_id = ?`).run(id);
+  db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, output_json = NULL
+    WHERE run_id = ? AND status = 'completed' AND ord >= (SELECT ord FROM steps WHERE run_id = ? AND name = 'followup')`).run(id, id);
 }
 
 // Sends a signal to a process group; false when the group is gone.
@@ -270,7 +280,10 @@ async function work(cfg, db, id) {
       break;
     }
   }
-  db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(failed ? 'failed' : 'completed', error, iso(Date.now()), id);
+  locked(db, () => {
+    const ended = db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(failed ? 'failed' : 'completed', error, iso(Date.now()), id).changes;
+    if (failed && ended) discard(db, id);
+  });
   if (failed && !(failed instanceof UsageError)) throw failed; // a bug, not a run outcome: keep its stack
 }
 
@@ -379,8 +392,8 @@ export async function runs(cfg) {
 }
 
 // The run, its steps, what each source read once collect is done, the numbers once metrics is done, each
-// applied change's verdict once followup is done, the kept fixes once check is done, each with the judge's verdict (a fix the judge left
-// out reads not judged), and once report is done the result:
+// applied change's verdict once followup is done, the kept fixes once check is done, each with the judge's verdict, and once
+// report is done the result:
 // the causes its labels counted and the worker's findings, each with its counts and verdict. Agent text and hashes stay out:
 // the finding summaries are in report.txt.
 function show(db, id) {

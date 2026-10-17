@@ -172,16 +172,15 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
 });
 
 // A terminal (stdin and stdout are TTYs, here a pseudo-terminal from util-linux script) is asked: a pick list of the
-// supported agents, then the model; a judge on the worker's agent is asked again. The answer is saved.
+// supported agents, then the model. The answer is saved.
 test('in a terminal, init asks for each agent and model and saves the answer', () => {
   const { tmp, p, env, config, lfm } = setup(['claude', 'opencode']);
-  // the worker and judge are picked by number; the judge is claude first, refused as the worker's agent; its first model is a bare id, refused and asked again, then typed
-  const answers = ['1', '1', MODELS.claude, '1', '3', 'muse-spark-1.3-contributor', MODELS.opencode].join('\n') + '\n';
+  // the worker and judge are picked by number; the judge's first model is a bare id, refused and asked again, then typed
+  const answers = ['1', '1', MODELS.claude, '3', 'muse-spark-1.3-contributor', MODELS.opencode].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /Which agent runs the worker\?\r?\n {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode/);
-  assert.match(r.stdout, /the judge must be another agent than the worker \(claude\)/);
   assert.match(r.stdout, /muse-spark-1\.3-contributor is not a model id \(letters/);
   assert.match(r.stdout, /saved: agent and judge_agent in /);
   assert.ok(r.stdout.indexOf('status: written') < r.stdout.indexOf('Which agent runs the worker'), 'the written report comes before the ask');
@@ -214,8 +213,8 @@ test('in a terminal, the pick lists BYOKit routes and the model question lists t
   assert.equal(yaml.agent_config['byokit:opencode-go'].model, models[0]); // picked by number, never chosen by the tool
 });
 
-// With BYOKit not installed the pick still offers the agent CLIs, says how to add a route, and never fails.
-test('in a terminal without BYOKit, the pick offers the agent CLIs and says how to add a route', () => {
+// With the BYOKit packages missing from the install the pick still offers the agent CLIs, says how to repair it, and never fails.
+test('in a terminal where BYOKit cannot load, the pick offers the agent CLIs and says how to repair the install', () => {
   const { tmp, p, env, config } = setup(['claude', 'codex']);
   const loader = new URL('./byokit-missing-loader.mjs', import.meta.url).pathname;
   const answers = ['1', '1', MODELS.claude, '2', MODELS.codex].join('\n') + '\n';
@@ -224,9 +223,37 @@ test('in a terminal without BYOKit, the pick offers the agent CLIs and says how 
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, / {2}1\) claude\r?\n {2}2\) codex\r?\n {2}3\) opencode\r?\n {2}4\) pi\r?\n/);
   assert.doesNotMatch(r.stdout, /\) byokit:/);
-  assert.match(r.stdout, /\(no BYOKit route is ready: npm install -g learn-from-mistakes-axi/);
+  assert.match(r.stdout, /\(BYOKit cannot load: npm install -g learn-from-mistakes-axi   # reinstall: the BYOKit packages are its dependencies\)/);
   const yaml = parse(readFileSync(config, 'utf8'));
   assert.deepEqual([yaml.agent, yaml.judge_agent], ['claude', 'codex']);
+});
+
+// A saved model that replaces the one the agent's other role ran is never refused: one plain note names the agent and
+// the old and new model, on the flag path and in the terminal pick alike.
+test('init states a saved model that replaces the model the other role ran', () => {
+  const a = setup(['claude', 'opencode'], CHOSEN('claude', 'opencode'));
+  const first = a.lfm('init', '-y', '--no-skill'); // the global file holds the roles; the project file sets no agent keys
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(parse(readFileSync(a.config, 'utf8')).agent, undefined);
+  const r = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'claude-sonnet-6', '--no-skill');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^note: worker on claude now uses claude-sonnet-6 \(was claude-haiku-5-5\): one model per agent$/m);
+  const yaml = parse(readFileSync(a.config, 'utf8'));
+  assert.deepEqual([yaml.judge_agent, yaml.agent_config], ['claude', { claude: { model: 'claude-sonnet-6' } }]);
+  const again = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'gpt-6-luna', '--reconfigure', '--no-skill', '--json');
+  assert.equal(again.status, 0, again.stderr);
+  assert.deepEqual(JSON.parse(again.stdout).notes, ['worker on claude now uses gpt-6-luna (was claude-sonnet-6): one model per agent']);
+
+  // The terminal pick: the judge picks the worker's already-configured agent, and its model replaces the worker's.
+  const b = setup(['claude', 'opencode'], `agent: claude\nagent_config: { claude: { model: ${JSON.stringify(MODELS.claude)} } }\n`);
+  const seeded = b.lfm('init', '-y', '--no-skill');
+  assert.equal(seeded.status, 0, seeded.stderr);
+  const answers = ['', '1', 'claude-sonnet-6'].join('\n') + '\n'; // sessions: none; judge: claude; its new model
+  const picked = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${b.p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...b.env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: b.tmp, timeout: 30000 });
+  assert.equal(picked.status, 0, picked.stdout);
+  assert.match(picked.stdout, /note: worker on claude now uses claude-sonnet-6 \(was claude-haiku-5-5\): one model per agent/);
+  assert.deepEqual(parse(readFileSync(b.config, 'utf8')).agent_config, { claude: { model: 'claude-sonnet-6' } });
 });
 
 // The sessions question is asked once: an empty answer (none) is carried into the rerun that saves the roles, so the
@@ -297,15 +324,14 @@ test('in a terminal, a worker agent set globally is asked only its model, and th
   assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], [undefined, 'opencode', { claude: { model: MODELS.claude }, opencode: { model: MODELS.opencode } }]);
 });
 
-// A worker and judge already set to one agent with no model: the clash is refused before any model is asked, and nothing is saved.
-test('in a terminal, a worker and judge set to one agent are refused before any model is asked', () => {
+// A worker and judge already set to one agent with no model: the model is asked once, and both roles run it.
+test('in a terminal, a worker and judge set to one agent are asked its model once', () => {
   const { tmp, p, env, config, global } = setup(['claude'], 'agent: claude\njudge_agent: claude\n');
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
-    { encoding: 'utf8', input: '', env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
-  assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, /judge_agent and agent are both claude: agent_config holds one model per agent/);
-  assert.doesNotMatch(r.stdout, /model for claude/);
-  assert.equal(parse(readFileSync(config, 'utf8')).agent_config, undefined);
+    { encoding: 'utf8', input: `${MODELS.claude}\n`, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(r.stdout.match(/model for claude: /g)?.length, 1);
+  assert.deepEqual(parse(readFileSync(config, 'utf8')).agent_config, { claude: { model: MODELS.claude } });
   assert.equal(readFileSync(global, 'utf8'), 'agent: claude\njudge_agent: claude\n');
 });
 
@@ -348,39 +374,25 @@ test('init --model keeps the model the project file sets for that agent, and lis
   assert.deepEqual(parse(readFileSync(config, 'utf8')).agent_config, { claude: { model: 'umer-cheap-1' } });
 });
 
-// The worker is checked against a judge that is already set, so a terminal pick never makes both roles one agent.
-test('in a terminal, a worker pick equal to the set judge is refused and asked again', () => {
+// A worker pick equal to the set judge is the user's choice: it is saved, and the judge shares its model.
+test('in a terminal, a worker pick equal to the set judge is saved, and the judge shares its model', () => {
   const { tmp, p, env, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
-  const answers = ['1', '2', MODELS.codex, MODELS.claude].join('\n') + '\n'; // claude refused as the worker; codex, its model, then claude's model
+  const answers = ['1', MODELS.claude].join('\n') + '\n';
   const r = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --sessions claude --dir ${p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: tmp, timeout: 30000 });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /the worker must be another agent than the judge \(claude\)/);
+  assert.equal(r.stdout.match(/model for claude: /g)?.length, 1);
   const yaml = parse(readFileSync(config, 'utf8'));
-  assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['codex', undefined, { codex: { model: MODELS.codex }, claude: { model: MODELS.claude } }]);
+  assert.deepEqual([yaml.agent, yaml.judge_agent, yaml.agent_config], ['claude', undefined, { claude: { model: MODELS.claude } }]);
 });
 
-test('init refuses a worker chosen as the set judge\'s agent and model, and writes nothing', () => {
-  const { p, lfm, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
-  const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude);
-  assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, /^error: judge: the worker and the judge are both claude, and agent_config holds one model per agent, so the judge would judge its own work$/m);
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model ${MODELS.claude} --judge-agent <another agent> --judge-model <model> --dir ${p}   # ask the user which other agent runs the judge`);
-  assert.equal(existsSync(config), false);
-});
-
-test('a premium model fix names the file that sets the model, not the file that sets another key of its agent', () => {
-  const { lfm, config, global } = setup(['pi', 'claude'], 'agent_config: { pi: { model: claude-opus-5-5 } }\n');
-  writeFileSync(config, `agent: pi\njudge_agent: claude\nagent_config: { pi: { effort: low }, claude: { model: ${MODELS.claude} } }\n`);
-  const fix = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model').fix;
-  assert.equal(fix, `ask the user which agent and model to use, then set agent in ${config} and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${config}`);
-});
-
-test('a premium model in the global file with the agent set in the project names each key in its own file', () => {
-  const { lfm, config, global } = setup(['claude', 'pi'], 'agent_config: { claude: { model: claude-opus-5-5 } }\n');
-  writeFileSync(config, 'agent: claude\njudge_agent: pi\nagent_config: { pi: { model: umer-pi-1 } }\n');
-  const fix = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model').fix;
-  assert.equal(fix, `ask the user which agent and model to use, then set agent in ${config} and its agent_config model in ${global}; the run never picks one, or set allow_premium: true in ${config}`);
+test('init saves a worker chosen as the set judge\'s agent and model', () => {
+  const { lfm, config } = setup(['claude', 'codex'], 'judge_agent: claude\n');
+  const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude, '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).gaps.filter((g) => /^(worker|judge):/.test(g)), []);
+  const yaml = parse(readFileSync(config, 'utf8'));
+  assert.deepEqual([yaml.agent, yaml.agent_config.claude.model], ['claude', MODELS.claude]);
 });
 
 test('agents lists a configured acp target with the model set for that target', () => {
@@ -390,16 +402,16 @@ test('agents lists a configured acp target with the model set for that target', 
   assert.equal(row.model, 'umer-acp-1');
 });
 
-test('a judge on the worker\'s agent and model is reported by init and fails agents, never a silent fallback', () => {
+test('a judge on the worker\'s agent and model is no gap in init, and agents passes', () => {
   const { lfm, config } = setup(['claude']);
   writeFileSync(config, `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
   const r = lfm('init', '--json');
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).gaps[0], 'judge: agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work');
-  assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${config}; the run never picks one`);
-  const agents = lfm('agents'); // the clash fails every later check of the config
-  assert.equal(agents.status, 1);
-  assert.match(agents.stderr, /^problem: judge: agent_config holds one model per agent/m);
+  assert.deepEqual(JSON.parse(r.stdout).gaps.filter((g) => /^(worker|judge):/.test(g)), []);
+  const agents = lfm('agents', '--json');
+  assert.equal(agents.status, 0, agents.stderr);
+  const { judge } = JSON.parse(agents.stdout);
+  assert.deepEqual([judge.runner, judge.problem || ''], ['claude', '']);
 });
 
 test('an empty or relative PATH entry never runs an agent CLI from the project dir', () => {
@@ -434,10 +446,10 @@ test('an unusable judge is not named as seeing excerpts', () => {
   assert.match(r.stdout, /^excerpts on: the worker \(claude\) and the judge \(codex, not usable\) see redacted record excerpts/m);
 });
 
-test('init refuses a judge on the worker\'s identity, an unknown or unusable agent and a bad model, and writes nothing', () => {
+test('init refuses two models for one agent, an unknown or unusable agent and a bad model, and writes nothing', () => {
   const { p, lfm, config, env } = setup(['claude', 'opencode', 'gemini']);
-  for (const [args, code, error] of [ // one agent in both roles, even with two models: agent_config holds one model per agent
-    [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, 'error: judge: the worker and the judge are both claude, and agent_config holds one model per agent, so the judge would judge its own work'],
+  for (const [args, code, error] of [ // one agent in both roles with two models: agent_config holds one model per agent
+    [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, `error: --model ${MODELS.claude} and --judge-model claude-umer-2 both set the model of claude, and agent_config holds one model per agent`],
     [['--agent', 'umer'], 2, 'error: --agent "umer" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'],
     [['--model', MODELS.claude], 2, 'error: --model needs --agent'],
     [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'],
@@ -450,7 +462,7 @@ test('init refuses a judge on the worker\'s identity, an unknown or unusable age
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
-    if (args[5] === 'claude') assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model ${MODELS.claude} --judge-agent <another agent> --judge-model <model> --dir ${p}   # ask the user which other agent runs the judge`);
+    if (args[5] === 'claude') assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model <model> --judge-agent claude --dir ${p}   # ask the user which one model claude runs, or another agent for the judge`);
   }
   writeFileSync(config, `agent: claude\njudge_agent: opencode\nsources: {}\ncauses: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`); // a set key is never rewritten: the flags that would change it are reported
   const pinned = lfm('init', '--agent', 'opencode', '--judge-agent', 'claude', '--json');
@@ -477,9 +489,10 @@ test('init finds the no-mistakes repo of a git worktree of the project, as the s
   assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
 });
 
-// doctor after init: every check ok or warn, exit 0; then a missing defect log, a judge on the worker's identity and
-// a premium model are 3 fail lines, each with its fix, exit 1; after the fixes, exit 0 again. Login checks run the
-// agent's own status command (pi's never refreshes a token) and print no credential text.
+// doctor after init: every check ok or warn, exit 0; then a missing defect log is one fail line with its fix, exit
+// 1, and after the fix exit 0 again. A judge on the worker's agent and a premium model name are the user's choice:
+// no fail line. Login checks run the agent's own status command (pi's never refreshes a token) and print no
+// credential text.
 test('doctor names each fail with its fix and exits 1 until the fixes are made', () => {
   const { p, lfm, config, env, global } = setup(['claude', 'opencode', 'pi', 'gemini'], CHOSEN('claude', 'opencode'));
   const fake = (name, body) => { writeFileSync(join(env.PATH, name), `#!/bin/sh\n${body}\necho "1.0.0"\n`); chmodSync(join(env.PATH, name), 0o755); };
@@ -514,16 +527,14 @@ test('doctor names each fail with its fix and exits 1 until the fixes are made',
   const bad = doctor();
   assert.equal(bad.status, 1);
   const fails = bad.out.checks.filter((c) => c.level === 'fail');
-  assert.deepEqual(fails.map((c) => c.label), ['source log', 'worker model', 'judge']);
-  assert.ok(fails.every((c) => c.fix), 'a fail with no fix');
+  // pi in both roles with a premium name is the user's choice: only the missing source fails.
+  assert.deepEqual(fails.map((c) => c.label), ['source log']);
   assert.ok(fails[0].fix.startsWith(`check sources.log.path in ${config}, or create it: touch `), fails[0].fix);
-  // each fix names the file the key came from: agent_config.pi from the project file, allow_premium unset so the project file
-  assert.equal(fails[1].fix, `ask the user which agent and model to use, then set agent and its agent_config model in ${config}; the run never picks one, or set allow_premium: true in ${config}`);
+  assert.deepEqual(['worker model', 'judge model'].map((l) => bad.out.checks.find((c) => c.label === l)?.detail), ['claude-opus-5-5', 'claude-opus-5-5']);
   assert.equal(readFileSync(join(p, '..', 'pi-argv'), 'utf8'), 'auth check --no-refresh --model claude-opus-5-5\n');
   const text = lfm('doctor');
   assert.equal(text.status, 1);
-  assert.match(text.stdout, /^fail judge +agent_config holds one model per agent, so a judge on the worker's agent gets the worker's model and would judge its own work\n {5}fix: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
-  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the 3 fixes above/m);
+  assert.match(text.stderr, /^next: learn-from-mistakes-axi doctor   # again after the fix above/m);
 
   writeFileSync(join(p, 'docs', 'defects.md'), '- 2026-10-12 umer: a synthetic defect\n');
   writeFileSync(config, `${yaml}agent: pi\nagent_config: { pi: { model: umer-cheap-1 } }\n`);
@@ -661,14 +672,13 @@ test('doctor asks for the model of a BYOKit worker that has none, and makes no c
   assert.match(r.stderr, /^error: ask the user which agent to use: agent_config\.byokit:zai-coding-cn\.model is not set in /m);
 });
 
-// Two BYOKit roles on one route read one agent_config entry, so they call the same model: the judge would judge its own work.
-test('doctor fails a judge that resolves to the worker\'s BYOKit route and model', () => {
+// Two BYOKit roles on one route read one agent_config entry, so they call the same model: the user's choice, never a fail.
+test('doctor accepts a judge on the worker\'s BYOKit route and model', () => {
   const { lfm, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   keys('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\nagent_config: { "byokit:chatgpt": { model: gpt-6-luna } }\n');
-  const clash = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'judge');
-  assert.equal(clash.level, 'fail');
-  assert.equal(clash.detail, 'agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work');
+  const judge = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'judge');
+  assert.equal(judge.level, 'ok');
 });
 
 // A pi whose auth check exits non-zero: the login file decides. A present auth.json is a warn with the exit code; an
@@ -703,7 +713,7 @@ test('init saves into a project config whose agent_config is null, and the resul
   assert.equal(lfm('init', '-y', '--no-skill').status, 0, 'the saved config loads');
 });
 
-// The judge's model is not set, so there is no identity to clash on: init reports the judge model as unset.
+// The judge's model is not set: init reports the judge model as unset and asks for it instead of refusing.
 test('init does not refuse a judge with no model as a clash, and asks for its model', () => {
   const { lfm } = setup(['claude', 'codex'], 'judge_agent: codex\n');
   const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude);

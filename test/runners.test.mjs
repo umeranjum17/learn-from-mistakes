@@ -132,31 +132,16 @@ test('agents lists only the configured agents with version, login presence and m
   assert.equal(none.stdout, '');
 });
 
-test('a BYOKit sign-in route is its vendor agent: the same model clashes, another model is allowed', () => {
+test('the judge may be the worker\'s agent and model, or that vendor\'s BYOKit sign-in route: both resolve', () => {
   const { lfm, config } = setup();
-  config(`agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: ${MODELS.claude} } }\n`);
-  const clash = lfm({}, 'agents', '--json');
-  assert.equal(clash.status, 1, clash.stderr);
-  assert.match(JSON.parse(clash.stdout).judge.problem, /would judge its own work/);
-  config(`agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: claude-umer-2 } }\n`);
-  const other = lfm({}, 'agents', '--json');
-  assert.equal(other.status, 0, other.stderr);
-  assert.equal(JSON.parse(other.stdout).judge.runner, 'byokit:claude');
-});
-
-test('the judge never resolves to the worker: a clash exits 1 with the fix', () => {
-  const { lfm, config, p } = setup();
-  config('agent: claude\njudge_agent: claude\n');
-  const r = lfm({}, 'agents', '--json');
-  assert.equal(r.status, 1, r.stderr);
-  assert.match(JSON.parse(r.stdout).judge.problem, /would judge its own work/);
-  assert.match(r.stderr, /^problem: judge: agent_config holds one model per agent/m);
-  const project = join(p, '.learn-from-mistakes.yaml').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  assert.match(r.stderr, new RegExp(`^next: ask the user which agent and model to use, then set judge_agent in ${project} and its agent_config model in \\S+config\\.yaml; the run never picks one$`, 'm'));
-  config('agent: claude\njudge_agent: codex\n'); // another agent as the judge resolves
-  const two = lfm({}, 'agents', '--json');
-  assert.equal(two.status, 0, two.stderr);
-  assert.equal(JSON.parse(two.stdout).judge.runner, 'codex');
+  for (const yaml of ['agent: claude\njudge_agent: claude\n',
+    `agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: ${MODELS.claude} } }\n`]) {
+    config(yaml);
+    const r = lfm({}, 'agents', '--json');
+    assert.equal(r.status, 0, r.stderr);
+    const { worker, judge } = JSON.parse(r.stdout);
+    assert.deepEqual([worker.model, judge.model, judge.problem || ''], [MODELS.claude, MODELS.claude, '']);
+  }
 });
 
 test('a runner whose tool-off mode is not confirmed is never worker or judge, and says why', () => {
@@ -216,20 +201,17 @@ test('an unset model of a judge_agent is named as judge_agent in the fix, never 
   assert.equal(t.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set judge_agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
 });
 
-test('a premium or unset model that allow_premium forbids is never called: doctor --live shows its one fail, agents --test refuses it', () => {
-  const { p, lfm, calls, config, env } = setup();
+test('every model the user set is called, a premium name too; an unset model is never called', () => {
+  const { p, lfm, calls, config } = setup();
   config('agent: claude\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
   const r = lfm({}, 'doctor', '--live', '--json');
   const checks = JSON.parse(r.stdout).checks;
-  assert.equal(r.status, 1);
-  assert.equal(checks.find((c) => c.label === 'worker model').level, 'fail');
-  assert.equal(checks.find((c) => c.label === 'worker live'), undefined); // the model fail is the one line: no second fail for the live call
-  const t = lfm({}, 'agents', '--test', 'claude');
-  assert.equal(t.status, 1);
-  assert.match(t.stderr, /^error: claude: claude-opus-5-5 is a premium model/m);
-  assert.ok(calls('claude').every((c) => !c.args.includes('claude-opus-5-5')), JSON.stringify(calls('claude')));
+  assert.deepEqual(['worker model', 'worker live'].map((l) => checks.find((c) => c.label === l)?.level), ['ok', 'ok'], r.stdout);
+  assert.equal(checks.find((c) => c.label === 'worker model').detail, 'claude-opus-5-5');
+  assert.equal(lfm({}, 'agents', '--test', 'claude').status, 0);
+  assert.ok(calls('claude').some((c) => c.args.includes('claude-opus-5-5')), JSON.stringify(calls('claude')));
 
-  // pi with no model set: no call is made, and the key to set is named, with or without allow_premium.
+  // pi with no model set: no call is made, and the key to set is named.
   const noModel = lfm({}, 'agents', '--test', 'pi');
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
@@ -239,21 +221,8 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   assert.equal(asked.status, 2, asked.stderr);
   assert.match(asked.stderr, /^error: ask the user which agent to use: agent_config\.pi\.model is not set in /m);
   assert.equal(calls('pi').length, 0);
-  config('agent: pi\nallow_premium: true\n');
-  assert.equal(lfm({}, 'agents', '--test', 'pi').status, 1); // allow_premium permits a premium name, never an empty model
-  assert.equal(calls('pi').length, 0); // and the empty model never reaches the pi binary, so no premium default can run
-  config('agent: pi\nallow_premium: true\nagent_config: { pi: { model: umer-cheap-1 } }\n');
+  config('agent: pi\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);
-});
-
-test('doctor\'s ok model line is the bare model, with no "(allow_premium)" suffix', () => {
-  const { lfm, config } = setup();
-  config('allow_premium: true\nagent_config: { claude: { model: claude-opus-5-5 } }\n'); // a premium name the user allowed
-  const r = lfm({}, 'doctor', '--json');
-  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker model');
-  assert.equal(line.level, 'ok', r.stderr);
-  assert.equal(line.detail, 'claude-opus-5-5');
-  assert.doesNotMatch(line.detail, /allow_premium/);
 });
 
 test('the skill row looks where the agent CLI reads skills: its login check\'s config dir, not the home default', () => {
@@ -408,10 +377,10 @@ test('byokit: agents --test makes one plan call through BYOKit with the signed-i
   const text = await lfm('agents'); // the text output lists the same byokit row
   assert.equal(text.status, 0, text.stderr);
   assert.deepEqual(decode(text.stdout).agents.find((a) => a.runner === 'byokit:chatgpt'), byokitRow);
-  config('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\n'); // the same route judging itself
-  const clash = await lfm('agents', '--json');
-  assert.equal(clash.status, 1);
-  assert.match(JSON.parse(clash.stdout).judge.problem, /would judge its own work/);
+  config('agent: "byokit:chatgpt"\njudge_agent: "byokit:chatgpt"\n'); // one route in both roles: the user's choice
+  const same = await lfm('agents', '--json');
+  assert.equal(same.status, 0, same.stderr);
+  assert.equal(JSON.parse(same.stdout).judge.runner, 'byokit:chatgpt');
 });
 
 // A stand-in for a plan key provider's Responses API: it records each request and streams one fixed answer.
@@ -519,11 +488,11 @@ test('byokit: a name that is not a plan route, a route with no model set and a m
   const bad = await lfm('agents', '--test', 'byokit:../x');
   assert.equal(bad.status, 2);
 
-  const lone = join(tmp, 'lone'); // the runner file with no node_modules above it: BYOKit is not installed
+  const lone = join(tmp, 'lone'); // the runner file with no node_modules above it: the BYOKit packages are missing
   mkdirSync(lone);
   cpSync(BYOKIT, join(lone, 'byokit.mjs'));
-  assert.deepEqual(await hook('chatgpt', join(lone, 'byokit.mjs')), [{ status: 'fail', label: 'byokit:chatgpt', detail: 'BYOKit is not installed',
-    fix: 'npm install -g learn-from-mistakes-axi   # with its optional dependencies (not --omit=optional): the BYOKit packages install beside it' }]);
+  assert.deepEqual(await hook('chatgpt', join(lone, 'byokit.mjs')), [{ status: 'fail', label: 'byokit:chatgpt', detail: 'the BYOKit packages are missing from this install',
+    fix: 'npm install -g learn-from-mistakes-axi   # reinstall: the BYOKit packages are its dependencies' }]);
 });
 
 test('byokit: a role that is not installed says to install it or choose another; a worker that names no plan route exits 1 with the problem', async () => {
@@ -540,7 +509,11 @@ test('byokit: a role that is not installed says to install it or choose another;
   assert.match(r.stderr, /^next: use one of: byokit:chatgpt, byokit:claude, .*byokit:opencode-go, .*byokit:zai-coding-cn$/m);
 });
 
-test('byokit: a route the user set with BYOKit not installed gives BYOKit\'s own fix', () => {
+test('byokit: a route the user set in an install missing the BYOKit packages says to reinstall', () => {
+  // The BYOKit packages install with the tool, as dependencies: no install of it goes without them.
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.optionalDependencies, undefined);
+  for (const d of ['@byokit/accounts', '@byokit/secrets', '@earendil-works/pi-ai']) assert.ok(pkg.dependencies[d], d);
   const { tmp, p, env, config } = setup();
   config('agent: "byokit:opencode-go"\nagent_config: { "byokit:opencode-go": { model: muse-spark-1.3-contributor } }\n');
   const app = join(tmp, 'app'); // the CLI tree with every dependency but BYOKit's packages
@@ -550,8 +523,8 @@ test('byokit: a route the user set with BYOKit not installed gives BYOKit\'s own
   for (const e of readdirSync(join(ROOT, 'node_modules'))) if (!e.startsWith('@byokit') && e !== '@earendil-works') symlinkSync(join(ROOT, 'node_modules', e), join(app, 'node_modules', e));
   const r = spawnSync(process.execPath, [join(app, 'bin', 'learn-from-mistakes-axi.mjs'), 'agents', '--dir', p], { encoding: 'utf8', env });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /^problem: worker: BYOKit is not installed$/m);
-  assert.match(r.stderr, /^next: npm install -g learn-from-mistakes-axi /m);
+  assert.match(r.stderr, /^problem: worker: the BYOKit packages are missing from this install$/m);
+  assert.match(r.stderr, /^next: npm install -g learn-from-mistakes-axi   # reinstall: the BYOKit packages are its dependencies$/m);
 });
 
 test('byokit: a judge whose agent CLI is not installed is told to install it or set judge_agent to another agent', async () => {

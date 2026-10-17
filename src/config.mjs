@@ -64,7 +64,7 @@ const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with an effort flag
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
 // in a cloned repo cannot run a program of its choosing.
-const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout', 'allow_premium'];
+const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout'];
 const GLOBAL_ONLY = ['auto_fix', 'state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
 
 // Applies the agent keys one file sets onto cfg, and records that file in cfg.from as the place to change each one.
@@ -92,11 +92,6 @@ function agentKeys(cfg, g, file) {
     cfg.agent_timeout = g.agent_timeout;
     cfg.from.agent_timeout = file;
   }
-  if (g.allow_premium !== undefined) {
-    check(typeof g.allow_premium === 'boolean', `${file}: allow_premium`, 'true or false');
-    cfg.allow_premium = g.allow_premium;
-    cfg.from.allow_premium = file;
-  }
   return cfg;
 }
 
@@ -112,7 +107,7 @@ export function loadGlobal() {
   const agent_args_override = mapping(g.agent_args_override ?? {}, [...AGENTS, 'acp'], `${file}: agent_args_override`);
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
-    agent: '', judge_agent: '', agent_config: {}, agent_timeout: '20m', allow_premium: false, auto_fix: 0, from: {} };
+    agent: '', judge_agent: '', agent_config: {}, agent_timeout: '20m', auto_fix: 0, from: {} };
   if (g.auto_fix !== undefined) { check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)'); cfg.auto_fix = g.auto_fix; }
   return agentKeys(cfg, g, file);
 }

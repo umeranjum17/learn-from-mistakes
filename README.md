@@ -4,13 +4,15 @@
 
 <p align="center">Find the mistakes your coding agents keep repeating, with evidence and a short list of changes to stop them.</p>
 
-`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and proposes fixes. A separate judge checks the claims. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
+`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and proposes fixes. A judge role checks the claims. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
 
 You, or your calling agent, start the retro and read its report. **Do not label or judge records yourself.** Unread records stay unlabelled, not guessed. Recommendations do not change your project by default.
 
+**The worker and the judge always run.** There is no judge-less or agent-less mode. With no agent set, the command stops and asks you to set one. If an agent is not ready, the retro does not start. If the worker or the judge fails, or the judge leaves a claim without a verdict, the run fails with an error and a `next:` line. A run that does not complete keeps no verdict, label, finding or fix.
+
 ## Quick start
 
-Requires Node **22.13+**, project records to read, and two ready agents with models **you choose**. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
+Requires Node **22.13+**, project records to read, and a ready agent for each of the two roles, with models **you choose**; one agent may run both roles. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
 
 ```sh
 npm install -g learn-from-mistakes-axi
@@ -39,7 +41,7 @@ learn-from-mistakes-axi init --no-skill \
   --judge-agent "$JUDGE" --judge-model "$JUDGE_MODEL"
 ```
 
-Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. The judge must be a different agent than the worker (see `Runners and user-chosen models`).
+Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. The judge may run on the worker's agent (see `Runners and user-chosen models`).
 
 `init -y --no-skill` can write config without asking, but it does **not** choose agents or make the project ready. Follow its gaps. A second `init` keeps existing choices; flags can fill missing project choices, not replace them. `init --reconfigure` is the one exception: it re-applies `--agent`, `--model`, `--judge-agent`, `--judge-model` and `--sessions` to an existing config, replacing those keys while every other key and comment stays. Edit existing keys explicitly if you want to change anything else.
 
@@ -63,11 +65,11 @@ The optional discovery skill uses the [Agent Skills](https://agentskills.io) for
 
 ## Runners and user-chosen models
 
-Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The two roles must differ: `agent_config` holds one model per agent, so a judge on the worker's binary and model would judge its own work. A BYOKit sign-in route counts as its vendor's agent (`byokit:claude` is Claude, `byokit:chatgpt` is Codex).
+Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The judge may be the worker's agent: `agent_config` holds one model per agent, so it then runs the worker's model, each call in a fresh session. Nothing refuses that choice.
 
 The current CLI runners are `claude`, `codex`, `opencode` and `pi`. Claude, OpenCode and Pi run with tools off; Codex uses read-only mode. Each needs its own executable and login. `gemini` and `acp:<target>` (through `acpx`) have adapters, but are **not offered for retro roles**: their headless tool restrictions are not confirmed. `agents --test <runner>` can probe an adapter, including an unconfirmed one; it does not remove that restriction.
 
-`byokit:<route>` calls a model without an agent CLI and has no tools. It requires Node **22.18+**, the optional BYOKit packages and a ready plan route with its own sign-in or plan key. Routes include `byokit:chatgpt` and `byokit:claude`; other plan-key aliases depend on installed BYOKit support. Follow `doctor`'s readiness fixes; a route name alone is not a login or model choice.
+`byokit:<route>` calls a model without an agent CLI and has no tools. It requires Node **22.18+**, the BYOKit packages (dependencies of the tool, installed with it) and a ready plan route with its own sign-in or plan key. Routes include `byokit:chatgpt` and `byokit:claude`; other plan-key aliases depend on installed BYOKit support. Follow `doctor`'s readiness fixes; a route name alone is not a login or model choice.
 
 Example shape, with placeholders to replace with your own choices:
 
@@ -83,7 +85,7 @@ agent_config:
 agent_timeout: "20m"
 ```
 
-Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices and `allow_premium`. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Model names containing the separate word `opus`, `sonnet` or `sol` are blocked unless you explicitly set `allow_premium: true`. Permission is not a recommendation to upgrade.
+Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Every model you set runs: no model name is blocked.
 
 ## Cost and limits
 
@@ -105,9 +107,9 @@ learn-from-mistakes-axi abort                  # cancel the current worker
 learn-from-mistakes-axi rerun --resume --wait 8m
 ```
 
-Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
+Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Such a run kept no verdict, label, finding or fix, so the resume runs again from its `followup` step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
 
-`status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently.
+`status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently or to run without one.
 
 ## Sources, state and privacy
 
@@ -158,7 +160,7 @@ To track a change you made yourself, use `change applied --cause <configured-cau
 | --- | --- |
 | `0` | Command succeeded, or a background run started/is still running. Inspect status before claiming completion. Doctor warnings do not fail it. |
 | `1` | Failed or interrupted run shown by `retro --wait`, `status`, the bare command, `attach` or `rerun`; agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
-| `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, identity clash, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
+| `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
 | `3` | No saved run to inspect, no completed retro to report, or no run with kept fixes to `apply`. Start or finish a retro first. |
 
 Use `--json` for structured output where supported; default output is compact TOON. A bare `learn-from-mistakes-axi` shows the latest run's status. `report` selects the latest completed retro, which may be older than the latest failed/running run. Check its `run` id. `--dir <project>` targets another project without changing directories. `guide` gives the current calling-agent procedure; `--help` is the installed version's command reference.

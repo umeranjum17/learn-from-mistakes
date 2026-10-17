@@ -63,14 +63,6 @@ export function detect(cfg, only = configuredRunners(cfg)) {
   });
 }
 
-const PREMIUM = /(^|[^a-z])(opus|sonnet|sol)([^a-z]|$)/i;
-export const premiumBlocked = (cfg, model) => !!model && PREMIUM.test(model) && !cfg.allow_premium;
-
-// The identity rule: a role is the real path of its binary plus its model (a BYOKit sign-in route, identity below, counts as its vendor's agent). A role with no model is never compared: it is unset.
-export const CLASH = 'agent_config holds one model per agent, so a judge on the worker\'s agent gets the worker\'s model and would judge its own work';
-export const same = (a, b) => a.bin === b.bin && a.model === b.model;
-const VENDOR = { 'byokit:claude': 'claude', 'byokit:chatgpt': 'codex' }; // a sign-in route is the same model mind as its vendor's agent
-const identity = (r, agents) => (VENDOR[r.runner] ? { ...r, bin: agents.find((x) => x.runner === VENDOR[r.runner])?.bin || VENDOR[r.runner] } : r);
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
 // One agent as a role: its model from agent_config, its binary (a BYOKit route names its own binary), or its problem.
 async function candidate(cfg, runner, agents) {
@@ -87,20 +79,16 @@ async function candidate(cfg, runner, agents) {
 }
 
 // Resolve the worker (agent:) or the judge (judge_agent:): the one agent the user set. When it is not ready, its own
-// problem is the result and no other agent is tried. A judge on the worker's identity is a clash, which the caller
-// reports rather than judging its own work. A role that is not set resolves to nothing: the tool never picks one.
-export async function resolveRole(cfg, name, agents, worker, env = process.env) {
+// problem is the result and no other agent is tried. The judge may be the worker's agent and model: each call is a
+// fresh session. A role that is not set resolves to nothing: the tool never picks one.
+export async function resolveRole(cfg, name, agents) {
   const runner = cfg[KEY[name]];
   if (!runner) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
-  const r = await candidate(cfg, runner, agents);
-  if (!r.problem && worker && r.model && worker.model && same(identity(r, agents), identity(worker, agents))) return { ...r, problem: CLASH };
-  return r;
+  return candidate(cfg, runner, agents);
 }
 
-// The worker first, then a judge that differs from it.
-export async function resolveRoles(cfg, agents, env = process.env) {
-  const worker = await resolveRole(cfg, 'worker', agents, undefined, env);
-  return { worker, judge: await resolveRole(cfg, 'judge', agents, worker.problem ? undefined : worker, env) };
+export async function resolveRoles(cfg, agents) {
+  return { worker: await resolveRole(cfg, 'worker', agents), judge: await resolveRole(cfg, 'judge', agents) };
 }
 
 // One process: detached, so a timeout stops its whole group; after exit, a grandchild holding stdout gets 5 s, then
@@ -153,7 +141,6 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   const route = byokit.routeOf(runner);
   const p = route && await byokit.check(route);
   if (p) throw new InputError(`${runner}: ${p.problem}`, p.fix);
-  if (premiumBlocked(cfg, model)) throw new InputError(`${runner}: ${model} is a premium model`, `${chooseFix(cfg, role, name)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
   const mod = RUNNERS[runner];
   const bin = route ? runner : which(binName(cfg, runner));
   const fix = route ? await byokit.signIn(route) : FIX;
