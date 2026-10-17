@@ -76,13 +76,13 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
   };
   const read1 = (f) => readText(join(state, f), `source ${source}`, `chmod -R u+r ${shq(state)}   # the tool only reads it`);
   for (const f of files.filter((n) => /^[^/]+\.status$/.test(n))) {
-    let at = NaN;
+    let when = NaN;
     read1(f).split(/\r?\n/).forEach((line, i) => {
       const m = line.match(/^([a-z-]+)((?: \[[^\]]*\])*): (.*)$/);
       if (!m) return;
       const stamp = m[2].match(/\[at=([^\]]*)\]/)?.[1];
-      if (stamp !== undefined) at = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : NaN; // a stamp that is not digits is no time
-      if (Object.hasOwn(KINDS, m[1])) add(at, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
+      if (stamp !== undefined) when = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : NaN; // a stamp that is not digits is no time
+      if (Object.hasOwn(KINDS, m[1])) add(when, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
     });
   }
   for (const f of files.filter((n) => /^[^/]+\.inbox\/(handled\/)?[^/]+\.msg$/.test(n))) {
