@@ -9,6 +9,7 @@ import { isAbsolute, join, relative } from 'node:path';
 import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { counts, plain, RAW, splitSentences } from './check.mjs';
+import { inWindow } from './metrics.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 
@@ -69,6 +70,13 @@ export function reportText(cfg, db, id, dir, window, run) {
   const measured = run.metrics.filter((m) => m.target || m.current !== 'n/a' || m.previous !== 'n/a'); // the rest have no data
   for (const m of measured) lines.push(`- ${m.name}: this window ${m.current}, last window ${m.previous}, ${m.target ? `target ${m.target}, ${m.met === 'n/a' ? 'no data' : m.met}` : 'no target'}.`);
   if (!measured.length) lines.push('- No metric has data.');
+  // Each home of a fleet, by salted id: its share of the fleet numbers above, this window.
+  const homes = new Map(run.sources.flatMap((s) => s.homes ?? []).map((h) => [h, {}]));
+  for (const r of inWindow(all('SELECT ts, data FROM records WHERE run_id = ? AND ts IS NOT NULL'), { start: Date.parse(window.current_start) })) {
+    const { home, kind } = JSON.parse(r.data ?? '{}'), n = homes.get(home);
+    if (n) n[kind] = (n[kind] ?? 0) + 1;
+  }
+  for (const [home, n] of homes) lines.push(`- Home ${home}: ${['decision', 'block', 'steer', 'defect'].map((k) => plural(n[k] ?? 0, k)).join(', ')} this window.`);
   lines.push('', '3. Last changes');
   for (const f of run.followups) {
     lines.push(`- Change ${f.change}, metric ${f.metric}: ${f.before} before, ${f.after} after. The verdict is ${f.verdict}. ${DO[f.verdict]}`);
@@ -102,6 +110,7 @@ export function reportText(cfg, db, id, dir, window, run) {
   const judged = (verdict) => [...fixes, ...findings].filter((x) => x.verdict === verdict).length; // the kept fixes and the findings counted above
   const gaps = [...run.sources.filter((s) => !s.items).map((s) => `- Source ${s.id} gave no records.`),
     ...run.sources.filter((s) => s.skipped).map((s) => `- Source ${s.id} skipped ${plural(s.skipped, 'session')}.`),
+    ...run.sources.filter((s) => s.lines_skipped).map((s) => `- Source ${s.id} skipped ${plural(s.lines_skipped, 'home line')} with no local home.`),
     ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]

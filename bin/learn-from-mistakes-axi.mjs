@@ -242,7 +242,7 @@ export async function ingest(cfg, db) {
       throw sourceError(id, e, count);
     }
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
-      ...(got.events && { sessions: got.sessions, skipped: got.skipped }) });
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped }), ...(got.homes && { homes: got.homes, lines_skipped: got.lines_skipped }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   // records.jsonl holds a record's text only with excerpts on, redacted; with excerpts off it has no text field.
@@ -449,6 +449,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                       stays. Without it an existing config is never changed
   --firstmate <home>  (init) add a firstmate source that reads that Firstmate home's status logs,
                       inbox, defect log and targets (opt-in, never detected)
+  --fleet             (init, with --firstmate) read the whole fleet: that main home and each
+                      secondmate home its data/secondmates.md lists, counted together
   --no-excerpts       (init) write excerpts: off, so the agents get pointers and counts only,
                       never record text
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's
@@ -518,7 +520,7 @@ const REMOVED = ['ingest', 'count', '--labels', '--proposals'];
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   '': 'learn-from-mistakes-axi [--dir <dir>] [--json]', // no command: the last run's status and summary line
-  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--reconfigure] [--firstmate <home>] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
+  init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--reconfigure] [--firstmate <home> [--fleet]] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--json] [--full]',
@@ -539,7 +541,7 @@ const FORMS = {
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
 const VALUE_FLAGS = ['--dir', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
-const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '-y'];
+const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -689,8 +691,8 @@ async function runCommand(cmd, cfg, opts) {
   else if (cmd === 'abort') hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, 'finish it from its first step that is not completed', opts));
   else if (out.run.status === 'failed') {
     if (cmd !== '') console.error(`error: ${out.run.error}`);
-    const step = out.steps.find((s) => s.status === 'failed')?.name;
-    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it after fixing ${step ? `the ${step} step` : 'the cause'}; completed steps are not run again`, opts));
+    const step = out.steps.find((s) => s.status === 'failed')?.name, source = out.run.error?.match(/^\w+: source ([^\s:]+):/)?.[1]; // its id, never its path
+    hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it after fixing ${source ? `source ${source} in ` : ''}${step ? `the ${step} step` : 'the cause'}; completed steps are not run again`, opts));
     process.exitCode = 1; // the same code retro --wait uses: status and the bare command show the failed run too
   } else if (out.run.status !== 'completed') { // interrupted or cancelled
     if (cmd !== '') console.error(`error: ${out.run.error}`);

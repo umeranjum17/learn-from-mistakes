@@ -9,6 +9,7 @@ import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-
 import { interactive, modelNotes, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { AGENT_RULE, expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from './runners/index.mjs';
+import { checkHomes } from './sources/firstmate.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
@@ -127,14 +128,16 @@ export async function init(dir, opts) {
       Object.assign(found, await mod.detect?.(dir));
     } catch (e) { skipped.push(`${type}: ${e.message}`); }
   }
+  if (opts.fleet && !opts.firstmate) throw new UsageError('--fleet needs --firstmate <home>', 'learn-from-mistakes-axi init --firstmate <home> --fleet   # the main home, whose data/secondmates.md lists the fleet');
   if (opts.firstmate) { // opt-in only: a Firstmate home is never detected
     if (!statSync(opts.firstmate, { throwIfNoEntry: false })?.isDirectory()) throw new UsageError(`--firstmate ${opts.firstmate}: not a directory`, 'learn-from-mistakes-axi init --firstmate <home>   # the Firstmate home folder that holds state/');
-    found.home = { type: 'firstmate', path: opts.firstmate };
+    found.home = { type: 'firstmate', path: opts.firstmate, ...(opts.fleet && { fleet: true }) };
   }
   // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
   // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override -- unless
   // --reconfigure says the flags re-apply: they replace those keys in the existing config, every other key and comment stays.
   const before = written ? loadGlobal() : loadConfig(dir), here = (k) => before.from[k] === file;
+  if (opts.firstmate && (written || (!Object.values(before.sources).some((s) => s.type === 'firstmate') && !Object.hasOwn(before.sources, 'home')))) checkHomes({ home: { ...found.home, path: expand(found.home.path, dir) } }, file);
   const chosen = {}, ignored = [];
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
@@ -193,13 +196,14 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   }
   const notes = modelNotes(before, chosen);
   if (Object.keys(chosen).length) save(file, chosen);
+  if (!written && opts.fleet && Object.values(before.sources).some((s) => s.type === 'firstmate' && s.path === opts.firstmate && !s.fleet)) ignored.push('--fleet');
   if (!written && opts.firstmate && !Object.values(before.sources).some((s) => s.type === 'firstmate' && s.path === opts.firstmate)) {
     // the opt-in adds the source to a config that exists, unless it has another home or a source named home
     if (Object.hasOwn(before.sources, 'home') || Object.values(before.sources).some((s) => s.type === 'firstmate')) ignored.push('--firstmate');
     else {
       const doc = parseDocument(readFileSync(file, 'utf8'));
       if (!doc.get('sources')) doc.set('sources', doc.createNode({}));
-      doc.setIn(['sources', 'home'], doc.createNode({ type: 'firstmate', path: opts.firstmate }, { flow: true }));
+      doc.setIn(['sources', 'home'], doc.createNode(found.home, { flow: true }));
       try { writeFileSync(file, doc.toString({ lineWidth: 90 })); }
       catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
     }
@@ -236,7 +240,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     config: file, status: written ? 'written' : 'already set up', global, global_status: globalWritten ? 'written' : 'kept', ignored, notes,
     causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
-    excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),
+    excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path, ...(s.fleet && { fleet: true }) } : { type: s.type }])),
     gaps, skipped, skills, skills_updated, skills_skipped, skills_roots,
   };
 }
