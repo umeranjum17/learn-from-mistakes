@@ -4,7 +4,7 @@
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -553,18 +553,26 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   const read = retro();
   assert.equal(read.status, 0, read.stderr);
   const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  // A record's id and ref name the app only through the store's salt, so the bundle the model reads has neither the app name nor its folder.
+  const salt = Buffer.from(db.prepare('SELECT salt FROM secret').get().salt);
+  const keyed = (text) => createHmac('sha256', salt).update(text).digest('hex').slice(0, 12);
+  const dd = (id, step) => `dd:${keyed(`notes/${id}/${step}`)}`;
   const file = (id) => join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json');
+  const ref = (id) => join(env.DONE_DONE_HOME, 'runs', keyed('notes'), id, 'run.json');
   assert.deepEqual(records, [
-    { id: 'dd:notes/r1/check', source: 'dd', step: 'check', ref: file('r1'), date: ENDED.slice(0, 10), text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
-    { id: 'dd:notes/r2/drive', source: 'dd', step: 'drive', ref: file('r2'), date: UPDATED.slice(0, 10), text: 'verify inconclusive: drive: journey timed out after 30m' },
-    { id: 'dd:notes/r6/judge', source: 'dd', step: 'judge', ref: file('r6'), date: UPDATED.slice(0, 10), text: 'verify overridden: judge: shot.png: judge says wrong screen' },
-    { id: 'dd:notes/r7/setup', source: 'dd', step: 'setup', ref: file('r7'), date: UPDATED.slice(0, 10), text: 'verify failed: setup: .done-done.yaml: bad key' }]);
+    { id: dd('r1', 'check'), source: 'dd', step: 'check', ref: ref('r1'), date: ENDED.slice(0, 10), text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
+    { id: dd('r2', 'drive'), source: 'dd', step: 'drive', ref: ref('r2'), date: UPDATED.slice(0, 10), text: 'verify inconclusive: drive: journey timed out after 30m' },
+    { id: dd('r6', 'judge'), source: 'dd', step: 'judge', ref: ref('r6'), date: UPDATED.slice(0, 10), text: 'verify overridden: judge: shot.png: judge says wrong screen' },
+    { id: dd('r7', 'setup'), source: 'dd', step: 'setup', ref: ref('r7'), date: UPDATED.slice(0, 10), text: 'verify failed: setup: .done-done.yaml: bad key' }]);
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(read.stdout).run.id), 'bundle.md'), 'utf8');
+  for (const [id, step] of [['r1', 'check'], ['r2', 'drive'], ['r6', 'judge'], ['r7', 'setup']]) assert.ok(bundle.includes(`[${dd(id, step)}]`), bundle);
+  assert.doesNotMatch(bundle, /notes/);
   const doctor = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'source dd');
   assert.match(doctor.detail, /^done-done: 4 failed or inconclusive verify steps, 4 in the window; no runs for nottes in /);
   assert.match(doctor.fix, /^ls .*# done-done's app names; set sources\.dd\.apps in /);
-  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   assert.deepEqual(db.prepare('SELECT record_id, ref FROM records ORDER BY record_id').all().map((r) => ({ ...r })),
-    ['r1/check', 'r2/drive', 'r6/judge', 'r7/setup'].map((r) => ({ record_id: `dd:notes/${r}`, ref: file(r.split('/')[0]) })));
+    [['r1', 'check'], ['r2', 'drive'], ['r6', 'judge'], ['r7', 'setup']].map(([id, step]) => ({ record_id: dd(id, step), ref: ref(id) })).toSorted((a, b) => (a.record_id < b.record_id ? -1 : 1)));
   db.close();
 
   run('r5', { schema: 3, result: 'fail', steps: steps('check') }); // a newer done-done: never skipped, never a crash
