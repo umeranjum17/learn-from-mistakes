@@ -12,7 +12,8 @@
 // home as a salted id (data.home, and its record id's prefix), never the home's name or path; the store keeps the path.
 // A home that cannot be read stops the read.
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { readText, shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource, RULE } from '../config.mjs';
@@ -37,17 +38,43 @@ export function validate(s, where, dir) {
   return { type, path, ...(fleet && { fleet }), targets, targets_file: file };
 }
 
-// The fleet's homes: the main home, then each secondmate home its registry lists once; `lines` counts the bullets skipped.
+// A registry bullet's route: the `key: value` pairs of its first parenthesised group, `;`-separated, in any order.
+function registryRoute(line) {
+  const route = {};
+  for (const pair of (line.match(/\(([^)]*)\)/)?.[1] ?? '').split(';')) {
+    const at = pair.indexOf(':');
+    if (at > 0) route[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
+  }
+  return route;
+}
+
+// The fleet's homes: the main home, then each secondmate home its registry lists; `lines` counts the bullets skipped.
 function fleetHomes(source, path, project) {
   const file = join(path, 'data', 'secondmates.md'), homes = [path];
   let lines = 0;
   for (const line of readText(file, `source ${source}: ${file}`, `set sources.${source}.fleet to false in ${shq(project)} to read the main home alone`).split(/\r?\n/)) {
     if (!line.startsWith('- ')) continue;
-    const home = line.match(/\(home: ([^;)]+?)\s*[;)]/)?.[1];
-    if (!home || !isAbsolute(home)) lines += 1;
-    else if (!homes.includes(resolve(home))) homes.push(resolve(home));
+    const route = registryRoute(line), home = route.home?.replace(/^~(?=\/|$)/, homedir());
+    if ('host' in route || !home || !isAbsolute(home)) lines += 1;
+    else homes.push(resolve(home));
   }
   return { homes, lines, file };
+}
+
+const realHome = (home) => { try { return realpathSync(home); } catch { return resolve(home); } };
+
+// A home is read by one source only: two sources, or one registry, naming the same home would count its records twice.
+export function checkHomes(sources, project) {
+  const seen = new Map();
+  for (const [id, s] of Object.entries(sources)) {
+    if (s.type !== 'firstmate') continue;
+    for (const home of s.fleet ? fleetHomes(id, s.path, project).homes : [s.path]) {
+      const real = realHome(home), prev = seen.get(real);
+      if (prev === undefined) seen.set(real, id);
+      else if (prev === id) throw new UsageError(`${project}: sources.${id} reads ${home} twice`, `remove the extra ${home} from source ${id}`);
+      else throw new UsageError(`${project}: sources.${prev} and sources.${id} both read ${home}`, `remove ${home} from source ${prev} or source ${id}`);
+    }
+  }
 }
 
 export function read(source, entry, ctx) {

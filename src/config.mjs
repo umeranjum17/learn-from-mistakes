@@ -135,6 +135,7 @@ sources:
     if (type === 'markdown-log' && s.review !== undefined) check(typeof s.review === 'boolean', `${where}.review`, 'true or false');
     sources[id] = SOURCES[type].validate(s, where, dir);
   }
+  firstmate.checkHomes(sources, file);
   const causes = mapping(p.causes ?? {}, null, `${file}: causes`);
   for (const [id, c] of Object.entries(causes)) {
     if (!/^[a-z0-9-]{1,64}$/.test(id)) throw new UsageError(`${file}: causes.${id}: a cause key must be 1-64 of a-z, 0-9 and - (rename it, for example to ${id.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 64)})`);

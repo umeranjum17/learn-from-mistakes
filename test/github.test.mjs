@@ -231,26 +231,32 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
 // or a prompt; the report gives each home's counts by its salted id, and a home that cannot be read fails the retro.
 test('init --firstmate <home> --fleet reads every home of the fleet; home names stay out of the bundle and prompts', () => {
   const { tmp, p, lfm } = setup();
-  const [main, kestrel, wren] = ['harbor-main', 'kestrel-mate', 'wren-mate'].map((n) => join(tmp, n));
+  const [main, kestrel, wren, late, far2] = ['harbor-main', 'kestrel-mate', 'wren-mate', 'late-mate', 'far2-mate'].map((n) => join(tmp, n));
+  const tilde = join(tmp, 'home', 'fm-tilde');
   const at = (days) => `at=${Math.floor(NOW / 1000 - days * 86_400)}`;
   const put = (home, file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
   const registry = (...homes) => put(main, 'data/secondmates.md', `# Secondmates\n\n${homes.map((h, i) => `- mate${i} - Umer's work (home: ${h}; scope: demo; projects: umer-app; added 2026-10-01)\n`).join('')}`
-    + '- far - a remote route (host: far-box; root: /srv/fm; home: /srv/fm-home; scope: demo; projects: umer-app; added 2026-10-01)\n- loose - a line with no home field\n');
+    + '- far - a remote route (host: far-box; root: /srv/fm; home: /srv/fm-home; scope: demo; projects: umer-app; added 2026-10-01)\n- loose - a line with no home field\n'
+    + `- late - a home after its other keys (scope: demo; home: ${late}; added 2026-10-01)\n- tilde - a home under ~ (scope: demo; home: ~/fm-tilde; added 2026-10-01)\n`
+    + `- far2 - a remote route with home before host (home: ${far2}; host: far-box; scope: demo)\n`);
   put(main, 'state/task.status', `blocked [${at(1)}]: waiting on review\n`);
   put(kestrel, 'state/task.status', `needs-decision [${at(1)}]: pick a name\nblocked [${at(2)}]: waiting on CI\n`);
   put(wren, 'state/demo.inbox/001.msg', `${at(1)}\n[steer] use the demo data\n`);
   put(wren, 'data/defects.md', `## ${new Date(NOW - 86_400_000).toISOString().slice(0, 10)}\n\n- [tests] Umer's demo flake.\n`);
-  registry(kestrel, wren, kestrel); // a home listed twice is read once
+  put(late, 'state/task.status', `needs-decision [${at(1)}]: a home after its other keys\n`);
+  put(tilde, 'state/task.status', `blocked [${at(1)}]: a home under ~\n`);
+  put(far2, 'state/task.status', `needs-decision [${at(1)}]: a remote route is not read\n`);
+  registry(kestrel, wren);
   assert.equal(lfm({}, 'init', '-y', '--no-skill', '--fleet').status, 2); // --fleet needs --firstmate
   const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet', '--json');
   assert.equal(init.status, 0, init.stderr);
   assert.deepEqual(JSON.parse(init.stdout).sources.home, { type: 'firstmate', path: main, fleet: true });
-  assert.match(lfm({}, 'doctor').stdout, /3 homes, 2 registry lines skipped \(no local home\), 1 decisions, 2 blocks, 1 steers, 1 defect records/);
+  assert.match(lfm({}, 'doctor').stdout, /5 homes, 3 registry lines skipped \(no local home\), 2 decisions, 3 blocks, 1 steers, 1 defect records/);
   const r = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const run = JSON.parse(r.stdout);
   const m = Object.fromEntries(run.metrics.map((x) => [x.name, x.current]));
-  assert.deepEqual([m.decisions, m.blocks, m.steers, m.defects], [1, 2, 1, 1]); // the fleet totals
+  assert.deepEqual([m.decisions, m.blocks, m.steers, m.defects], [2, 3, 1, 1]); // the fleet totals
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   let salt, refs;
   try {
@@ -267,11 +273,25 @@ test('init --firstmate <home> --fleet reads every home of the fleet; home names 
   for (const text of [bundle, ...prompts]) for (const canary of ['harbor-main', 'kestrel-mate', 'wren-mate', 'mate0', tmp]) assert.ok(!text.includes(canary), `${canary} reached the bundle or a prompt`);
   const report = readFileSync(join(dir, 'report.txt'), 'utf8');
   for (const line of [`- Home ${id(main)}: 0 decisions, 1 block, 0 steers, 0 defects this window.`, `- Home ${id(kestrel)}: 1 decision, 1 block, 0 steers, 0 defects this window.`,
-    `- Home ${id(wren)}: 0 decisions, 0 blocks, 1 steer, 1 defect this window.`, '- Source home skipped 2 home lines with no local home.']) assert.ok(report.includes(line), `report.txt lacks ${line}`);
+    `- Home ${id(wren)}: 0 decisions, 0 blocks, 1 steer, 1 defect this window.`, `- Home ${id(late)}: 1 decision, 0 blocks, 0 steers, 0 defects this window.`,
+    `- Home ${id(tilde)}: 0 decisions, 1 block, 0 steers, 0 defects this window.`, '- Source home skipped 3 home lines with no local home.']) assert.ok(report.includes(line), `report.txt lacks ${line}`);
   registry(kestrel, join(tmp, 'gone-mate')); // a listed home that cannot be read fails the retro, naming the source and the fix
   const gone = lfm({}, 'retro', '--foreground');
   assert.notEqual(gone.status, 0);
   assert.match(gone.stderr, /^error: collect: source home: cannot read \S*gone-mate\/state \(ENOENT\)/m);
   assert.match(gone.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing source home in the collect step/m);
   assert.match(lfm({}, 'doctor').stdout, /fix or remove the line of \S*gone-mate in \S*secondmates\.md, the fleet registry source home reads/); // doctor names the registry line
+  registry(kestrel, wren, kestrel); // a home listed twice fails the config, before any read
+  const twice = lfm({}, 'retro', '--foreground');
+  assert.notEqual(twice.status, 0);
+  assert.match(twice.stderr, /^error: \S+: sources\.home reads \S+ twice$/m);
+  assert.match(twice.stderr, /^next: remove the extra \S+ from source home$/m);
+  assert.match(lfm({}, 'doctor').stdout, /^fail config\s+\S+: sources\.home reads \S+ twice$/m);
+  registry(kestrel, wren);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${main}, fleet: true }\n  kestrel: { type: firstmate, path: ${kestrel} }\n`);
+  const cross = lfm({}, 'retro', '--foreground');
+  assert.notEqual(cross.status, 0);
+  assert.match(cross.stderr, /^error: \S+: sources\.home and sources\.kestrel both read \S+$/m);
+  assert.match(cross.stderr, /^next: remove \S+ from source home or source kestrel$/m);
+  assert.match(lfm({}, 'doctor').stdout, /fix: edit \S+\s+# then run doctor again/);
 });
