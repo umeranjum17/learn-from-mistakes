@@ -23,7 +23,7 @@ The change may go to the user's decision board. Write the proposed action, never
 Causes and how often they came back:
 {{causes}}
 
-Findings of the analyse step:
+Findings of the analyse step that the judge did not refute, each with its verdict:
 {{findings}}
 
 Follow-ups to explain:
