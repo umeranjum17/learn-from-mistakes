@@ -1,4 +1,4 @@
-// The verify step: the judge (judge_agent, an agent and model that differ from the worker's) tries to refute each finding
+// The verify step: the judge (the judge_agent role, which may be the worker's agent and model, in a fresh session) tries to refute each finding
 // of the analyse step and each fix of the propose step. The worker's claims are not evidence: the judge checks each claim
 // against the bundle items it cites and answers confirmed, weakened or refuted, with a reason (`verdict` and `judge_note`
 // in the findings and proposals tables). The answer's shape and its reasons (STE100) are checked and a bad answer is sent

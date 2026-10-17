@@ -95,7 +95,7 @@ function runResult(db, id, cfg) {
     const known = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id));
     if (!runLabels || runLabels.every((l) => known.has(l.id))) counted = Object.fromEntries(counts(cfg, db, id, collected(db, id)).causes);
   }
-  return { run: id, runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })),
+  return { run: id, runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })),
     ...(counted && { counted }) };
 }
 // The latest completed run that kept labels or findings, else the latest completed run: `report` counts it and shows its
@@ -414,7 +414,7 @@ function show(db, id) {
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
     ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
-    ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
+    ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
     ...(applyOut?.refused?.length && { refused: applyOut.refused }),
     ...(report && { result: { summary: summaryLine(report), labelled: report.coverage.labelled, records: report.coverage.total_records,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
