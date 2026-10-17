@@ -1665,7 +1665,7 @@ test('apply: two projects in one repo that share a name get a branch each, and e
   assert.deepEqual(git('branch', '--list', 'lfm/*').split('\n').map((l) => l.trim()).sort(), [`lfm/web-0cb686/${runA}-1`, `lfm/web-f862db/${runA}-1`]);
 });
 
-test('apply: a fix applied on the old lfm/<run>-<n> branch is recorded again on a repeat apply, with no worker call or new change', () => {
+test('apply: a repeat apply on the old lfm/<run>-<n> branch reuses the same commit, with no worker call and no second change', () => {
   const { p, lfm, git, fake, calls } = applyRepo();
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   const first = lfm({}, 'apply', '--fix', '1'); assert.equal(first.status, 0, first.stderr);
