@@ -3,9 +3,9 @@
 // and the records with no label, this window's and the undated ones. Each item has an id and refs (an event's id
 // is its store row id, for reference only; a record's is the id its label takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
-// and a number or a hash, never record text, and the worker must cite it as the store keeps it. A fleet record's ref is
-// a path in a home, so it shows as its salted home id: no home name or path reaches the bundle. Items that would pass caps.bundle_chars are
-// dropped, and a last line counts them.
+// and a number or a hash, never record text, and the worker must cite it as the store keeps it. A fleet record's home
+// shows as its salted home id, and a done-done record's ref shows with its app folder and home salted or replaced:
+// no home name, path or app name reaches the bundle. Items that would pass caps.bundle_chars are dropped, and a last line counts them.
 import { writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { inWindow } from './metrics.mjs';
