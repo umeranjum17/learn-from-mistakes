@@ -4,7 +4,7 @@
 
 <p align="center">Find the mistakes your coding agents keep repeating, with evidence and a short list of changes to stop them.</p>
 
-`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and proposes fixes. A judge role checks the claims. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
+`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and names findings. A judge role checks each finding, then the worker proposes fixes for the findings the judge did not refute, and the judge checks each fix. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
 
 You, or your calling agent, start the retro and read its report. **Do not label or judge records yourself.** Unread records stay unlabelled, not guessed. Recommendations do not change your project by default.
 
@@ -93,7 +93,7 @@ The CLI has no per-retro fee, but the agents or BYOKit use **your** subscription
 
 - `init`, ordinary `doctor`, `status` and `report` make no model calls. Login/version checks may run an agent's own status command.
 - `retro`, `rerun` and `apply` can call models. `agents --test <runner>` makes a live probe; `doctor --live` probes both roles. These cost tokens.
-- Defaults: `agent_timeout: "20m"` per attempt; `caps: { invocations: 12, bundle_chars: 60000 }`. A runner call can retry transient failures, up to three attempts. These are operational limits, **not a currency budget**.
+- Defaults: `agent_timeout: "20m"` per attempt; `caps: { invocations: 14, bundle_chars: 60000 }`. A runner call can retry transient failures, up to three attempts. These are operational limits, **not a currency budget**.
 - Reduce the configured sources or `window` (default `7d`) to bound the work. Inspect the report's not-checked section for capped or unread evidence.
 
 ## Follow a run and recover
@@ -107,7 +107,7 @@ learn-from-mistakes-axi abort                  # cancel the current worker
 learn-from-mistakes-axi rerun --resume --wait 8m
 ```
 
-Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Such a run kept no verdict, label, finding or fix, so the resume runs again from its `followup` step. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
+Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Such a run kept no verdict, label, finding or fix, so the resume runs again from its `followup` step. A run saved by an earlier version whose steps ran in another order takes today's order (`analyse`, `verify`, `propose`, `verify-fixes`, `check`) and runs again from its first step that moved. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
 
 `status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently or to run without one.
 

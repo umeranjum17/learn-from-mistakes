@@ -392,9 +392,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
   retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup,
-                      bundle, analyse, propose, verify, check, apply, report) in a background worker
-                      that goes on when this terminal ends; --wait <time> waits for it,
-                      --foreground runs it here. With auto_fix: <n> in the config, its apply
+                      bundle, analyse, verify, propose, verify-fixes, check, apply, report) in a
+                      background worker that goes on when this terminal ends; --wait <time> waits
+                      for it, --foreground runs it here. With auto_fix: <n> in the config, its apply
                       step applies the top n kept fixes as apply does, and report.txt names them as
                       applied instead of asking; 0 (the default) proposes only
   status              print the last saved run and its steps
@@ -428,8 +428,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --run <id>          (status, attach, logs, abort, rerun, apply) the saved run
                       (default: the last one; abort: the running one; apply: the last run with
                       kept fixes)
-  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, propose, verify,
-                      check, apply or report
+  --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, verify, propose,
+                      verify-fixes, check, apply or report
   --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then
                       print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
@@ -586,7 +586,7 @@ async function main(ctx) {
   }
   const { json, full } = opts;
   if (cmd === 'guide') { console.log(guideText()); return; }
-  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['fix', /^[1-9]\d{0,2}$/, 'the number of a kept fix that status lists'], ['wait', /^[1-9]\d{0,3}[smh]$/, 'a time like 30s, 8m or 1h'], ['step', /^[a-z]{1,32}$/, 'a step name such as collect or report']]) {
+  for (const [k, re, rule] of [['run', /^[1-9]\d{0,8}$/, 'a run id that runs lists'], ['fix', /^[1-9]\d{0,2}$/, 'the number of a kept fix that status lists'], ['wait', /^[1-9]\d{0,3}[smh]$/, 'a time like 30s, 8m or 1h'], ['step', /^[a-z][a-z-]{0,31}$/, 'a step name such as collect or report']]) {
     if (opts[k] !== undefined && !re.test(opts[k])) throw new UsageError(`--${k} ${shown(opts[k])} must be ${rule}`, form);
   }
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];

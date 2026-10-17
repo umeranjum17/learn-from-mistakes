@@ -145,7 +145,7 @@ try {
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'umer-judge-model' }, claude: { model: 'umer-worker-model', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
-    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on' });
+    caps: { invocations: 14, bundle_chars: 60000 }, signoff: 'on' });
   // In-window canary records, one sentence per source type this journey configures, so the excerpts: off check
   // has in-window records to hide: the run must count them, and none of their text may reach the bundle, the
   // report or the drive's own output. Seeded only for this run - later journeys read the same staged sources.
@@ -249,7 +249,7 @@ try {
     drive('retro-followup', 'retro', '--foreground', '--json'); // 1 failed test run before the change, 3 after: rollback
     const verdicts = JSON.parse(readFileSync(join(evidence, 'retro-followup.stdout'), 'utf8')).followups.map((f) => [f.change, f.before, f.after, f.verdict]);
     assert.deepEqual(verdicts, [['chg-1', 'n/a', 'n/a', 'no-data'], ['chg-2', 1, 3, 'rollback']], 'the followup step does not give the verdicts');
-    // Propose, verify and check: eight fixes for the gate's repeated cause; the judge refutes fix 2 (a problem) and weakens
+    // Verify, propose, verify-fixes and check: eight fixes for the gate's repeated cause; the judge refutes fix 2 (a problem) and weakens
     // fix 3 (ranked last of the five kept); three are problems; one goes into the ledger.
     run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2', FAKE_WEAKEN: 'p3', FAKE_TARGET: 'AGENTS.md' });
     const proposed = JSON.parse(readFileSync(join(evidence, 'retro-propose.stdout'), 'utf8'));
@@ -258,7 +258,8 @@ try {
     try {
       assert.deepEqual(db.prepare('SELECT change_id, reason IS NOT NULL AS given FROM followups WHERE run_id = ?').all(proposed.run.id).map((f) => [f.change_id, f.given]), [['chg-1', 1], ['chg-2', 1]], 'a follow-up that is not keep has no reason');
       assert.deepEqual(db.prepare('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id').all(proposed.run.id).map((f) => f.verdict), ['confirmed', 'refuted', 'weakened', ...Array(5).fill('confirmed')], 'the judge\'s verdicts are not on the fixes');
-      assert.deepEqual({ ...db.prepare(`SELECT role, runner FROM invocations WHERE run_id = ? AND step = 'verify'`).get(proposed.run.id) }, { role: 'judge', runner: 'codex' }, 'the judge is not the second agent');
+      assert.deepEqual(db.prepare(`SELECT step, role, runner FROM invocations WHERE run_id = ? AND role = 'judge' ORDER BY id`).all(proposed.run.id).map((r) => ({ ...r })),
+        ['verify', 'verify-fixes'].map((step) => ({ step, role: 'judge', runner: 'codex' })), 'the judge is not the second agent, or does not judge the findings before propose and the fixes after it');
     } finally { db.close(); }
     // report.txt: the seven sections for a person, an Apply or Skip question per kept fix and a yes or no one per rollback.
     const reportTxt = readFileSync(join(staged, '.lfm', 'runs', String(proposed.run.id), 'report.txt'), 'utf8');
@@ -266,8 +267,8 @@ try {
     assert.match(reportTxt, /^1\. Short answer$[\s\S]*^2\. Numbers$[\s\S]*^3\. Last changes$[\s\S]*^4\. Repeated mistakes$[\s\S]*^5\. Fixes$[\s\S]*^6\. Not checked$[\s\S]*^7\. Questions for you\n1\. Apply fix 1, for agent-exit-wait\? Answer Apply or Skip\.$/m, 'report.txt does not have the seven sections and the questions');
     assert.match(reportTxt, /^6\. Roll back change chg-2\? Answer yes or no\.$/m, 'report.txt does not ask to roll back chg-2');
     assert.ok(!reportTxt.includes(staged), 'report.txt shows a path outside its evidence lines');
-    drive('logs-verify', 'logs', '--step', 'verify');
-    assert.match(readFileSync(join(evidence, 'logs-verify.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 7 confirmed, 1 weakened, 1 refuted/, 'logs do not show the judge\'s verdicts');
+    drive('logs-verify-fixes', 'logs', '--step', 'verify-fixes');
+    assert.match(readFileSync(join(evidence, 'logs-verify-fixes.stdout'), 'utf8'), /refuted: p2[\s\S]*weakened: p3[\s\S]*verdicts: 6 confirmed, 1 weakened, 1 refuted/, 'logs do not show the judge\'s verdicts');
     drive('logs-check', 'logs', '--step', 'check');
     assert.match(readFileSync(join(evidence, 'logs-check.stdout'), 'utf8'), /problem: proposals\[1\]: the judge refuted it[\s\S]*problem: proposals\[6\]: its cause did not repeat[\s\S]*problem: proposals\[7\]: no tripwire[\s\S]*fixes: 5 kept of 8, problems: 3/, 'logs do not show the check problems');
     run('signoff-fallback', process.execPath, [cli, 'signoff', 'post', '--run', String(proposed.run.id), '--dir', staged], 0, { PATH: agentBin });
