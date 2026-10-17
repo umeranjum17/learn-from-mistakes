@@ -4,7 +4,7 @@
 
 <p align="center">Find the mistakes your coding agents keep repeating, with evidence and a short list of changes to stop them.</p>
 
-`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and proposes fixes. A separate judge checks the claims. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
+`learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and proposes fixes. A judge role checks the claims. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
 
 You, or your calling agent, start the retro and read its report. **Do not label or judge records yourself.** Unread records stay unlabelled, not guessed. Recommendations do not change your project by default.
 
@@ -12,7 +12,7 @@ You, or your calling agent, start the retro and read its report. **Do not label 
 
 ## Quick start
 
-Requires Node **22.13+**, project records to read, and two ready agents with models **you choose**. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
+Requires Node **22.13+**, project records to read, and a ready agent for each of the two roles, with models **you choose**; one agent may run both roles. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
 
 ```sh
 npm install -g learn-from-mistakes-axi
@@ -41,7 +41,7 @@ learn-from-mistakes-axi init --no-skill \
   --judge-agent "$JUDGE" --judge-model "$JUDGE_MODEL"
 ```
 
-Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. The judge must be a different agent than the worker (see `Runners and user-chosen models`).
+Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These variables are your inputs, not suggested defaults. The judge may run on the worker's agent (see `Runners and user-chosen models`).
 
 `init -y --no-skill` can write config without asking, but it does **not** choose agents or make the project ready. Follow its gaps. A second `init` keeps existing choices; flags can fill missing project choices, not replace them. `init --reconfigure` is the one exception: it re-applies `--agent`, `--model`, `--judge-agent`, `--judge-model` and `--sessions` to an existing config, replacing those keys while every other key and comment stays. Edit existing keys explicitly if you want to change anything else.
 

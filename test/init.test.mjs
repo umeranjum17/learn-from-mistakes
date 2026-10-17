@@ -489,9 +489,10 @@ test('init finds the no-mistakes repo of a git worktree of the project, as the s
   assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
 });
 
-// doctor after init: every check ok or warn, exit 0; then a missing defect log, a judge on the worker's identity and
-// a premium model are 3 fail lines, each with its fix, exit 1; after the fixes, exit 0 again. Login checks run the
-// agent's own status command (pi's never refreshes a token) and print no credential text.
+// doctor after init: every check ok or warn, exit 0; then a missing defect log is one fail line with its fix, exit
+// 1, and after the fix exit 0 again. A judge on the worker's agent and a premium model name are the user's choice:
+// no fail line. Login checks run the agent's own status command (pi's never refreshes a token) and print no
+// credential text.
 test('doctor names each fail with its fix and exits 1 until the fixes are made', () => {
   const { p, lfm, config, env, global } = setup(['claude', 'opencode', 'pi', 'gemini'], CHOSEN('claude', 'opencode'));
   const fake = (name, body) => { writeFileSync(join(env.PATH, name), `#!/bin/sh\n${body}\necho "1.0.0"\n`); chmodSync(join(env.PATH, name), 0o755); };
@@ -712,7 +713,7 @@ test('init saves into a project config whose agent_config is null, and the resul
   assert.equal(lfm('init', '-y', '--no-skill').status, 0, 'the saved config loads');
 });
 
-// The judge's model is not set, so there is no identity to clash on: init reports the judge model as unset.
+// The judge's model is not set: init reports the judge model as unset and asks for it instead of refusing.
 test('init does not refuse a judge with no model as a clash, and asks for its model', () => {
   const { lfm } = setup(['claude', 'codex'], 'judge_agent: codex\n');
   const r = lfm('init', '--agent', 'claude', '--model', MODELS.claude);
