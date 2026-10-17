@@ -4,6 +4,7 @@
 // and repeat a PR across two pages, as a PR updated between the two reads would be.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -223,4 +224,54 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'name: umer-app\nsources:\n'); // a config whose sources key is empty: the opt-in still adds home
   const bare = lfm({}, 'init', '-y', '--no-skill', '--firstmate', home, '--json');
   assert.equal(bare.status, 0, bare.stderr);
+});
+
+// A synthetic fleet: a main home and two secondmate homes its registry lists, plus a remote route and a line with no home,
+// which are skipped and counted. Two homes hold a status file of the same name. No home's name or path reaches the bundle
+// or a prompt; the report gives each home's counts by its salted id, and a home that cannot be read fails the retro.
+test('init --firstmate <home> --fleet reads every home of the fleet; home names stay out of the bundle and prompts', () => {
+  const { tmp, p, lfm } = setup();
+  const [main, kestrel, wren] = ['harbor-main', 'kestrel-mate', 'wren-mate'].map((n) => join(tmp, n));
+  const at = (days) => `at=${Math.floor(NOW / 1000 - days * 86_400)}`;
+  const put = (home, file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
+  const registry = (...homes) => put(main, 'data/secondmates.md', `# Secondmates\n\n${homes.map((h, i) => `- mate${i} - Umer's work (home: ${h}; scope: demo; projects: umer-app; added 2026-10-01)\n`).join('')}`
+    + '- far - a remote route (host: far-box; root: /srv/fm; home: /srv/fm-home; scope: demo; projects: umer-app; added 2026-10-01)\n- loose - a line with no home field\n');
+  put(main, 'state/task.status', `blocked [${at(1)}]: waiting on review\n`);
+  put(kestrel, 'state/task.status', `needs-decision [${at(1)}]: pick a name\nblocked [${at(2)}]: waiting on CI\n`);
+  put(wren, 'state/demo.inbox/001.msg', `${at(1)}\n[steer] use the demo data\n`);
+  put(wren, 'data/defects.md', `## ${new Date(NOW - 86_400_000).toISOString().slice(0, 10)}\n\n- [tests] Umer's demo flake.\n`);
+  registry(kestrel, wren, kestrel); // a home listed twice is read once
+  assert.equal(lfm({}, 'init', '-y', '--no-skill', '--fleet').status, 2); // --fleet needs --firstmate
+  const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet', '--json');
+  assert.equal(init.status, 0, init.stderr);
+  assert.deepEqual(JSON.parse(init.stdout).sources.home, { type: 'firstmate', path: main, fleet: true });
+  assert.match(lfm({}, 'doctor').stdout, /3 homes, 2 registry lines skipped \(no local home\), 1 decisions, 2 blocks, 1 steers, 1 defect records/);
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const run = JSON.parse(r.stdout);
+  const m = Object.fromEntries(run.metrics.map((x) => [x.name, x.current]));
+  assert.deepEqual([m.decisions, m.blocks, m.steers, m.defects], [1, 2, 1, 1]); // the fleet totals
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
+  let salt, refs;
+  try {
+    salt = db.prepare('SELECT salt FROM secret').get().salt;
+    refs = db.prepare(`SELECT record_id, ref FROM records WHERE source = 'home'`).all();
+  } finally { db.close(); }
+  const id = (home) => createHmac('sha256', salt).update(home).digest('hex').slice(0, 12);
+  assert.ok(refs.some((x) => x.record_id === `${id(main)}/task.status:1`) && refs.some((x) => x.record_id === `${id(kestrel)}/task.status:1`)); // same file, two homes
+  assert.ok(refs.some((x) => x.ref.startsWith(join(kestrel, 'state'))), 'the store keeps the real path');
+  const dir = join(p, '.lfm', 'runs', String(run.run.id)), bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');
+  assert.match(bundle, new RegExp(`^- \\[${id(wren)}/defects:\\w+\\] home in home ${id(wren)}, `, 'm'));
+  const prompts = ['claude', 'codex'].flatMap((a) => readFileSync(join(tmp, 'log', `${a}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l).stdin));
+  assert.ok(prompts.some((x) => x.includes(bundle)), 'bundle not delivered to an agent');
+  for (const text of [bundle, ...prompts]) for (const canary of ['harbor-main', 'kestrel-mate', 'wren-mate', 'mate0', tmp]) assert.ok(!text.includes(canary), `${canary} reached the bundle or a prompt`);
+  const report = readFileSync(join(dir, 'report.txt'), 'utf8');
+  for (const line of [`- Home ${id(main)}: 0 decisions, 1 block, 0 steers, 0 defects this window.`, `- Home ${id(kestrel)}: 1 decision, 1 block, 0 steers, 0 defects this window.`,
+    `- Home ${id(wren)}: 0 decisions, 0 blocks, 1 steer, 1 defect this window.`, '- Source home skipped 2 home lines with no local home.']) assert.ok(report.includes(line), `report.txt lacks ${line}`);
+  registry(kestrel, join(tmp, 'gone-mate')); // a listed home that cannot be read fails the retro, naming the source and the fix
+  const gone = lfm({}, 'retro', '--foreground');
+  assert.notEqual(gone.status, 0);
+  assert.match(gone.stderr, /^error: collect: source home: cannot read \S*gone-mate\/state \(ENOENT\)/m);
+  assert.match(gone.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing source home in the collect step/m);
+  assert.match(lfm({}, 'doctor').stdout, /fix or remove the line of \S*gone-mate in \S*secondmates\.md, the fleet registry source home reads/); // doctor names the registry line
 });

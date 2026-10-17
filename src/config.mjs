@@ -42,9 +42,9 @@ export function mapping(value, keys, where) {
   return value;
 }
 export const expand = (p, dir) => resolve(dir, p.replace(/^~(?=\/|$)/, homedir()));
-// The config entry of a source read from one file: { type, path }, the path resolved against the project dir.
-export function pathSource(s, where, dir) {
-  mapping(s, ['type', 'path'], where);
+// The config entry of a source read from one file: { type, path } and the source's own keys, the path resolved against the project dir.
+export function pathSource(s, where, dir, keys = []) {
+  mapping(s, ['type', 'path', ...keys], where);
   if (typeof s.path !== 'string') throw new UsageError(`${where}.path must be a string`);
   return { ...s, path: expand(s.path, dir) };
 }
