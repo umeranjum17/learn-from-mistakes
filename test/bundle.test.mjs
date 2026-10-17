@@ -8,6 +8,7 @@ import { after, test } from 'node:test';
 // The CLI loads first: src/config.mjs and src/init.mjs import each other, so a test that starts at src/bundle.mjs crashes.
 import '../bin/learn-from-mistakes-axi.mjs';
 import { bundle } from '../src/bundle.mjs';
+import { saltedId } from '../src/sources/markdown-log.mjs';
 import { openStore } from '../src/store.mjs';
 
 test('the unlabelled section lists a record with a cause and no label, and not a record with a label and no cause', async () => {
@@ -30,4 +31,23 @@ test('the unlabelled section lists a record with a cause and no label, and not a
   const section = text.slice(text.indexOf('## Unlabelled defect records'));
   assert.match(section, /^- \[log:cause-only\] log at defects\.md:3, \d{4}-\d{2}-\d{2}$/m);
   assert.doesNotMatch(section, /log:label-only/);
+});
+
+test('a done-done record keeps no app name in bundle.md: a stored pre-salt id is keyed, and the home path is replaced', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
+  after(() => rmSync(state, { recursive: true }));
+  const db = await openStore(state, true);
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', now, now);
+  const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, record_id) VALUES (1, ?, ?, ?, ?, ?, ?)');
+  record.run('dd', now, '/work/notes/runs/notes/r1/run.json', null, 'verify fail: check: wrong screen', 'dd:notes/r1/check');
+  const { salt } = db.prepare('SELECT salt FROM secret').get();
+  const file = join(state, 'bundle.md');
+  const window = { current_start: new Date(Date.now() - 7 * 86_400_000).toISOString(), previous_start: new Date(Date.now() - 14 * 86_400_000).toISOString() };
+  bundle({ excerpts: 'off', caps: { bundle_chars: 100_000 }, sources: { dd: { type: 'done-done', path: '/work/notes', apps: ['notes'] } } }, db, 1, file, window);
+  db.close();
+
+  const text = readFileSync(file, 'utf8');
+  assert.doesNotMatch(text, /notes/);
+  assert.match(text, new RegExp(`^- \\[dd:${saltedId(salt, 'notes/r1/check')}\\] dd at <done-done home>/runs/${saltedId(salt, 'notes')}/r1/run\\.json, `, 'm'));
 });
