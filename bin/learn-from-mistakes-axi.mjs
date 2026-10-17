@@ -461,7 +461,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   -h, --help          show this help and the supported commands
   -v, --version       show the version
 the report --json output is privacy-bounded: identifiers, counts, metrics, follow-ups, fixes and
-  each finding's judge verdict word (confirmed, weakened or refuted), plus the run's
+  each finding's judge verdict word (confirmed, weakened, refuted or not judged), plus the run's
   report.txt path; the default and --full reports also print one \`finding:\` line per finding with
   its counts and verdict, never the agent's summary (it is in report.txt only), record text,
   label/proposal prose or change what/why;
