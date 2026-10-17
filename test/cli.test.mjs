@@ -515,6 +515,19 @@ test('verify runs before propose: a finding the judge refuted never reaches the 
   assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ?', old).map((f) => f.verdict), ['confirmed']);
 });
 
+test('a cause whose every finding the judge refuted gets no proposal and its fixes are refused at check, though its label counts repeat', () => {
+  const { p, lfm, query, calls, lines } = agentSetup(), yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'twins-other', FAKE_CAUSE: 'shared-cache-lock', FAKE_REFUTE: 'f1,f2', FAKE_PROPOSE: 'twin' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const id = JSON.parse(r.stdout).run.id;
+  assert.deepEqual(query('SELECT verdict FROM findings WHERE run_id = ? ORDER BY id', id).map((f) => f.verdict), ['refuted', 'refuted', 'confirmed']);
+  const [prompt] = calls().filter((c) => c.stdin.startsWith(`lfm-run:${id}:propose\n`)).map((c) => c.stdin);
+  assert.match(prompt, /^- agent-exit-wait, confirmed by the judge: /m);
+  assert.doesNotMatch(prompt, /^- shared-cache-lock:/m);
+  assert.deepEqual(lines('check', id), ['problem: proposals[0]: the judge refuted every finding for its cause', 'fixes: 0 kept of 1, problems: 1']);
+});
+
 test('duplicate labels collapse to one incident, occurrences add, and log and store totals never add', () => {
   const run = agentSetup();
   const dup = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'agent-exit-wait', FAKE_DUP: '1' };

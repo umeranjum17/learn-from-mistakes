@@ -80,8 +80,9 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const first = bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1];
   const answer = mode === 'blank' ? '' : mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] }
     : mode === 'outside' ? { findings: [], labels: [{ id: 'nowhere-9', event: true, cause: 'other', why: 'The run failed for Umer.' }] } : {
-      findings: process.env.FAKE_FINDINGS === 'twins' ? [{ cause: process.env.FAKE_CAUSE, summary: 'First twin failed alone.', refs: [records[0]] },
-        { cause: process.env.FAKE_CAUSE, summary: 'Second twin failed alone.', refs: [records[1]] }]
+      findings: process.env.FAKE_FINDINGS?.startsWith('twins') ? [{ cause: process.env.FAKE_CAUSE, summary: 'First twin failed alone.', refs: [records[0]] },
+        { cause: process.env.FAKE_CAUSE, summary: 'Second twin failed alone.', refs: [records[1]] },
+        ...(process.env.FAKE_FINDINGS === 'twins-other' ? [{ cause: 'agent-exit-wait', summary: 'The agent exit wait failed for Umer alone.', refs: [first] }] : [])]
         : [{ cause: 'umer-fixtures-unset', summary: 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
           { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
       labels: records.map((id, i) => ({ id, event: true, cause: process.env.FAKE_CAUSE || 'other', why: 'The run failed for Umer.', duplicate_of: i > 0 && process.env.FAKE_DUP ? records[0] : null, occurrences: i === 0 && process.env.FAKE_OCC ? Number(process.env.FAKE_OCC) : null, confidence: null })),
