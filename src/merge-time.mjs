@@ -1,4 +1,4 @@
-// When an applied change went live: `apply` commits the fix on its own lfm/<run>-<n>
+// When an applied change went live: `apply` commits the fix on its own lfm/<project>/<run>-<n>
 // branch, but the fix only reaches users when that branch is merged into the default
 // branch, days or weeks later. The follow-up windows start at that merge time, not at
 // the apply commit's recorded time; the full rule lives in features/followup.md. A

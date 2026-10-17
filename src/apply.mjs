@@ -1,5 +1,5 @@
 // Applies a retro's kept fixes, each on its own branch: the worker (agent:, never the judge) answers each fix with the new text
-// of the repo files its target names, and the tool commits that from HEAD with git's plumbing on lfm/<run>-<n> and records it
+// of the repo files its target names, and the tool commits that from HEAD with git's plumbing on lfm/<project>/<run>-<n> and records it
 // as `change applied --proposal <run>:<n>` does. The user's branch, index and work tree are never touched; nothing is pushed.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -55,9 +55,13 @@ function workerFailed(db, run, fix, made, e) {
   throw failed;
 }
 
+// A fix's branch, lfm/<project>/<run>-<n>. The project's name (its id) keeps two projects in one repo that share a run number
+// and a fix from sharing one branch; only the name's letters, digits, _ and - reach the ref, so it is always a valid one.
+const applyBranch = (cfg, run, n) => `lfm/${cfg.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'project'}/${run}-${n}`;
+
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
 async function applyOne(cfg, db, run, fix, log, opts = {}) {
-  const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`,
+  const at = `${run}:${fix.n}`, branch = applyBranch(cfg, run, fix.n),
   // The branch's identity for this fix: run, fix, cause, target and change. The target is part of it, so a reused
   // run id with the same cause and change text for another file never matches this branch and is refused, not applied.
   message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\ntarget: ${redact(fix.target)}\n\n${redact(fix.change)}`;
