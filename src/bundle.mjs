@@ -1,6 +1,6 @@
 // The bundle step: the one file the run's own agents read, <state dir>/runs/<id>/bundle.md. It holds the metrics,
 // the follow-ups, the top signal clusters (this window's session events with a failure signal, by tool and signal)
-// and the records no match rule tagged, this window's and the undated ones. Each item has an id and refs (an event's id
+// and the records with no label, this window's and the undated ones. Each item has an id and refs (an event's id
 // is its store row id, for reference only; a record's is the id its label takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
 // and a number or a hash, never record text, and the worker must cite it as the store keeps it. Items that would pass caps.bundle_chars are
@@ -32,7 +32,9 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     metrics.set(m.name, { ...metrics.get(m.name), [m.window]: m.value ?? 'n/a', target: m.target });
   }
   const grouped = clusters(db, id, window.start);
-  const records = db.prepare('SELECT record_id, source, ts, ref, text FROM records WHERE run_id = ? AND cause IS NULL ORDER BY ts DESC, id').all(id)
+  // Unlabelled means no row in the labels table, the same meaning report coverage counts; a record's cause does not decide it.
+  const records = db.prepare(`SELECT record_id, source, ts, ref, text FROM records r WHERE run_id = ?
+    AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
@@ -44,7 +46,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       const more = es.length > SAMPLES ? [`- ${es.length - SAMPLES} more events`] : [];
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
-    ['Unlabelled defect records', 'No record in this window lacks a cause.', records.map((r) =>
+    ['Unlabelled defect records', 'No record in this window lacks a label.', records.map((r) =>
       `- [${r.record_id}] ${redact(r.source)} at ${redact(r.ref)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
