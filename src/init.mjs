@@ -9,6 +9,7 @@ import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-
 import { interactive, modelNotes, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { AGENT_RULE, expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from './runners/index.mjs';
+import { checkHomes } from './sources/firstmate.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
@@ -136,6 +137,7 @@ export async function init(dir, opts) {
   // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override -- unless
   // --reconfigure says the flags re-apply: they replace those keys in the existing config, every other key and comment stays.
   const before = written ? loadGlobal() : loadConfig(dir), here = (k) => before.from[k] === file;
+  if (opts.firstmate && (written || (!Object.values(before.sources).some((s) => s.type === 'firstmate') && !Object.hasOwn(before.sources, 'home')))) checkHomes({ home: { ...found.home, path: expand(found.home.path, dir) } }, file);
   const chosen = {}, ignored = [];
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;

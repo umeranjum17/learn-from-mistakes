@@ -238,6 +238,38 @@ test('a registry summary with parentheses still reads its home', () => {
   assert.match(lfm({}, 'doctor').stdout, /2 homes, 0 registry lines skipped \(no local home\), 1 decisions/);
 });
 
+test('a registry home path holding ; or ) is refused by init, which writes nothing', () => {
+  for (const route of ['home: {mate};v2; scope: demo', 'home: {mate};v2:3; scope: demo', 'home: {mate} (old)/x; scope: demo']) {
+    const { tmp, p, lfm } = setup();
+    const [main, mate] = ['harbor-main', 'ops-mate'].map((n) => join(tmp, n));
+    mkdirSync(join(main, 'data'), { recursive: true });
+    mkdirSync(join(mate, 'state'), { recursive: true });
+    writeFileSync(join(main, 'data', 'secondmates.md'), `# Secondmates\n\n- ops - deploys (${route.replace('{mate}', mate)}; added 2026-10-01)\n`);
+    const cfg = join(p, '.learn-from-mistakes.yaml');
+    writeFileSync(cfg, 'name: umer-app\nsources:\n');
+    const before = readFileSync(cfg, 'utf8');
+    const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet');
+    assert.notEqual(init.status, 0);
+    assert.match(init.stderr, /^error: \S+secondmates\.md:3: a home path cannot hold ';' or '\)'$/m);
+    assert.match(init.stderr, /^next: fix the home: path on \S+secondmates\.md:3$/m);
+    assert.equal(readFileSync(cfg, 'utf8'), before);
+  }
+});
+
+test('init refuses a fleet whose registry lists the main home, and leaves the config unchanged', () => {
+  const { tmp, p, lfm } = setup();
+  const main = join(tmp, 'harbor-main');
+  mkdirSync(join(main, 'data'), { recursive: true });
+  writeFileSync(join(main, 'data', 'secondmates.md'), `- mate - x (home: ${main}; scope: demo; added 2026-10-01)\n`);
+  const cfg = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(cfg, 'name: umer-app\nsources:\n');
+  const before = readFileSync(cfg, 'utf8');
+  const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet');
+  assert.notEqual(init.status, 0);
+  assert.match(init.stderr, /^error: \S+: sources\.home reads \S+ twice$/m);
+  assert.equal(readFileSync(cfg, 'utf8'), before);
+});
+
 // A synthetic fleet: a main home and two secondmate homes its registry lists, plus a remote route and a line with no home,
 // which are skipped and counted. Two homes hold a status file of the same name. No home's name or path reaches the bundle
 // or a prompt; the report gives each home's counts by its salted id, and a home that cannot be read fails the retro.
@@ -297,7 +329,7 @@ test('init --firstmate <home> --fleet reads every home of the fleet; home names 
   const twice = lfm({}, 'retro', '--foreground');
   assert.notEqual(twice.status, 0);
   assert.match(twice.stderr, /^error: \S+: sources\.home reads \S+ twice$/m);
-  assert.match(twice.stderr, /^next: remove the extra \S+ from source home$/m);
+  assert.match(twice.stderr, /^next: fix or remove the line of \S+ in \S*secondmates\.md'?, line \d+$/m);
   assert.match(lfm({}, 'doctor').stdout, /^fail config\s+\S+: sources\.home reads \S+ twice$/m);
   registry(kestrel, wren);
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${main}, fleet: true }\n  kestrel: { type: firstmate, path: ${kestrel} }\n`);

@@ -38,28 +38,35 @@ export function validate(s, where, dir) {
   return { type, path, ...(fleet && { fleet }), targets, targets_file: file };
 }
 
-// A registry bullet's route: the `key: value` pairs of its parenthesised group that names a home or host, `;`-separated, in any order.
-function registryRoute(line) {
-  const route = {}, group = [...line.matchAll(/\(([^)]*)\)/g)].map((m) => m[1]).find((g) => /(^|;)\s*(home|host)\s*:/.test(g));
-  for (const pair of (group ?? '').split(';')) {
-    const at = pair.indexOf(':');
-    if (at > 0) route[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
+// A registry bullet's route: the `key: value` pairs of its parenthesised group that names a home or host, `;`-separated, in
+// any order, and a bare `added <date>`. A home path cannot hold `;` or `)`: either cuts it, so such a line is refused.
+function registryRoute(line, at) {
+  const cut = () => new UsageError(`${at}: a home path cannot hold ';' or ')'`, `fix the home: path on ${at}`);
+  const m = [...line.matchAll(/\(([^)]*)\)/g)].find((g) => /(^|;)\s*(home|host)\s*:/.test(g[1]));
+  if (!m) return {};
+  const route = {};
+  for (const pair of m[1].split(';')) {
+    const colon = pair.indexOf(':'), key = colon > 0 ? pair.slice(0, colon).trim() : '';
+    if (/^[a-z]+$/.test(key)) route[key] = pair.slice(colon + 1).trim();
+    else if (pair.trim() && !/^added \d{4}-\d{2}-\d{2}$/.test(pair.trim())) throw cut();
   }
+  if (/^\S/.test(line.slice(m.index + m[0].length))) throw cut();
   return route;
 }
 
-// The fleet's homes: the main home, then each secondmate home its registry lists; `lines` counts the bullets skipped.
+// The fleet's homes: the main home, then each secondmate home its registry lists, with the registry line that lists it
+// (`rows`); `lines` counts the bullets skipped.
 function fleetHomes(source, path, project) {
-  const file = join(path, 'data', 'secondmates.md'), homes = [path];
+  const file = join(path, 'data', 'secondmates.md'), homes = [path], rows = [undefined];
   let lines = 0;
   const text = existsSync(file) ? readText(file, `source ${source}: ${file}`, `set sources.${source}.fleet to false in ${shq(project)} to read the main home alone`) : '';
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith('- ')) continue;
-    const route = registryRoute(line), home = route.home?.replace(/^~(?=\/|$)/, homedir());
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (!line.startsWith('- ')) return;
+    const route = registryRoute(line, `${file}:${i + 1}`), home = route.home?.replace(/^~(?=\/|$)/, homedir());
     if ('host' in route || !home || !isAbsolute(home)) lines += 1;
-    else homes.push(resolve(home));
-  }
-  return { homes, lines, file };
+    else { homes.push(resolve(home)); rows.push(i + 1); }
+  });
+  return { homes, rows, lines, file };
 }
 
 const realHome = (home) => { try { return realpathSync(home); } catch { return resolve(home); } };
@@ -69,12 +76,13 @@ export function checkHomes(sources, project) {
   const seen = new Map();
   for (const [id, s] of Object.entries(sources)) {
     if (s.type !== 'firstmate') continue;
-    for (const home of s.fleet ? fleetHomes(id, s.path, project).homes : [s.path]) {
+    const fleet = s.fleet ? fleetHomes(id, s.path, project) : { homes: [s.path] };
+    fleet.homes.forEach((home, i) => {
       const real = realHome(home), prev = seen.get(real);
       if (prev === undefined) seen.set(real, id);
-      else if (prev === id) throw new UsageError(`${project}: sources.${id} reads ${home} twice`, `remove the extra ${home} from source ${id}`);
+      else if (prev === id) throw new UsageError(`${project}: sources.${id} reads ${home} twice`, `fix or remove the line of ${home} in ${shq(fleet.file)}, line ${fleet.rows[i]}`);
       else throw new UsageError(`${project}: sources.${prev} and sources.${id} both read ${home}`, `remove ${home} from source ${prev} or source ${id}`);
-    }
+    });
   }
 }
 
