@@ -38,19 +38,15 @@ export function validate(s, where, dir) {
   return { type, path, ...(fleet && { fleet }), targets, targets_file: file };
 }
 
-// A registry bullet's route: the `key: value` pairs of its parenthesised group that names a home or host, `;`-separated, in
-// any order, and a bare `added <date>`. A home path cannot hold `;` or `)`: either cuts it, so such a line is refused.
-function registryRoute(line, at) {
-  const cut = () => new UsageError(`${at}: a home path cannot hold ';' or ')'`, `fix the home: path on ${at}`);
+// A registry bullet's route: the `home:` and `host:` pairs of its parenthesised group that names one, `;`-separated, in
+// any order. Other segments are ignored; a home path is cut at the next `;` or `)`.
+function registryRoute(line) {
   const m = [...line.matchAll(/\(([^)]*)\)/g)].find((g) => /(^|;)\s*(home|host)\s*:/.test(g[1]));
-  if (!m) return {};
   const route = {};
-  for (const pair of m[1].split(';')) {
+  for (const pair of m ? m[1].split(';') : []) {
     const colon = pair.indexOf(':'), key = colon > 0 ? pair.slice(0, colon).trim() : '';
-    if (/^[a-z]+$/.test(key)) route[key] = pair.slice(colon + 1).trim();
-    else if (pair.trim() && !/^added \d{4}-\d{2}-\d{2}$/.test(pair.trim())) throw cut();
+    if (key === 'home' || key === 'host') route[key] = pair.slice(colon + 1).trim();
   }
-  if (/^\S/.test(line.slice(m.index + m[0].length))) throw cut();
   return route;
 }
 
@@ -62,7 +58,7 @@ function fleetHomes(source, path, project) {
   const text = existsSync(file) ? readText(file, `source ${source}: ${file}`, `set sources.${source}.fleet to false in ${shq(project)} to read the main home alone`) : '';
   text.split(/\r?\n/).forEach((line, i) => {
     if (!line.startsWith('- ')) return;
-    const route = registryRoute(line, `${file}:${i + 1}`), home = route.home?.replace(/^~(?=\/|$)/, homedir());
+    const route = registryRoute(line), home = route.home?.replace(/^~(?=\/|$)/, homedir());
     if ('host' in route || !home || !isAbsolute(home)) lines += 1;
     else { homes.push(resolve(home)); rows.push(i + 1); }
   });

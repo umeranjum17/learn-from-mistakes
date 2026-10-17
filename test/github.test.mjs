@@ -238,24 +238,6 @@ test('a registry summary with parentheses still reads its home', () => {
   assert.match(lfm({}, 'doctor').stdout, /2 homes, 0 registry lines skipped \(no local home\), 1 decisions/);
 });
 
-test('a registry home path holding ; or ) is refused by init, which writes nothing', () => {
-  for (const route of ['home: {mate};v2; scope: demo', 'home: {mate};v2:3; scope: demo', 'home: {mate} (old)/x; scope: demo']) {
-    const { tmp, p, lfm } = setup();
-    const [main, mate] = ['harbor-main', 'ops-mate'].map((n) => join(tmp, n));
-    mkdirSync(join(main, 'data'), { recursive: true });
-    mkdirSync(join(mate, 'state'), { recursive: true });
-    writeFileSync(join(main, 'data', 'secondmates.md'), `# Secondmates\n\n- ops - deploys (${route.replace('{mate}', mate)}; added 2026-10-01)\n`);
-    const cfg = join(p, '.learn-from-mistakes.yaml');
-    writeFileSync(cfg, 'name: umer-app\nsources:\n');
-    const before = readFileSync(cfg, 'utf8');
-    const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet');
-    assert.notEqual(init.status, 0);
-    assert.match(init.stderr, /^error: \S+secondmates\.md:3: a home path cannot hold ';' or '\)'$/m);
-    assert.match(init.stderr, /^next: fix the home: path on \S+secondmates\.md:3$/m);
-    assert.equal(readFileSync(cfg, 'utf8'), before);
-  }
-});
-
 test('init refuses a fleet whose registry lists the main home, and leaves the config unchanged', () => {
   const { tmp, p, lfm } = setup();
   const main = join(tmp, 'harbor-main');
@@ -279,7 +261,7 @@ test('init --firstmate <home> --fleet reads every home of the fleet; home names 
   const tilde = join(tmp, 'home', 'fm-tilde');
   const at = (days) => `at=${Math.floor(NOW / 1000 - days * 86_400)}`;
   const put = (home, file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
-  const registry = (...homes) => put(main, 'data/secondmates.md', `# Secondmates\n\n${homes.map((h, i) => `- mate${i} - Umer's work (home: ${h}; scope: demo; projects: umer-app; added 2026-10-01)\n`).join('')}`
+  const registry = (...homes) => put(main, 'data/secondmates.md', `# Secondmates\n\n${homes.map((h, i) => `- mate${i} - Umer's work (home: ${h}; scope: demo; projects: umer-app; last-seen: 2026-10-01; retired; added 2026-10-01)\n`).join('')}`
     + '- far - a remote route (host: far-box; root: /srv/fm; home: /srv/fm-home; scope: demo; projects: umer-app; added 2026-10-01)\n- loose - a line with no home field\n'
     + `- late - a home after its other keys (scope: demo; home: ${late}; added 2026-10-01)\n- tilde - a home under ~ (scope: demo; home: ~/fm-tilde; added 2026-10-01)\n`
     + `- far2 - a remote route with home before host (home: ${far2}; host: far-box; scope: demo)\n`);
