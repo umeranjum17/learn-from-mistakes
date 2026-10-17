@@ -287,7 +287,9 @@ try {
     drive('apply', 'apply');
     assert.match(readFileSync(join(evidence, 'apply.stdout'), 'utf8'), new RegExp(`^applied: fix ${proposed.run.id}:1 on branch lfm/${proposed.run.id}-1, commit [0-9a-f]{12}, ledger chg-\\d+$`, 'm'), 'apply does not make fix 1');
     assert.deepEqual([git('rev-parse', `lfm/${proposed.run.id}-1^`), git('status', '--porcelain')], [git('rev-parse', 'HEAD'), ''], 'apply moved HEAD or touched the work tree');
-    drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', 'abc1234', '--json');
+    // The ref check verifies a hex --ref against the project's git, so the journey records the proposal against the
+    // commit apply just made (the change's own version id), not a placeholder that names no commit.
+    drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', git('rev-parse', `lfm/${proposed.run.id}-1`), '--json');
     assert.deepEqual((({ cause, metric, tripwire }) => [cause, metric, tripwire])(JSON.parse(readFileSync(join(evidence, 'change-proposal.stdout'), 'utf8'))),
       ['agent-exit-wait', 'cause_count:agent-exit-wait', '<= 0'], '--proposal does not copy the fix into the ledger');
   }
