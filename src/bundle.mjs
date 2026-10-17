@@ -39,7 +39,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
   const { salt } = db.prepare('SELECT salt FROM secret').get();
-  // A done-done record's ref goes out with its app folder keyed like its id; when that form cannot be derived (the
+  // A done-done record's ref goes out with its home and app folder replaced; when that form cannot be derived (the
   // source moved, changed type or is gone), the path is withheld rather than leaking the plain app name to the model.
   const keyed = (r) => {
     const s = cfg.sources?.[r.source];
@@ -47,7 +47,12 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     const root = join(s.path, 'runs');
     if (!r.ref.startsWith(root + sep)) return null;
     const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
-    return join(root, saltedId(salt, app), ...rest);
+    return ['<done-done home>', 'runs', saltedId(salt, app), ...rest].join(sep);
+  };
+  const idFor = (r) => {
+    if (cfg.sources?.[r.source]?.type !== 'done-done') return r.record_id;
+    const plain = r.record_id.slice(r.source.length + 1);
+    return plain.includes('/') ? `${r.source}:${saltedId(salt, plain)}` : r.record_id;
   };
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
@@ -61,7 +66,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     })],
     ['Unlabelled defect records', 'No record in this window lacks a label.', records.map((r) => {
       const at = keyed(r);
-      return `- [${r.record_id}] ${redact(r.source)} at ${at ? redact(at) : 'an unknown path'}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`;
+      return `- [${idFor(r)}] ${redact(r.source)} at ${at ? redact(at) : 'an unknown path'}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`;
     })],
   ];
   // The headings are always written, so their length is kept out of the room for items first.

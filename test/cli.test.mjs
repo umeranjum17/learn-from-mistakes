@@ -560,7 +560,7 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   const keyed = (text) => createHmac('sha256', salt).update(text).digest('hex').slice(0, 12);
   const dd = (id, step) => `dd:${keyed(`notes/${id}/${step}`)}`;
   const file = (id) => join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json');
-  const ref = (id) => join(env.DONE_DONE_HOME, 'runs', keyed('notes'), id, 'run.json');
+  const ref = (id) => join('<done-done home>', 'runs', keyed('notes'), id, 'run.json');
   assert.deepEqual(records, [
     { id: dd('r1', 'check'), source: 'dd', step: 'check', ref: file('r1'), date: ENDED.slice(0, 10), text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
     { id: dd('r2', 'drive'), source: 'dd', step: 'drive', ref: file('r2'), date: UPDATED.slice(0, 10), text: 'verify inconclusive: drive: journey timed out after 30m' },
