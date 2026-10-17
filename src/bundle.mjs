@@ -43,7 +43,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   // A done-done record's ref goes out with its app folder keyed like its id; when that form cannot be derived (the
   // source moved, changed type or is gone), the path is withheld rather than leaking the plain app name to the model.
   const keyed = (r) => {
-    const s = cfg.sources[r.source];
+    const s = cfg.sources?.[r.source];
     if (s?.type !== 'done-done') return r.ref.endsWith(sep + 'run.json') ? null : r.ref;
     const root = join(s.path, 'runs');
     if (!r.ref.startsWith(root + sep)) return null;
