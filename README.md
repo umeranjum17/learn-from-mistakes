@@ -65,11 +65,11 @@ The optional discovery skill uses the [Agent Skills](https://agentskills.io) for
 
 ## Runners and user-chosen models
 
-Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The two roles must differ: `agent_config` holds one model per agent, so a judge on the worker's binary and model would judge its own work. A BYOKit sign-in route counts as its vendor's agent (`byokit:claude` is Claude, `byokit:chatgpt` is Codex).
+Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The judge may be the worker's agent: `agent_config` holds one model per agent, so it then runs the worker's model, each call in a fresh session. Nothing refuses that choice.
 
 The current CLI runners are `claude`, `codex`, `opencode` and `pi`. Claude, OpenCode and Pi run with tools off; Codex uses read-only mode. Each needs its own executable and login. `gemini` and `acp:<target>` (through `acpx`) have adapters, but are **not offered for retro roles**: their headless tool restrictions are not confirmed. `agents --test <runner>` can probe an adapter, including an unconfirmed one; it does not remove that restriction.
 
-`byokit:<route>` calls a model without an agent CLI and has no tools. It requires Node **22.18+**, the optional BYOKit packages and a ready plan route with its own sign-in or plan key. Routes include `byokit:chatgpt` and `byokit:claude`; other plan-key aliases depend on installed BYOKit support. Follow `doctor`'s readiness fixes; a route name alone is not a login or model choice.
+`byokit:<route>` calls a model without an agent CLI and has no tools. It requires Node **22.18+**, the BYOKit packages (dependencies of the tool, installed with it) and a ready plan route with its own sign-in or plan key. Routes include `byokit:chatgpt` and `byokit:claude`; other plan-key aliases depend on installed BYOKit support. Follow `doctor`'s readiness fixes; a route name alone is not a login or model choice.
 
 Example shape, with placeholders to replace with your own choices:
 
@@ -85,7 +85,7 @@ agent_config:
 agent_timeout: "20m"
 ```
 
-Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices and `allow_premium`. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Model names containing the separate word `opus`, `sonnet` or `sol` are blocked unless you explicitly set `allow_premium: true`. Permission is not a recommendation to upgrade.
+Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Every model you set runs: no model name is blocked.
 
 ## Cost and limits
 
@@ -160,7 +160,7 @@ To track a change you made yourself, use `change applied --cause <configured-cau
 | --- | --- |
 | `0` | Command succeeded, or a background run started/is still running. Inspect status before claiming completion. Doctor warnings do not fail it. |
 | `1` | Failed or interrupted run shown by `retro --wait`, `status`, the bare command, `attach` or `rerun`; agent/live-probe/input problem, invalid change ledger, or a doctor `fail`. Read diagnostics and the `fix:` / `next:` line. |
-| `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, identity clash, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
+| `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
 | `3` | No saved run to inspect, no completed retro to report, or no run with kept fixes to `apply`. Start or finish a retro first. |
 
 Use `--json` for structured output where supported; default output is compact TOON. A bare `learn-from-mistakes-axi` shows the latest run's status. `report` selects the latest completed retro, which may be older than the latest failed/running run. Check its `run` id. `--dir <project>` targets another project without changing directories. `guide` gives the current calling-agent procedure; `--help` is the installed version's command reference.

@@ -8,7 +8,6 @@ import { parseDocument } from 'yaml';
 import { shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { AGENT_NAME, MODEL_RULE, modelOk, PROJECT_FILE } from './config.mjs';
 import { INSTALL, readyRoutes, routeModels } from './runners/byokit.mjs';
-import { CLASH } from './runners/index.mjs';
 
 // The fixed agent CLIs a terminal picks from (never a PATH scan); the BYOKit entries come from BYOKit's own routes
 // listing, and a byokit:<route> can always be typed as well.
@@ -63,10 +62,9 @@ const line = () => {
 const rest = () => { if (!ended) reader?.pause(); };
 export const closeAsk = () => { reader?.close(); reader = lines = undefined; ended = false; };
 
-// A terminal picks each unset role: its agent when not set (the judge must be another agent than the worker), then
-// the model of that agent. A role whose agent is set only gets the model question; the agent key is then not written.
+// A terminal picks each unset role: its agent when not set, then the model of that agent. A role whose agent is set
+// only gets the model question; the agent key is then not written. Both roles may pick one agent: they share its model.
 export async function pick(keys, cfg, dir) {
-  if (cfg.agent && cfg.agent === cfg.judge_agent) throw new UsageError(`judge_agent and agent are both ${cfg.agent}: ${CLASH}; set judge_agent to another agent in ${shq(projectFile(dir))}, then run the command that stopped again`, saveCommand(['judge_agent'], dir));
   const ask = async (q) => {
     process.stderr.write(q);
     const { value, done } = await line();
@@ -74,38 +72,35 @@ export async function pick(keys, cfg, dir) {
     return value.trim();
   };
   const picks = {};
-  // The BYOKit entries are the routes BYOKit reports as ready; with BYOKit not installed nothing is known, so the
-  // pick still offers the agent CLIs and says how to add a route, and never fails.
+  // The BYOKit entries are the routes BYOKit reports as ready; when BYOKit cannot load nothing is known, so the pick
+  // still offers the agent CLIs and says how to repair the install, and never fails.
   const choices = [...CLIS, ...(await readyRoutes()).map((r) => `byokit:${r}`)];
-  const noRoute = `\n  (no BYOKit route is ready: ${INSTALL})`;
+  const noRoute = `\n  (BYOKit cannot load: ${INSTALL})`;
   try {
     for (const key of keys) {
       let agent = cfg[key];
       if (!agent) {
-        const [role, other, otherRole] = key === 'agent'
-          ? ['worker', cfg.judge_agent, 'judge']
-          : ['judge', picks.agent?.agent ?? cfg.agent, 'worker'];
+        const role = key === 'agent' ? 'worker' : 'judge';
         process.stderr.write(`Which agent runs the ${role}?\n${choices.map((c, i) => `  ${i + 1}) ${c}`).join('\n')}\n  or type byokit:<route>${choices.length === CLIS.length ? noRoute : ''}\n`);
         for (;;) {
           const a = await ask('agent: ');
           agent = choices[Number(a) - 1] ?? a;
           if (!AGENT_NAME.test(agent)) process.stderr.write(`${a || '(empty)'} is not one of the choices\n`);
-          // agent_config holds one model per agent, so two roles on one agent would judge their own work.
-          else if (agent === other) process.stderr.write(`the ${key === 'agent' ? 'worker' : 'judge'} must be another agent than the ${otherRole} (${other})\n`);
           else break;
         }
       }
-      let model;
+      // agent_config holds one model per agent: a role on the agent the other role just picked takes its model.
+      let model = Object.values(picks).find((p) => p.agent === agent)?.model;
       // A BYOKit route lists the models BYOKit exposes for it when it exposes any; the user still types one or picks
       // one by number, and nothing is chosen for them.
-      const offered = agent.startsWith('byokit:') ? await routeModels(agent.slice('byokit:'.length)) : undefined;
+      const offered = !model && agent.startsWith('byokit:') ? await routeModels(agent.slice('byokit:'.length)) : undefined;
       if (offered?.length) process.stderr.write(`Models for ${agent}:\n${offered.map((m, i) => `  ${i + 1}) ${m}`).join('\n')}\n`);
-      for (;;) {
+      while (!model) {
         const typed = await ask(`model for ${agent}: `);
-        model = offered?.[Number(typed) - 1] ?? typed;
-        if (!model) process.stderr.write('a model is needed\n');
-        else if (!modelOk(agent, model)) process.stderr.write(`${model} is not ${MODEL_RULE}\n`);
-        else break;
+        const m = offered?.[Number(typed) - 1] ?? typed;
+        if (!m) process.stderr.write('a model is needed\n');
+        else if (!modelOk(agent, m)) process.stderr.write(`${m} is not ${MODEL_RULE}\n`);
+        else model = m;
       }
       picks[key] = { agent, model, set: !cfg[key] };
     }

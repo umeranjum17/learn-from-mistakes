@@ -914,10 +914,9 @@ followup: { min_sessions: 3, min_days: 2 }
 excerpts: off
 caps: { invocations: 12, bundle_chars: 60000 }
 signoff: on
-allow_premium: false
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });
-  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nallow_premium: false\nagent_path_override: { claude: ' + FAKE_AGENT + ' }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
+  writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nagent_path_override: { claude: ' + FAKE_AGENT + ' }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
   assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
@@ -940,7 +939,8 @@ allow_premium: false
   assert.equal(failed.status, 1, failed.stderr);
   const f = JSON.parse(failed.stdout);
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
-  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'failed']);
+  // A failed run keeps no verdict: the steps from followup on are pending again, for a resume to run them.
+  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', ...Array(7).fill('pending'), 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
@@ -1847,14 +1847,8 @@ test('apply: a worker that answers no JSON fails the fix in the run as failed:, 
   assert.match(direct.stderr, /^next: learn-from-mistakes-axi --help/m);
 });
 
-test('retro and rerun stop before a run when the judge resolves to the worker\'s agent and model, or is not ready', () => {
-  const { p, env, lfm } = agentSetup();
-  writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);
-  for (const cmd of ['retro', 'rerun']) {
-    const r = lfm({}, cmd);
-    assert.equal(r.status, 2, `${cmd}: ${r.stderr}`);
-    assert.match(r.stderr, /^error: judge: agent_config holds one model per agent, so a judge on the worker's agent gets the worker's model and would judge its own work\nnext: ask the user which agent and model to use, then set judge_agent and its agent_config model in /m);
-  }
+test('retro and rerun stop before a run when the judge is not ready; a judge on the worker\'s agent and model runs, in its own session', () => {
+  const { p, env, lfm, lines } = agentSetup();
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: acp:claude\nagent_config: { claude: { model: claude-haiku-5-5 }, "acp:claude": { model: claude-haiku-5-5 } }\n`);
   for (const cmd of ['retro', 'rerun']) {
     const r = lfm({}, cmd);
@@ -1862,6 +1856,16 @@ test('retro and rerun stop before a run when the judge resolves to the worker\'s
     assert.match(r.stderr, /^error: judge: acp:claude is not usable: acpx is not on PATH$/m);
   }
   assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a run started');
+  // The user's choice: one agent and model in both roles. Nothing refuses it; the judge still checks every claim.
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n`);
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.run.status, 'completed');
+  assert.match(lines('verify', out.run.id)[0], /^judge claude claude-haiku-5-5: answered/);
+  assert.ok(out.fixes.length && out.fixes.every((f) => f.verdict === 'confirmed'), r.stdout);
 });
 
 test('a judge that leaves a claim without a verdict, or fails, fails the run: it keeps no verdict, label, finding, fix or report; a resume runs from followup', () => {
@@ -2035,19 +2039,16 @@ test('the CLI, its guide and the shipped skill say the user sets the agents: no 
   assert.match(skill, /ask the user which agent to use[\s\S]*run the stopped command again/);
 });
 
-// A premium worker model names no replacement model, so the fix can never equal the judge's model and clash.
-test('doctor names no model for a premium worker: the fix cannot equal the judge\'s model', () => {
+// Every model the user sets runs: no model name is refused, and the removed allow_premium key is an unknown key.
+test('doctor accepts any model the user set, with no premium block; a config that still sets allow_premium is refused', () => {
   const { p, lfm } = setup();
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\nagent_config: { claude: { model: claude-opus-5-5 } }\n');
+  const line = JSON.parse(lfm('doctor', '--json').stdout).checks.find((c) => c.label === 'worker model');
+  assert.deepEqual([line.level, line.detail], ['ok', 'claude-opus-5-5']);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  log: { type: markdown-log, path: defects.md }\nallow_premium: true\n');
   const r = lfm('doctor', '--json');
   assert.equal(r.status, 1, r.stderr);
-  const line = JSON.parse(r.stdout).checks.find((c) => c.label === 'worker model');
-  assert.equal(line.level, 'fail');
-  assert.equal(line.detail, 'claude-opus-5-5 is a premium model');
-  assert.match(line.fix, /ask the user which agent and model to use, then set agent /);
-  assert.match(line.fix, /or set allow_premium: true in /);
-  assert.doesNotMatch(line.fix, /gpt-6-luna/); // the judge's model is never the suggestion
-  assert.doesNotMatch(line.fix, /set \S+ to \S/); // no value is named at all: nothing to clash with
+  assert.match(JSON.parse(r.stdout).checks.find((c) => c.label === 'config').detail, /\.learn-from-mistakes\.yaml: unknown key allow_premium$/);
 });
 
 // A pinned runner that is not offered names no other agent CLI, so the fix cannot lead to the judge's agent and model.
@@ -2154,10 +2155,10 @@ process.exit(0);`;
     writeFileSync(join(fakes, name), `#!${process.execPath}\n${shim}`);
     chmodSync(join(fakes, name), 0o755);
   }
-  // One configured agent: claude in both roles (a clash doctor reports). The tool probes no other runner.
+  // One configured agent: claude in both roles, which doctor accepts. The tool probes no other runner.
   writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), 'agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n');
   const env = { ...process.env, PATH: fakes, HOME: home, LFM_HOME: join(tmp, 'lfm-home'), CALL_LOG: log };
   const r = spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env });
-  assert.equal(r.status, 1, r.stderr); // the judge clash is the one fail; it does not widen the probe
+  assert.equal(r.status, 0, r.stdout);
   assert.deepEqual(readdirSync(log).sort(), ['claude.jsonl']); // codex, gemini, opencode, pi and acpx were never started
 });

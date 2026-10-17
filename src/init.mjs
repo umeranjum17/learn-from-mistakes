@@ -8,7 +8,7 @@ import { parseDocument } from 'yaml';
 import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { interactive, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { AGENT_RULE, expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
-import { CLASH, configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from './runners/index.mjs';
+import { configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from './runners/index.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
 const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
@@ -61,7 +61,7 @@ const STARTER = {
 
 const globalText = `# learn-from-mistakes global configuration
 # A project's .learn-from-mistakes.yaml may override agent, judge_agent, agent_config,
-# agent_timeout and allow_premium; auto_fix and the other keys here are global-only.
+# and agent_timeout; auto_fix and the other keys here are global-only.
 
 # Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never
 # picks one, and asks when it is not set (init --agent <agent> --model <model> saves the answer).
@@ -72,8 +72,8 @@ const globalText = `# learn-from-mistakes global configuration
 # checks one)
 # agent: claude
 
-# Agent that checks the worker's output. Same values as agent; its agent must differ from the
-# worker's (agent_config holds one model per agent): the judge never judges its own work.
+# Agent that checks the worker's output. Same values as agent. It may be the worker's agent:
+# agent_config holds one model per agent, so it then runs that model, in a fresh session.
 # judge_agent: codex
 
 # Model and reasoning effort per agent. Effort is one of minimal, low, medium, high, xhigh, max; it
@@ -90,9 +90,6 @@ const globalText = `# learn-from-mistakes global configuration
 # Maximum wall-clock time for one agent call. A stalled agent is stopped and the step fails with
 # its cause.
 # agent_timeout: "20m"
-
-# Premium models (Opus, Sonnet, Sol) are refused unless this is true.
-# allow_premium: false
 
 # auto_fix: 0   # kept fixes a run applies unless answered Skip, each on its own branch;
 #   0 proposes only
@@ -158,8 +155,12 @@ export async function init(dir, opts) {
   // Only the roles the user set now need probing: the config's, plus the agents these flags choose. No other
   // agent CLI is run and no other login store is read.
   const agents = detect(before, [...new Set([...configuredRunners(before), ...configuredRunners({ agent: chosen.agent?.agent, judge_agent: chosen.judge_agent?.agent })])]);
-  // A chosen role that is not usable, or a chosen judge on the worker's identity, is refused before any file is written.
+  // A chosen role that is not usable is refused before any file is written. Both roles may name one agent; it then has
+  // one model, so two different models for it contradict each other.
   if (Object.keys(chosen).length) {
+    const [w, j] = [chosen.agent, chosen.judge_agent];
+    if (w?.model && j?.model && w.agent === j.agent && w.model !== j.model) throw new UsageError(`--model ${shq(w.model)} and --judge-model ${shq(j.model)} both set the model of ${w.agent}, and agent_config holds one model per agent`,
+      `learn-from-mistakes-axi init --agent ${shq(w.agent)} --model <model> --judge-agent ${shq(j.agent)}${opts.dir ? ` --dir ${shq(opts.dir)}` : ''}   # ask the user which one model ${w.agent} runs, or another agent for the judge`);
     const want = { ...before, agent_config: structuredClone(before.agent_config) };
     for (const [key, c] of Object.entries(chosen)) {
       if (c.set) want[key] = c.agent;
@@ -167,12 +168,6 @@ export async function init(dir, opts) {
     }
     const { worker, judge } = await resolveRoles(want, agents);
     if (chosen.agent && worker.problem) throw new InputError(`worker: ${worker.problem}`, worker.fix ?? FIX('--agent'));
-    if ((chosen.agent || chosen.judge_agent) && judge.problem === CLASH) {
-      // One agent in both roles has one model, whatever --model and --judge-model say: the judge needs another agent.
-      const one = want.agent === want.judge_agent, model = (m) => (m ? shq(m) : '<model>');
-      throw new UsageError(`judge: ${one ? `the worker and the judge are both ${want.agent}, and agent_config holds one model per agent, so the judge would judge its own work` : judge.problem}`,
-        `learn-from-mistakes-axi init --agent ${shq(want.agent)} --model ${model(chosen.agent?.model ?? before.agent_config[want.agent]?.model)} --judge-agent <another agent> --judge-model <model>${opts.dir ? ` --dir ${shq(opts.dir)}` : ''}   # ask the user which other agent runs the judge`);
-    }
     if (chosen.judge_agent && judge.problem) throw new InputError(`judge: ${judge.problem}`, judge.fix ?? FIX('--judge-agent'));
   }
   if (globalWritten) {
@@ -187,7 +182,7 @@ name: ${scalar(basename(dir))}
 # one here to override it for this project. The tool never picks an agent: set agent and
 # judge_agent, each with its model.
 # agent: claude   # or codex, opencode, pi, gemini, acp:<target>, byokit:<route>
-# judge_agent: codex   # its agent must differ from the worker's (one model per agent)
+# judge_agent: codex   # may be the worker's agent; one model per agent
 # agent_config: { <agent>: { model: <model>, effort: low } }
 # agent_timeout: "20m"
 excerpts: ${opts['no-excerpts'] ? 'off' : 'on'}   # on: the worker and judge see redacted record excerpts; off: pointers and counts only

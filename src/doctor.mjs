@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ingestReadFrom, shq, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
-import { agents, binName, CLASH, chooseFix, detect, fileOf, KEY, premiumBlocked, resolveRoles, runnerKey, RUNNERS, which } from './runners/index.mjs';
+import { agents, binName, chooseFix, detect, KEY, resolveRoles, runnerKey, RUNNERS, which } from './runners/index.mjs';
 import { atLeast, SIGNOFF_MIN } from './signoff.mjs';
 const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
 
@@ -62,10 +62,8 @@ export async function doctor(dir, opts) {
 
   const list = detect(cfg);
   const roles = await resolveRoles(cfg, list);
-  const failedModel = new Set(); // a role whose model check failed gets no --live call
   for (const name of ['worker', 'judge']) {
     const r = roles[name], key = runnerKey(r.runner), a = list.find((x) => x.runner === key), mod = RUNNERS[key];
-    if (r.problem === CLASH) { add('fail', name, r.problem, chooseFix(cfg, 'judge_agent', cfg.judge_agent)); continue; } // the judge would judge its own work
     if (r.fix) { add('fail', name, r.problem, r.fix); continue; } // a BYOKit route that failed its own check
     if (!r.bin) { // only the configured agent is checked: the tool never offers another one
       add('fail', name, r.problem, a && !a.usable ? `install ${binName(cfg, key)}, or set ${key === 'acp' ? 'acpx_path' : `agent_path_override.${key}`} in ${shq(cfg.globalPath)}`
@@ -93,11 +91,7 @@ export async function doctor(dir, opts) {
         else add('fail', `${name} login`, `${shown}: not logged in${p.status ? ` (exit ${p.status})` : ''}`, probe.fix);
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
-    const { model } = r;
-    if (premiumBlocked(cfg, model)) {
-      failedModel.add(name);
-      add('fail', `${name} model`, `${model} is a premium model`, `${chooseFix(cfg, KEY[name], r.runner)}, or set allow_premium: true in ${fileOf(cfg, 'allow_premium')}`);
-    } else add('ok', `${name} model`, model);
+    add('ok', `${name} model`, r.model);
   }
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.
   const used = new Set([roles.worker.runner, roles.judge.runner]);
@@ -120,7 +114,7 @@ export async function doctor(dir, opts) {
   // --live: one call per role that asks the agent to write a file; it must answer and write nothing.
   if (opts.live) for (const name of ['worker', 'judge']) {
     const r = roles[name];
-    if (!r.bin || r.problem || failedModel.has(name)) continue; // its fail line above already names the fix
+    if (!r.bin || r.problem) continue; // its fail line above already names the fix
     try {
       const { test } = await agents(cfg, { test: r.runner, model: r.model });
       add('ok', `${name} live`, `${r.runner} answered and wrote no file: ${JSON.stringify(test.reply.slice(0, 80))}`);

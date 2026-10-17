@@ -12,7 +12,7 @@ import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from
 import { doctor } from '../src/doctor.mjs';
 import { init, RECONFIGURABLE } from '../src/init.mjs';
 import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
-import { agents, CLASH, chooseFix, detect, resolveRoles, RUNNERS, which } from '../src/runners/index.mjs';
+import { agents, chooseFix, detect, resolveRoles, RUNNERS, which } from '../src/runners/index.mjs';
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
@@ -382,7 +382,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                       where each is missing, then print the resolved worker and judge and the gaps.
                       Either way, make the state dir .lfm/ and its .gitignore
   doctor              check node, git, the config, .lfm ignored, each source, the worker and judge
-                      (usable, login, model, a different identity), the skill per agent CLI and
+                      (usable, login, model), the skill per agent CLI and
                       sign-off: ok, warn or fail, with a fix: line; exit 1 on a fail
   guide               print how an agent drives a retro: init, doctor, retro, then read
                       report.txt to the user
@@ -439,8 +439,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never
                       picked by the tool
   --model <model>     (init) save agent_config.<agent>.model for that agent
-  --judge-agent <agent>  (init) save judge_agent: <agent>; its agent must differ from the worker's
-                         (one model per agent)
+  --judge-agent <agent>  (init) save judge_agent: <agent>; it may be the worker's agent, which
+                         then runs its one model (one model per agent)
   --judge-model <model>  (init) save agent_config.<judge agent>.model
   --sessions <agent>,...  (init) read these agents' sessions (claude, codex, opencode, pi, gemini);
                            the user's choice, never picked by the tool
@@ -536,7 +536,6 @@ const FORMS = {
   'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
   apply: 'learn-from-mistakes-axi apply [--run <id>] [--fix <n>] [--dir <dir>]',
 };
-const JUDGE_FIX = (cfg) => chooseFix(cfg, 'judge_agent', cfg.judge_agent);
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
 const VALUE_FLAGS = ['--dir', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
@@ -619,12 +618,10 @@ async function main(ctx) {
     db?.close();
     if (await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir, ['agent'])) cfg = loadConfig(opts.dir ?? resolve('.'));
   }
-  // Both agents always run: a worker that is not ready, a judge on the worker's agent and model, or a judge that is not
-  // ready, stops the run before it starts.
+  // Both agents always run: a worker or a judge that is not ready stops the run before it starts.
   if (['retro', 'rerun'].includes(cmd)) {
     const { worker, judge } = await resolveRoles(cfg, detect(cfg));
     if (worker.problem) throw new InputError(`worker: ${worker.problem}`, roleFix(cfg, 'agent', worker));
-    if (judge.problem === CLASH) throw new UsageError(`judge: ${CLASH}`, JUDGE_FIX(cfg));
     if (judge.problem) throw new InputError(`judge: ${judge.problem}`, roleFix(cfg, 'judge_agent', judge));
   }
   if (cmd.startsWith('signoff-')) { quietSqlite(); await signoff(cmd.slice(8), cfg, opts).catch((e) => { throw storeError(e, cfg, opts, name); }); return; }
@@ -723,7 +720,6 @@ async function agentsCommand(opts) {
   for (const r of roles) console.error(`problem: ${r}: ${out[r].problem}`);
   if (roles.length) process.exitCode = 1;
   if (roles.includes('worker')) hint(roleFix(cfg, 'agent', out.worker));
-  else if (out.judge.problem === CLASH) hint(JUDGE_FIX(cfg));
   else if (roles.includes('judge')) hint(roleFix(cfg, 'judge_agent', out.judge));
   else hint(withContext(`learn-from-mistakes-axi agents --test ${out.worker.runner}`, 'one live call (costs tokens): the agent must answer and write no file', opts));
 }
@@ -779,7 +775,7 @@ async function initCommand(opts) {
     process.exitCode = e.code;
   } else if (out.missing.length) hint(saveCommand(out.missing, opts.dir));
   else if (problem('worker')) hint(roleFix(cfg, 'agent', { runner: out.worker.runner, problem: problem('worker') }));
-  else if (problem('judge')) hint(problem('judge') === CLASH ? JUDGE_FIX(cfg) : roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
+  else if (problem('judge')) hint(roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
   else if (problem('sessions')) hint(sessionsCommand(opts.dir));
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }

@@ -1,5 +1,5 @@
 // Test-only `--import` hook: every BYOKit (and its pi-ai model list) import fails
-// exactly as with BYOKit not installed, so the pick's never-fails fallback runs.
+// exactly as in an install with the BYOKit packages missing, so the pick's never-fails fallback runs.
 import { registerHooks } from 'node:module';
 
 registerHooks({
