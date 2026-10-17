@@ -102,7 +102,10 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.ok(gql[0].includes('owner=umer') && gql[0].includes('name=umer-app') && !gql[0].some((a) => a.startsWith('after=')));
   assert.ok(gql[1].includes('after=second'));
   assert.ok(!r.stdout.includes(SECRET) && !r.stderr.includes(SECRET));
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8'), /^- \[prs:10\] prs at PR #10, /m);
+  const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8');
+  assert.match(bundle, /^- \[prs:10\] prs at PR #10, /m);
+  assert.match(bundle, /^- \[prs:10\] prs at PR #10, .*\n  > .*Demo value: \[redacted\]/m); // the PR body's canary is in the bundle, redacted
+  assert.ok(!bundle.includes(SECRET), 'the PR body token in bundle.md');
   const reported = lfm({}, 'report');
   assert.equal(reported.status, 0, reported.stderr);
 

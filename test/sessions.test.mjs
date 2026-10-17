@@ -550,7 +550,9 @@ test('a target compares the unrounded ratio: 25 failed results of 496 miss "<= 0
 
 test('the bundle has ids, refs and redacted excerpts, pointers and counts only with excerpts off, no other repo\'s rows, and keeps to its cap', () => {
   const { tmp, p, lfm, env } = setup();
-  const cfg = join(p, '.learn-from-mistakes.yaml'), examples = readFileSync(cfg, 'utf8');
+  const fm = join(tmp, 'fm'), cfg = join(p, '.learn-from-mistakes.yaml');
+  const examples = readFileSync(cfg, 'utf8').replace('sources:\n', `sources:\n  fm: { type: firstmate, path: ${fm} }\n`);
+  writeFileSync(cfg, examples);
   env.FAKE_LOG = join(tmp, 'agent-log');
   mkdirSync(env.FAKE_LOG);
   // One defect bullet and one failed gate step of this repo per planted shape, and a failed step of another repo in the same store.
@@ -572,6 +574,10 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
     INSERT INTO runs VALUES ('run-x', 'repo-other', 'feat/other')`);
   step.run('step-other', 'run-x', 'push: OTHER-REPO-CANARY', at, at);
   gate.close();
+  // A Firstmate status line of this home, with its own secret-shaped canary.
+  const fmSecret = `sk${'_live_'}${'M'.repeat(24)}`;
+  mkdirSync(join(fm, 'state'), { recursive: true });
+  writeFileSync(join(fm, 'state', 'lfm-bundle-canary.status'), `blocked [at=${at}]: deploy key ${fmSecret} was rejected by the host\n`);
   const bundleOf = (r) => {
     assert.equal(r.status, 0, r.stderr);
     const { id } = decode(r.stdout).run;
@@ -581,13 +587,18 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   // The canaries are secret-shaped values, which redact() removes; with excerpts on, plain record text stays in the bundle by design.
   const on = bundleOf(lfm('retro', '--foreground'));
   for (const [, needle] of one) assert.ok(!on.text.includes(needle), `${needle} in bundle.md`);
+  assert.match(on.text, /^- \[lfm-bundle-canary\.status:1\] fm at \S+lfm-bundle-canary\.status:1, /m); // the Firstmate line is read
+  assert.ok(!on.text.includes(fmSecret), 'the Firstmate status canary in bundle.md');
   const prompts = readdirSync(env.FAKE_LOG).flatMap((f) => readFileSync(join(env.FAKE_LOG, f), 'utf8').trim().split('\n').map((line) => JSON.parse(line).stdin));
   assert.ok(prompts.some((prompt) => prompt.includes(on.text)), 'bundle not delivered to an agent');
   for (const [, needle] of one) for (const prompt of prompts) assert.ok(!prompt.includes(needle), `${needle} in agent prompt`);
+  for (const prompt of prompts) assert.ok(!prompt.includes(fmSecret), 'the Firstmate status canary in agent prompt');
   assert.ok(!on.text.includes('OTHER-REPO-CANARY') && !on.text.includes('step-other'), 'another repo\'s gate row in bundle.md');
   assert.deepEqual(query(p, `SELECT count(*) AS n FROM records WHERE text LIKE '%OTHER-REPO-CANARY%'`), [{ n: 0 }]); // never read at all
   const stored = query(p, `SELECT text FROM records WHERE run_id = ? AND source = 'gate'`, on.id).map((r) => r.text).join('\n');
   for (const [, needle] of one) assert.ok(!stored.includes(needle), `${needle} stored from a gate error`); // kept redacted
+  const storedFm = query(p, `SELECT text FROM records WHERE run_id = ? AND source = 'fm'`, on.id).map((r) => r.text).join('\n');
+  assert.ok(storedFm.includes('deploy key') && !storedFm.includes(fmSecret), 'the Firstmate status line stored unredacted'); // kept redacted
   assert.match(on.text, /^\| tool_error_rate \| 0\.5 \| 0\.75 \| <= 0\.05 \|$/m);
   assert.match(on.text, /^No follow-ups yet\.$/m);
   // Clusters by tool and signal, the largest first, each with its latest events; then the records no rule tagged.
@@ -601,7 +612,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND id IN (${events})`, on.id)[0].n, events.length); // ids are store rows
   const quotes = on.text.match(/^  > .+$/gm);
   assert.ok(quotes.every((q) => q.length <= 304), 'an excerpt over 300 characters');
-  assert.equal(on.text.match(/^- \[(?!e\d+\])[^\]]+\] .+\n  > .+$/gm).length, records.length, 'a record without its excerpt');
+  assert.equal(on.text.match(/^- \[(?!e\d+\])[^\]]+\] .+\n  > .+$/gm).length, records.length + 1, 'a record without its excerpt'); // + the Firstmate line
   assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
   assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
   assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
@@ -646,7 +657,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
   for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
   assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));
-  assert.equal([...off.text.matchAll(/^- \[(?!e\d+\])[^\]]+\] /gm)].length, records.length);
+  assert.equal([...off.text.matchAll(/^- \[(?!e\d+\])[^\]]+\] /gm)].length, records.length + 1); // + the Firstmate line
   assert.equal([...off.text.matchAll(/^### \[c\d+\] /gm)].length, clusters.length);
 
   // A config in a subdirectory of the checkout counts this repo's gate rows, matched by its checkout, and no other repo's.
