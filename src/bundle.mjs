@@ -6,8 +6,10 @@
 // and a number or a hash, never record text, and the worker must cite it as the store keeps it. Items that would pass caps.bundle_chars are
 // dropped, and a last line counts them.
 import { writeFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { inWindow } from './metrics.mjs';
 import { excerpt, redact } from './redact.mjs';
+import { saltedId } from './sources/markdown-log.mjs';
 
 const SAMPLES = 3; // the latest events shown in each cluster; the rest are counted
 const DROPPED = 80; // room kept for the dropped line
@@ -36,6 +38,15 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const records = db.prepare(`SELECT record_id, source, ts, ref, text FROM records r WHERE run_id = ?
     AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
+  const { salt } = db.prepare('SELECT salt FROM secret').get();
+  const keyed = (r) => {
+    const s = cfg.sources[r.source];
+    if (s?.type !== 'done-done') return r.ref;
+    const root = join(s.path, 'runs');
+    if (!r.ref.startsWith(root + sep)) return r.ref;
+    const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
+    return join(root, saltedId(salt, app), ...rest);
+  };
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
       '| metric | this window | last window | target |\n| --- | --- | --- | --- |\n'],
@@ -47,7 +58,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
     ['Unlabelled defect records', 'No record in this window lacks a label.', records.map((r) =>
-      `- [${r.record_id}] ${redact(r.source)} at ${redact(r.ref)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
+      `- [${r.record_id}] ${redact(r.source)} at ${redact(keyed(r))}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
   const cap = cfg.caps.bundle_chars, heads = sections.map(([title, empty, list, head = '']) => `\n## ${title}\n\n${list.length ? head : `${empty}\n`}`);

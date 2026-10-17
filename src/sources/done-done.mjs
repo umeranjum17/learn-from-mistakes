@@ -5,8 +5,8 @@
 // no failed step is one record for the step its reason names (setup: an error before the first step). Passed, cancelled
 // and unfinished runs are not records. A run whose updated (else created) time, else its file's mtime, is before the
 // read's start has its schema and steps unchecked and is skipped; any other run file in a schema this version does not
-// read stops the read with the fix. A record's id and ref name the app only through the store's salt: a bundle goes to a
-// model, and the app name must not reach it.
+// read stops the read with the fix. A record's id is keyed with the store's salt, and the bundle step scrubs the ref's
+// app folder: a bundle goes to a model, and the app name must not reach it.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -32,7 +32,7 @@ export function validate(s, where, dir) {
 export function read(source, { apps, path }, { readFrom = 0, project, salt }) {
   const records = [], missing = [];
   for (const app of apps) {
-    const folder = saltedId(salt, app), root = join(path, 'runs', app);
+    const root = join(path, 'runs', app);
     let ids;
     try { ids = readdirSync(root).sort(); } catch (e) {
       if (e.code === 'ENOENT') { missing.push(app); continue; }
@@ -68,7 +68,7 @@ export function read(source, { apps, path }, { readFrom = 0, project, salt }) {
         else if (typeof found === 'string') why = `${s.name}: ${found}`;
         else if (failed.length) why = `${s.name}: failed${s.exit === undefined ? '' : ` (exit ${s.exit})`}`;
         else why = reason || `${s.name}: no reason saved`;
-        records.push({ id: `${source}:${saltedId(salt, `${app}/${id}/${s.name}`)}`, source, step: s.name, ref: join(path, 'runs', folder, id, 'run.json'),
+        records.push({ id: `${source}:${saltedId(salt, `${app}/${id}/${s.name}`)}`, source, step: s.name, ref: file,
           date: String(s.ended ?? run.updated ?? '').slice(0, 10), text: excerpt(`verify ${run.result ?? 'failed'}: ${why}`) });
       }
     }
