@@ -489,6 +489,21 @@ test('init finds the no-mistakes repo of a git worktree of the project, as the s
   assert.equal(parse(readFileSync(join(wt, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
 });
 
+test('init and the read find the no-mistakes repo by the same origin when its checkout path is elsewhere', () => {
+  const { tmp, p, nm, lfm, env } = setup(['claude', 'opencode'], CHOSEN('claude', 'opencode'));
+  execFileSync('git', ['-C', p, 'remote', 'add', 'origin', 'https://example.com/umer/umer-app.git']);
+  const db = new DatabaseSync(join(nm, 'state.sqlite'));
+  db.prepare('UPDATE repos SET working_path = ?').run(join(tmp, 'elsewhere'));
+  db.close();
+  // git only, not the host PATH: the detect and the read both look up origin with it
+  symlinkSync(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim(), join(env.PATH, 'git'));
+  assert.equal(lfm('init', '-y', '--no-skill').status, 0);
+  assert.equal(parse(readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')).sources.gate.path, join(nm, 'state.sqlite'));
+  const dr = lfm('doctor', '--json');
+  const gate = JSON.parse(dr.stdout).checks.find((c) => c.label === 'source gate');
+  assert.match(gate.detail, /: [1-9]\d* failed steps/); // the read matched the same repo, by origin, that detect did
+});
+
 // doctor after init: every check ok or warn, exit 0; then a missing defect log is one fail line with its fix, exit
 // 1, and after the fix exit 0 again. A judge on the worker's agent and a premium model name are the user's choice:
 // no fail line. Login checks run the agent's own status command (pi's never refreshes a token) and print no
