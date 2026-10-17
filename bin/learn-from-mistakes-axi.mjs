@@ -745,7 +745,7 @@ async function initCommand(opts) {
   quietSqlite();
   const dir = opts.dir ?? resolve('.');
   let out = await init(dir, opts);
-  const { skills, skills_updated, skills_skipped, skills_roots, ...shown } = out; // text shows the skill lines below, not these
+  const { skills, skills_updated, skills_skipped, skills_roots, notes, ...shown } = out; // text shows the note and skill lines below, not these
   if (!opts.json) { // workerBin/judgeBin are --json schema keys; the human output names them in plain words
     shown['worker command'] = shown.workerBin; shown['judge command'] = shown.judgeBin;
     delete shown.workerBin; delete shown.judgeBin;
@@ -758,6 +758,7 @@ async function initCommand(opts) {
     const edit = rest.length && re.length ? `edit ${rest.join(' ')} to change ${rest.length > 1 ? 'them' : 'it'}` : 'edit it to change them';
     console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (${re.length ? `${edit}, or init --reconfigure to apply ${re.join(' ')}` : edit})`);
   }
+  for (const n of !opts.json ? notes ?? [] : []) console.log(`note: ${n}`);
   for (const f of !opts.json ? out.skills ?? [] : []) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
   for (const f of !opts.json ? out.skills_skipped ?? [] : []) console.log(`skipped: ${f}`);
   if (!opts.json && !opts['no-skill'] && !out.skills_roots) console.log('skills: no configured agent has a skills dir');

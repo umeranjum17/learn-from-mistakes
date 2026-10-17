@@ -62,6 +62,10 @@ const MIGRATIONS = [
   // A session event whose test_fail only the tool output's own test-runner summary line showed: the error flag and the
   // exit code had stayed green (`npm test | tail` exits 0), so the output is the proof. See src/sessions/claude.mjs.
   'ALTER TABLE events ADD COLUMN from_output INTEGER NOT NULL DEFAULT 0',
+  // When a run last discarded: a failed or cancelled attempt keeps no verdict, and the cap counts the attempt's agent
+  // calls only, so a resume is never refused for the calls a discarded attempt made. The rows stay: a source that reads
+  // sessions skips the ones the run's own agents held.
+  'ALTER TABLE runs ADD COLUMN discarded_at TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

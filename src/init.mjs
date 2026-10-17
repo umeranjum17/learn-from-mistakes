@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
 import { InputError, shq, shown, stateDir, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
-import { interactive, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
+import { interactive, modelNotes, pickSessions, save, saveCommand, sessionsAsk, unset } from './ask.mjs';
 import { AGENT_RULE, expand, globalFile, loadConfig, loadGlobal, PROJECT_FILE, SOURCES } from './config.mjs';
 import { configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from './runners/index.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
@@ -191,6 +191,7 @@ sources:${Object.keys(found).length ? '' : ' {}'}
 ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { flag: 'wx' });
     } catch (e) { throw new UsageError(`${file}: cannot write (${e.code})`, `ls -la ${dir}   # init writes ${PROJECT_FILE} there`); }
   }
+  const notes = modelNotes(before, chosen);
   if (Object.keys(chosen).length) save(file, chosen);
   if (!written && opts.firstmate && !Object.values(before.sources).some((s) => s.type === 'firstmate' && s.path === opts.firstmate)) {
     // the opt-in adds the source to a config that exists, unless it has another home or a source named home
@@ -232,7 +233,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     ...Object.entries(found).filter(([, s]) => !Object.values(cfg.sources).some((c) => c.type === s.type && (!s.path || c.path === expand(s.path, dir))))
       .map(([id, s]) => `sources: ${s.type} found${s.path ? ` at ${s.path}` : ''}, not configured (add it as ${id})`)];
   return {
-    config: file, status: written ? 'written' : 'already set up', global, global_status: globalWritten ? 'written' : 'kept', ignored,
+    config: file, status: written ? 'written' : 'already set up', global, global_status: globalWritten ? 'written' : 'kept', ignored, notes,
     causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path } : { type: s.type }])),

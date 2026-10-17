@@ -2,8 +2,8 @@
 // (agent or judge_agent, with its agent_config model); the run never picks one: a role that is not set, has no model, or
 // does not resolve to a ready agent, fails the step. It calls it in the run dir with the step's prompt and the bundle, and checks the answer with the step's
 // own check. An answer that fails the check is sent back once with the problems; a second one fails the step with them.
-// Each call is one `invocations` row, with the agent's process group while it runs and the tokens it reported; a run
-// makes at most caps.invocations calls.
+// Each call is one `invocations` row, with the agent's process group while it runs and the tokens it reported; each
+// attempt makes at most caps.invocations calls, counted since the run last discarded.
 import { InputError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { readBundle } from '../check.mjs';
 import { startTime } from '../proc.mjs';
@@ -40,7 +40,8 @@ export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, l
 }
 
 async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, log) {
-  const used = db.prepare('SELECT count(*) AS n FROM invocations WHERE run_id = ?').get(id).n;
+  const used = db.prepare(`SELECT count(*) AS n FROM invocations WHERE run_id = ?
+    AND started_at > COALESCE((SELECT discarded_at FROM runs WHERE id = ?), '')`).get(id, id).n;
   if (used >= cfg.caps.invocations) throw new InputError(`caps.invocations reached: run ${id} already made ${used} agent calls`);
   const row = db.prepare('INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(id, step, role, runner, model, `lfm-run:${id}:${step}`, iso()).lastInsertRowid;

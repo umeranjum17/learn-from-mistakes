@@ -133,6 +133,7 @@ function stop(db, id, status, why) {
 // A run that does not complete keeps no verdict, label, finding or fix: what its followup step and its agents wrote is
 // removed, and those steps are pending again, so a resume runs them from the followup step.
 function discard(db, id) {
+  db.prepare('UPDATE runs SET discarded_at = ? WHERE id = ?').run(iso(Date.now()), id);
   db.prepare('DELETE FROM signoff WHERE proposal_id IN (SELECT id FROM proposals WHERE run_id = ?)').run(id);
   for (const t of ['labels', 'findings', 'proposals', 'followups']) db.prepare(`DELETE FROM ${t} WHERE run_id = ?`).run(id);
   db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, output_json = NULL

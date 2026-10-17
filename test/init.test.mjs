@@ -228,6 +228,34 @@ test('in a terminal where BYOKit cannot load, the pick offers the agent CLIs and
   assert.deepEqual([yaml.agent, yaml.judge_agent], ['claude', 'codex']);
 });
 
+// A saved model that replaces the one the agent's other role ran is never refused: one plain note names the agent and
+// the old and new model, on the flag path and in the terminal pick alike.
+test('init states a saved model that replaces the model the other role ran', () => {
+  const a = setup(['claude', 'opencode'], CHOSEN('claude', 'opencode'));
+  const first = a.lfm('init', '-y', '--no-skill'); // the global file holds the roles; the project file sets no agent keys
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(parse(readFileSync(a.config, 'utf8')).agent, undefined);
+  const r = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'claude-sonnet-6', '--no-skill');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^note: worker on claude now uses claude-sonnet-6 \(was claude-haiku-5-5\): one model per agent$/m);
+  const yaml = parse(readFileSync(a.config, 'utf8'));
+  assert.deepEqual([yaml.judge_agent, yaml.agent_config], ['claude', { claude: { model: 'claude-sonnet-6' } }]);
+  const again = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'gpt-6-luna', '--reconfigure', '--no-skill', '--json');
+  assert.equal(again.status, 0, again.stderr);
+  assert.deepEqual(JSON.parse(again.stdout).notes, ['worker on claude now uses gpt-6-luna (was claude-sonnet-6): one model per agent']);
+
+  // The terminal pick: the judge picks the worker's already-configured agent, and its model replaces the worker's.
+  const b = setup(['claude', 'opencode'], `agent: claude\nagent_config: { claude: { model: ${JSON.stringify(MODELS.claude)} } }\n`);
+  const seeded = b.lfm('init', '-y', '--no-skill');
+  assert.equal(seeded.status, 0, seeded.stderr);
+  const answers = ['', '1', 'claude-sonnet-6'].join('\n') + '\n'; // sessions: none; judge: claude; its new model
+  const picked = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${b.p}`, '/dev/null'],
+    { encoding: 'utf8', input: answers, env: { ...b.env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: b.tmp, timeout: 30000 });
+  assert.equal(picked.status, 0, picked.stdout);
+  assert.match(picked.stdout, /note: worker on claude now uses claude-sonnet-6 \(was claude-haiku-5-5\): one model per agent/);
+  assert.deepEqual(parse(readFileSync(b.config, 'utf8')).agent_config, { claude: { model: 'claude-sonnet-6' } });
+});
+
 // The sessions question is asked once: an empty answer (none) is carried into the rerun that saves the roles, so the
 // prompt is printed once and no sessions source is written.
 test('in a terminal, init asks which sessions to read once, and an empty answer writes no sessions source', () => {

@@ -1278,15 +1278,21 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const e = JSON.parse(blank.stdout).run;
   assert.equal(e.error, "analyse: the worker's answer is not valid after one retry: the answer is empty");
   assert.deepEqual(query('SELECT exit_status FROM invocations WHERE run_id = ?', e.id), [{ exit_status: 'invalid' }, { exit_status: 'invalid' }]);
-  // caps.invocations: the run makes no call past it.
+  // caps.invocations counts the current attempt only: the discarded attempt's 2 calls never block a resume.
   appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'caps: { invocations: 3 }\n');
+  const resumed = lfm({ FAKE_ANALYSE: 'prose' }, 'rerun', '--resume', '--run', String(b.run.id), '--wait', '1m', '--json');
+  assert.equal(resumed.status, 1, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).run.error, `analyse: the worker's answer is not valid after one retry: the answer holds no JSON object`);
+  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', b.run.id)[0].n, 4);
+  // an attempt still makes no call past the cap.
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8').replace('caps: { invocations: 3 }', 'caps: { invocations: 1 }'));
   const capped = lfm({ FAKE_ANALYSE: 'prose' }, 'rerun', '--resume', '--run', String(b.run.id), '--wait', '1m', '--json');
   assert.equal(capped.status, 1, capped.stderr);
-  assert.equal(JSON.parse(capped.stdout).run.error, `analyse: caps.invocations reached: run ${b.run.id} already made 3 agent calls`);
-  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', b.run.id)[0].n, 3);
+  assert.equal(JSON.parse(capped.stdout).run.error, `analyse: caps.invocations reached: run ${b.run.id} already made 1 agent calls`);
+  assert.equal(query('SELECT count(*) AS n FROM invocations WHERE run_id = ?', b.run.id)[0].n, 5);
 
   // A worker killed during the agent call: status marks the run interrupted and ends the agent's process group.
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8').replace('caps: { invocations: 3 }\n', ''));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8').replace('caps: { invocations: 1 }\n', ''));
   const started = lfm({ FAKE_ANALYSE: 'hang' }, 'retro', '--json');
   assert.equal(started.status, 0, started.stderr);
   const h = JSON.parse(started.stdout).run;

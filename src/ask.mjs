@@ -33,6 +33,20 @@ export function askError(cfg, keys, dir) {
     saveCommand(keys, dir));
 }
 
+const ROLE = { agent: 'worker', judge_agent: 'judge' };
+// A saved model replaces the one the agent's other role ran: agent_config holds one model per agent, so that role now
+// runs the new model too. Each such role takes one plain note naming the agent and the old and new model, never a refusal.
+export const modelNotes = (before, picks) => {
+  const notes = new Set();
+  for (const [key, { agent, model }] of Object.entries(picks)) {
+    const was = model && before.agent_config?.[agent]?.model;
+    if (!was || was === model) continue;
+    for (const other of Object.keys(ROLE))
+      if (other !== key && before[other] === agent) notes.add(`${ROLE[other]} on ${agent} now uses ${model} (was ${was}): one model per agent`);
+  }
+  return [...notes];
+};
+
 // Sets agent/judge_agent and each one's agent_config model in a config file, keeping its comments and other keys.
 export function save(file, picks) {
   const doc = parseDocument(existsSync(file) ? readFileSync(file, 'utf8') : '');
@@ -132,7 +146,9 @@ export async function ensureAgents(cfg, file, dir, keys = ['agent', 'judge_agent
   const missing = unset(cfg, keys);
   if (!missing.length) return false;
   if (!interactive()) throw askError(cfg, missing, dir);
-  save(file, await pick(missing, cfg, dir));
+  const picks = await pick(missing, cfg, dir);
+  save(file, picks);
+  for (const n of modelNotes(cfg, picks)) process.stderr.write(`note: ${n}\n`);
   process.stderr.write(`saved: ${named(cfg, missing).join(' and ')} in ${file}\n`);
   return true;
 }
