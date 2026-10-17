@@ -2092,7 +2092,7 @@ test('doctor with auto_fix checks the git author identity and names git config u
   const { p, env } = setup();
   appendFileSync(join(env.LFM_HOME, 'config.yaml'), 'auto_fix: 1\n');
   const home2 = join(env.LFM_HOME, 'h'); mkdirSync(home2); // a throwaway HOME: the host's ~/.gitconfig must not answer here
-  const gitEnv = { ...env, HOME: home2, GIT_CONFIG_NOSYSTEM: '1' }; // nor a system-wide identity
+  const gitEnv = { ...env, HOME: home2, XDG_CONFIG_HOME: home2, GIT_CONFIG_NOSYSTEM: '1' }; // nor a system-wide or XDG identity
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8', env: gitEnv });
   const line = () => JSON.parse(spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env: gitEnv }).stdout).checks.find((c) => c.label === 'git identity');
   assert.equal(line(), undefined, 'no identity check outside a git repo');

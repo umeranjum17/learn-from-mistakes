@@ -14,7 +14,6 @@ name: learn-from-mistakes
 description: ${JSON.stringify(description)}
 license: ${pkg.license}
 metadata:
-  author: ${pkg.author}
   version: ${pkg.version}
   argument-hint: <what keeps going wrong, or the log to read>
   hermes-tags: retrospective, defects, agents, instructions

@@ -3,7 +3,6 @@
   "version": "0.2.0",
   "description": "AXI CLI that finds the causes your coding agents keep repeating in defect logs and failed pipeline runs, with the evidence for each and evidence-backed change recommendations.",
   "license": "MIT",
-  "author": "Umer Anjum (https://github.com/umeranjum17)",
   "keywords": ["axi", "agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
   "homepage": "https://github.com/umeranjum17/learn-from-mistakes#readme",
   "repository": { "type": "git", "url": "git+https://github.com/umeranjum17/learn-from-mistakes.git" },
