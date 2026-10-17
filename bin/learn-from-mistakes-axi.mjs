@@ -376,7 +376,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                      (optional sign-off-axi)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
   apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch
-                      lfm/<project>/<run>-<n> from HEAD, and records it;
+                      lfm/<project>-<hash>/<run>-<n> from HEAD, and records it;
                       never your branch or work tree
   init                write $LFM_HOME/config.yaml (the agent keys, commented) and
                       .learn-from-mistakes.yaml (the sources found, the agents the user chose)

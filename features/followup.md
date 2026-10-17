@@ -2,7 +2,7 @@
 
 An applied change is measured from when its fix went live, not from when it was recorded.
 
-`apply` commits each kept fix on its own `lfm/<project>/<run>-<n>` branch, but the fix only reaches users when that branch is merged into the default branch, and days or weeks can pass in between.
+`apply` commits each kept fix on its own `lfm/<project>-<hash>/<run>-<n>` branch, but the fix only reaches users when that branch is merged into the default branch, and days or weeks can pass in between.
 Measuring from the apply commit would count records from before the fix was live in the after window and give the wrong verdict.
 So for a change whose ledger entry names its apply branch (the `what` that `apply` writes, `fix <run>:<n> on branch <branch>`), the follow-up step resolves the time that fix commit became reachable from the default branch and starts the after window there; the before window of one window length ends at the same time.
 
