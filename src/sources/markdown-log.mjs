@@ -45,8 +45,11 @@ function headingDate(line) {
   return fmt(y);
 }
 
-// Each record's id is an HMAC of its text keyed with the run store's salt: it survives line moves, and whoever reads a
+// A record's id: an HMAC of its text keyed with the run store's salt. It survives moves in the source, and whoever reads a
 // bundle without the store cannot hash a guessed text to it.
+export const saltedId = (salt, text) => createHmac('sha256', salt).update(text).digest('hex').slice(0, 12);
+
+// Each record's id is saltedId of its text: it survives line moves.
 export function read(source, { path }, { project, salt }) {
   const text = readText(path, `source ${source}`, `check sources.${source}.path in ${shq(project)}, or create it: touch ${shq(path)}`);
   const seen = new Map();
@@ -56,7 +59,7 @@ export function read(source, { path }, { project, salt }) {
     if (line.startsWith('## ')) date = headingDate(line);
     if (!line.startsWith('- ')) return;
     const body = line.slice(2).trim();
-    let id = createHmac('sha256', salt).update(body.toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
+    let id = saltedId(salt, body.toLowerCase().replace(/\s+/g, ' '));
     const n = (seen.get(id) ?? 0) + 1;
     seen.set(id, n);
     if (n > 1) id += `~${n}`;
