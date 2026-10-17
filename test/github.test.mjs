@@ -294,4 +294,22 @@ test('init --firstmate <home> --fleet reads every home of the fleet; home names 
   assert.match(cross.stderr, /^error: \S+: sources\.home and sources\.kestrel both read \S+$/m);
   assert.match(cross.stderr, /^next: remove \S+ from source home or source kestrel$/m);
   assert.match(lfm({}, 'doctor').stdout, /fix: edit \S+\s+# then run doctor again/);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${main}, fleet: true }\n`);
+  const empty = join(tmp, 'empty-mate');
+  mkdirSync(empty);
+  registry(kestrel, wren, empty); // a listed home whose folder exists with no state/ reads as empty
+  const quiet = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(quiet.status, 0, quiet.stderr);
+  const quietReport = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(quiet.stdout).run.id), 'report.txt'), 'utf8');
+  assert.ok(quietReport.includes(`- Home ${id(empty)}: 0 decisions, 0 blocks, 0 steers, 0 defects this window.`));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'name: umer-app\nsources:\n');
+  const solo = join(tmp, 'solo-main');
+  put(solo, 'state/task.status', `blocked [${at(1)}]: a fleet of one\n`);
+  const soloInit = lfm({}, 'init', '-y', '--no-skill', '--firstmate', solo, '--fleet', '--json');
+  assert.equal(soloInit.status, 0, soloInit.stderr);
+  assert.match(lfm({}, 'doctor').stdout, /1 homes, 0 registry lines skipped \(no local home\)/);
+  const soloRun = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(soloRun.status, 0, soloRun.stderr);
+  const soloReport = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(soloRun.stdout).run.id), 'report.txt'), 'utf8');
+  assert.ok(soloReport.includes(`- Home ${id(solo)}: 0 decisions, 1 block, 0 steers, 0 defects this window.`));
 });

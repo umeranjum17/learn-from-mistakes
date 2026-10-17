@@ -10,7 +10,7 @@
 // secondmate home its data/secondmates.md lists, one `- <id> - <summary> (home: <absolute path>; ...)` line each; a
 // bullet with no local home (a remote route, or no absolute home: path) is skipped and counted. Each record keeps its
 // home as a salted id (data.home, and its record id's prefix), never the home's name or path; the store keeps the path.
-// A home that cannot be read stops the read.
+// A home whose folder is missing stops the read; a listed home whose folder exists but has no state/ reads as empty.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -52,7 +52,8 @@ function registryRoute(line) {
 function fleetHomes(source, path, project) {
   const file = join(path, 'data', 'secondmates.md'), homes = [path];
   let lines = 0;
-  for (const line of readText(file, `source ${source}: ${file}`, `set sources.${source}.fleet to false in ${shq(project)} to read the main home alone`).split(/\r?\n/)) {
+  const text = existsSync(file) ? readText(file, `source ${source}: ${file}`, `set sources.${source}.fleet to false in ${shq(project)} to read the main home alone`) : '';
+  for (const line of text.split(/\r?\n/)) {
     if (!line.startsWith('- ')) continue;
     const route = registryRoute(line), home = route.home?.replace(/^~(?=\/|$)/, homedir());
     if ('host' in route || !home || !isAbsolute(home)) lines += 1;
@@ -95,7 +96,8 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
   const state = join(path, 'state'), records = [], text = (t) => (excerpts ? excerpt(t) : ''), at = home ? `${home}/` : '';
   let files, skipped = 0;
   try { files = readdirSync(state, { recursive: true }).sort(); } catch (e) {
-    throw new UsageError(`source ${source}: cannot read ${state} (${e.code})`, fix ?? `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
+    if (!home || e.code !== 'ENOENT' || !existsSync(path)) throw new UsageError(`source ${source}: cannot read ${state} (${e.code})`, fix ?? `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
+    files = [];
   }
   const add = (ms, id, ref, kind, body, tag) => {
     if (Number.isNaN(new Date(ms).getTime())) skipped += 1; // no stamp, or one that is not a time
