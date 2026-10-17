@@ -71,15 +71,16 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
   let branch = `lfm/${project}/${run}-${fix.n}`;
   // The branch's identity for this fix: run, fix, cause, target and change. The target is part of it, so a reused
   // run id with the same cause and change text for another file never matches this branch and is refused, not applied.
-  const message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\nproject: ${project}\ntarget: ${redact(fix.target)}\n\n${redact(fix.change)}`;
+  const message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\ntarget: ${redact(fix.target)}\n\n${redact(fix.change)}`;
   if (git(top, ['status', '--porcelain', '--untracked-files=no'])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
-  const head = git(top, ['rev-parse', '--verify', 'HEAD']); let commit = branchTip(top, branch);
-  if (commit && git(top, ['show', '-s', '--format=%B', commit]) !== message) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
+  const head = git(top, ['rev-parse', '--verify', 'HEAD']);
   const entries = readLedger(join(cfg.state, 'changes.jsonl')).entries;
+  let commit = branchTip(top, branch);
   if (!commit) {
     const legacy = `lfm/${run}-${fix.n}`, tip = branchTip(top, legacy);
     if (tip && entries.some((e) => e.ref === tip)) { branch = legacy; commit = tip; }
   }
+  if (commit && git(top, ['show', '-s', '--format=%B', commit]) !== message) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
   if (!commit) {
     const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
     if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);

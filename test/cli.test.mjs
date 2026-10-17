@@ -1677,6 +1677,20 @@ test('apply: a fix applied on the old lfm/<run>-<n> branch is recorded again on 
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'a repeat apply must not record a second change');
 });
 
+test('apply: a legacy lfm/<run>-<n> branch holding another fix is refused, with no worker call or new change', () => {
+  const { p, lfm, git, fake, calls } = applyRepo();
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const first = lfm({}, 'apply', '--fix', '1'); assert.equal(first.status, 0, first.stderr);
+  git('branch', '-m', `lfm/example-e3b0c4/${run.id}-1`, `lfm/${run.id}-1`);
+  const reuse = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { reuse.prepare(`UPDATE proposals SET target = 'defects.md' WHERE run_id = ? AND n = 1`).run(run.id); } finally { reuse.close(); }
+  const before = calls().length, other = lfm({}, 'apply', '--fix', '1');
+  assert.equal(other.status, 1, other.stderr); assert.equal(other.stdout, '');
+  assert.match(other.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
+  assert.equal(calls().length, before, 'a refused legacy reuse must not call the worker');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'a refused legacy reuse must not record a change');
+});
+
 test('apply: the worker makes an accepted fix on its own branch from HEAD and records it; Skip, a dirty tree and no file refuse; auto_fix applies in the run', () => {
   const { p, global, lfm, query, calls, lines, git, fake, auto } = applyRepo();
   const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
