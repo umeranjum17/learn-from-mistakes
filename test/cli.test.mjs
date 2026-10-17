@@ -4,13 +4,14 @@
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
+import { saltedId } from '../src/sources/markdown-log.mjs';
 // The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
 const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }\n';
 
@@ -617,10 +618,9 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   // The record id is keyed with the store's salt, and the bundle scrubs the ref's app folder, so the model the bundle
   // goes to reads neither the app name nor its folder; the stored ref stays the run file a person can open.
   const salt = Buffer.from(db.prepare('SELECT salt FROM secret').get().salt);
-  const keyed = (text) => createHmac('sha256', salt).update(text).digest('hex').slice(0, 12);
-  const dd = (id, step) => `dd:${keyed(`notes/${id}/${step}`)}`;
+  const dd = (id, step) => `dd:${saltedId(salt, `notes/${id}/${step}`)}`;
   const file = (id) => join(env.DONE_DONE_HOME, 'runs', 'notes', id, 'run.json');
-  const ref = (id) => join('<done-done home>', 'runs', keyed('notes'), id, 'run.json');
+  const ref = (id) => join('<done-done home>', 'runs', saltedId(salt, 'notes'), id, 'run.json');
   assert.deepEqual(records, [
     { id: dd('r1', 'check'), source: 'dd', step: 'check', ref: file('r1'), date: ENDED.slice(0, 10), text: 'verify fail: check: shot.png: judge says wrong screen; token=[redacted]' },
     { id: dd('r2', 'drive'), source: 'dd', step: 'drive', ref: file('r2'), date: UPDATED.slice(0, 10), text: 'verify inconclusive: drive: journey timed out after 30m' },
