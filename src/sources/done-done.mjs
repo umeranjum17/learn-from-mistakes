@@ -5,7 +5,8 @@
 // no failed step is one record for the step its reason names (setup: an error before the first step). Passed, cancelled
 // and unfinished runs are not records. A run whose updated (else created) time, else its file's mtime, is before the
 // read's start has its schema and steps unchecked and is skipped; any other run file in a schema this version does not
-// read stops the read with the fix.
+// read stops the read with the fix. A record's id and ref name the app only through the store's salt: a bundle goes to a
+// model, and the app name must not reach it.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -13,6 +14,7 @@ import { join, resolve } from 'node:path';
 import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { expand, mapping } from '../config.mjs';
 import { excerpt } from '../redact.mjs';
+import { saltedId } from './markdown-log.mjs';
 
 const SCHEMA = 2;
 
@@ -27,10 +29,10 @@ export function validate(s, where, dir) {
 }
 
 // Returns the records, and the apps with no runs folder (doctor warns: a typo in an app name reads nothing).
-export function read(source, { apps, path }, { readFrom = 0, project }) {
+export function read(source, { apps, path }, { readFrom = 0, project, salt }) {
   const records = [], missing = [];
   for (const app of apps) {
-    const root = join(path, 'runs', app);
+    const folder = saltedId(salt, app), root = join(path, 'runs', app);
     let ids;
     try { ids = readdirSync(root).sort(); } catch (e) {
       if (e.code === 'ENOENT') { missing.push(app); continue; }
@@ -66,7 +68,7 @@ export function read(source, { apps, path }, { readFrom = 0, project }) {
         else if (typeof found === 'string') why = `${s.name}: ${found}`;
         else if (failed.length) why = `${s.name}: failed${s.exit === undefined ? '' : ` (exit ${s.exit})`}`;
         else why = reason || `${s.name}: no reason saved`;
-        records.push({ id: `${source}:${app}/${id}/${s.name}`, source, step: s.name, ref: file,
+        records.push({ id: `${source}:${saltedId(salt, `${app}/${id}/${s.name}`)}`, source, step: s.name, ref: join(path, 'runs', folder, id, 'run.json'),
           date: String(s.ended ?? run.updated ?? '').slice(0, 10), text: excerpt(`verify ${run.result ?? 'failed'}: ${why}`) });
       }
     }
@@ -75,8 +77,8 @@ export function read(source, { apps, path }, { readFrom = 0, project }) {
 }
 
 // doctor: readable, the failed steps in the window, and the apps with no runs (a warn with the fix).
-export function doctor(source, entry, { readFrom, project }) {
-  const { records, missing } = read(source, entry, { readFrom, project });
+export function doctor(source, entry, { readFrom, project, salt }) {
+  const { records, missing } = read(source, entry, { readFrom, project, salt });
   const detail = `${records.length} failed or inconclusive verify steps, ${records.filter((r) => Date.parse(r.date) >= readFrom).length} in the window`;
   if (!missing.length) return { level: 'ok', detail };
   return { level: 'warn', detail: `${detail}; no runs for ${missing.join(', ')} in ${join(entry.path, 'runs')}`,
