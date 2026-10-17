@@ -1,12 +1,12 @@
 // The bundle's unlabelled section lists the records with no row in the labels table, whatever their cause: the
 // same meaning report coverage counts. A real store, and the bundle step's own function, write and read the file.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 // The CLI loads first: src/config.mjs and src/init.mjs import each other, so a test that starts at src/bundle.mjs crashes.
-import '../bin/learn-from-mistakes-axi.mjs';
+import { InputError } from '../bin/learn-from-mistakes-axi.mjs';
 import { bundle } from '../src/bundle.mjs';
 import { saltedId } from '../src/sources/markdown-log.mjs';
 import { openStore } from '../src/store.mjs';
@@ -33,15 +33,15 @@ test('the unlabelled section lists a record with a cause and no label, and not a
   assert.doesNotMatch(section, /log:label-only/);
 });
 
-test('a done-done record keeps no app name in bundle.md: a stored pre-salt id is keyed, and the home path is replaced', async () => {
+test('a done-done record keeps no app name in bundle.md: its id is salted and the home path is replaced', async () => {
   const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
   after(() => rmSync(state, { recursive: true }));
   const db = await openStore(state, true);
   const now = new Date().toISOString();
   db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', now, now);
-  const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, record_id) VALUES (1, ?, ?, ?, ?, ?, ?)');
-  record.run('dd', now, '/work/notes/runs/notes/r1/run.json', null, 'verify fail: check: wrong screen', 'dd:notes/r1/check');
   const { salt } = db.prepare('SELECT salt FROM secret').get();
+  const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, record_id) VALUES (1, ?, ?, ?, ?, ?, ?)');
+  record.run('dd', now, '/work/notes/runs/notes/r1/run.json', null, 'verify fail: check: wrong screen', `dd:${saltedId(salt, 'notes/r1/check')}`);
   const file = join(state, 'bundle.md');
   const window = { current_start: new Date(Date.now() - 7 * 86_400_000).toISOString(), previous_start: new Date(Date.now() - 14 * 86_400_000).toISOString() };
   bundle({ excerpts: 'off', caps: { bundle_chars: 100_000 }, sources: { dd: { type: 'done-done', path: '/work/notes', apps: ['notes'] } } }, db, 1, file, window);
@@ -50,4 +50,35 @@ test('a done-done record keeps no app name in bundle.md: a stored pre-salt id is
   const text = readFileSync(file, 'utf8');
   assert.doesNotMatch(text, /notes/);
   assert.match(text, new RegExp(`^- \\[dd:${saltedId(salt, 'notes/r1/check')}\\] dd at <done-done home>/runs/${saltedId(salt, 'notes')}/r1/run\\.json, `, 'm'));
+});
+
+test('a run that stored a pre-salt done-done id refuses its bundle, even after the source leaves the config', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
+  after(() => rmSync(state, { recursive: true }));
+  const db = await openStore(state, true);
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', now, now);
+  db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, record_id) VALUES (1, ?, ?, ?, ?, ?, ?)')
+    .run('dd', now, '/work/notes/runs/notes/r1/run.json', null, 'verify fail: check: wrong screen', 'dd:notes/r1/check');
+  const file = join(state, 'bundle.md');
+  const window = { current_start: new Date(Date.now() - 7 * 86_400_000).toISOString(), previous_start: new Date(Date.now() - 14 * 86_400_000).toISOString() };
+  assert.throws(() => bundle({ excerpts: 'off', caps: { bundle_chars: 100_000 }, sources: {} }, db, 1, file, window), (e) => e instanceof InputError
+    && /collected before done-done record ids were salted/.test(e.message) && /retro/.test(e.next));
+  db.close();
+  assert.equal(existsSync(file), false);
+});
+
+test('a firstmate inbox message whose id holds a slash is not a pre-salt done-done record', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
+  after(() => rmSync(state, { recursive: true }));
+  const db = await openStore(state, true);
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', now, now);
+  db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, record_id) VALUES (1, ?, ?, ?, ?, ?, ?)')
+    .run('fm', now, '/home/fm/state/alpha.inbox/handled/1.msg', null, 'steer text', 'fm:alpha.inbox/handled/1.msg');
+  const file = join(state, 'bundle.md');
+  const window = { current_start: new Date(Date.now() - 7 * 86_400_000).toISOString(), previous_start: new Date(Date.now() - 14 * 86_400_000).toISOString() };
+  bundle({ excerpts: 'off', caps: { bundle_chars: 100_000 }, sources: {} }, db, 1, file, window);
+  db.close();
+  assert.match(readFileSync(file, 'utf8'), /^- \[fm:alpha\.inbox\/handled\/1\.msg\] fm at /m);
 });

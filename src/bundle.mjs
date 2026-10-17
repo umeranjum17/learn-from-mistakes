@@ -10,6 +10,7 @@ import { writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { inWindow } from './metrics.mjs';
 import { excerpt, redact } from './redact.mjs';
+import { InputError } from '../bin/learn-from-mistakes-axi.mjs';
 import { saltedId } from './sources/markdown-log.mjs';
 
 const SAMPLES = 3; // the latest events shown in each cluster; the rest are counted
@@ -29,6 +30,12 @@ export function clusters(db, id, start) {
 
 export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const window = { start: Date.parse(current_start) }, on = cfg.excerpts === 'on';
+  // A done-done id from before the salt is plain: its part after the first colon holds a slash, which a salted id never does, and its ref is the run.json.
+  const predatesSalt = (r) => r.record_id?.slice(r.record_id.indexOf(':') + 1).includes('/') && r.ref?.endsWith(sep + 'run.json');
+  if (db.prepare('SELECT record_id, ref FROM records WHERE run_id = ?').all(id).some(predatesSalt)) {
+    throw new InputError(`run ${id} was collected before done-done record ids were salted, so its bundle would name the app`,
+      'learn-from-mistakes-axi retro --wait 8m   # a fresh retro collects and salts its records');
+  }
   const quote = (text) => (on && text ? `\n  > ${excerpt(text)}` : '');
   const metrics = new Map();
   for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
@@ -50,11 +57,6 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
     return ['<done-done home>', 'runs', saltedId(salt, app), ...rest].join(sep);
   };
-  const idFor = (r) => {
-    if (cfg.sources?.[r.source]?.type !== 'done-done') return r.record_id;
-    const plain = r.record_id.slice(r.source.length + 1);
-    return plain.includes('/') ? `${r.source}:${saltedId(salt, plain)}` : r.record_id;
-  };
   const at = (r) => {
     const home = r.data && JSON.parse(r.data).home;
     if (home) return `in home ${home}`;
@@ -72,7 +74,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
     ['Unlabelled defect records', 'No record in this window lacks a label.', records.map((r) =>
-      `- [${idFor(r)}] ${redact(r.source)} ${at(r)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
+      `- [${r.record_id}] ${redact(r.source)} ${at(r)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
   const cap = cfg.caps.bundle_chars, heads = sections.map(([title, empty, list, head = '']) => `\n## ${title}\n\n${list.length ? head : `${empty}\n`}`);
