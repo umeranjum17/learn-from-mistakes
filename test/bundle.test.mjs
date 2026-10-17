@@ -1,0 +1,33 @@
+// The bundle's unlabelled section lists the records with no row in the labels table, whatever their cause: the
+// same meaning report coverage counts. A real store, and the bundle step's own function, write and read the file.
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
+// The CLI loads first: src/config.mjs and src/init.mjs import each other, so a test that starts at src/bundle.mjs crashes.
+import '../bin/learn-from-mistakes-axi.mjs';
+import { bundle } from '../src/bundle.mjs';
+import { openStore } from '../src/store.mjs';
+
+test('the unlabelled section lists a record with a cause and no label, and not a record with a label and no cause', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
+  after(() => rmSync(state, { recursive: true }));
+  const db = await openStore(state, true);
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', now, now);
+  const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, cause, text, record_id) VALUES (1, ?, ?, ?, ?, ?, ?)');
+  record.run('log', now, 'defects.md:3', 'missing-file', 'The agent cannot find the fixture.', 'log:cause-only');
+  record.run('log', now, 'defects.md:5', null, 'The deploy was labelled.', 'log:label-only');
+  db.prepare('INSERT INTO labels (run_id, record_id, event, cause, why) VALUES (1, ?, 1, NULL, ?)').run('log:label-only', 'The record names a defect.');
+
+  const file = join(state, 'bundle.md');
+  const window = { current_start: new Date(Date.now() - 7 * 86_400_000).toISOString(), previous_start: new Date(Date.now() - 14 * 86_400_000).toISOString() };
+  bundle({ excerpts: 'off', caps: { bundle_chars: 100_000 } }, db, 1, file, window);
+  db.close();
+
+  const text = readFileSync(file, 'utf8');
+  const section = text.slice(text.indexOf('## Unlabelled defect records'));
+  assert.match(section, /^- \[log:cause-only\] log at defects\.md:3, \d{4}-\d{2}-\d{2}$/m);
+  assert.doesNotMatch(section, /log:label-only/);
+});

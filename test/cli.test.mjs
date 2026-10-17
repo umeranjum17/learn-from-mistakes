@@ -886,7 +886,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.match(bundle, /^\| defects \| 0 \| 0 \|  \|$/m);
   assert.match(bundle, /^No follow-ups yet\.$/m);
   assert.match(bundle, /^No session event has a failure signal in this window\.$/m);
-  assert.match(bundle, /^No record in this window lacks a cause\.$/m);
+  assert.match(bundle, /^No record in this window lacks a label\.$/m);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
