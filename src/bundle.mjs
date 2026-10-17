@@ -7,8 +7,10 @@
 // a path in a home, so it shows as its salted home id: no home name or path reaches the bundle. Items that would pass caps.bundle_chars are
 // dropped, and a last line counts them.
 import { writeFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { inWindow } from './metrics.mjs';
 import { excerpt, redact } from './redact.mjs';
+import { saltedId } from './sources/markdown-log.mjs';
 
 const SAMPLES = 3; // the latest events shown in each cluster; the rest are counted
 const DROPPED = 80; // room kept for the dropped line
@@ -33,11 +35,20 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     metrics.set(m.name, { ...metrics.get(m.name), [m.window]: m.value ?? 'n/a', target: m.target });
   }
   const grouped = clusters(db, id, window.start);
-  const at = (r) => { const home = r.data && JSON.parse(r.data).home; return home ? `in home ${home}` : `at ${redact(r.ref)}`; };
   // Unlabelled means no row in the labels table, the same meaning report coverage counts; a record's cause does not decide it.
   const records = db.prepare(`SELECT record_id, source, ts, ref, text, data FROM records r WHERE run_id = ?
     AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
+  const { salt } = db.prepare('SELECT salt FROM secret').get();
+  const keyed = (r) => {
+    const s = cfg.sources[r.source];
+    if (s?.type !== 'done-done') return r.ref;
+    const root = join(s.path, 'runs');
+    if (!r.ref.startsWith(root + sep)) return r.ref;
+    const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
+    return join(root, saltedId(salt, app), ...rest);
+  };
+  const at = (r) => { const home = r.data && JSON.parse(r.data).home; return home ? `in home ${home}` : `at ${redact(keyed(r))}`; };
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
       '| metric | this window | last window | target |\n| --- | --- | --- | --- |\n'],
