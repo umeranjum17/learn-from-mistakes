@@ -241,6 +241,7 @@ test('a premium or unset model that allow_premium forbids is never called: docto
   assert.equal(calls('pi').length, 0);
   config('agent: pi\nallow_premium: true\n');
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 1); // allow_premium permits a premium name, never an empty model
+  assert.equal(calls('pi').length, 0); // and the empty model never reaches the pi binary, so no premium default can run
   config('agent: pi\nallow_premium: true\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);
 });
