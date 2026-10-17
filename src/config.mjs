@@ -175,7 +175,7 @@ sources:
   for (const s of Object.values(sources)) for (const k of Object.keys(s.targets ?? {})) check(isMetric(k, causes), `${s.targets_file}: ${k}`, METRIC_RULE);
   // the read range is this window and the last one; only the sessions source applies it so far
   if (p.window !== undefined) check(typeof p.window === 'string' && /^[1-9]\d{0,2}d$/.test(p.window), `${file}: window`, 'a number of days, such as 7d');
-  const caps = block('caps', { invocations: 12, bundle_chars: 60000 });
+  const caps = block('caps', { invocations: 14, bundle_chars: 60000 });
   check(caps.bundle_chars >= 1000, `${file}: caps.bundle_chars`, 'at least 1000');
   if (p.signoff === 'auto') throw new UsageError(`${file}: signoff: auto is not a value; use on (the default) or off`);
   const cfg = {
