@@ -325,8 +325,8 @@ function project(a, full) {
     if (full) {
       m.change_ids = applied.map((c) => c.id);
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
-      // Only non-content ids: a record id is a hash of its text (unkeyed in a run from before the store's salt), so
-      // emitting one could confirm private prose.
+      // Only non-content ids: a record id is a salted hash of its text, or of a done-done record's app/run/step key
+      // (both unkeyed in a run from before the store's salt), so emitting one could confirm private prose.
       m.store_row_ids = g.store.rows.map(recordId);
       // A content-hash record id (a defect-log bullet) is left out by the same rule.
       m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.records.has(ref)
