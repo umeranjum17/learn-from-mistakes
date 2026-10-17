@@ -49,7 +49,7 @@ function headingDate(line) {
 // bundle without the store cannot hash a guessed text to it.
 export const saltedId = (salt, text) => createHmac('sha256', salt).update(text).digest('hex').slice(0, 12);
 
-// Each record's id is saltedId of its text.
+// Each record's id is saltedId of its text: it survives line moves.
 export function read(source, { path }, { project, salt }) {
   const text = readText(path, `source ${source}`, `check sources.${source}.path in ${shq(project)}, or create it: touch ${shq(path)}`);
   const seen = new Map();
