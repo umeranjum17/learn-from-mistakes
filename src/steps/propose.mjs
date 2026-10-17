@@ -14,7 +14,7 @@ import { METRIC_RULE } from '../config.mjs';
 import { liveAt } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
-import { counts, plain, quoteProblem, quoteRuns, rawProblem } from '../check.mjs';
+import { counts, plain, quoteProblem, quoteRuns, rawProblem, refutedCauses } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/propose.md', import.meta.url), 'utf8');
@@ -99,9 +99,10 @@ export async function propose(cfg, db, id, dir, window, log) {
     return { asked: false, fixes: 0, reasons: unmerged.size };
   }
   const list = (lines) => (lines.length ? lines.join('\n') : 'None.');
+  const refuted = refutedCauses(db, id);
   const fill = {
     metrics: METRIC_RULE,
-    causes: list([...counts(cfg, db, id, window).causes].map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
+    causes: list([...counts(cfg, db, id, window).causes].filter(([c]) => !refuted.has(c)).map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
     findings: list(findings.map((f) => `- ${f.cause}, ${f.verdict} by the judge: ${f.summary} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
     followups: list(pending.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
   };

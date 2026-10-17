@@ -193,6 +193,14 @@ export function counts(cfg, db, id, { current_start }) {
   return { causes, findings };
 }
 
+// The causes whose every finding the judge refuted: propose is not given them and check refuses a fix for them, so
+// the labels' counts alone cannot bring one back.
+export function refutedCauses(db, id) {
+  const all = new Map();
+  for (const f of db.prepare('SELECT cause, verdict FROM findings WHERE run_id = ?').all(id)) all.set(f.cause, (all.get(f.cause) ?? true) && f.verdict === 'refuted');
+  return new Set([...all].filter(([, refuted]) => refuted).map(([cause]) => cause));
+}
+
 // The check step. A fix is kept when the judge confirmed or weakened it, its cause has counted events and repeated, its refs
 // name bundle items, it has a target, an owner, a metric (default cause_count:<cause>) and a tripwire; a fix that breaks
 // a rule is a problem: it is logged and saved with the rule. The kept fixes are ranked, a weakened fix after the others,
@@ -200,6 +208,7 @@ export function counts(cfg, db, id, { current_start }) {
 // It can run again: it first clears what it set.
 export function check(cfg, db, id, dir, window, log) {
   const { causes, findings } = counts(cfg, db, id, window);
+  const refuted = refutedCauses(db, id);
   const ids = bundleIds(readBundle(dir, id));
   // How far each metric this window misses its target; 0 when it meets it or has none.
   const gaps = new Map(db.prepare(`SELECT name, value, target FROM metrics WHERE run_id = ? AND window = 'current' AND target IS NOT NULL AND value IS NOT NULL`).all(id)
@@ -207,7 +216,7 @@ export function check(cfg, db, id, dir, window, log) {
   const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json, verdict FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
     const refs = JSON.parse(f.refs_json), missing = refs.filter((r) => !ids.has(r)).length, c = causes.get(f.cause);
     const metric = f.metric?.trim() || `cause_count:${f.cause}`, trip = RULE.exec(f.tripwire?.trim() ?? '');
-    const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !f.verdict ? 'the judge gave it no verdict' : !c?.count ? 'its cause has no counted events'
+    const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !f.verdict ? 'the judge gave it no verdict' : refuted.has(f.cause) ? 'the judge refuted every finding for its cause' : !c?.count ? 'its cause has no counted events'
       : !refs.length ? 'no evidence refs' : missing ? `${missing} of ${refs.length} refs name no bundle item`
       : !c.repeated ? 'its cause did not repeat; propose only for repeated causes'
       : !f.target.trim() ? 'no target' : !f.owner.trim() ? 'no owner'
