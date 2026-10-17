@@ -145,7 +145,7 @@ try {
   const stagedConfig = join(staged, '.learn-from-mistakes.yaml');
   Object.assign(config, { agent: 'claude', judge_agent: 'codex', agent_config: { codex: { model: 'umer-judge-model' }, claude: { model: 'umer-worker-model', effort: 'low' } }, agent_timeout: '20m', window: '7d',
     targets: { first_pass: '>= 70', escaped: '<= 0' }, followup: { min_sessions: 3, min_days: 2 }, excerpts: 'off',
-    caps: { invocations: 12, bundle_chars: 60000 }, signoff: 'on' });
+    caps: { invocations: 14, bundle_chars: 60000 }, signoff: 'on' });
   // In-window canary records, one sentence per source type this journey configures, so the excerpts: off check
   // has in-window records to hide: the run must count them, and none of their text may reach the bundle, the
   // report or the drive's own output. Seeded only for this run - later journeys read the same staged sources.

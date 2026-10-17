@@ -959,7 +959,7 @@ window: 30d
 targets: { first_pass: ">= 70", p90_hours_to_merge: "<= 8", escaped: "<= 0", "cause_count:server-memory-kill": "<= 1" }
 followup: { min_sessions: 3, min_days: 2 }
 excerpts: off
-caps: { invocations: 12, bundle_chars: 60000 }
+caps: { invocations: 14, bundle_chars: 60000 }
 signoff: on
 `);
   mkdirSync(join(p, '..', 'home'), { recursive: true });

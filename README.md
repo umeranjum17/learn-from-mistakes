@@ -93,7 +93,7 @@ The CLI has no per-retro fee, but the agents or BYOKit use **your** subscription
 
 - `init`, ordinary `doctor`, `status` and `report` make no model calls. Login/version checks may run an agent's own status command.
 - `retro`, `rerun` and `apply` can call models. `agents --test <runner>` makes a live probe; `doctor --live` probes both roles. These cost tokens.
-- Defaults: `agent_timeout: "20m"` per attempt; `caps: { invocations: 12, bundle_chars: 60000 }`. A runner call can retry transient failures, up to three attempts. These are operational limits, **not a currency budget**.
+- Defaults: `agent_timeout: "20m"` per attempt; `caps: { invocations: 14, bundle_chars: 60000 }`. A runner call can retry transient failures, up to three attempts. These are operational limits, **not a currency budget**.
 - Reduce the configured sources or `window` (default `7d`) to bound the work. Inspect the report's not-checked section for capped or unread evidence.
 
 ## Follow a run and recover
