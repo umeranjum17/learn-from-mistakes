@@ -49,7 +49,7 @@ export async function doctor(dir, opts) {
   }
 
   // Each source's own doctor hook: readable, its count in the window, and the entries it skipped. It shows no record
-  // id, so a defect log's ids are keyed with a throwaway salt, not the run store's.
+  // id, so salted ids are keyed with a throwaway salt, not the run store's.
   // The read start is the retro's own: what the next retro reads, doctor checks.
   const since = ingestReadFrom(cfg);
   if (!Object.keys(cfg.sources).length) add('warn', 'sources', 'none configured: a retro has nothing to read', `learn-from-mistakes-axi init --dir ${shq(dir)}   # lists the sources it finds as gaps`);
