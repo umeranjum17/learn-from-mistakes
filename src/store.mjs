@@ -52,7 +52,7 @@ const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES runs(id), n INTEGER, cause TEXT NOT NULL,
     target TEXT NOT NULL, owner TEXT NOT NULL, change TEXT NOT NULL, metric TEXT, tripwire TEXT, refs_json TEXT NOT NULL, problem TEXT);
     ALTER TABLE followups ADD COLUMN reason TEXT`,
-  // The verify step's judge verdict on each fix (confirmed, weakened or refuted) and its reason.
+  // The verify-fixes step's judge verdict on each fix (confirmed, weakened or refuted) and its reason.
   'ALTER TABLE proposals ADD COLUMN verdict TEXT; ALTER TABLE proposals ADD COLUMN judge_note TEXT',
   `ALTER TABLE proposals ADD COLUMN kind TEXT;
     CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
