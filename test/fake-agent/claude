@@ -12,9 +12,10 @@
 // FAKE_PROPOSE=quote gives two fixes: one whose change copies a record sentence word for word (the quote rule
 // refuses it) and one that paraphrases it (kept), on every answer.
 // FAKE_DUP=1 makes every label after the first a duplicate of the first record; FAKE_OCC=n gives the first label n occurrences.
-// The verify step (its marker line) gets a verdict for each claim it lists: refuted for a claim id in FAKE_REFUTE (a comma
+// The verify and verify-fixes steps (their marker lines) get a verdict for each claim they list: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
-// FAKE_JUDGE=fail makes the verify call fail: an error line on stderr and exit 1, with no answer.
+// FAKE_JUDGE=fail makes the judge's call fail: an error line on stderr and exit 1, with no answer.
+// FAKE_PROPOSE=findings gives one fix per finding the propose step lists, for its cause and citing its refs.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
 // FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl. FAKE_CANARY, when set, is
 // added as a last word to each sentence that ends a text field of the answer.
@@ -30,8 +31,8 @@ const reply = (answer, extra = {}) => { const result = process.env.FAKE_CANARY ?
   return name === 'codex' ? args.includes('-o') && writeFileSync(args[args.indexOf('-o') + 1], result)
     : console.log(JSON.stringify({ type: 'result', is_error: false, result, session_id: 'fake-session', usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 }, ...extra })); };
 if (mode === 'hang') setInterval(() => {}, 1000);
-else if (/^lfm-run:\d+:verify\n/.test(stdin) && process.env.FAKE_JUDGE === 'fail') { console.error('the judge crashed for Umer'); process.exit(1); }
-else if (/^lfm-run:\d+:verify\n/.test(stdin)) {
+else if (/^lfm-run:\d+:verify(-fixes)?\n/.test(stdin) && process.env.FAKE_JUDGE === 'fail') { console.error('the judge crashed for Umer'); process.exit(1); }
+else if (/^lfm-run:\d+:verify(-fixes)?\n/.test(stdin)) {
   const claims = [...stdin.slice(stdin.indexOf('Claims to judge:'), stdin.indexOf('Reply with one JSON object')).matchAll(/^- (\w+):/gm)].map((m) => m[1]);
   const has = (v, item) => (process.env[v] ?? '').split(',').includes(item);
   reply(JSON.stringify({ verdicts: claims.filter((item) => !has('FAKE_UNJUDGED', item)).map((item) => (has('FAKE_REFUTE', item) ? { item, verdict: 'refuted', reason: 'The cited items show a different failure for Umer.' }
@@ -66,6 +67,8 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
     : process.env.FAKE_PROPOSE === 'quote' ? [fix('launch script 1', { change: 'Give each worker its own cache directory. The nightly backlog queue filled and blocked the morning release workers.' }),
       fix('launch script 2', { change: 'Give each worker its own cache directory for every lane.' })]
     : process.env.FAKE_PROPOSE === 'twin' ? [fix('launch script 1', { refs: records.slice(1, 2) })]
+    : process.env.FAKE_PROPOSE === 'findings' ? [...stdin.slice(stdin.indexOf('Findings of the analyse step'), stdin.indexOf('Follow-ups to explain:'))
+      .matchAll(/^- ([\w-]+), \w+ by the judge: .* Refs: (.+)\.$/gm)].map((m, i) => fix(`launch script ${i + 1}`, { cause: m[1], refs: m[2].split(', ') }))
     : process.env.FAKE_PROPOSE !== 'eight' ? [] :[...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
     fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })];
   const answer = { proposals,

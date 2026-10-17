@@ -60,10 +60,13 @@ const STEPS = {
   },
   // The worker reads the bundle: it names the causes it finds and labels the defect records (the labels and findings tables).
   analyse: (cfg, db, id, log) => analyse(cfg, db, id, runDir(cfg, id), log),
+  // The judge tries to refute each finding against the bundle items it cites: confirmed, weakened or refuted. It runs
+  // before propose, so no fix rests on a finding the judge refuted.
+  verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), 'findings', log),
   // The worker proposes fixes for the repeated causes and gives the reason for each follow-up that is not keep.
   propose: (cfg, db, id, log) => propose(cfg, db, id, runDir(cfg, id), collected(db, id), log),
-  // The judge tries to refute each finding and fix against the bundle items it cites: confirmed, weakened or refuted.
-  verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), log),
+  // The judge tries to refute each fix the same way.
+  'verify-fixes': (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), 'proposals', log),
   // Keeps only the fixes that follow the rules: ranked, at most five, numbered for `change applied --proposal <run>:<n>`.
   check: (cfg, db, id, log) => check(cfg, db, id, runDir(cfg, id), collected(db, id), log),
   // With auto_fix: n, puts the top n kept fixes on their own branches. It runs before report, so report.txt names them as applied.
@@ -192,10 +195,15 @@ export async function rerun(cfg, opts) {
     const { status } = db.prepare('SELECT status FROM runs WHERE id = ?').get(id);
     if (status === 'completed') throw new UsageError(`run ${id} already completed`, withContext('learn-from-mistakes-axi retro --wait 8m', 'a new run', opts));
     blockRunning(db, opts);
-    // A run saved before a step moved (report before apply) takes today's order, and every step from its first one that is
-    // not completed runs again: a report written before apply is written again after it.
-    Object.keys(STEPS).forEach((name, ord) => db.prepare('UPDATE steps SET ord = ? WHERE run_id = ? AND name = ?').run(ord, id, name));
-    const from = db.prepare(`SELECT min(ord) AS ord FROM steps WHERE run_id = ? AND status != 'completed'`).get(id).ord;
+    // A run saved before a step moved (report before apply, verify before propose) or was added (verify-fixes) takes today's
+    // order, with each new step pending, and runs again from its first step that is not completed or that is not where it
+    // was: a report written before apply is written again after it, and fixes proposed before verify are proposed again.
+    const was = db.prepare('SELECT name FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => s.name);
+    const moved = Object.keys(STEPS).findIndex((name, ord) => was[ord] !== name);
+    Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')
+      ON CONFLICT (run_id, name) DO UPDATE SET ord = excluded.ord`).run(id, name, ord));
+    const first = db.prepare(`SELECT min(ord) AS ord FROM steps WHERE run_id = ? AND status != 'completed'`).get(id).ord;
+    const from = moved < 0 ? first : Math.min(first ?? moved, moved);
     const reset = db.prepare('SELECT name FROM steps WHERE run_id = ? AND ord >= ?').all(id, from).map((s) => s.name);
     db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, error = NULL, output_json = NULL WHERE run_id = ? AND ord >= ?`).run(id, from);
     for (const name of reset) dropLog(cfg, id, name);

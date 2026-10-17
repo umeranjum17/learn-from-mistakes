@@ -407,7 +407,7 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   appendFileSync(join(run.p, 'defects.md'), `- [runner] ${CANARY} stopped the server -> 1 h -> OPEN.\n`);
   const outs = [run.lfm(agents, 'retro', '--foreground'), run.lfm(agents, 'retro', '--foreground', '--json')];
   const id = JSON.parse(outs[1].stdout).run.id;
-  outs.push(run.lfm({}), run.lfm({}, '--json'), run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), run.lfm({}, 'report'), run.lfm({}, 'report', '--full'), run.lfm({}, 'report', '--full', '--json'), ...['analyse', 'propose', 'verify', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
+  outs.push(run.lfm({}), run.lfm({}, '--json'), run.lfm({}, 'status'), run.lfm({}, 'attach', '--json'), run.lfm({}, 'report'), run.lfm({}, 'report', '--full'), run.lfm({}, 'report', '--full', '--json'), ...['analyse', 'verify', 'propose', 'verify-fixes', 'check', 'report'].map((step) => run.lfm({}, 'logs', '--step', step)));
   for (const r of outs) {
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout + r.stderr, new RegExp(CANARY));
@@ -466,6 +466,53 @@ test('a fix shows the finding its refs cite, not the first finding with the same
   const text = reportOf(run.p, JSON.parse(r.stdout).run.id);
   assert.match(text, /^Fix 1, for shared-cache-lock:\n- Finding:\n  Second twin failed alone\.\n/m);
   assert.doesNotMatch(text, /First twin/);
+});
+
+test('verify runs before propose: a finding the judge refuted never reaches the worker and gets no fix; a confirmed or weakened one does, with its verdict; an old-order run resumes', () => {
+  const { p, lfm, query, calls, lines } = agentSetup(), yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const agents = { FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'twins', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'findings' };
+  const retro = (extra) => { const r = lfm({ ...agents, ...extra }, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout).run.id; };
+  const asked = (id) => calls().filter((c) => c.stdin.startsWith(`lfm-run:${id}:propose\n`)).map((c) => c.stdin);
+  const refs = (id, table) => query(`SELECT refs_json FROM ${table} WHERE run_id = ? ORDER BY id`, id).map((r) => JSON.parse(r.refs_json));
+  // The judge refutes the first twin: the worker reads only the second, with its verdict, and proposes one fix for it.
+  const id = retro({ FAKE_REFUTE: 'f1' });
+  assert.deepEqual(query('SELECT step FROM invocations WHERE run_id = ? ORDER BY id', id).map((r) => r.step), ['analyse', 'verify', 'propose', 'verify-fixes']);
+  const [prompt] = asked(id);
+  assert.doesNotMatch(prompt, /First twin failed alone/);
+  assert.match(prompt, /^Findings of the analyse step that the judge did not refute, each with its verdict:\n- shared-cache-lock, confirmed by the judge: Second twin failed alone\. Refs: \S+\.\n\n/m);
+  assert.deepEqual(refs(id, 'proposals'), [refs(id, 'findings')[1]]);
+  assert.deepEqual(query('SELECT verdict FROM findings WHERE run_id = ? ORDER BY id', id).map((f) => f.verdict), ['refuted', 'confirmed']);
+  assert.match(lfm({}, 'report').stdout, /^finding: shared-cache-lock \(0\/0 days, refuted\)$/m); // the refuted finding is still in the report
+  // A weakened finding still reaches the worker, with its verdict, and gets its fix.
+  const weak = retro({ FAKE_REFUTE: 'f1', FAKE_WEAKEN: 'f2' });
+  assert.match(asked(weak)[0], /^- shared-cache-lock, weakened by the judge: Second twin failed alone\. Refs: \S+\.$/m);
+  assert.deepEqual(refs(weak, 'proposals'), [refs(weak, 'findings')[1]]);
+  // With every finding refuted and no follow-up to explain, the worker is not asked to propose.
+  const none = retro({ FAKE_REFUTE: 'f1,f2' });
+  assert.deepEqual([asked(none), lines('propose', none), refs(none, 'proposals')], [[], ['nothing to propose: no finding and no follow-up to explain'], []]);
+
+  // A run saved in the earlier order (propose before verify, no verify-fixes step) that failed after verify, as runs did
+  // before a failed run kept no verdict: the resume takes today's order and runs again from verify, so propose reads the
+  // new verdicts and its old fix for the refuted finding is gone.
+  const old = retro({});
+  assert.equal(refs(old, 'proposals').length, 2);
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try {
+    db.exec(`DELETE FROM steps WHERE run_id = ${old} AND name = 'verify-fixes';
+      UPDATE steps SET ord = CASE name WHEN 'propose' THEN 5 WHEN 'verify' THEN 6 ELSE ord - 1 END WHERE run_id = ${old} AND ord >= 5;
+      UPDATE steps SET status = CASE name WHEN 'check' THEN 'failed' ELSE 'pending' END, output_json = NULL WHERE run_id = ${old} AND ord >= 7;
+      UPDATE runs SET status = 'failed', error = 'check: an earlier failure' WHERE id = ${old}`);
+  } finally { db.close(); }
+  assert.deepEqual(query('SELECT name FROM steps WHERE run_id = ? ORDER BY ord', old).map((s) => s.name).slice(4, 7), ['analyse', 'propose', 'verify']);
+  const resumed = lfm({ ...agents, FAKE_REFUTE: 'f1' }, 'rerun', '--resume', '--run', String(old), '--wait', '1m', '--json');
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const r = JSON.parse(resumed.stdout);
+  assert.deepEqual([r.run.status, ...r.steps.map((s) => `${s.name} ${s.status}`)], ['completed', ...['collect', 'metrics', 'followup', 'bundle', 'analyse', 'verify', 'propose', 'verify-fixes', 'check', 'apply', 'report'].map((n) => `${n} completed`)]);
+  assert.equal(asked(old).length, 2, 'the resume does not ask the worker to propose again');
+  assert.doesNotMatch(asked(old)[1], /First twin failed alone/);
+  assert.deepEqual(refs(old, 'proposals'), [refs(old, 'findings')[1]]);
+  assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ?', old).map((f) => f.verdict), ['confirmed']);
 });
 
 test('duplicate labels collapse to one incident, occurrences add, and log and store totals never add', () => {
@@ -880,7 +927,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   assert.doesNotMatch(r.stderr, /ExperimentalWarning/); // the examples read a store, so node:sqlite loads
   const run = decode(r.stdout);
   assert.equal(run.run.status, 'completed');
-  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(run.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['verify', 'completed'], ['propose', 'completed'], ['verify-fixes', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   // The bundle: the metrics; the example's records and gate rows are all from March, before this window.
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'bundle.md'), 'utf8');
   assert.match(bundle, /^\| defects \| 0 \| 0 \|  \|$/m);
@@ -891,7 +938,7 @@ test('retro --foreground saves a run and its steps in .lfm/; status and runs sho
   const steps = db.prepare('SELECT name, output_json FROM steps WHERE run_id = ? ORDER BY ord').all(run.run.id);
   db.close();
   assert.deepEqual(JSON.parse(steps[0].output_json).sources.map((s) => s.items), [13, 5]);
-  assert.deepEqual(JSON.parse(steps[9].output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
+  assert.deepEqual(JSON.parse(steps.at(-1).output_json).coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // no labels yet
   const status = lfm('status', '--json');
   assert.equal(status.status, 0, status.stderr);
   const saved = JSON.parse(status.stdout);
@@ -919,7 +966,7 @@ signoff: on
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna, effort: low } }\nagent_timeout: 5m\nagent_path_override: { claude: ' + FAKE_AGENT + ' }\nagent_args_override: { codex: [--profile, cheap] }\nacpx_path: acpx\n');
   const v2 = lfm('retro', '--foreground', '--json');
   assert.equal(v2.status, 0, v2.stderr);
-  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(JSON.parse(v2.stdout).steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['verify', 'completed'], ['propose', 'completed'], ['verify-fixes', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   writeFileSync(join(p, '..', 'home', 'config.yaml'), 'agent_args_override: { codex: --profile }\n');
   const badGlobal = lfm('status');
   assert.equal(badGlobal.status, 2, badGlobal.stderr);
@@ -940,7 +987,7 @@ signoff: on
   const f = JSON.parse(failed.stdout);
   assert.equal(f.run.error, 'report: no records or rows in the sources: nothing to count');
   // A failed run keeps no verdict: the steps from followup on are pending again, for a resume to run them.
-  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', ...Array(7).fill('pending'), 'failed']);
+  assert.deepEqual(f.steps.map((s) => s.status), ['completed', 'completed', ...Array(8).fill('pending'), 'failed']);
   assert.match(failed.stderr, /^error: report: no records or rows in the sources: nothing to count$/m);
   assert.match(failed.stderr, /^next: learn-from-mistakes-axi rerun --resume --run \d+   # finish it after fixing the report step/m);
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs[0], f.run);
@@ -1014,7 +1061,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.doesNotMatch(waited.stderr, /ExperimentalWarning/);
   const first = JSON.parse(waited.stdout);
   assert.equal(first.run.status, 'completed');
-  assert.deepEqual(first.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  assert.deepEqual(first.steps.map((s) => s.status), Array(11).fill('completed'));
   // A run whose worker labelled nothing and found nothing says so in one plain line, with where to see why.
   assert.deepEqual(first.result, { summary: 'repeated: agent-exit-wait (4 times/3 days)', labelled: 0, records: 18, causes: [{ cause: 'agent-exit-wait', repeated: true, incidents: 0, days: 0, rows: 4 }], findings: [] }); // a match rule counts gate rows
   assert.match(waited.stderr, /^result: the worker labelled no record and named no finding\nnext: learn-from-mistakes-axi logs --step analyse --run 1   # why/m);
@@ -1030,10 +1077,10 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   let steps;
   for (let i = 0; i < 100; i++) { // up to 20 s for the worker to reach the slow step
     steps = (await statusJson(() => lfm('status', '--json'))).steps;
-    if (steps[9].status === 'running') break;
+    if (steps.at(-1).status === 'running') break;
     await new Promise((r) => setTimeout(r, 200));
   }
-  assert.deepEqual(steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'running']);
+  assert.deepEqual(steps.map((s) => s.status), [...Array(10).fill('completed'), 'running']);
   const busy = lfm('retro');
   assert.equal(busy.status, 2, busy.stderr);
   assert.match(busy.stderr, new RegExp(`^error: run ${run.id} is still running$`, 'm'));
@@ -1046,7 +1093,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   assert.equal(k.run.status, 'interrupted');
   assert.equal(k.run.error, 'report: the worker stopped before the step ended');
   // An interrupted run keeps no verdict: its steps from followup on are pending again.
-  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', ...Array(7).fill('pending'), 'interrupted']);
+  assert.deepEqual(k.steps.map((s) => s.status), ['completed', 'completed', ...Array(8).fill('pending'), 'interrupted']);
   assert.match(killed.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
 
   const next = lfm('retro', '--wait', '--json'); // the interrupted run blocks nothing; a bare --wait waits 8 minutes
@@ -1058,7 +1105,7 @@ test('retro runs in a detached worker; a killed worker is interrupted and rerun 
   const r = JSON.parse(resumed.stdout);
   assert.equal(r.run.status, 'completed');
   assert.equal(r.run.error, null);
-  assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  assert.deepEqual(r.steps.map((s) => s.status), Array(11).fill('completed'));
   assert.deepEqual(r.steps.slice(0, 2), k.steps.slice(0, 2), 'the completed collect and metrics steps were not run again');
   assert.deepEqual(r.metrics, k.metrics);
   const again = lfm('rerun', '--resume', '--run', String(run.id));
@@ -1097,7 +1144,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.doesNotMatch(log.stdout, /sha256/);
   const nope = lfm('logs', '--step', 'judge');
   assert.equal(nope.status, 2, nope.stderr);
-  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "judge" \\(steps: collect, metrics, followup, bundle, analyse, propose, verify, check, apply, report\\)$`, 'm'));
+  assert.match(nope.stderr, new RegExp(`^error: run ${first.id} has no step "judge" \\(steps: collect, metrics, followup, bundle, analyse, verify, propose, verify-fixes, check, apply, report\\)$`, 'm'));
 
   // abort stops a running run: its worker ends and the run is cancelled; a new retro is not blocked.
   const slow = spawnSync(process.execPath, [CLI, 'retro', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, LFM_TEST_SLOW_STEP: 'report' } });
@@ -1112,7 +1159,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const a = JSON.parse(aborted.stdout);
   assert.equal(a.run.status, 'cancelled');
   assert.equal(a.run.error, 'report: cancelled by SIGTERM'); // the worker's own trap ended it
-  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', ...Array(7).fill('pending'), 'cancelled']); // a cancelled run keeps no verdict either
+  assert.deepEqual(a.steps.map((s) => s.status), ['completed', 'completed', ...Array(8).fill('pending'), 'cancelled']); // a cancelled run keeps no verdict either
   assert.throws(() => process.kill(run.pid, 0), { code: 'ESRCH' }, 'the worker is gone');
   assert.match(aborted.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${run.id}   # finish it`, 'm'));
   const idle = lfm('abort');
@@ -1128,7 +1175,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   assert.match(rerun.stderr, new RegExp(`^rerun: started run ${run.id + 1} from run ${run.id}$`, 'm'));
   const r = JSON.parse(rerun.stdout);
   assert.deepEqual([r.run.id, r.from], [run.id + 1, run.id]);
-  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed', 'completed']);
+  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], Array(12).fill('completed'));
   assert.deepEqual(JSON.parse(lfm('runs', '--json').stdout).runs.map((x) => x.status), ['completed', 'cancelled', 'completed']);
 });
 
@@ -1153,7 +1200,7 @@ function agentSetup() {
 // True when a run stored no verdict, label, finding, fix or follow-up, and wrote no report.txt.
 function nothingJudged(query, id) {
   return ['labels', 'findings', 'proposals', 'followups'].every((t) => query(`SELECT count(*) AS n FROM ${t} WHERE run_id = ?`, id)[0].n === 0)
-    && query(`SELECT count(*) AS n FROM steps WHERE run_id = ? AND name IN ('followup', 'analyse', 'propose', 'verify', 'check', 'report') AND output_json IS NOT NULL`, id)[0].n === 0;
+    && query(`SELECT count(*) AS n FROM steps WHERE run_id = ? AND name IN ('followup', 'analyse', 'verify', 'propose', 'verify-fixes', 'check', 'report') AND output_json IS NOT NULL`, id)[0].n === 0;
 }
 // A run's report.txt: the seven sections in order; each line a person reads has sentences of at most 20 words and no
 // path or store id; each pointer on an Evidence line opens: a line of a project file, a gate store row or a session.
@@ -1191,7 +1238,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock' }, 'retro', '--wait', '1m', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run, steps, result } = JSON.parse(r.stdout);
-  assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['propose', 'completed'], ['verify', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
+  assert.deepEqual(steps.map((s) => [s.name, s.status]).slice(3), [['bundle', 'completed'], ['analyse', 'completed'], ['verify', 'completed'], ['propose', 'completed'], ['verify-fixes', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   const bundle = readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8');
   const records = [...bundle.matchAll(/^- \[([^\]]+)\] log at /gm)].map((m) => m[1]);
   assert.equal(records.length, 2);
@@ -1260,7 +1307,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const why = "the worker's answer is not valid after one retry: the answer holds no JSON object";
   assert.equal(b.run.error, `analyse: ${why}`);
   // A failed worker leaves nothing verdict-shaped: the followup step's verdicts go too, and it is pending again for a resume.
-  assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'pending', 'pending', 'failed', 'pending', 'pending', 'pending', 'pending', 'pending']);
+  assert.deepEqual(b.steps.map((s) => s.status), ['completed', 'completed', 'pending', 'pending', 'failed', ...Array(6).fill('pending')]);
   assert.equal(nothingJudged(query, b.run.id), true);
   assert.match(bad.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${b.run.id}   # finish it after fixing the analyse step`, 'm'));
   const failed = lfm({}); // the bare command shows the failed run without its error text, which can hold an agent's output
@@ -1376,21 +1423,26 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.equal(r.status, 0, r.stderr);
   const { run, fixes } = JSON.parse(r.stdout);
   // The judge is the second fake agent (codex, its own model), never the worker: in the run dir it got the judge's method,
-  // each finding and fix as a claim with its refs, then the bundle. Its verdicts land on the rows.
-  const [judge] = calls('codex');
+  // each finding as a claim with its refs before propose, then each fix after it, each time with the bundle. Its verdicts land on the rows.
+  const [judge, fixJudge] = calls('codex');
   assert.equal(realpathSync(judge.cwd), realpathSync(join(p, '.lfm', 'runs', String(run.id))));
   assert.deepEqual(judge.args.slice(0, 3), ['exec', '-m', 'gpt-6-luna']);
   assert.ok(judge.stdin.startsWith(`lfm-run:${run.id}:verify\nYou are the judge of a retro.`), judge.stdin.slice(0, 200));
+  assert.ok(fixJudge.stdin.startsWith(`lfm-run:${run.id}:verify-fixes\nYou are the judge of a retro.`), fixJudge.stdin.slice(0, 200));
   assert.match(judge.stdin, /The worker's claims are not evidence\./);
   assert.match(judge.stdin, /^- f1: finding for cause umer-fixtures-unset\. The tests fail when UMER_FIXTURES is unset\. No doc names it\. Refs: \S+\.$/m);
-  assert.match(judge.stdin, /^- p2: fix for cause shared-cache-lock\. Target: launch script 2\. Owner: maintainer\. Change: .+ Metric: cause_count:shared-cache-lock\. Tripwire: <= 0\. Refs: .+\.$/m);
-  assert.ok(judge.stdin.endsWith(readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8')), 'the bundle is not the end of the prompt');
-  assert.ok(!calls().some((c) => c.stdin.includes(':verify\n')), 'the worker was asked to judge');
-  assert.deepEqual(query(`SELECT role, runner, model, exit_status FROM invocations WHERE run_id = ? AND step = 'verify'`, run.id), [{ role: 'judge', runner: 'codex', model: 'gpt-6-luna', exit_status: 'ok' }]);
+  assert.doesNotMatch(judge.stdin, /^- p\d+: /m);
+  assert.match(fixJudge.stdin, /^- p2: fix for cause shared-cache-lock\. Target: launch script 2\. Owner: maintainer\. Change: .+ Metric: cause_count:shared-cache-lock\. Tripwire: <= 0\. Refs: .+\.$/m);
+  assert.doesNotMatch(fixJudge.stdin, /^- f\d+: /m);
+  for (const c of [judge, fixJudge]) assert.ok(c.stdin.endsWith(readFileSync(join(p, '.lfm', 'runs', String(run.id), 'bundle.md'), 'utf8')), 'the bundle is not the end of the prompt');
+  assert.ok(!calls().some((c) => /:verify(-fixes)?\n/.test(c.stdin)), 'the worker was asked to judge');
+  assert.deepEqual(query(`SELECT step, role, runner, model, exit_status FROM invocations WHERE run_id = ? AND step LIKE 'verify%' ORDER BY id`, run.id),
+    ['verify', 'verify-fixes'].map((step) => ({ step, role: 'judge', runner: 'codex', model: 'gpt-6-luna', exit_status: 'ok' })));
   assert.deepEqual(query('SELECT verdict, judge_note FROM findings WHERE run_id = ?', run.id), [{ verdict: 'confirmed', judge_note: 'The cited items show this for Umer.' }]);
   assert.deepEqual(query('SELECT verdict FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => f.verdict), ['confirmed', 'refuted', 'weakened', ...Array(5).fill('confirmed')]);
-  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'weakened: p3', 'verdicts: 7 confirmed, 1 weakened, 1 refuted']);
-  // The worker got the causes with their counts, the kept finding and the propose method, then the bundle.
+  assert.deepEqual(lines('verify', run.id), ['judge codex gpt-6-luna: answered', 'verdicts: 1 confirmed, 0 weakened, 0 refuted']);
+  assert.deepEqual(lines('verify-fixes', run.id), ['judge codex gpt-6-luna: answered', 'refuted: p2', 'weakened: p3', 'verdicts: 6 confirmed, 1 weakened, 1 refuted']);
+  // The worker got the causes with their counts, the judged finding and the propose method, then the bundle.
   const call = calls().at(-1);
   assert.ok(call.stdin.startsWith(`lfm-run:${run.id}:propose\nYou are the worker of a retro.`), call.stdin.slice(0, 200));
   assert.match(call.stdin, /^- shared-cache-lock: 2 incidents on 1 day, repeated$/m);
@@ -1539,7 +1591,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.match(calls().at(-1).stdin, /^Follow-ups to explain:\n- chg-1: metric defects, 2 before, 0 after, tripwire <= 0, verdict no-data$/m);
   assert.deepEqual(query('SELECT change_id, reason FROM followups WHERE run_id = ?', second.id), [{ change_id: 'chg-1', reason: 'Too few sessions ran after the change for Umer.' }]);
   assert.match(reportOf(p, second.id), /^3\. Last changes\n- Change chg-1, metric defects: 2 before, 0 after\. The verdict is no-data\. Wait for more data\.\n {2}Too few sessions ran after the change for Umer\.\n\n4\.[\s\S]*^7\. Questions for you\n- No questions\.\n$/m);
-  assert.deepEqual(lines('verify', second.id), ['nothing to verify: no finding and no fix']);
+  assert.deepEqual([lines('verify', second.id), lines('verify-fixes', second.id)], [['nothing to verify: no finding'], ['nothing to verify: no fix']]);
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });
 
@@ -1633,9 +1685,9 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual(asked(auto1.run.id), [`   ${done}`, ...[2, 3, 4, 5].map((n, i) => `${i + 1}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`)]);
   const post = lfm({}, 'signoff', 'post', '--run', String(auto1.run.id)); assert.equal(post.status, 0, post.stderr);
   assert.deepEqual([post.stdout.split('\n')[0], [...post.stdout.matchAll(/^kept: lfm-\d+-(\d+)-/gm)].map((m) => m[1])], [done, ['2', '3', '4', '5']]);
-  // A run saved before apply moved ahead of report (report ord 8, apply ord 9) resumes in today's order: apply, then report again.
+  // A run saved before apply moved ahead of report (report ord 9, apply ord 10) resumes in today's order: apply, then report again.
   const old = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  try { old.exec(`UPDATE steps SET ord = 17 - ord, status = CASE name WHEN 'apply' THEN 'failed' ELSE status END WHERE run_id = ${auto1.run.id} AND name IN ('report', 'apply'); UPDATE runs SET status = 'failed' WHERE id = ${auto1.run.id}`); } finally { old.close(); }
+  try { old.exec(`UPDATE steps SET ord = 19 - ord, status = CASE name WHEN 'apply' THEN 'failed' ELSE status END WHERE run_id = ${auto1.run.id} AND name IN ('report', 'apply'); UPDATE runs SET status = 'failed' WHERE id = ${auto1.run.id}`); } finally { old.close(); }
   rmSync(join(p, '.lfm', 'runs', String(auto1.run.id), 'report.txt')); const before2 = calls().length;
   const resumed = lfm(fake, 'rerun', '--resume', '--run', String(auto1.run.id), '--wait', '1m', '--json'); assert.equal(resumed.status, 0, resumed.stderr);
   assert.deepEqual(JSON.parse(resumed.stdout).steps.slice(-2).map((s) => [s.name, s.status]), [['apply', 'completed'], ['report', 'completed']]);
@@ -1644,6 +1696,7 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
 
 test('apply: a cut-off reply is refused with no branch and no ledger change; trailing-newline-only and normal-stop replies still apply', () => {
   const { p, lfm, calls, git, fake } = applyRepo();
+  appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'caps: { invocations: 16 }\n'); git('commit', '-qam', 'caps'); // the retro's calls and every apply call below count on one run
   const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
   const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   // two ways a cut-off reply shows: FAKE_APPLY=cut returns text cut mid-line (no stop reason reported), length returns
@@ -1883,12 +1936,12 @@ test('a judge that leaves a claim without a verdict, or fails, fails the run: it
   const left = lfm({ ...agents, FAKE_UNJUDGED: 'p1' }, 'retro', '--foreground', '--json');
   assert.equal(left.status, 1, left.stderr);
   const l = JSON.parse(left.stdout);
-  assert.equal(l.run.error, `verify: ${why}`);
-  assert.deepEqual(lines('verify', l.run.id), ['judge codex gpt-6-luna: answered', 'judge answer 1 is not valid: verdicts has no verdict for p1', 'judge codex gpt-6-luna: answered',
+  assert.equal(l.run.error, `verify-fixes: ${why}`);
+  assert.deepEqual(lines('verify-fixes', l.run.id), ['judge codex gpt-6-luna: answered', 'judge answer 1 is not valid: verdicts has no verdict for p1', 'judge codex gpt-6-luna: answered',
     'judge answer 2 is not valid: verdicts has no verdict for p1', `error: ${why}`]);
   assert.equal(nothingJudged(query, l.run.id), true);
   assert.deepEqual([l.followups, l.fixes, l.result, existsSync(join(p, '.lfm', 'runs', String(l.run.id), 'report.txt'))], [undefined, undefined, undefined, false]);
-  assert.match(left.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${l.run.id}   # finish it after fixing the verify step`, 'm'));
+  assert.match(left.stderr, new RegExp(`^next: learn-from-mistakes-axi rerun --resume --run ${l.run.id}   # finish it after fixing the verify-fixes step`, 'm'));
   // A judge whose call fails: the same, with the agent's own error as the cause.
   const crashed = lfm({ ...agents, FAKE_JUDGE: 'fail' }, 'retro', '--foreground', '--json');
   assert.equal(crashed.status, 1, crashed.stderr);
@@ -1902,16 +1955,16 @@ test('a judge that leaves a claim without a verdict, or fails, fails the run: it
   const resumed = lfm(agents, 'rerun', '--resume', '--run', String(c.run.id), '--wait', '1m', '--json');
   assert.equal(resumed.status, 0, resumed.stderr);
   const r = JSON.parse(resumed.stdout);
-  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], ['completed', ...Array(10).fill('completed')]);
+  assert.deepEqual([r.run.status, ...r.steps.map((s) => s.status)], Array(12).fill('completed'));
   assert.deepEqual(r.fixes.map((f) => f.verdict), Array(5).fill('confirmed'));
   assert.equal(query('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND verdict IS NULL', c.run.id)[0].n, 0);
 });
 
-test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept; check counts nothing for a refuted finding', () => {
+test('propose: a rule-breaking fix is sent back once, then dropped on the second answer while the valid fixes are kept', () => {
   const { p, lfm, query, calls, lines } = agentSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long', FAKE_REFUTE: 'f1' }, 'retro', '--foreground', '--json');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'long' }, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   const { run } = JSON.parse(r.stdout);
   const asks = calls().filter((c) => c.stdin.startsWith(`lfm-run:${run.id}:propose\n`));
@@ -1920,8 +1973,6 @@ test('propose: a rule-breaking fix is sent back once, then dropped on the second
   assert.deepEqual(query('SELECT target FROM proposals WHERE run_id = ?', run.id), [{ target: 'launch script 1' }]);
   assert.ok(lines('propose', run.id).includes('dropped: proposals[1].change has more than 3 sentences'));
   assert.equal(lines('propose', run.id).at(-1), 'fixes: 1 proposed, reasons: 0 of 0 follow-ups');
-  assert.deepEqual(query('SELECT verdict, count, days FROM findings WHERE run_id = ?', run.id), [{ verdict: 'refuted', count: null, days: null }]);
-  assert.match(lfm({}, 'report').stdout, /^finding: umer-fixtures-unset \(0\/0 days, refuted\)$/m);
   const badKind = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_KIND: 'guess' }, 'retro', '--foreground', '--json');
   assert.equal(badKind.status, 0, badKind.stderr);
   const badId = JSON.parse(badKind.stdout).run.id;
