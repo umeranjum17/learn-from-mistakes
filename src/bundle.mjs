@@ -39,9 +39,9 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const { salt } = db.prepare('SELECT salt FROM secret').get();
   const keyed = (r) => {
     const s = cfg.sources[r.source];
-    if (s?.type !== 'done-done') return r.ref;
+    if (s?.type !== 'done-done') return r.ref.endsWith(sep + 'run.json') ? null : r.ref;
     const root = join(s.path, 'runs');
-    if (!r.ref.startsWith(root + sep)) return r.ref;
+    if (!r.ref.startsWith(root + sep)) return null;
     const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
     return join(root, saltedId(salt, app), ...rest);
   };
@@ -55,8 +55,10 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       const more = es.length > SAMPLES ? [`- ${es.length - SAMPLES} more events`] : [];
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
-    ['Unlabelled defect records', 'No record in this window lacks a cause.', records.map((r) =>
-      `- [${r.record_id}] ${redact(r.source)} at ${redact(keyed(r))}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
+    ['Unlabelled defect records', 'No record in this window lacks a cause.', records.map((r) => {
+      const at = keyed(r);
+      return `- [${r.record_id}] ${redact(r.source)} at ${at ? redact(at) : 'an unknown path'}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`;
+    })],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
   const cap = cfg.caps.bundle_chars, heads = sections.map(([title, empty, list, head = '']) => `\n## ${title}\n\n${list.length ? head : `${empty}\n`}`);
