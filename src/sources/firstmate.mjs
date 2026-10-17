@@ -87,7 +87,7 @@ export function read(source, entry, ctx) {
   let skipped = 0;
   for (const [i, home] of (fleet ? fleet.homes : [entry.path]).entries()) {
     const id = fleet && markdownLog.saltedId(ctx.salt, home);
-    const got = readHome(source, home, ctx, id, i ? `fix or remove the line of ${home} in ${shq(fleet.file)}, the fleet registry source ${source} reads` : undefined);
+    const got = readHome(source, home, ctx, id, i ? `fix or remove the line of ${home} in ${shq(fleet.file)}, the fleet registry source ${source} reads` : undefined, i > 0);
     for (const r of got.records) records.push(r); // one push per record, as below
     skipped += got.skipped;
     ids.push(id);
@@ -96,11 +96,11 @@ export function read(source, entry, ctx) {
 }
 
 // One home's records; with a home id, each record's id starts with it and its data names it.
-function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }, home, fix) {
+function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }, home, fix, listed) {
   const state = join(path, 'state'), records = [], text = (t) => (excerpts ? excerpt(t) : ''), at = home ? `${home}/` : '';
   let files, skipped = 0;
   try { files = readdirSync(state, { recursive: true }).sort(); } catch (e) {
-    if (!home || e.code !== 'ENOENT' || !existsSync(path)) throw new UsageError(`source ${source}: cannot read ${state} (${e.code})`, fix ?? `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
+    if (!listed || e.code !== 'ENOENT' || !existsSync(path)) throw new UsageError(`source ${source}: cannot read ${state} (${e.code})`, fix ?? `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
     files = [];
   }
   const add = (ms, id, ref, kind, body, tag) => {

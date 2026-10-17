@@ -231,6 +231,7 @@ test('a registry summary with parentheses still reads its home', () => {
   const [main, mate] = ['harbor-main', 'ops-mate'].map((n) => join(tmp, n));
   const at = Math.floor(NOW / 1000 - 86_400);
   mkdirSync(join(main, 'data'), { recursive: true });
+  mkdirSync(join(main, 'state'), { recursive: true });
   writeFileSync(join(main, 'data', 'secondmates.md'), `# Secondmates\n\n- ops - deploys (staging) (home: ${mate}; scope: demo; added 2026-10-01) (see ops)\n`);
   mkdirSync(join(mate, 'state'), { recursive: true });
   writeFileSync(join(mate, 'state', 'task.status'), `needs-decision [at=${at}]: pick a region\n`);
