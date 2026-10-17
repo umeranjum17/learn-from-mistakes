@@ -37,6 +37,8 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const records = db.prepare('SELECT record_id, source, ts, ref, text FROM records WHERE run_id = ? AND cause IS NULL ORDER BY ts DESC, id').all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
   const { salt } = db.prepare('SELECT salt FROM secret').get();
+  // A done-done record's ref goes out with its app folder keyed like its id; when that form cannot be derived (the
+  // source moved, changed type or is gone), the path is withheld rather than leaking the plain app name to the model.
   const keyed = (r) => {
     const s = cfg.sources[r.source];
     if (s?.type !== 'done-done') return r.ref.endsWith(sep + 'run.json') ? null : r.ref;
