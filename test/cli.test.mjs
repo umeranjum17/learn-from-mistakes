@@ -639,6 +639,26 @@ test('a done-done source: each failed step of a failed, inconclusive or overridd
   for (const { ref } of rows) assert.ok(statSync(ref).isFile(), ref); // the stored ref opens: it is the run file itself
   db.close();
 
+  // A config edit between collect and a resumed bundle: the run state is the documented interrupted-worker state, so
+  // `rerun --resume` re-runs the bundle step from the new config over the stored records. The line keeps the id and
+  // withholds the path, and no app name or done-done home reaches the model.
+  const runId = String(JSON.parse(read.stdout).run.id);
+  const drift = (config) => {
+    writeFileSync(join(p, '.learn-from-mistakes.yaml'), config);
+    const w = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+    w.prepare(`UPDATE runs SET status = 'running' WHERE id = ?`).run(runId); // its worker (the retro process) is gone
+    w.prepare(`UPDATE steps SET status = 'pending' WHERE run_id = ? AND ord >= 3`).run(runId); // bundle and after re-run
+    w.close();
+    const resumed = JSON.parse(lfm('rerun', '--resume', '--run', runId, '--wait', '1m', '--json').stdout);
+    assert.equal(resumed.run.status, 'completed', JSON.stringify(resumed.steps));
+    const text = readFileSync(join(p, '.lfm', 'runs', runId, 'bundle.md'), 'utf8');
+    for (const [id, step] of [['r1', 'check'], ['r2', 'drive'], ['r6', 'judge'], ['r7', 'setup']]) assert.ok(text.includes(`[${dd(id, step)}]`), text);
+    assert.match(text, / at an unknown path, /, text);
+    assert.doesNotMatch(text, /notes|dd-home/, text);
+  };
+  drift('sources:\n  dd: { type: done-done, apps: [notes], path: elsewhere }\n'); // the source's path changed under the stored refs
+  drift('sources:\n  dd2: { type: done-done, apps: [notes], path: dd-home }\n'); // the source id is gone: the records are orphans
+
   run('r5', { schema: 3, result: 'fail', steps: steps('check') }); // a newer done-done: never skipped, never a crash
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  dd: { type: done-done, apps: [notes], path: dd-home }\n');
   const source = () => { // doctor names the source's problem and its fix; a retro fails at collect

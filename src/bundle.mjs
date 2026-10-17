@@ -42,13 +42,18 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const { salt } = db.prepare('SELECT salt FROM secret').get();
   const keyed = (r) => {
     const s = cfg.sources[r.source];
-    if (s?.type !== 'done-done') return r.ref;
+    if (s?.type !== 'done-done') return r.ref.endsWith(sep + 'run.json') ? null : r.ref;
     const root = join(s.path, 'runs');
-    if (!r.ref.startsWith(root + sep)) return r.ref;
+    if (!r.ref.startsWith(root + sep)) return null;
     const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
     return join(root, saltedId(salt, app), ...rest);
   };
-  const at = (r) => { const home = r.data && JSON.parse(r.data).home; return home ? `in home ${home}` : `at ${redact(keyed(r))}`; };
+  const at = (r) => {
+    const home = r.data && JSON.parse(r.data).home;
+    if (home) return `in home ${home}`;
+    const key = keyed(r);
+    return `at ${key ? redact(key) : 'an unknown path'}`;
+  };
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
       '| metric | this window | last window | target |\n| --- | --- | --- | --- |\n'],
