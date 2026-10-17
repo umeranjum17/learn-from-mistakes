@@ -38,10 +38,10 @@ export function validate(s, where, dir) {
   return { type, path, ...(fleet && { fleet }), targets, targets_file: file };
 }
 
-// A registry bullet's route: the `key: value` pairs of its first parenthesised group, `;`-separated, in any order.
+// A registry bullet's route: the `key: value` pairs of its parenthesised group that names a home or host, `;`-separated, in any order.
 function registryRoute(line) {
-  const route = {};
-  for (const pair of (line.match(/\(([^)]*)\)/)?.[1] ?? '').split(';')) {
+  const route = {}, group = [...line.matchAll(/\(([^)]*)\)/g)].map((m) => m[1]).find((g) => /(^|;)\s*(home|host)\s*:/.test(g));
+  for (const pair of (group ?? '').split(';')) {
     const at = pair.indexOf(':');
     if (at > 0) route[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
   }

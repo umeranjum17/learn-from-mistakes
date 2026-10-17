@@ -226,6 +226,18 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
   assert.equal(bare.status, 0, bare.stderr);
 });
 
+test('a registry summary with parentheses still reads its home', () => {
+  const { tmp, lfm } = setup();
+  const [main, mate] = ['harbor-main', 'ops-mate'].map((n) => join(tmp, n));
+  const at = Math.floor(NOW / 1000 - 86_400);
+  mkdirSync(join(main, 'data'), { recursive: true });
+  writeFileSync(join(main, 'data', 'secondmates.md'), `# Secondmates\n\n- ops - deploys (staging) (home: ${mate}; scope: demo; added 2026-10-01) (see ops)\n`);
+  mkdirSync(join(mate, 'state'), { recursive: true });
+  writeFileSync(join(mate, 'state', 'task.status'), `needs-decision [at=${at}]: pick a region\n`);
+  assert.equal(lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet', '--json').status, 0);
+  assert.match(lfm({}, 'doctor').stdout, /2 homes, 0 registry lines skipped \(no local home\), 1 decisions/);
+});
+
 // A synthetic fleet: a main home and two secondmate homes its registry lists, plus a remote route and a line with no home,
 // which are skipped and counted. Two homes hold a status file of the same name. No home's name or path reaches the bundle
 // or a prompt; the report gives each home's counts by its salted id, and a home that cannot be read fails the retro.
