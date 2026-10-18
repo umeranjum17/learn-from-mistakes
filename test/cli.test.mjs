@@ -1204,11 +1204,12 @@ function agentSetup() {
   appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`);
   // The tool's git runs with PATH=bin only, so the host's global git config must not answer: a global hooksPath would
   // run hooks whose bash is not on that PATH, and a ref update (apply's git branch) would fail for the host, not the tool.
-  const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...extra } });
+  const lfmAt = (dir, extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', dir], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...extra } });
+  const lfm = (extra, ...args) => lfmAt(p, extra, ...args);
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
   const calls = (name = 'claude') => readFileSync(join(log, `${name}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const lines = (step, id) => JSON.parse(lfm({}, 'logs', '--step', step, '--run', String(id), '--json').stdout).log.map((l) => l.line);
-  return { p, env, bin, lfm, query, calls, lines };
+  return { p, env, bin, lfm, lfmAt, query, calls, lines };
 }
 // True when a run stored no verdict, label, finding, fix or follow-up, and wrote no report.txt.
 function nothingJudged(query, id) {
@@ -1224,7 +1225,7 @@ function reportOf(p, id) {
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }), gate = new DatabaseSync(join(p, 'gate.sqlite'), { readOnly: true });
   try {
     for (const line of text.split('\n')) {
-      const ap = /^ {3}applied: fix \d+:\d+ on branch lfm\/\d+-\d+, commit ([0-9a-f]{12}), ledger (chg-\d+)$/.exec(line); // a fix the run applied: its ledger entry opens
+      const ap = /^ {3}applied: fix \d+:\d+ on branch lfm\/[^\s/]+\/\d+-\d+, commit ([0-9a-f]{12}), ledger (chg-\d+)$/.exec(line); // a fix the run applied: its ledger entry opens
       if (ap) { assert.ok(readFileSync(join(p, '.lfm', 'changes.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).some((e) => e.id === ap[2] && e.ref.startsWith(ap[1])), line); continue; }
       const ev = /^ {3}Evidence: (.+)$/.exec(line);
       if (!ev) {
@@ -1635,6 +1636,61 @@ function applyRepo() {
   return s;
 }
 
+test('apply: two projects in one repo that apply the same run and fix number get a branch each, named for their project', () => {
+  const { p, lfm, lfmAt, git, fake } = applyRepo();
+  const head = git('rev-parse', 'HEAD'), second = join(p, 'second'), yaml = readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8');
+  mkdirSync(second); writeFileSync(join(second, '.learn-from-mistakes.yaml'), yaml.replace('name: example', 'name: second'));
+  for (const f of ['defects.md', 'gate.sqlite']) cpSync(join(p, f), join(second, f));
+  const run = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout).run.id;
+  assert.equal(JSON.parse(lfmAt(second, fake, 'retro', '--foreground', '--json').stdout).run.id, run, 'both projects must hold the same run number');
+  const a = lfm({}, 'apply', '--fix', '1'), b = lfmAt(second, {}, 'apply', '--fix', '1');
+  assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
+  assert.match(a.stdout, new RegExp(`^applied: fix ${run}:1 on branch lfm/example-e3b0c4/${run}-1, commit [0-9a-f]{12}, ledger chg-1$`, 'm'));
+  assert.match(b.stdout, new RegExp(`^applied: fix ${run}:1 on branch lfm/second-d42594/${run}-1, commit [0-9a-f]{12}, ledger chg-1$`, 'm'));
+  assert.deepEqual(git('branch', '--list', 'lfm/*').split('\n').map((l) => l.trim()).sort(), [`lfm/example-e3b0c4/${run}-1`, `lfm/second-d42594/${run}-1`]);
+  assert.deepEqual([git('rev-parse', `lfm/example-e3b0c4/${run}-1^`), git('rev-parse', `lfm/second-d42594/${run}-1^`), git('branch', '--show-current'), git('rev-parse', 'HEAD')], [head, head, 'main', head]);
+});
+
+test('apply: two projects in one repo that share a name get a branch each, and each one runs its own worker', () => {
+  const { p, lfm, lfmAt, git, fake, calls } = applyRepo();
+  const yaml = readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8').replace(/^name: example\n/m, ''), dirs = [join(p, 'packages', 'web'), join(p, 'apps', 'web')];
+  for (const dir of dirs) { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, '.learn-from-mistakes.yaml'), yaml); for (const f of ['defects.md', 'gate.sqlite']) cpSync(join(p, f), join(dir, f)); }
+  const [a, b] = dirs, runA = JSON.parse(lfmAt(a, fake, 'retro', '--foreground', '--json').stdout).run.id;
+  assert.equal(JSON.parse(lfmAt(b, fake, 'retro', '--foreground', '--json').stdout).run.id, runA, 'both projects must hold the same run number');
+  const before = calls().length, ra = lfmAt(a, {}, 'apply', '--fix', '1'), rb = lfmAt(b, {}, 'apply', '--fix', '1');
+  assert.equal(ra.status, 0, ra.stderr); assert.equal(rb.status, 0, rb.stderr);
+  assert.equal(calls().length, before + 2, 'each project must call its own worker');
+  assert.match(ra.stdout, new RegExp(`^applied: fix ${runA}:1 on branch lfm/web-0cb686/${runA}-1, commit [0-9a-f]{12}, ledger chg-1$`, 'm'));
+  assert.match(rb.stdout, new RegExp(`^applied: fix ${runA}:1 on branch lfm/web-f862db/${runA}-1, commit [0-9a-f]{12}, ledger chg-1$`, 'm'));
+  assert.deepEqual(git('branch', '--list', 'lfm/*').split('\n').map((l) => l.trim()).sort(), [`lfm/web-0cb686/${runA}-1`, `lfm/web-f862db/${runA}-1`]);
+});
+
+test('apply: a repeat apply on the old lfm/<run>-<n> branch reuses the same commit, with no worker call and no second change', () => {
+  const { p, lfm, git, fake, calls } = applyRepo();
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const first = lfm({}, 'apply', '--fix', '1'); assert.equal(first.status, 0, first.stderr);
+  git('branch', '-m', `lfm/example-e3b0c4/${run.id}-1`, `lfm/${run.id}-1`);
+  const before = calls().length, again = lfm({}, 'apply', '--fix', '1');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(again.stdout, first.stdout.replace(`lfm/example-e3b0c4/${run.id}-1`, `lfm/${run.id}-1`));
+  assert.equal(calls().length, before, 'a repeat apply must not call the worker');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'a repeat apply must not record a second change');
+});
+
+test('apply: a legacy lfm/<run>-<n> branch holding another fix is refused, with no worker call or new change', () => {
+  const { p, lfm, git, fake, calls } = applyRepo();
+  const { run } = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
+  const first = lfm({}, 'apply', '--fix', '1'); assert.equal(first.status, 0, first.stderr);
+  git('branch', '-m', `lfm/example-e3b0c4/${run.id}-1`, `lfm/${run.id}-1`);
+  const reuse = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  try { reuse.prepare(`UPDATE proposals SET target = 'defects.md' WHERE run_id = ? AND n = 1`).run(run.id); } finally { reuse.close(); }
+  const before = calls().length, other = lfm({}, 'apply', '--fix', '1');
+  assert.equal(other.status, 1, other.stderr); assert.equal(other.stdout, '');
+  assert.match(other.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
+  assert.equal(calls().length, before, 'a refused legacy reuse must not call the worker');
+  assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'a refused legacy reuse must not record a change');
+});
+
 test('apply: the worker makes an accepted fix on its own branch from HEAD and records it; Skip, a dirty tree and no file refuse; auto_fix applies in the run', () => {
   const { p, global, lfm, query, calls, lines, git, fake, auto } = applyRepo();
   const rules = '# Rules\n\n- Run the tests before a PR.\n'; const head = git('rev-parse', 'HEAD');
@@ -1654,14 +1710,14 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.match(dirty.stderr, /has uncommitted changes; apply never touches them\nnext: git status/);
   writeFileSync(join(p, 'AGENTS.md'), rules); writeFileSync(join(p, 'notes.txt'), 'Umer is still writing this.\n');
   const before = calls().length, ok = lfm({}, 'apply'); assert.equal(ok.status, 0, ok.stderr);
-  const commit = git('rev-parse', `lfm/${run.id}-1`); assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
-  assert.match(ok.stderr, new RegExp(`^next: git diff HEAD\\.\\.\\.lfm/${run.id}-1   # review it`, 'm'));
+  const commit = git('rev-parse', `lfm/example-e3b0c4/${run.id}-1`); assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/example-e3b0c4/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  assert.match(ok.stderr, new RegExp(`^next: git diff HEAD\\.\\.\\.lfm/example-e3b0c4/${run.id}-1   # review it`, 'm'));
   // The branch holds one commit on HEAD with the worker's edit; the user's branch, index and work tree are untouched.
-  assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('rev-parse', 'HEAD'), git('branch', '--show-current'), git('status', '--porcelain')], [head, head, 'main', '?? notes.txt']);
+  assert.deepEqual([git('rev-parse', `lfm/example-e3b0c4/${run.id}-1^`), git('rev-parse', 'HEAD'), git('branch', '--show-current'), git('status', '--porcelain')], [head, head, 'main', '?? notes.txt']);
   rmSync(join(p, 'notes.txt')); assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules);
-  assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
-  assert.equal(git('show', `lfm/${run.id}-1:defects.md`), `${defects}- Give each worker its own cache directory, Umer.`);
-  assert.deepEqual(git('diff', '--name-only', `HEAD..lfm/${run.id}-1`), 'AGENTS.md\ndefects.md');
+  assert.equal(git('show', `lfm/example-e3b0c4/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
+  assert.equal(git('show', `lfm/example-e3b0c4/${run.id}-1:defects.md`), `${defects}- Give each worker its own cache directory, Umer.`);
+  assert.deepEqual(git('diff', '--name-only', `HEAD..lfm/example-e3b0c4/${run.id}-1`), 'AGENTS.md\ndefects.md');
   // One fresh tool-off call to the worker, never the judge, with the fix and both files: no bundle and no record text beyond the files.
   const call = calls().at(-1); assert.equal(calls().length, before + 1);
   assert.ok(call.stdin.startsWith(`lfm-run:${run.id}:apply-1\nYou are the worker of a retro. The user accepted the fix below.`), call.stdin.slice(0, 200));
@@ -1670,27 +1726,27 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   for (const { text } of query(`SELECT text FROM records WHERE run_id = ? AND source != 'log'`, run.id)) assert.ok(!call.stdin.includes(text.trim()), 'record text reached the apply call');
   assert.ok(!calls('codex').some((c) => c.stdin.includes(':apply-')), 'the judge applied a fix');
   assert.deepEqual(query(`SELECT role, runner, exit_status FROM invocations WHERE run_id = ? AND step = 'apply-1'`, run.id), [{ role: 'worker', runner: 'claude', exit_status: 'ok' }]);
-  const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes; assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/${run.id}-1`]);
+  const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes; assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/example-e3b0c4/${run.id}-1`]);
   assert.equal(lfm({}, 'apply').stdout, ok.stdout); assert.equal(calls().length, before + 1);
   { // a reused run id with the same cause and change text but another target is refused, never reported applied
     const reuse = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
     try { reuse.prepare(`UPDATE proposals SET target = 'defects.md' WHERE run_id = ? AND n = 1`).run(run.id); } finally { reuse.close(); }
     const other = lfm({}, 'apply', '--fix', '1'); assert.equal(other.status, 1, other.stderr);
-    assert.match(other.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
-    assert.equal(git('rev-parse', `lfm/${run.id}-1`), commit, 'a refused reuse must not move the branch');
+    assert.match(other.stderr, new RegExp(`^error: branch lfm/example-e3b0c4/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/example-e3b0c4/${run.id}-1`, 'm'));
+    assert.equal(git('rev-parse', `lfm/example-e3b0c4/${run.id}-1`), commit, 'a refused reuse must not move the branch');
     assert.equal(calls().length, before + 1, 'a refused reuse must not call the worker');
     const restore = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
     try { restore.prepare(`UPDATE proposals SET target = 'AGENTS.md:12 and defects.md' WHERE run_id = ? AND n = 1`).run(run.id); } finally { restore.close(); }
   }
-  git('branch', '-f', `lfm/${run.id}-1`, git('commit-tree', `${head}^{tree}`, '-p', head, '-m', `learn-from-mistakes: fix ${run.id}:1 for slow-build\n\nRebuild the Go binary before the gate.`));
-  const stale = lfm({}, 'apply', '--fix', '1'); assert.equal(stale.status, 1, stale.stderr); assert.match(stale.stderr, new RegExp(`^error: branch lfm/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/${run.id}-1`, 'm'));
+  git('branch', '-f', `lfm/example-e3b0c4/${run.id}-1`, git('commit-tree', `${head}^{tree}`, '-p', head, '-m', `learn-from-mistakes: fix ${run.id}:1 for slow-build\n\nRebuild the Go binary before the gate.`));
+  const stale = lfm({}, 'apply', '--fix', '1'); assert.equal(stale.status, 1, stale.stderr); assert.match(stale.stderr, new RegExp(`^error: branch lfm/example-e3b0c4/${run.id}-1 holds [0-9a-f]{7} instead of the fix ${run.id}:1 apply commit\nnext: git branch -D lfm/example-e3b0c4/${run.id}-1`, 'm'));
   for (const [n, code, error] of [[2, 2, `fix ${run.id}:2 was answered Skip, and a Skip is never applied`], [3, 1, `fix ${run.id}:3 names no tracked file in its target "the launch script", so the worker has nothing to edit`], [9, 2, `run ${run.id} has no kept fix 9`]]) {
     const r = lfm({}, 'apply', '--fix', String(n)); assert.equal(r.status, code, r.stderr); assert.match(r.stderr, new RegExp(`^error: ${error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
   }
   assert.ok(!git('branch', '--list', 'lfm/*').includes('-2') && JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length === 1);
   auto(-1); assert.match(lfm({}, 'apply').stderr, /auto_fix must be a whole number, 0 or more \(0 = propose only\)/);
   writeFileSync(global, readFileSync(global, 'utf8').replace('auto_fix: -1', 'auto_fix: 1'));
-  const auto1 = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout), branch = `lfm/${auto1.run.id}-1`, commit2 = git('rev-parse', branch);
+  const auto1 = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout), branch = `lfm/example-e3b0c4/${auto1.run.id}-1`, commit2 = git('rev-parse', branch);
   assert.deepEqual([auto1.run.status, git('rev-parse', `${branch}^`), git('branch', '--show-current'), git('status', '--porcelain')], ['completed', head, 'main', '']);
   assert.deepEqual(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.map((c) => [c.id, c.ref]), [['chg-1', commit], ['chg-2', commit2]]);
   // The run applies fix 1 before its report: report.txt and signoff post name it as applied and ask only about the rest.
@@ -1727,35 +1783,35 @@ test('apply: a cut-off reply is refused with no branch and no ledger change; tra
   }
   // A whole-file reply is still applied on its branch from HEAD and recorded; the work tree is untouched.
   const ok = lfm({}, 'apply', '--fix', '1'); assert.equal(ok.status, 0, ok.stderr);
-  const commit = git('rev-parse', `lfm/${run.id}-1`);
-  assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
-  assert.deepEqual([git('rev-parse', `lfm/${run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
+  const commit = git('rev-parse', `lfm/example-e3b0c4/${run.id}-1`);
+  assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch lfm/example-e3b0c4/${run.id}-1, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  assert.deepEqual([git('rev-parse', `lfm/example-e3b0c4/${run.id}-1^`), git('branch', '--show-current'), git('status', '--porcelain')], [head, 'main', '']);
   assert.equal(readFileSync(join(p, 'AGENTS.md'), 'utf8'), rules, 'the work tree is untouched');
-  assert.equal(git('show', `lfm/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
+  assert.equal(git('show', `lfm/example-e3b0c4/${run.id}-1:AGENTS.md`), `${rules}- Give each worker its own cache directory, Umer.`);
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 1, 'after two refusals, exactly one applied change is recorded');
   // A whole reply that only removes the trailing newline still applies on a fresh branch.
   const trail = lfm({ FAKE_APPLY: 'trailing' }, 'apply', '--fix', '2'); assert.equal(trail.status, 0, trail.stderr);
-  assert.equal(git('show', `lfm/${run.id}-2:AGENTS.md`), rules.replace(/\n$/, ''));
+  assert.equal(git('show', `lfm/example-e3b0c4/${run.id}-2:AGENTS.md`), rules.replace(/\n$/, ''));
   // A runner-reported normal stop is the runner's own word the reply is whole, so an oddly-shaped reply applies.
   const normal = lfm({ FAKE_APPLY: 'cut', FAKE_STOP: 'end_turn' }, 'apply', '--fix', '3'); assert.equal(normal.status, 0, normal.stderr);
-  assert.ok(git('rev-parse', `lfm/${run.id}-3`).length > 0, 'a normal stop applies an oddly-shaped reply');
+  assert.ok(git('rev-parse', `lfm/example-e3b0c4/${run.id}-3`).length > 0, 'a normal stop applies an oddly-shaped reply');
   // A length stop always refuses, even with whole file text: no branch, no ledger change.
   const len = lfm({ FAKE_STOP: 'max_tokens' }, 'apply', '--fix', '4');
   assert.equal(len.status, 1, len.stderr);
   assert.match(len.stderr, new RegExp(`^error: fix ${run.id}:4: the worker's reply for .+ was cut off \\(.+; apply refuses to commit an incomplete file$`, 'm'));
-  assert.equal(git('branch', '--list', `lfm/${run.id}-4`), '', 'a length stop creates no branch');
+  assert.equal(git('branch', '--list', `lfm/example-e3b0c4/${run.id}-4`), '', 'a length stop creates no branch');
   // A big shrink refuses with its honest next step: name the removal, or edit by hand and record it.
   const shrink = lfm({ FAKE_APPLY: 'shrink' }, 'apply', '--fix', '5');
   assert.equal(shrink.status, 1, shrink.stderr);
   assert.match(shrink.stderr, new RegExp(`^error: fix ${run.id}:5: the worker's reply for .+ was cut off \\(the new text drops more than half the file`, 'm'));
   assert.match(shrink.stderr, new RegExp(`^next: name the removal in the change text, or make the edit by hand and record it with change applied --proposal ${run.id}:5 --ref <sha>`, 'm'));
-  assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a big shrink creates no branch');
+  assert.equal(git('branch', '--list', `lfm/example-e3b0c4/${run.id}-5`), '', 'a big shrink creates no branch');
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the two refused fixes record nothing');
   const grownBefore = calls().length;
   const grown = lfm({ FAKE_APPLY: 'grown' }, 'apply', '--fix', '4');
   assert.equal(grown.status, 1, grown.stderr);
   assert.match(grown.stderr, new RegExp(`^error: fix ${run.id}:4: the worker's reply for .+ was cut off \\(it ends mid-line where the file ended with a newline`, 'm'));
-  assert.equal(git('branch', '--list', `lfm/${run.id}-4`), '', 'a grown mid-line cut creates no branch');
+  assert.equal(git('branch', '--list', `lfm/example-e3b0c4/${run.id}-4`), '', 'a grown mid-line cut creates no branch');
   assert.equal(calls().length, grownBefore + 1, 'a grown cut is refused without a retry');
   const brokenBefore = calls().length;
   const broken = lfm({ FAKE_APPLY: 'broken' }, 'apply', '--fix', '5');
@@ -1763,7 +1819,7 @@ test('apply: a cut-off reply is refused with no branch and no ledger change; tra
   assert.match(broken.stderr, /^error: the worker's reply was cut off \(the reply stopped at "max_tokens"\)/m);
   assert.match(broken.stderr, /output limit/m);
   assert.match(broken.stderr, /^next: shorten the change or raise the model's output limit/m);
-  assert.equal(git('branch', '--list', `lfm/${run.id}-5`), '', 'a cut JSON envelope creates no branch');
+  assert.equal(git('branch', '--list', `lfm/example-e3b0c4/${run.id}-5`), '', 'a cut JSON envelope creates no branch');
   assert.equal(calls().length, brokenBefore + 1, 'a cut envelope is refused without a retry');
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 3, 'the refused fixes record nothing');
 });
@@ -1800,10 +1856,10 @@ test('auto_fix with no git identity: the retro output and report name the refusa
   git('config', 'user.name', 'Umer'); git('config', 'user.email', 'umer@example.com');
   const byHand = lfm({}, 'apply', '--run', String(out.run.id), '--fix', '1');
   assert.equal(byHand.status, 0, byHand.stderr);
-  assert.match(byHand.stdout, new RegExp(`^applied: fix ${out.run.id}:1 on branch lfm/${out.run.id}-1`, 'm'));
+  assert.match(byHand.stdout, new RegExp(`^applied: fix ${out.run.id}:1 on branch lfm/example-e3b0c4/${out.run.id}-1`, 'm'));
   const again = JSON.parse(lfm(fake, 'retro', '--foreground', '--json').stdout);
   assert.equal(again.refused, undefined);
-  assert.match(lines('apply', again.run.id).join('\n'), /^applied: fix \d+:1 on branch lfm\/\d+-1, commit /m);
+  assert.match(lines('apply', again.run.id).join('\n'), /^applied: fix \d+:1 on branch lfm\/[^\s/]+\/\d+-1, commit /m);
 });
 
 test('apply: with the judge unset and no kept fixes, it checks the store first and asks nothing', () => {
@@ -1867,9 +1923,9 @@ test('apply: a target that is not valid UTF-8 is refused before the worker is as
   assert.equal(calls().length, before, 'a refused UTF-8 target must not call the worker');
   assert.equal(JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length, 0, 'a refused UTF-8 target must not record a ledger entry');
   const ok = lfm({}, 'apply', '--fix', '2'); assert.equal(ok.status, 0, ok.stderr);
-  const commit = git('rev-parse', `lfm/${run.id}-2`);
-  assert.equal(ok.stdout, `applied: fix ${run.id}:2 on branch lfm/${run.id}-2, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
-  assert.ok(!git('branch', '--list', 'lfm/*').includes(`lfm/${run.id}-1`), 'the refused fix must still have no branch');
+  const commit = git('rev-parse', `lfm/example-e3b0c4/${run.id}-2`);
+  assert.equal(ok.stdout, `applied: fix ${run.id}:2 on branch lfm/example-e3b0c4/${run.id}-2, commit ${commit.slice(0, 12)}, ledger chg-1\n`);
+  assert.ok(!git('branch', '--list', 'lfm/*').includes(`lfm/example-e3b0c4/${run.id}-1`), 'the refused fix must still have no branch');
 });
 
 test('apply: a target over caps.bundle_chars is refused before the worker is asked and before any branch', () => {

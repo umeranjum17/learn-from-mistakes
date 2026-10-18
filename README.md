@@ -152,7 +152,7 @@ learn-from-mistakes-axi signoff answers
 
 ### Apply only when requested
 
-Default `auto_fix: 0` proposes only. `apply` commits kept fixes answered Apply (or a particular `--fix <n>`) on separate `lfm/<run>-<n>` branches. It refuses a dirty tree, does not change your current branch/index/worktree, and never pushes or merges. Global `auto_fix: <n>` explicitly enables applying the top n kept fixes during retro, except those answered Skip. The run applies them before it writes `report.txt`, which names each one's branch, commit and ledger id and asks only about the rest.
+Default `auto_fix: 0` proposes only. `apply` commits kept fixes answered Apply (or a particular `--fix <n>`) on separate `lfm/<project>-<hash>/<run>-<n>` branches. It refuses a dirty tree, does not change your current branch/index/worktree, and never pushes or merges. Global `auto_fix: <n>` explicitly enables applying the top n kept fixes during retro, except those answered Skip. The run applies them before it writes `report.txt`, which names each one's branch, commit and ledger id and asks only about the rest.
 
 To track a change you made yourself, use `change applied --cause <configured-cause> --ref <commit>`; `--proposal <run>:<n>` can identify a kept fix instead. Optional `--metric`, `--tripwire`, `--kind`, `--what` and `--why` record how to evaluate it. `changes --json` exports `lfm-changes.v1`; the next retro measures follow-ups. See `--help` for accepted values.
 

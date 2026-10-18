@@ -1,7 +1,8 @@
 // Applies a retro's kept fixes, each on its own branch: the worker (agent:, never the judge) answers each fix with the new text
-// of the repo files its target names, and the tool commits that from HEAD with git's plumbing on lfm/<run>-<n> and records it
+// of the repo files its target names, and the tool commits that from HEAD with git's plumbing on lfm/<project>-<hash>/<run>-<n> and records it
 // as `change applied --proposal <run>:<n>` does. The user's branch, index and work tree are never touched; nothing is pushed.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { EmptyError, InputError, readLedger, recordableCauses, recordChange, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
@@ -55,17 +56,30 @@ function workerFailed(db, run, fix, made, e) {
   throw failed;
 }
 
+// A fix's project: its name, sanitized, and a short hash of its dir relative to the repo root. Two projects in one repo can
+// share a name (packages/web and apps/web both default to web), so the hash is what keeps their branches apart.
+const projectKey = (cfg, prefix) => `${cfg.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'project'}-${createHash('sha256').update(prefix).digest('hex').slice(0, 6)}`;
+const branchTip = (top, name) => spawnSync(which('git'), ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], { cwd: top, encoding: 'utf8' }).stdout.trim();
+
 // One kept fix: its branch, commit and ledger change. A fix already on its branch is only recorded, once.
 async function applyOne(cfg, db, run, fix, log, opts = {}) {
-  const at = `${run}:${fix.n}`, branch = `lfm/${run}-${fix.n}`,
-  // The branch's identity for this fix: run, fix, cause, target and change. The target is part of it, so a reused
-  // run id with the same cause and change text for another file never matches this branch and is refused, not applied.
-  message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\ntarget: ${redact(fix.target)}\n\n${redact(fix.change)}`;
+  const at = `${run}:${fix.n}`;
   if (fix.answer === 'skip') throw new UsageError(`fix ${at} was answered Skip, and a Skip is never applied`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its other kept fixes', opts));
   if (!recordableCauses(cfg).includes(fix.cause)) throw new InputError(`fix ${at} names cause ${fix.cause}, which is not a configured cause`, `add ${fix.cause} under causes in ${PROJECT_FILE}, then apply again`);
   const top = git(cfg.dir, ['rev-parse', '--show-toplevel']);
+  const project = projectKey(cfg, git(cfg.dir, ['rev-parse', '--show-prefix']));
+  let branch = `lfm/${project}/${run}-${fix.n}`;
+  // The branch's identity for this fix: run, fix, cause, target and change. The target is part of it, so a reused
+  // run id with the same cause and change text for another file never matches this branch and is refused, not applied.
+  const message = `learn-from-mistakes: fix ${at} for ${fix.cause}\n\ntarget: ${redact(fix.target)}\n\n${redact(fix.change)}`;
   if (git(top, ['status', '--porcelain', '--untracked-files=no'])) throw new InputError(`${top} has uncommitted changes; apply never touches them`, 'git status   # commit or stash them, then apply again');
-  const head = git(top, ['rev-parse', '--verify', 'HEAD']); let commit = spawnSync(which('git'), ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: top, encoding: 'utf8' }).stdout.trim();
+  const head = git(top, ['rev-parse', '--verify', 'HEAD']);
+  const entries = readLedger(join(cfg.state, 'changes.jsonl')).entries;
+  let commit = branchTip(top, branch);
+  if (!commit) {
+    const legacy = `lfm/${run}-${fix.n}`, tip = branchTip(top, legacy);
+    if (tip && entries.some((e) => e.ref === tip)) { branch = legacy; commit = tip; }
+  }
   if (commit && git(top, ['show', '-s', '--format=%B', commit]) !== message) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
   if (!commit) {
     const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
@@ -129,7 +143,7 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
       git(top, ['branch', branch, commit]);
     } finally { rmSync(env.GIT_INDEX_FILE, { force: true }); }
   }
-  const change = readLedger(join(cfg.state, 'changes.jsonl')).entries.find((e) => e.ref === commit)?.id
+  const change = entries.find((e) => e.ref === commit)?.id
     ?? (await recordChange(cfg, { proposal: at, ref: commit, kind: fix.kind ?? undefined, what: `fix ${at} on branch ${branch}` })).id;
   return { fix: fix.n, branch, commit, change };
 }
