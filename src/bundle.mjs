@@ -3,12 +3,15 @@
 // and the records with no label, this window's and the undated ones. Each item has an id and refs (an event's id
 // is its store row id, for reference only; a record's is the id its label takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
-// and a number or a hash, never record text, and the worker must cite it as the store keeps it. A fleet record's ref is
-// a path in a home, so it shows as its salted home id: no home name or path reaches the bundle. Items that would pass caps.bundle_chars are
-// dropped, and a last line counts them.
+// and a number or a hash, never record text, and the worker must cite it as the store keeps it. A fleet record's home
+// shows as its salted home id, and a done-done record's ref shows with its app folder and home salted or replaced:
+// no home name, path or app name reaches the bundle. Items that would pass caps.bundle_chars are dropped, and a last line counts them.
 import { writeFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { inWindow } from './metrics.mjs';
 import { excerpt, redact } from './redact.mjs';
+import { InputError } from '../bin/learn-from-mistakes-axi.mjs';
+import { saltedId } from './sources/markdown-log.mjs';
 
 const SAMPLES = 3; // the latest events shown in each cluster; the rest are counted
 const DROPPED = 80; // room kept for the dropped line
@@ -27,17 +30,39 @@ export function clusters(db, id, start) {
 
 export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const window = { start: Date.parse(current_start) }, on = cfg.excerpts === 'on';
+  // A done-done id from before the salt is plain: its part after the first colon holds a slash, which a salted id never does, and its ref is the run.json.
+  const predatesSalt = (r) => r.record_id?.slice(r.record_id.indexOf(':') + 1).includes('/') && r.ref?.endsWith(sep + 'run.json');
+  if (db.prepare('SELECT record_id, ref FROM records WHERE run_id = ?').all(id).some(predatesSalt)) {
+    throw new InputError(`run ${id} was collected before done-done record ids were salted, so its bundle would name the app`,
+      'learn-from-mistakes-axi retro --wait 8m   # a fresh retro collects and salts its records');
+  }
   const quote = (text) => (on && text ? `\n  > ${excerpt(text)}` : '');
   const metrics = new Map();
   for (const m of db.prepare('SELECT window, name, value, target FROM metrics WHERE run_id = ? ORDER BY rowid').all(id)) {
     metrics.set(m.name, { ...metrics.get(m.name), [m.window]: m.value ?? 'n/a', target: m.target });
   }
   const grouped = clusters(db, id, window.start);
-  const at = (r) => { const home = r.data && JSON.parse(r.data).home; return home ? `in home ${home}` : `at ${redact(r.ref)}`; };
   // Unlabelled means no row in the labels table, the same meaning report coverage counts; a record's cause does not decide it.
   const records = db.prepare(`SELECT record_id, source, ts, ref, text, data FROM records r WHERE run_id = ?
     AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
     .filter((r) => !r.ts || Date.parse(r.ts) >= window.start);
+  const { salt } = db.prepare('SELECT salt FROM secret').get();
+  // A done-done record's ref goes out with its home and app folder replaced; when that form cannot be derived (the
+  // source moved, changed type or is gone), the path is withheld rather than leaking the plain app name to the model.
+  const keyed = (r) => {
+    const s = cfg.sources?.[r.source];
+    if (s?.type !== 'done-done') return r.ref.endsWith(sep + 'run.json') ? null : r.ref;
+    const root = join(s.path, 'runs');
+    if (!r.ref.startsWith(root + sep)) return null;
+    const [app, ...rest] = r.ref.slice(root.length + sep.length).split(sep);
+    return ['<done-done home>', 'runs', saltedId(salt, app), ...rest].join(sep);
+  };
+  const at = (r) => {
+    const home = r.data && JSON.parse(r.data).home;
+    if (home) return `in home ${home}`;
+    const key = keyed(r);
+    return `at ${key ? redact(key) : 'an unknown path'}`;
+  };
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
       '| metric | this window | last window | target |\n| --- | --- | --- | --- |\n'],

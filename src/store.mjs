@@ -33,7 +33,7 @@ const MIGRATIONS = [
   // Each applied change's metric before and after it, its tripwire (NULL with none) and the verdict the followup step gave.
   `CREATE TABLE IF NOT EXISTS followups (run_id INTEGER NOT NULL REFERENCES runs(id), change_id TEXT NOT NULL, metric TEXT NOT NULL,
     before NUMERIC, after NUMERIC, tripwire TEXT, verdict TEXT NOT NULL, PRIMARY KEY (run_id, change_id))`,
-  // The id the labels and proposals take: a store-salted HMAC of the text for a defect-log record, source:id for a gate row or PR.
+  // The id the labels and proposals take: a store-salted HMAC for a defect-log or done-done record, source:id for a gate row or PR.
   'ALTER TABLE records ADD COLUMN record_id TEXT',
   // Each call to the run's own agent: its step and role, the agent CLI and model, its process group while it runs, how it
   // ended (ok, invalid, error, or the run's cancelled or interrupted), and the session id and tokens the agent reported.
@@ -56,8 +56,9 @@ const MIGRATIONS = [
   'ALTER TABLE proposals ADD COLUMN verdict TEXT; ALTER TABLE proposals ADD COLUMN judge_note TEXT',
   `ALTER TABLE proposals ADD COLUMN kind TEXT;
     CREATE TABLE IF NOT EXISTS signoff (proposal_id INTEGER PRIMARY KEY REFERENCES proposals(id), message TEXT NOT NULL, answer TEXT)`,
-  // The key of a defect-log record's id, made once per store and never printed: the id is an HMAC of the record's text,
-  // so whoever reads a bundle cannot hash a guessed text to it. A run from before this entry keeps its plain-hash ids.
+  // The key of a defect-log or done-done record's id, made once per store and never printed: a defect-log id is an
+  // HMAC of the record's text, so whoever reads a bundle cannot hash a guessed text to it. A run from before this
+  // entry keeps its plain-hash ids.
   () => `CREATE TABLE IF NOT EXISTS secret (salt BLOB NOT NULL); INSERT INTO secret VALUES (X'${randomBytes(32).toString('hex')}')`,
   // A session event whose test_fail only the tool output's own test-runner summary line showed: the error flag and the
   // exit code had stayed green (`npm test | tail` exits 0), so the output is the proof. See src/sessions/claude.mjs.

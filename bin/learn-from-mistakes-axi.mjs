@@ -219,8 +219,8 @@ export function ingestReadFrom(cfg, now = Date.now()) {
 
 // Reads every configured source into the state dir. Returns each source's id, type, item count and hash (plus the
 // session counts of a sessions source), the items read, the start of this window and the last, and of the read range.
-// The sessions the tool's own runs started (the run store's `invocations` table) are skipped, and a defect log's record
-// ids are keyed with the store's salt (its `secret` table).
+// The sessions the tool's own runs started (the run store's `invocations` table) are skipped, and defect-log and
+// done-done record ids are keyed with the store's salt (its `secret` table).
 export async function ingest(cfg, db) {
   stateDir(cfg);
   const skip = new Set(db.prepare('SELECT session_id FROM invocations WHERE session_id IS NOT NULL').all().map((r) => r.session_id));
@@ -325,8 +325,8 @@ function project(a, full) {
     if (full) {
       m.change_ids = applied.map((c) => c.id);
       m.change_refs = [...new Set(applied.map((c) => c.ref))]; // user-supplied version ids, never private record content
-      // Only non-content ids: a record id is a hash of its text (unkeyed in a run from before the store's salt), so
-      // emitting one could confirm private prose.
+      // Only non-content ids: a record id is a salted hash of its text, or of a done-done record's app/run/step key
+      // (both unkeyed in a run from before the store's salt), so emitting one could confirm private prose.
       m.store_row_ids = g.store.rows.map(recordId);
       // A content-hash record id (a defect-log bullet) is left out by the same rule.
       m.proposal_refs = [...new Set(ps.flatMap((p) => p.refs).filter((ref) => a.records.has(ref)
