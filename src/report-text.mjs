@@ -92,6 +92,9 @@ export function reportText(cfg, db, id, dir, window, run) {
     lines.push(`- ${cause}: ${plural(c.count, 'time')} on ${plural(c.days, 'day')}.`, evidence(refs));
   }
   if (!repeated.length) lines.push('- None.');
+  // Records exist but none is dated inside the window: say so, so an empty report does not read as a quiet week.
+  const dated = [...all('SELECT ts FROM events WHERE run_id = ? AND ts IS NOT NULL'), ...all('SELECT ts FROM records WHERE run_id = ? AND ts IS NOT NULL')];
+  if (!repeated.length && dated.length && !inWindow(dated, { start: Date.parse(window.current_start) }).length) lines.push(`- The sources have records, but all fall outside the ${parseInt(cfg.window, 10)}-day window.`);
   lines.push('', '5. Fixes');
   for (const f of fixes) {
     const refs = JSON.parse(f.refs_json);
