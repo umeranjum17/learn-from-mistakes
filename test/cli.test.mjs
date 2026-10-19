@@ -957,6 +957,22 @@ test('a markdown-log heading dates its bullets in the log\'s date forms: ISO, D 
   assert.match(doctor.detail, /^markdown-log: 5 records, \d+ in the window, 0 skipped \(no date\)$/);
 });
 
+test('an empty retro report says the records fall outside the window', () => {
+  const { p, env } = setup();
+  execFileSync('git', ['-C', p, 'init', '-q']);
+  writeFileSync(join(p, 'defects.md'), '# Defects\n## 2020-03-02\n- Umer: tests failed\n- Umer: lint failed on a stale import\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'window: 5d\nsources:\n  log: { type: markdown-log, path: defects.md }\ncauses: { flaky: { description: d } }\n');
+  const bin = join(p, '..', 'bin');
+  mkdirSync(bin);
+  symlinkSync(FAKE_AGENT, join(bin, 'claude'));
+  symlinkSync(FAKE_AGENT, join(bin, 'codex'));
+  symlinkSync(process.execPath, join(bin, 'node'));
+  const r = spawnSync(process.execPath, [CLI, 'retro', '--foreground', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, PATH: bin } });
+  assert.equal(r.status, 0, r.stderr);
+  const report = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8');
+  assert.match(report, /^- None\.\n- The sources have records, but all fall outside the 5-day window\.$/m);
+});
+
 test('retro --foreground saves a run and its steps in .lfm/; status and runs show it', () => {
   const { p, lfm } = setup();
   const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' });
