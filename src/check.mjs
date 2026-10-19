@@ -8,10 +8,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { recordId, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { clusters } from './bundle.mjs';
-import { isMetric, METRIC_RULE, RULE } from './config.mjs';
+import { isMetric, RULE } from './config.mjs';
 import { meets } from './metrics.mjs';
 
 const MAX = 5;
+
+// A fix's metric when it gives none: its cause's count when the config lists the cause (only a listed cause is counted
+// and followed up), else the defects count.
+export const defaultMetric = (cfg, cause) => (Object.hasOwn(cfg.causes, cause) ? `cause_count:${cause}` : 'defects');
 
 // The ids a bundle cites: its clusters, events and records.
 export const bundleIds = (text) => new Set([...text.matchAll(/^(?:### |- )\[([^\]\n]+)\]/gm)].map((m) => m[1]));
@@ -215,12 +219,12 @@ export function check(cfg, db, id, dir, window, log) {
     .filter((m) => !meets(m.value, m.target)).map((m) => [m.name, Math.abs(m.value - Number(RULE.exec(m.target)[2]))]));
   const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json, verdict FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
     const refs = JSON.parse(f.refs_json), missing = refs.filter((r) => !ids.has(r)).length, c = causes.get(f.cause);
-    const metric = f.metric?.trim() || `cause_count:${f.cause}`, trip = RULE.exec(f.tripwire?.trim() ?? '');
+    const metric = f.metric?.trim() || defaultMetric(cfg, f.cause), trip = RULE.exec(f.tripwire?.trim() ?? '');
     const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !f.verdict ? 'the judge gave it no verdict' : refuted.has(f.cause) ? 'the judge refuted every finding for its cause' : !c?.count ? 'its cause has no counted events'
       : !refs.length ? 'no evidence refs' : missing ? `${missing} of ${refs.length} refs name no bundle item`
       : !c.repeated ? 'its cause did not repeat; propose only for repeated causes'
       : !f.target.trim() ? 'no target' : !f.owner.trim() ? 'no owner'
-      : !isMetric(metric, cfg.causes) ? `its metric is not ${METRIC_RULE}`
+      : !isMetric(metric, cfg.causes) ? `its metric is not measurable: cause_count needs a cause the config lists`
       : !f.tripwire?.trim() ? 'no tripwire' : !trip ? 'its tripwire is not "<op> <number>", such as "<= 0"' : '';
     return { id: f.id, i, metric, tripwire: trip ? `${trip[1]} ${trip[2]}` : f.tripwire, count: c?.count ?? 0, gap: gaps.get(metric) ?? 0, unconfirmed: f.verdict !== 'confirmed', bad };
   });

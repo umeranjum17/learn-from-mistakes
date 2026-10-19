@@ -101,7 +101,7 @@ export async function propose(cfg, db, id, dir, window, log) {
   const list = (lines) => (lines.length ? lines.join('\n') : 'None.');
   const refuted = refutedCauses(db, id);
   const fill = {
-    metrics: METRIC_RULE,
+    metrics: `${METRIC_RULE}; use cause_count:<cause> only for ${Object.keys(cfg.causes).join(', ') || 'no cause'}, and for any other cause use defects, blocks or decisions`,
     causes: list([...counts(cfg, db, id, window).causes].filter(([c]) => !refuted.has(c)).map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
     findings: list(findings.map((f) => `- ${f.cause}, ${f.verdict} by the judge: ${f.summary} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
     followups: list(pending.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
