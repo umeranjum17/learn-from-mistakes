@@ -53,7 +53,7 @@ sources:
   log: { type: markdown-log, path: defects.md }
 ```
 
-Each `- ` bullet is a record. A `YYYY-MM-DD` in the bullet dates it; otherwise its dated `##` heading does — `YYYY-MM-DD`, `12 Oct 2026`, `12 October 2026`, `Oct 12, 2026`, or a year-less `12 Oct` / `12 October`, which take the latest year that keeps the date on or before today. Use actual project records, not invented failures. `init` also detects `reviews.md` and supported local pipeline stores; GitHub needs a GitHub origin and a working `gh` login. Session stores are read only when you name their agents, for example `init --sessions claude,pi --no-skill`.
+Each `- ` bullet is a record. A `YYYY-MM-DD` in the bullet dates it; otherwise its dated `##` heading does — `YYYY-MM-DD`, `12 Oct 2026`, `12 October 2026`, `Oct 12, 2026`, or a year-less `12 Oct` / `12 October`, which take the latest year that keeps the date on or before today. Only records dated inside the `window` (default `7d`) are read: older ones count as "0 in the window" in `doctor`, and the retro completes with no findings. Use actual project records, not invented failures. `init` also detects `reviews.md` and supported local pipeline stores; GitHub needs a GitHub origin and a working `gh` login. Session stores are read only when you name their agents, for example `init --sessions claude,pi --no-skill`.
 
 A `markdown-log` source with `review: true` is a review log: its records do not count as `defects`; a source id of `reviews` without the flag keeps the old behavior and is still treated as a review log.
 
