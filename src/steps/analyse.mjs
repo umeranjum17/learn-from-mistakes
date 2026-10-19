@@ -12,7 +12,7 @@ const PROMPT = readFileSync(new URL('../prompts/analyse.md', import.meta.url), '
 const KEY = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const CONFIDENCE = ['high', 'medium', 'low'];
 
-function check(cfg, v) {
+function check(cfg, v, attempt = 1) {
   const p = [];
   if (!Array.isArray(v.findings)) p.push('findings must be a list');
   if (!Array.isArray(v.labels)) p.push('labels must be a list');
@@ -21,7 +21,7 @@ function check(cfg, v) {
     const at = `findings[${i}]`;
     if (!f || typeof f !== 'object') return p.push(`${at} must be an object`);
     if (typeof f.cause !== 'string' || !(Object.hasOwn(cfg.causes, f.cause) || KEY.test(f.cause))) p.push(`${at}.cause must be a configured cause key or a new key: lowercase letters, digits and dashes`);
-    p.push(plain(f.summary, `${at}.summary`, { sentences: 3 }));
+    if (attempt < 2) p.push(plain(f.summary, `${at}.summary`, { sentences: 3 }));
     if (!Array.isArray(f.refs) || !f.refs.length || !f.refs.every((r) => typeof r === 'string')) p.push(`${at}.refs must be a non-empty list of bundle ids`);
   });
   const seen = new Set();
@@ -34,7 +34,7 @@ function check(cfg, v) {
     if (typeof l.event !== 'boolean') p.push(`${at}.event must be true or false`);
     if (l.cause != null && typeof l.cause !== 'string') p.push(`${at}.cause must be a string`);
     if (l.event && !(typeof l.cause === 'string' && (Object.hasOwn(cfg.causes, l.cause) || l.cause === 'other'))) p.push(`${at}.cause must be a listed cause or other`);
-    p.push(plain(l.why, `${at}.why`, { words: 25 }));
+    if (attempt < 2) p.push(plain(l.why, `${at}.why`, { words: 25 })); // the last answer keeps its labels; one with a bad why is dropped below, not the whole run
     if (l.duplicate_of != null && typeof l.duplicate_of !== 'string') p.push(`${at}.duplicate_of must be a record id`);
     if (l.occurrences != null && !(Number.isInteger(l.occurrences) && l.occurrences > 0)) p.push(`${at}.occurrences must be a positive integer`);
     if (l.confidence != null && !CONFIDENCE.includes(l.confidence)) p.push(`${at}.confidence must be high, medium or low`);
@@ -52,15 +52,16 @@ export async function analyse(cfg, db, id, dir, log) {
   }
   const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
-  const v = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x) => check(cfg, x), log });
+  const v = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x, attempt) => check(cfg, x, attempt), log });
   const problems = [];
   const findings = v.findings.filter((f, i) => {
+    if (plain(f.summary, '', { sentences: 3 })) { problems.push(`findings[${i}] has a summary that breaks the plain-language rules`); return false; }
     const bad = f.refs.findIndex((r) => !ids.has(r));
     if (bad >= 0) problems.push(`findings[${i}]: ref ${bad + 1} names no bundle item`);
     return bad < 0;
   });
   const labels = v.labels.filter((l, i) => {
-    const bad = !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of != null && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
+    const bad = plain(l.why, '', { words: 25 }) ? 'has a why that breaks the plain-language rules' : !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of != null && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
     if (bad) problems.push(`labels[${i}] ${bad}`);
     return !bad;
   });
