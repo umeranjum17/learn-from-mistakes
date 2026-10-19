@@ -5,7 +5,7 @@
 // back once; a second one fails the step, so no finding or fix goes on without the judge's verdict. The step logs ids
 // and verdicts only, never the judge's text. With no claim it asks no agent.
 import { readFileSync } from 'node:fs';
-import { plain } from '../check.mjs';
+import { defaultMetric, plain } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/verify.md', import.meta.url), 'utf8');
@@ -53,7 +53,7 @@ export async function verify(cfg, db, id, dir, table, log) {
       .map((f, i) => [`f${i + 1}`, { id: f.id, text: `finding for cause ${f.cause}. ${f.summary} Refs: ${refs(f.refs_json)}.` }])
     : db.prepare('SELECT id, cause, target, owner, change, metric, tripwire, refs_json FROM proposals WHERE run_id = ? ORDER BY id').all(id)
       .map((f, i) => [`p${i + 1}`, { id: f.id, text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
-        + `Metric: ${f.metric?.trim() || `cause_count:${f.cause}`}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]));
+        + `Metric: ${f.metric?.trim() || defaultMetric(cfg, f.cause)}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]));
   const none = { asked: false, confirmed: 0, weakened: 0, refuted: 0 };
   if (!claims.size) {
     log(`nothing to verify: no ${table === 'findings' ? 'finding' : 'fix'}`);

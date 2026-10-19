@@ -469,6 +469,20 @@ test('a fix shows the finding its refs cite, not the first finding with the same
   assert.doesNotMatch(text, /First twin/);
 });
 
+test('a fix for a cause the config does not list: propose names the listed causes and a global metric for the rest, a blank metric becomes defects and is kept, and cause_count of an unlisted cause is refused with the rule named in the report', () => {
+  const { p, lfm, query, calls } = agentSetup(), yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const agents = { FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'newcause', FAKE_FINDING_CAUSE: 'umer-fixtures-unset', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'findings' };
+  const retro = (extra) => { const r = lfm({ ...agents, ...extra }, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout).run.id; };
+  const kept = retro({});
+  assert.match(calls().at(-1).stdin, /use cause_count:<cause> only for [a-z, -]*shared-cache-lock[a-z, -]*, and for any other cause use defects, blocks or decisions\./);
+  assert.deepEqual(query('SELECT cause, metric, n, problem FROM proposals WHERE run_id = ?', kept), [{ cause: 'umer-fixtures-unset', metric: 'defects', n: 1, problem: null }]);
+  assert.match(reportOf(p, kept), /^- Metric: defects, /m);
+  const refused = retro({ FAKE_METRIC: 'cause_count:umer-fixtures-unset' });
+  assert.deepEqual(query('SELECT metric, n, problem FROM proposals WHERE run_id = ?', refused), [{ metric: 'cause_count:umer-fixtures-unset', n: null, problem: 'its metric is not measurable: cause_count needs a cause the config lists' }]);
+  assert.match(reportOf(p, refused), /^- The rules left out 1 fix\.\n {3}The fix for umer-fixtures-unset: its metric is not measurable: cause_count needs a cause the config lists\.$/m);
+});
+
 test('verify runs before propose: a finding the judge refuted never reaches the worker and gets no fix; a confirmed or weakened one does, with its verdict; an old-order run resumes', () => {
   const { p, lfm, query, calls, lines } = agentSetup(), yaml = join(p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
@@ -1509,7 +1523,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(query('SELECT n, target, metric, tripwire, problem IS NOT NULL AS problem FROM proposals WHERE run_id = ? ORDER BY id', run.id).map((f) => [f.n, f.target, f.metric, f.tripwire, f.problem]), [
     [2, 'launch script 1', 'cause_count:shared-cache-lock', '<= 0', 0], [null, 'launch script 2', 'cause_count:shared-cache-lock', '<= 0', 1], [5, 'launch script 3', 'cause_count:shared-cache-lock', '<= 0', 0],
     [3, 'launch script 4', 'cause_count:shared-cache-lock', '<= 0', 0], [4, 'launch script 5', 'cause_count:shared-cache-lock', '<= 0', 0], [1, 'launch script 6', 'defects', '<= 0', 0],
-    [null, 'test setup', 'cause_count:umer-fixtures-unset', '<= 0', 1], [null, 'cache config', 'cause_count:shared-cache-lock', null, 1]]);
+    [null, 'test setup', 'defects', '<= 0', 1], [null, 'cache config', 'cause_count:shared-cache-lock', null, 1]]);
   assert.deepEqual(fixes, [1, 2, 3, 4, 5].map((n) => ({ n, cause: 'shared-cache-lock', metric: n === 1 ? 'defects' : 'cause_count:shared-cache-lock', tripwire: '<= 0', verdict: n === 5 ? 'weakened' : 'confirmed' })));
   assert.deepEqual(query('SELECT cause, count, days FROM findings WHERE run_id = ?', run.id), [{ cause: 'umer-fixtures-unset', count: 1, days: 1 }]);
   // report.txt: the kept fixes with the judge's verdict and note, what was not checked, and with no sign-off-axi an Apply or Skip question per fix.
@@ -1518,7 +1532,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.match(text, /^- defects: this window 2, last window 0, target <= 0, missed\.$/m);
   assert.match(text, /^- shared-cache-lock: 2 times on 1 day\.\n {3}Evidence: defects\.md:\d+; defects\.md:\d+$/m);
   assert.match(text, /^Fix 5, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory\.\n[\s\S]*?^- The judge's verdict: weakened\.\n {2}The cited items show this only once for Umer\.$/m);
-  assert.match(text, /^6\. Not checked\n- The rules left out 3 fixes\.\n- The judge weakened 1 item\.$/m);
+  assert.match(text, /^6\. Not checked\n- The rules left out 3 fixes\.\n {3}The fix for shared-cache-lock: the judge refuted it\.\n {3}The fix for umer-fixtures-unset: its cause did not repeat; propose only for repeated causes\.\n {3}The fix for shared-cache-lock: no tripwire\.\n- The judge weakened 1 item\.$/m);
   assert.deepEqual(text.split('\n').filter((l) => /^\d\. Apply/.test(l)), [1, 2, 3, 4, 5].map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`));
   assert.match(lines('report', run.id).at(-1), /^report\.txt: \d+ lines, 5 questions$/);
 

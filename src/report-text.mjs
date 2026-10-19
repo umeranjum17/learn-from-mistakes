@@ -114,7 +114,8 @@ export function reportText(cfg, db, id, dir, window, run) {
     ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]
-      .filter(([n]) => n).map(([n, what, word = 'item', many]) => `- ${what} ${plural(n, word, many)}.`)];
+      .filter(([n]) => n).flatMap(([n, what, word = 'item', many]) => [`- ${what} ${plural(n, word, many)}.`,
+        ...(what === 'The rules left out' ? all('SELECT cause, problem FROM proposals WHERE run_id = ? AND problem IS NOT NULL ORDER BY id').map((f) => `   The fix for ${f.cause}: ${f.problem}.`) : [])])];
   lines.push('', '6. Not checked', ...(gaps.length ? gaps : ['- Nothing. The run read all sources and checked all items.']), '', '7. Questions for you');
   const open = fixes.filter((f) => !applied.has(f.n)); // a fix the run applied is never asked about
   const signoff = Boolean(cfg.signoff !== 'off' && which('sign-off-axi') && open.length); // sign-off asks Apply or Skip for each open fix
