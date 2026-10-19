@@ -1345,7 +1345,6 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const shown = lfm({}, 'report');
   assert.equal(shown.status, 0, shown.stderr);
   assert.match(shown.stderr, new RegExp(`^note: run ${outside} kept no label and no finding; showing run ${run.id}$`, 'm'));
-
   // Bad JSON twice: the answer goes back once with the validation error, then the step fails with it.
   const bad = lfm({ FAKE_ANALYSE: 'prose' }, 'retro', '--foreground', '--json');
   assert.equal(bad.status, 1, bad.stderr);
@@ -1452,6 +1451,13 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   locked.close();
   assert.equal(busy.status, 1, busy.stderr);
   assert.equal(busy.stderr, stale.stderr);
+  // One label whose why is still passive after the retry is dropped and counted; the run and its other labels go on.
+  const passive = lfm({ FAKE_ANALYSE: 'passive' }, 'retro', '--foreground', '--json');
+  assert.equal(passive.status, 0, passive.stderr);
+  const pid = JSON.parse(passive.stdout).run.id;
+  assert.match(lines(pid).join('\n'), /^problem: labels\[0\] has a why that breaks the plain-language rules$/m);
+  assert.equal(query('SELECT count(*) AS n FROM labels WHERE run_id = ?', pid)[0].n, 1);
+  assert.match(lines(pid).join('\n'), /^problem: findings\[0\] has a summary that breaks the plain-language rules$/m);
   // A store sqlite cannot read is one error line with the file to move, never a stack trace.
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database');
   const broken = lfm({}, 'report');
@@ -1459,6 +1465,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   assert.match(broken.stderr, /^error: .*lfm\.sqlite: not a usable run store/m);
   assert.match(broken.stderr, /^next: mv .*lfm\.sqlite <elsewhere>/m);
   assert.doesNotMatch(broken.stderr, /^\s+at /m);
+
 });
 
 test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; check drops fix 2 and ranks fix 3 last of the five kept; a cause that did not repeat and no tripwire are problems; --proposal copies a fix into the ledger', () => {
