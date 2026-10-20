@@ -1,6 +1,6 @@
 // The bundle step: the one file the run's own agents read, <state dir>/runs/<id>/bundle.md. It holds the metrics,
 // the follow-ups, the top signal clusters (this window's session events with a failure signal, by tool and signal)
-// and the records with no label, this window's and the undated ones (a Firstmate home's PR and daily metric rows only feed the metrics). Each item has an id and refs (an event's id
+// and the records with no label, this window's and the undated ones (a Firstmate home's PR and daily metric rows, and an Actions run, only feed the metrics). Each item has an id and refs (an event's id
 // is its store row id, for reference only; a record's is the id its label takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
 // and a number or a hash, never record text, and the worker must cite it as the store keeps it. A fleet record's home
@@ -45,7 +45,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   // Unlabelled means no row in the labels table, the same meaning report coverage counts; a record's cause does not decide it.
   const records = db.prepare(`SELECT record_id, source, ts, ref, text, data FROM records r WHERE run_id = ?
     AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
-    .filter((r) => (!r.ts || Date.parse(r.ts) >= window.start) && !['pr', 'daily'].includes(r.data && JSON.parse(r.data).kind)); // a Firstmate metrics row is a number, not a mistake
+    .filter((r) => (!r.ts || Date.parse(r.ts) >= window.start) && !['pr', 'daily', 'ci'].includes(r.data && JSON.parse(r.data).kind)); // a Firstmate metrics row is a number, not a mistake
   const { salt } = db.prepare('SELECT salt FROM secret').get();
   // A done-done record's ref goes out with its home and app folder replaced; when that form cannot be derived (the
   // source moved, changed type or is gone), the path is withheld rather than leaking the plain app name to the model.

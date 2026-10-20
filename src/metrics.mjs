@@ -26,6 +26,7 @@ export function values(cfg, events, records, w) {
     if (!types.has(type)) for (const name of src.metricNames) v[name] ??= null; // firstmate shares some names with github and sessions
     else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w, v, cfg.sources));
   }
+  for (const src of Object.values(SOURCES)) for (const name of src.metricNames ?? []) v[name] ??= null; // a number its source could not measure is n/a, not absent
   for (const [cause, c] of Object.entries(cfg.causes)) {
     // n/a with no match rule, or when the rule's sessions source has no session in the window (as its other counts)
     const read = c.match && (SOURCES[cfg.sources[c.match.source].type].metricRows !== 'events' || inWindow(events, w).length);

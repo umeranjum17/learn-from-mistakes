@@ -228,7 +228,7 @@ export async function ingest(cfg, db) {
   // This window and the last, and far enough back to have before-numbers for every applied change.
   const w = parseInt(cfg.window, 10) * 86_400_000, since = Date.now() - w, iso = (ms) => new Date(ms).toISOString();
   const readFrom = ingestReadFrom(cfg);
-  const records = [], rows = [], events = [], prs = [], sources = [];
+  const records = [], rows = [], events = [], prs = [], ci = [], sources = [];
   for (const [id, s] of Object.entries(cfg.sources)) {
     let got;
     try {
@@ -237,12 +237,13 @@ export async function ingest(cfg, db) {
       pushAll(rows, got.rows ?? []);
       pushAll(events, got.events ?? []);
       pushAll(prs, got.prs ?? []);
+      pushAll(ci, got.ci ?? []); // Actions runs only feed the metrics: records.jsonl, and so the labelling, never sees them
     } catch (e) {
       const count = got ? (got.records ?? got.rows ?? got.events ?? got.prs).length : 0;
       throw sourceError(id, e, count);
     }
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
-      ...(got.events && { sessions: got.sessions, skipped: got.skipped }), ...(got.homes && { homes: got.homes, lines_skipped: got.lines_skipped }), ...(got.undated && { undated: got.undated }) });
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped }), ...(got.homes && { homes: got.homes, lines_skipped: got.lines_skipped }), ...(got.missing && { missing: got.missing }), ...(got.undated && { undated: got.undated }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   // records.jsonl holds a record's text only with excerpts on, redacted; with excerpts off it has no text field.
@@ -252,7 +253,7 @@ export async function ingest(cfg, db) {
     ...prs.map((r) => ({ id: recordId(r), source: r.source, date: r.ts.slice(0, 10), text: r.text }))].map(forAgent)));
   writeFileSync(join(cfg.state, 'rows.jsonl'), jsonl(rows.map(({ error, ...r }) => (cfg.excerpts === 'on' ? { ...r, error } : r))));
   writeFileSync(join(cfg.state, 'sources.json'), JSON.stringify({ read_at: new Date().toISOString(), sources }, null, 1));
-  return { sources, events, records, rows, prs, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
+  return { sources, events, records, rows, prs, ci, read_from: iso(readFrom), current_start: iso(since), previous_start: iso(since - w) };
 }
 
 function analyse(cfg, files) {

@@ -28,7 +28,7 @@ const STEPS = {
   // Reads the sources: session events go to the `events` table, defect-log bullets, failed gate and verify steps and PRs to `records`,
   // each with the cause its source tagged it with. It can run again: it first drops the run's events and records.
   collect: async (cfg, db, id, log) => {
-    const { sources, events, records, rows, prs, read_from, current_start, previous_start } = await ingest(cfg, db);
+    const { sources, events, records, rows, prs, ci, read_from, current_start, previous_start } = await ingest(cfg, db);
     for (const s of sources) log(sourceLine(s));
     const add = db.prepare(`INSERT INTO events (run_id, agent, session_id, ts, kind, tool, status, exit_code, signal, cause, ref, excerpt, from_output)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -40,7 +40,7 @@ const STEPS = {
       for (const e of events) add.run(id, e.agent, e.session_id, e.ts, e.kind, e.tool ?? null, e.status ?? null, e.exit_code ?? null, e.signal ?? null, e.cause ?? null, e.ref, e.excerpt, e.from_output ? 1 : 0);
       for (const r of records) record.run(id, r.source, r.date || null, r.ref ?? `${cfg.sources[r.source].path}:${r.line}`, null, r.text, r.data ? JSON.stringify(r.data) : null, r.id);
       for (const r of rows) record.run(id, r.source, r.at || null, `db:step_results:${r.id}`, r.cause, r.error, JSON.stringify({ step: r.step }), recordId(r));
-      for (const r of prs) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data), recordId(r));
+      for (const r of [...prs, ...ci]) record.run(id, r.source, r.ts, r.ref, null, r.text, JSON.stringify(r.data), recordId(r));
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
