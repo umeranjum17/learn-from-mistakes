@@ -20,6 +20,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 process.env.GIT_CEILING_DIRECTORIES = tmpdir();
 
 // A project holding the examples with a defect log dated now, its own state and a throwaway global agent config.
+// HOME and SIGN_OFF_HOME point at a private folder, so a sign-off-axi on the host PATH reads and locks a private board, never the host's.
 function project() {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-conformance-'));
   after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -33,7 +34,9 @@ function project() {
   const home = join(tmp, 'home');
   mkdirSync(home);
   writeFileSync(join(home, 'config.yaml'), AGENTS_SET);
-  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: home, GIT_CEILING_DIRECTORIES: tmpdir() };
+  const user = join(tmp, 'user');
+  mkdirSync(user);
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: home, HOME: user, SIGN_OFF_HOME: user, GIT_CEILING_DIRECTORIES: tmpdir() };
   const lfm = (args, extra = {}) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, ...extra } });
   const write = (text) => writeFileSync(join(p, '.learn-from-mistakes.yaml'), text);
   return { tmp, p, env, lfm, write };
