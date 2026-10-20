@@ -21,13 +21,13 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // detect (the config entries init writes, by id) and doctor (a check line); init calls detect, doctor calls doctor.
 // A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github, 'done-done': doneDone, firstmate };
-const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped',
-  'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
-// A metric name: one of METRICS, cause_count:<a configured cause>, or gate_failures:<a step no-mistakes read>. Targets and the ledger's --metric take these.
+const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped',
+  'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs', 'tool_error_rate', 'corrections_per_session', 'corrections_per_merge', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
+// A metric name: one of METRICS, cause_count:<a configured cause>, gate_failures:<a step no-mistakes read>, or a CI repo or job a github source read. Targets and the ledger's --metric take these.
 export const isMetric = (name, causes) => METRICS.includes(name)
   || (name.startsWith('cause_count:') && Object.hasOwn(causes, name.slice(12)))
-  || (name.startsWith('gate_failures:') && name.length > 'gate_failures:'.length);
-export const METRIC_RULE = `a metric (${METRICS.join(', ')}, or cause_count:<cause>, or gate_failures:<step>)`;
+  || ['gate_failures:', 'ci_failure_rate:', 'ci_job_failures:'].some((p) => name.startsWith(p) && name.length > p.length);
+export const METRIC_RULE = `a metric (${METRICS.join(', ')}, ci_failure_rate:<repo>, ci_job_failures:<repo / workflow / job>, or cause_count:<cause>, or gate_failures:<step>)`;
 // A target or a tripwire: "<op> <number>", such as ">= 70".
 export const RULE = /^(>=|<=|>|<|=) ?(\d+(?:\.\d+)?)$/;
 

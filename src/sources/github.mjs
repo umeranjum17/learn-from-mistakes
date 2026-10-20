@@ -4,6 +4,10 @@
 // merged PR whose title starts with "Revert" (Reverts, Reverted) and names #N reverts PR N; a later merged PR whose title
 // starts with "fix" (fix:, fix(scope):, Fixes, Fixed) and names #N is an escape from it.
 // A PR with more than 100 commits is read from its first 100 and marked partial.
+// The repo's GitHub Actions runs created in the read range are read through the REST API, one record each (data.kind
+// "ci", kept apart from the PRs so the agents never see them): its workflow, conclusion, attempts, and for a run that failed or was rerun, the jobs that failed in its last
+// attempt and the flaky ones (failed in an earlier attempt, passed in the last). Job names are read for the newest
+// JOB_RUNS such runs. A repo whose runs cannot be read keeps its PR numbers and says so (the source's `missing`).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
@@ -22,6 +26,10 @@ const QUERY = `query($owner: String!, $name: String!, $after: String) {
     }
   }
 }`;
+
+const JOB_RUNS = 200;
+const FAILED = ['failure', 'timed_out', 'startup_failure'], DONE = ['success', ...FAILED]; // a cancelled, skipped or neutral run is neither
+const lines = (p) => p.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
 export const validate = (s, where, dir) => ({ ...mapping(s, ['type'], where), dir });
 
@@ -84,29 +92,79 @@ export async function read(source, { dir }, { readFrom = 0, excerpts = true, pro
       partial: n.commits.totalCount > commits.length, labels: n.labels.nodes.map((l) => l.name),
       changes_requested: n.reviews.nodes.filter((v) => v.state === 'CHANGES_REQUESTED').length } };
   });
-  return { prs: rows, hash: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
+  const ci = readRuns(bin, r, source, readFrom);
+  return { prs: rows, ci: ci.rows, ...(ci.missing.length && { missing: ci.missing }), hash: createHash('sha256').update(JSON.stringify([rows, ci.rows])).digest('hex') };
 }
 
-// doctor: readable, the PRs merged in the window, and the partial ones (over 100 commits).
+// The Actions runs created since `readFrom`, as records; `missing` names what could not be read. GitHub lists at most 1000 runs a search.
+function readRuns(bin, r, source, readFrom) {
+  const base = `repos/${r.owner}/${r.name}/actions/runs`, repoName = `${r.owner}/${r.name}`;
+  const created = encodeURIComponent(`>=${new Date(readFrom).toISOString().slice(0, 19)}Z`);
+  const listed = gh(bin, r, ['api', '--paginate', `${base}?per_page=100&created=${created}`, '--jq', '.workflow_runs[] | {id, name, conclusion, run_attempt, created_at} | tojson']);
+  if (listed.error || listed.status !== 0) return { rows: [], missing: [`GitHub Actions runs of ${repoName} (${listed.error?.code ?? (redact((listed.stderr ?? '').trim().split('\n')[0]) || `exit ${listed.status}`)})`] };
+  let runs;
+  try { runs = lines(listed); if (!runs.every((x) => x.id && x.created_at)) throw new Error('shape'); } catch { return { rows: [], missing: [`GitHub Actions runs of ${repoName} (gh gave no run list)`] }; }
+  const jobs = (run, attempt) => {
+    const p = gh(bin, r, ['api', `${base}/${run}/attempts/${attempt}/jobs?per_page=100`, '--jq', '.jobs[] | {name, conclusion} | tojson']);
+    try { return p.status === 0 ? lines(p) : undefined; } catch { return undefined; }
+  };
+  const wanted = runs.filter((x) => FAILED.includes(x.conclusion) || x.run_attempt > 1).sort((a, b) => b.created_at.localeCompare(a.created_at)), need = wanted.slice(0, JOB_RUNS);
+  const detail = new Map(need.map((x) => {
+    const tries = Array.from({ length: x.run_attempt }, (_, i) => jobs(x.id, i + 1));
+    if (tries.some((t) => !t)) return [x.id, undefined];
+    const last = new Set(tries.at(-1).filter((j) => FAILED.includes(j.conclusion)).map((j) => j.name));
+    const passed = new Set(tries.at(-1).filter((j) => j.conclusion === 'success').map((j) => j.name));
+    const earlier = new Set(tries.slice(0, -1).flat().filter((j) => FAILED.includes(j.conclusion) && passed.has(j.name)).map((j) => j.name));
+    return [x.id, { failed_jobs: [...last], flaky_jobs: [...earlier] }];
+  }));
+  const rows = runs.map((x) => ({ source, id: `run:${x.id}`, ts: x.created_at, ref: `Actions run ${x.id}`, text: '', data: {
+    kind: 'ci', repo: repoName, workflow: x.name, conclusion: x.conclusion, attempts: x.run_attempt, ...detail.get(x.id) } }));
+  const unread = wanted.length - need.length + [...detail.values()].filter((d) => !d).length;
+  return { rows, missing: unread ? [`job names of ${unread} failed or rerun Actions runs of ${repoName} (only the newest ${JOB_RUNS} are read)`] : [] };
+}
+
+// doctor: readable, the PRs merged in the window, the partial ones (over 100 commits), and the Actions runs.
 export async function doctor(source, entry, ctx) {
-  const { prs } = await read(source, entry, ctx);
-  return { level: 'ok', detail: `${prs.length} PRs merged in the window, ${prs.filter((r) => r.data.partial).length} partial (over 100 commits)` };
+  const { prs: merged, ci, missing } = await read(source, entry, ctx);
+  return { level: 'ok', detail: `${merged.length} PRs merged in the window, ${merged.filter((r) => r.data.partial).length} partial (over 100 commits), ${ci.length} Actions runs${missing ? `; not read: ${missing.join('; ')}` : ''}` };
 }
 
 // The numbers over the PRs merged in the window. first_pass is the share of merged PRs by people (not bots) with no
-// commit after open that were not reverted or escaped; hours_to_merge is from open to merge, nearest rank.
-export const metricNames = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped'];
+// commit after open that were not reverted or escaped; hours_to_merge is from open to merge, nearest rank; rework_per_merge
+// is the rework commits a merged PR. The Actions runs created in the window give ci_runs (finished runs, not cancelled or
+// skipped), ci_failure_rate (the share of them that failed), ci_reruns (runs with a second attempt), ci_flaky_jobs (jobs that
+// failed, then passed on a rerun of the same run), and ci_failure_rate:<repo> and ci_job_failures:<repo> / <workflow> / <job>
+// for each repo and job that failed in either window, so a job that stopped failing shows 0, not n/a.
+export const metricNames = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped',
+  'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs'];
 export const metricRows = 'records';
+const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places;
+const share = (part, whole) => (whole ? round((100 * part) / whole, 1) : null);
 export function metrics(rows, window) {
-  const prs = inWindow(rows, window).map((r) => JSON.parse(r.data));
+  const data = rows.map((r) => ({ r, d: JSON.parse(r.data) })), ci = data.filter(({ d }) => d.kind === 'ci');
+  const prs = inWindow(data.filter(({ d }) => d.kind !== 'ci').map(({ r }) => r), window).map((r) => JSON.parse(r.data));
   const people = prs.filter((d) => !d.bot), hours = prs.map((d) => d.hours).sort((a, b) => a - b);
-  const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places;
   const rank = (p) => (hours.length ? round(hours[Math.ceil(p * hours.length) - 1], 2) : null);
   const sum = (f) => (prs.length ? prs.reduce((n, d) => n + Number(f(d)), 0) : null);
   const first = people.filter((d) => !d.rework_ci && !d.rework_other && !d.reverted && !d.escaped).length;
+  const runs = inWindow(ci.map(({ r }) => r), window).map((r) => JSON.parse(r.data)).filter((d) => DONE.includes(d.conclusion));
+  const failed = (list) => list.filter((d) => FAILED.includes(d.conclusion));
+  const jobKey = (d, job) => `${d.repo} / ${d.workflow} / ${job}`;
+  const jobs = new Map(), repos = new Set();
+  for (const { d } of ci) {
+    repos.add(d.repo);
+    for (const j of d.failed_jobs ?? []) jobs.set(jobKey(d, j), 0);
+  }
+  for (const d of failed(runs)) for (const j of d.failed_jobs ?? []) jobs.set(jobKey(d, j), jobs.get(jobKey(d, j)) + 1);
+  const rework = sum((d) => d.rework_ci + d.rework_other);
   return {
-    merged: prs.length, first_pass: people.length ? round((100 * first) / people.length, 1) : null,
+    merged: prs.length, first_pass: share(first, people.length),
     p50_hours_to_merge: rank(0.5), p90_hours_to_merge: rank(0.9),
-    rework_ci: sum((d) => d.rework_ci), rework_other: sum((d) => d.rework_other), reverted: sum((d) => d.reverted), escaped: sum((d) => d.escaped),
+    rework_ci: sum((d) => d.rework_ci), rework_other: sum((d) => d.rework_other), rework_per_merge: rework === null ? null : rework / prs.length,
+    reverted: sum((d) => d.reverted), escaped: sum((d) => d.escaped),
+    ci_runs: ci.length ? runs.length : null, ci_failure_rate: share(failed(runs).length, runs.length),
+    ci_reruns: ci.length ? runs.filter((d) => d.attempts > 1).length : null, ci_flaky_jobs: ci.length ? runs.reduce((n, d) => n + (d.flaky_jobs?.length ?? 0), 0) : null,
+    ...Object.fromEntries([...repos].map((repo) => [`ci_failure_rate:${repo}`, share(failed(runs.filter((d) => d.repo === repo)).length, runs.filter((d) => d.repo === repo).length)])),
+    ...Object.fromEntries([...jobs].map(([k, n]) => [`ci_job_failures:${k}`, n])),
   };
 }

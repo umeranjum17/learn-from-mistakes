@@ -70,8 +70,12 @@ export function reportText(cfg, db, id, dir, window, run) {
     `- ${plural(fixes.length, 'fix', 'fixes')} passed the rules. The judge confirmed ${fixes.filter((f) => f.verdict === 'confirmed').length} of them.`,
     `- ${plural(missed, 'metric')} missed the target.`, '', '2. Numbers'];
   const measured = run.metrics.filter((m) => m.target || m.current !== 'n/a' || m.previous !== 'n/a'); // the rest have no data
-  for (const m of measured) lines.push(`- ${m.name}: this window ${m.current}, last window ${m.previous}, trend ${trend(m)}, ${m.target ? `target ${m.target}, ${m.met === 'n/a' ? 'no data' : m.met}` : 'no target'}.`);
+  const JOB = 'ci_job_failures:', jobs = measured.filter((m) => m.name.startsWith(JOB)).sort((a, b) => b.current - a.current || b.previous - a.previous);
+  for (const m of measured.filter((x) => !x.name.startsWith(JOB))) lines.push(`- ${m.name}: this window ${m.current}, last window ${m.previous}, trend ${trend(m)}, ${m.target ? `target ${m.target}, ${m.met === 'n/a' ? 'no data' : m.met}` : 'no target'}.`);
   if (!measured.length) lines.push('- No metric has data.');
+  // Failing CI jobs by name, the worst first; the rest are counted.
+  for (const m of jobs.slice(0, EVIDENCE * 3)) lines.push(`- CI job ${m.name.slice(JOB.length)}: failed ${plural(m.current, 'time')} this window, ${m.previous} last window, trend ${trend(m)}.`);
+  if (jobs.length > EVIDENCE * 3) lines.push(`- ${plural(jobs.length - EVIDENCE * 3, 'more failing CI job')} not shown.`);
   // Each home of a fleet, by salted id: its share of the fleet numbers above, this window.
   const homes = new Map(run.sources.flatMap((s) => s.homes ?? []).map((h) => [h, {}]));
   for (const r of inWindow(all('SELECT ts, data FROM records WHERE run_id = ? AND ts IS NOT NULL'), { start: Date.parse(window.current_start) })) {
@@ -123,6 +127,7 @@ export function reportText(cfg, db, id, dir, window, run) {
   const gaps = [...run.sources.filter((s) => !s.items).map((s) => `- Source ${s.id} gave no records.`),
     ...run.sources.filter((s) => s.skipped).map((s) => `- Source ${s.id} skipped ${plural(s.skipped, 'session')}.`),
     ...run.sources.filter((s) => s.undated).map((s) => `- Source ${s.id} read ${plural(s.undated, 'record')} and none has a date, so the window placed none of them. Add a "## YYYY-MM-DD" heading above its bullets, or a date in each bullet.`),
+    ...run.sources.flatMap((s) => (s.missing ?? []).map((m) => `- Source ${s.id} gave no ${m}.`)),
     ...run.sources.filter((s) => s.lines_skipped).map((s) => `- Source ${s.id} skipped ${plural(s.lines_skipped, 'home line')} with no local home.`),
     ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],

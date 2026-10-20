@@ -97,7 +97,9 @@ export function read(source, entry, ctx) {
     skipped += got.skipped;
     ids.push(id);
   }
-  return { records, skipped, ...(fleet && { homes: ids, lines_skipped: fleet.lines }), hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
+  // The metrics tables the first home lacks (a fleet's other homes may keep none), named so the report says which source is missing.
+  const missing = ['prs.tsv', 'daily.tsv'].filter((t) => !records.some((r) => r.data.kind === (t === 'prs.tsv' ? 'pr' : 'daily'))).map((t) => `rows in ${t} under data/metrics of the home`);
+  return { records, skipped, ...(missing.length && { missing }), ...(fleet && { homes: ids, lines_skipped: fleet.lines }), hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
 }
 
 // One home's records; with a home id, each record's id starts with it and its data names it.
@@ -193,9 +195,10 @@ export function doctor(source, entry, ctx) {
 // decisions, blocks and steers in the window; interventions_per_merge is their sum over the PRs merged (n/a with no
 // merge). The home's dated defect records add to defects. With no github source, its prs.tsv gives the PR metrics (as the
 // github source computes them) and its daily.tsv gives corrections_per_session, over the PRs merged since the home
-// records no session count; a sessions source's own number wins.
+// records no session count; a sessions source's own number wins. corrections_per_merge is the same corrections over the PRs
+// merged, whichever source counts the merges.
 export const metricNames = ['decisions', 'blocks', 'steers', 'interventions_per_merge', 'merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge',
-  'rework_ci', 'rework_other', 'reverted', 'escaped', 'corrections_per_session'];
+  'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped', 'corrections_per_session', 'corrections_per_merge'];
 export const addsTo = ['defects']; // the follow-up step reads this source's records for these metrics too
 export const metricRows = 'records';
 export function metrics(rows, window, v) {
@@ -203,10 +206,9 @@ export function metrics(rows, window, v) {
   const kept = (kind) => rows.filter((r) => JSON.parse(r.data).kind === kind);
   const out = { decisions: of('decision').length, blocks: of('block').length, steers: steersIn(rows, window) };
   const prs = v.merged == null && kept('pr').length ? github.metrics(kept('pr'), window) : {}, merged = v.merged ?? prs.merged;
-  const corrections = v.corrections_per_session == null && merged && kept('daily').length
-    ? of('daily').reduce((n, r) => n + JSON.parse(r.data).corrections, 0) / merged : undefined;
+  const corrections = merged && kept('daily').length ? of('daily').reduce((n, r) => n + JSON.parse(r.data).corrections, 0) / merged : undefined;
   const defects = rows.filter((r) => r.ts && JSON.parse(r.data).kind === 'defect');
-  return { ...prs, ...out, ...(corrections !== undefined && { corrections_per_session: corrections }),
+  return { ...prs, ...out, ...(corrections !== undefined && { corrections_per_merge: corrections, ...(v.corrections_per_session == null && { corrections_per_session: corrections }) }),
     interventions_per_merge: merged ? (out.decisions + out.blocks + out.steers) / merged : null,
     ...(defects.length && { defects: (v.defects ?? 0) + of('defect').length }) };
 }

@@ -22,6 +22,12 @@ const fs = require('node:fs'), path = require('node:path'), args = process.argv.
 fs.appendFileSync(path.join(process.env.FAKE_LOG, 'gh.jsonl'), JSON.stringify(args) + '\\n');
 if (process.env.FAKE_GH === 'logged-out') { console.error('To get started with GitHub CLI, please run:  gh auth login'); process.exit(4); }
 if (args[0] === 'auth') { console.log('github.com: Logged in to github.com account umer'); process.exit(0); }
+const rest = args.find((a) => a.startsWith('repos/'));
+if (rest) { // the Actions runs and a run attempt's jobs, already cut down by gh's --jq
+  const [, , , , , run, , attempt] = rest.split('?')[0].split('/'), file = path.join(process.env.FAKE_PAGES, run ? 'jobs-' + run + '-' + attempt + '.jsonl' : 'runs.jsonl');
+  if (!fs.existsSync(file) || process.env.FAKE_GH === 'no-actions') { console.error('gh: Not Found (HTTP 404)'); process.exit(1); }
+  process.stdout.write(fs.readFileSync(file)); process.exit(0);
+}
 const after = args.find((a) => a.startsWith('after='))?.slice(6) ?? 'first';
 process.stdout.write(fs.readFileSync(path.join(process.env.FAKE_PAGES, after + '.json')));
 `;
@@ -73,6 +79,14 @@ function setup() {
     pr(3, 'feat: a small tweak', { merged: 230 }), // last window; reverted
     pr(2, 'feat: old work', { merged: 400 }), // before the read range of two 7d windows
   ], 'third'));
+  // Actions runs: this window (CI 50% failed, one rerun that was flaky, one cancelled Deploy) and the last window (CI 50% failed).
+  const jl = (rows) => rows.map((x) => JSON.stringify(x)).join('\n') + '\n';
+  const run = (id, name, conclusion, hours, attempt = 1) => ({ id, name, conclusion, run_attempt: attempt, created_at: ago(hours) });
+  writeFileSync(join(pages, 'runs.jsonl'), jl([run(101, 'CI', 'success', 10), run(102, 'CI', 'failure', 20), run(103, 'CI', 'success', 30, 2), run(104, 'Deploy', 'cancelled', 40),
+    run(105, 'CI', 'failure', 50), run(106, 'CI', 'success', 200), run(107, 'CI', 'failure', 220)]));
+  const job = (name, conclusion) => ({ name, conclusion });
+  for (const [file, rows] of Object.entries({ '102-1': [job('lint', 'failure'), job('test', 'failure'), job('build', 'success')], '103-1': [job('test', 'failure'), job('lint', 'success')],
+    '103-2': [job('test', 'success'), job('lint', 'success')], '105-1': [job('test', 'failure')], '107-1': [job('lint', 'failure')] })) writeFileSync(join(pages, `jobs-${file}.jsonl`), jl(rows));
   const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, FAKE_PAGES: pages };
   mkdirSync(env.LFM_HOME, { recursive: true });
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
@@ -95,9 +109,17 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries|cause_count:|gate_failures|decisions|blocks|steers|interventions)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
   assert.deepEqual(numbers, {
     merged: [10, 3], first_pass: [77.8, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [5, 10],
-    rework_ci: [1, 0], rework_other: [1, 0], reverted: [1, 1], escaped: [1, 1],
+    rework_ci: [1, 0], rework_other: [1, 0], rework_per_merge: [0.2, 0], reverted: [1, 1], escaped: [1, 1],
+    ci_runs: [4, 2], ci_failure_rate: [50, 50], ci_reruns: [1, 0], ci_flaky_jobs: [1, 0], 'ci_failure_rate:umer/umer-app': [50, 50],
+    'ci_job_failures:umer/umer-app / CI / lint': [1, 1], 'ci_job_failures:umer/umer-app / CI / test': [2, 0],
   });
-  const gql = calls().slice(1);
+  const text = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8');
+  assert.match(text, /^- ci_failure_rate: this window 50, last window 50, trend flat, no target\.$/m);
+  assert.match(text, /^- CI job umer\/umer-app \/ CI \/ test: failed 2 times this window, 0 last window, trend up\.$/m);
+  assert.ok(text.indexOf('CI / test') < text.indexOf('CI / lint'), 'the job that fails most comes first');
+  assert.ok(!/Actions runs/.test(text.split('6. Not checked')[1]), 'no gap line when the runs were read');
+  const gql = calls().filter((c) => c[1] === 'graphql');
+  assert.ok(calls().some((c) => c[1] === '--paginate' && c[2].startsWith('repos/umer/umer-app/actions/runs?')), 'the runs are listed through the REST API');
   assert.equal(gql.length, 2, 'the read stops at the first PR updated before the range');
   assert.deepEqual(gql[0].slice(0, 2), ['api', 'graphql']);
   assert.ok(gql[0].includes('owner=umer') && gql[0].includes('name=umer-app') && !gql[0].some((a) => a.startsWith('after=')));
@@ -143,7 +165,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   const db2 = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true });
   try {
     const texts = db2.prepare(`SELECT text FROM records WHERE source = 'prs' AND run_id = (SELECT max(id) FROM runs)`).all().map((x) => x.text);
-    assert.deepEqual([texts.length, texts.filter(Boolean)], [13, []]);
+    assert.deepEqual([texts.length, texts.filter(Boolean)], [20, []]); // 13 PRs and 7 Actions runs
   } finally { db2.close(); }
 
   const cfgFile = join(p, '.learn-from-mistakes.yaml');
@@ -165,6 +187,17 @@ test('a window with no merged PR: merged is 0, the ratios and the sums are n/a',
   const names = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped'];
   const current = Object.fromEntries(run.metrics.filter((m) => names.includes(m.name)).map((m) => [m.name, m.current]));
   assert.deepEqual(current, { merged: 0, first_pass: 'n/a', p50_hours_to_merge: 'n/a', p90_hours_to_merge: 'n/a', rework_ci: 'n/a', rework_other: 'n/a', reverted: 'n/a', escaped: 'n/a' });
+});
+
+test('Actions runs gh cannot read leave the CI numbers n/a, keep the PR numbers, and the report names the missing source', () => {
+  const { p, lfm } = setup();
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
+  const r = lfm({ FAKE_GH: 'no-actions' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const run = JSON.parse(r.stdout), value = (name) => run.metrics.find((m) => m.name === name).current;
+  assert.deepEqual([value('merged'), value('ci_runs'), value('ci_failure_rate')], [10, 'n/a', 'n/a']);
+  assert.deepEqual(run.sources[0].missing, ['GitHub Actions runs of umer/umer-app (gh: Not Found (HTTP 404))']);
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8'), /^- Source prs gave no GitHub Actions runs of umer\/umer-app \(gh: Not Found \(HTTP 404\)\)\.$/m);
 });
 
 test('a missing or logged-out gh and a non-GitHub origin fail the source with the fix, never the origin URL', () => {
@@ -372,9 +405,13 @@ test('a firstmate home reads data/metrics/prs.tsv and daily.tsv, counts steers f
   assert.deepEqual([m.merged, m.first_pass, m.p50_hours_to_merge, m.p90_hours_to_merge, m.rework_ci, m.rework_other, m.reverted, m.escaped],
     [[4, 1, '', ''], [33.3, 100, '>= 70', 'missed'], [1, 8, '', ''], [4, 8, '<= 8', 'met'], [0, 0, '', ''], [1, 0, '', ''], [0, 0, '', ''], [1, 0, '<= 0', 'missed']]);
   assert.deepEqual([m.steers, m.corrections_per_session, m.interventions_per_merge], [[12, 3, '', ''], [0.75, 1, '<= 0.3', 'missed'], [3.25, 3, '', '']]);
+  assert.deepEqual([m.rework_per_merge, m.corrections_per_merge], [[0.25, 0, '', ''], [0.75, 1, '', '']]);
   unlinkSync(join(home, 'data', 'metrics', 'daily.tsv')); // no daily table: the two handled and pending messages are the steers
   m = metricsOf();
   assert.deepEqual([m.steers, m.corrections_per_session, m.merged], [[2, 0, '', ''], ['n/a', 'n/a', '<= 0.3', 'n/a'], [4, 1, '', '']]);
+  assert.equal(m.corrections_per_merge[0], 'n/a');
+  const gone = JSON.parse(lfm({}, 'retro', '--foreground', '--json').stdout); // the report names the table that is missing
+  assert.deepEqual(gone.sources[0].missing, ['rows in daily.tsv under data/metrics of the home']);
   if (process.getuid?.() !== 0) { // a folder that cannot be read is no vanished entry: the error names its path
     const locked = join(home, 'state', 'locked.inbox');
     mkdirSync(locked);
