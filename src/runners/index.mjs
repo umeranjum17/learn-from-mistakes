@@ -30,7 +30,8 @@ export function which(name) {
 
 export const binName = (cfg, runner) => (runner === 'acp' ? cfg.acpx_path : cfg.agent_path_override?.[runner]) ?? RUNNERS[runner].bin ?? runner;
 // The model agent_config gives an agent (claude, acp:<target>, byokit:<route>), or "": none set, and no call is made.
-export const agentModel = (cfg, agent) => cfg.agent_config?.[agent]?.model ?? '';
+// The judge runs judge_model when the user set one, so it may differ from the worker's model on the same agent.
+export const agentModel = (cfg, agent, role = 'worker') => (role === 'judge' && cfg.judge_model) || (cfg.agent_config?.[agent]?.model ?? '');
 // The file to change a key in: the file that set it; a key no file sets goes to the project file, else the global file.
 export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? (cfg.dir ? join(cfg.dir, PROJECT_FILE) : cfg.globalPath));
 // The fix for an agent or its model the user has not set, or that is not ready: the user chooses, and the file and key are named.
@@ -64,9 +65,9 @@ export function detect(cfg, only = configuredRunners(cfg)) {
 }
 
 export const KEY = { worker: 'agent', judge: 'judge_agent' }; // the config key of each role
-// One agent as a role: its model from agent_config, its binary (a BYOKit route names its own binary), or its problem.
-async function candidate(cfg, runner, agents) {
-  const model = agentModel(cfg, runner);
+// One agent as a role: its model from agent_config (the judge's may be judge_model), its binary (a BYOKit route names its own binary), or its problem.
+async function candidate(cfg, runner, agents, role) {
+  const model = agentModel(cfg, runner, role);
   const route = byokit.routeOf(runner);
   if (route) { // in process
     const p = await byokit.check(route);
@@ -84,7 +85,7 @@ async function candidate(cfg, runner, agents) {
 export async function resolveRole(cfg, name, agents) {
   const runner = cfg[KEY[name]];
   if (!runner) return { runner: '', model: '', bin: '', problem: `${KEY[name]} is not set` };
-  return candidate(cfg, runner, agents);
+  return candidate(cfg, runner, agents, name);
 }
 
 export async function resolveRoles(cfg, agents) {

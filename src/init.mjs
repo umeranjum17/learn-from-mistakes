@@ -77,7 +77,7 @@ const STARTER = {
 };
 
 const globalText = `# learn-from-mistakes global configuration
-# A project's .learn-from-mistakes.yaml may override agent, judge_agent, agent_config,
+# A project's .learn-from-mistakes.yaml may override agent, judge_agent, judge_model, agent_config,
 # and agent_timeout; auto_fix and the other keys here are global-only.
 
 # Agent that runs the retro's agent steps. Every retro starts it. You set it: the tool never
@@ -89,9 +89,15 @@ const globalText = `# learn-from-mistakes global configuration
 # checks one)
 # agent: claude
 
-# Agent that checks the worker's output. Same values as agent. It may be the worker's agent:
-# agent_config holds one model per agent, so it then runs that model, in a fresh session.
+# Agent that checks the worker's output. Same values as agent. It may be the worker's agent,
+# in a fresh session; agent_config holds one model per agent, so set judge_model to give it a
+# stronger one than the worker's.
 # judge_agent: codex
+
+# Model the judge runs. Optional: without it the judge runs agent_config's model for its agent.
+# Set it for a cheap worker (it labels the records) and a stronger judge (it checks the findings
+# and fixes).
+# judge_model: <model>
 
 # Model and reasoning effort per agent. Effort is one of minimal, low, medium, high, xhigh, max; it
 # maps to --effort for claude, -c model_reasoning_effort for codex, --variant for opencode and
@@ -158,8 +164,12 @@ export async function init(dir, opts) {
   for (const [key, flag, model] of [['agent', 'agent', 'model'], ['judge_agent', 'judge-agent', 'judge-model']]) {
     if (!opts[flag]) continue;
     const agent = opts[flag], takeAgent = written || opts.reconfigure || !here(key);
-    const takeModel = !!opts[model] && (opts.reconfigure || (!here(`agent_config.${agent}.model`) && (takeAgent || before[key] === agent)));
-    if (takeAgent || takeModel) chosen[key] = { agent, model: takeModel ? opts[model] : undefined, set: takeAgent };
+    // A judge model that differs from the worker's model on the same agent is the judge's own (judge_model), so the
+    // worker's model stays: a cheap worker and a stronger judge may share one agent.
+    const worker = chosen.agent?.agent ?? before.agent, workerModel = chosen.agent?.model ?? before.agent_config[worker]?.model;
+    const split = key === 'judge_agent' && agent === worker && !!opts[model] && !!workerModel && opts[model] !== workerModel;
+    const takeModel = !!opts[model] && (opts.reconfigure || (!here(split ? 'judge_model' : `agent_config.${agent}.model`) && (takeAgent || before[key] === agent)));
+    if (takeAgent || takeModel) chosen[key] = { agent, model: takeModel ? opts[model] : undefined, set: takeAgent, split };
     if (!takeAgent) ignored.push(`--${flag}`);
     if (opts[model] && !takeModel) ignored.push(`--${model}`);
   }
@@ -174,16 +184,13 @@ export async function init(dir, opts) {
   // Only the roles the user set now need probing: the config's, plus the agents these flags choose. No other
   // agent CLI is run and no other login store is read.
   const agents = detect(before, [...new Set([...configuredRunners(before), ...configuredRunners({ agent: chosen.agent?.agent, judge_agent: chosen.judge_agent?.agent })])]);
-  // A chosen role that is not usable is refused before any file is written. Both roles may name one agent; it then has
-  // one model, so two different models for it contradict each other.
+  // A chosen role that is not usable is refused before any file is written.
   if (Object.keys(chosen).length) {
-    const [w, j] = [chosen.agent, chosen.judge_agent];
-    if (w?.model && j?.model && w.agent === j.agent && w.model !== j.model) throw new UsageError(`--model ${shq(w.model)} and --judge-model ${shq(j.model)} both set the model of ${w.agent}, and agent_config holds one model per agent`,
-      `learn-from-mistakes-axi init --agent ${shq(w.agent)} --model <model> --judge-agent ${shq(j.agent)}${opts.dir ? ` --dir ${shq(opts.dir)}` : ''}   # ask the user which one model ${w.agent} runs, or another agent for the judge`);
     const want = { ...before, agent_config: structuredClone(before.agent_config) };
     for (const [key, c] of Object.entries(chosen)) {
       if (c.set) want[key] = c.agent;
-      if (c.model) want.agent_config[c.agent] = { ...want.agent_config[c.agent], model: c.model };
+      if (c.split) want.judge_model = c.model;
+      else if (c.model) want.agent_config[c.agent] = { ...want.agent_config[c.agent], model: c.model };
     }
     const { worker, judge } = await resolveRoles(want, agents);
     if (chosen.agent && worker.problem) throw new InputError(`worker: ${worker.problem}`, worker.fix ?? FIX('--agent'));
@@ -201,7 +208,8 @@ name: ${scalar(basename(dir))}
 # one here to override it for this project. The tool never picks an agent: set agent and
 # judge_agent, each with its model.
 # agent: claude   # or codex, opencode, pi, gemini, acp:<target>, byokit:<route>
-# judge_agent: codex   # may be the worker's agent; one model per agent
+# judge_agent: codex   # may be the worker's agent
+# judge_model: <model>   # a stronger model for the judge than agent_config gives its agent
 # agent_config: { <agent>: { model: <model>, effort: low } }
 # agent_timeout: "20m"
 excerpts: ${opts['no-excerpts'] ? 'off' : 'on'}   # on: the worker and judge see redacted record excerpts; off: pointers and counts only

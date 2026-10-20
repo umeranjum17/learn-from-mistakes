@@ -2070,6 +2070,40 @@ test('retro and rerun stop before a run when the judge is not ready; a judge on 
   assert.ok(out.fixes.length && out.fixes.every((f) => f.verdict === 'confirmed'), r.stdout);
 });
 
+test('judge_model: a cheap worker labels and proposes, a stronger judge on the same agent checks; alone it is the judge\'s model; a bad one is refused', () => {
+  const { p, env, lfm, query, calls } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const home = (extra = '') => writeFileSync(join(env.LFM_HOME, 'config.yaml'), `agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n${extra}`);
+  home('judge_model: umer-strong-1\n');
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const { run } = JSON.parse(r.stdout);
+  assert.equal(run.status, 'completed');
+  const model = (args) => args[args.indexOf('--model') + 1];
+  assert.deepEqual(calls().map((c) => [c.stdin.split('\n')[0].split(':')[2], model(c.args)]),
+    [['analyse', 'claude-haiku-5-5'], ['verify', 'umer-strong-1'], ['propose', 'claude-haiku-5-5'], ['verify-fixes', 'umer-strong-1']]);
+  assert.deepEqual(query('SELECT step, role, model FROM invocations WHERE run_id = ? ORDER BY id', run.id),
+    [['analyse', 'worker', 'claude-haiku-5-5'], ['verify', 'judge', 'umer-strong-1'], ['propose', 'worker', 'claude-haiku-5-5'], ['verify-fixes', 'judge', 'umer-strong-1']].map(([step, role, m]) => ({ step, role, model: m })));
+  const roles = JSON.parse(lfm({}, 'agents', '--json').stdout);
+  assert.deepEqual([roles.worker.model, roles.judge.model], ['claude-haiku-5-5', 'umer-strong-1']);
+  // Alone, judge_model is the judge's model: the judge's agent needs no agent_config model of its own.
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), 'agent: claude\njudge_agent: codex\njudge_model: umer-strong-1\nagent_config: { claude: { model: claude-haiku-5-5 } }\n');
+  assert.equal(JSON.parse(lfm({}, 'agents', '--json').stdout).judge.model, 'umer-strong-1');
+  for (const text of ['judge_model: 5\n', 'judge_model: "--yolo"\n']) {
+    home(text);
+    const bad = lfm({}, 'agents', '--json');
+    assert.equal(bad.status, 2, bad.stderr);
+    assert.match(bad.stderr, /^error: \S+config\.yaml: judge_model must be a model id /m);
+  }
+  // A project file may set it too, and the file that set it is the one a bad value is named in.
+  home();
+  writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}judge_model: -x\n`);
+  const project = lfm({}, 'agents', '--json');
+  assert.equal(project.status, 2, project.stderr);
+  assert.match(project.stderr, /^error: \S+\.learn-from-mistakes\.yaml: judge_model must be a model id /m);
+});
+
 test('a judge that leaves a claim without a verdict, or fails, fails the run: it keeps no verdict, label, finding, fix or report; a resume runs from followup', () => {
   const { p, lfm, query, lines } = agentSetup();
   const yaml = join(p, '.learn-from-mistakes.yaml');

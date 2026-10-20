@@ -92,7 +92,7 @@ Each tool works on its own, with or without the other three and with or without 
 
 ## Runners and user-chosen models
 
-Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The judge may be the worker's agent: `agent_config` holds one model per agent, so it then runs the worker's model, each call in a fresh session. Nothing refuses that choice.
+Set `agent` (worker), `judge_agent` and one `agent_config.<agent>.model` for each. The worker labels the records and proposes fixes; the judge checks the findings and the fixes. To run a cheap worker and a stronger judge, give them different models: two agents, or one agent with `judge_model`. There is **no default model catalog**, automatic model selection, or fallback to another installed agent. `agents` shows configured agents and resolved roles, not a recommendation of which installed agent to use. The judge may be the worker's agent, each call in a fresh session. `agent_config` holds one model per agent, so it then runs the worker's model unless you set `judge_model`, which the judge runs instead (`init --judge-model` writes it when the judge shares the worker's agent and the models differ). The tool picks no model: with neither, `init` and `retro` ask.
 
 The current CLI runners are `claude`, `codex`, `opencode` and `pi`. Claude, OpenCode and Pi run with tools off; Codex uses read-only mode. Each needs its own executable and login. `gemini` and `acp:<target>` (through `acpx`) have adapters, but are **not offered for retro roles**: their headless tool restrictions are not confirmed. `agents --test <runner>` can probe an adapter, including an unconfirmed one; it does not remove that restriction.
 
@@ -109,6 +109,7 @@ agent_config:
     effort: low
   "<judge-agent>":
     model: "<user-chosen-model>"
+judge_model: "<optional-stronger-model>"   # the judge's model when it differs from its agent's model above
 agent_timeout: "20m"
 ```
 

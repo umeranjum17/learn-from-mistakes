@@ -16,7 +16,8 @@ const LIST = 'claude, codex, opencode, pi or byokit:<route> (such as byokit:open
 const FLAG = { agent: ['--agent', '--model'], judge_agent: ['--judge-agent', '--judge-model'] };
 // A role is unset when its agent is, or when the agent has no model: both are the user's to set. Only the keys named are
 // considered, so a command that starts one role (apply starts the worker) asks for that role alone.
-export const unset = (cfg, keys = ['agent', 'judge_agent']) => keys.filter((k) => !cfg[k] || !cfg.agent_config?.[cfg[k]]?.model);
+// A judge_model is the judge's model, so the judge needs no agent_config model of its own.
+export const unset = (cfg, keys = ['agent', 'judge_agent']) => keys.filter((k) => !cfg[k] || !((k === 'judge_agent' && cfg.judge_model) || cfg.agent_config?.[cfg[k]]?.model));
 // The names of the unset keys as the user reads them: a role's agent, or the model of the agent it already names.
 // Two roles on one agent with no model share one name, so it is listed once.
 export const named = (cfg, keys) => [...new Set(keys.map((k) => (cfg[k] ? `agent_config.${cfg[k]}.model` : k)))];
@@ -35,25 +36,29 @@ export function askError(cfg, keys, dir) {
 
 const ROLE = { agent: 'worker', judge_agent: 'judge' };
 // A saved model replaces the one the agent's other role ran: agent_config holds one model per agent, so that role now
-// runs the new model too. Each such role takes one plain note naming the agent and the old and new model, never a refusal.
+// runs the new model too, unless it is the judge with its own judge_model. Each such role takes one plain note naming
+// the agent and the old and new model, never a refusal. A judge model saved as judge_model replaces nothing.
 export const modelNotes = (before, picks) => {
   const notes = new Set();
-  for (const [key, { agent, model }] of Object.entries(picks)) {
-    const was = model && before.agent_config?.[agent]?.model;
+  for (const [key, { agent, model, split }] of Object.entries(picks)) {
+    const was = !split && model && before.agent_config?.[agent]?.model;
     if (!was || was === model) continue;
     for (const other of Object.keys(ROLE))
-      if (other !== key && before[other] === agent) notes.add(`${ROLE[other]} on ${agent} now uses ${model} (was ${was}): one model per agent`);
+      if (other !== key && before[other] === agent && !(other === 'judge_agent' && before.judge_model)) notes.add(`${ROLE[other]} on ${agent} now uses ${model} (was ${was}): one model per agent`);
   }
   return [...notes];
 };
 
 // Sets agent/judge_agent and each one's agent_config model in a config file, keeping its comments and other keys.
+// A split judge model goes to judge_model; a judge model saved to agent_config replaces an earlier judge_model.
 export function save(file, picks) {
   const doc = parseDocument(existsSync(file) ? readFileSync(file, 'utf8') : '');
   if (doc.contents === null) doc.contents = doc.createNode({});
-  for (const [key, { agent, model, set }] of Object.entries(picks)) {
+  for (const [key, { agent, model, set, split }] of Object.entries(picks)) {
     if (set) doc.set(key, agent);
-    if (model) {
+    if (split) doc.set('judge_model', model);
+    else if (model) {
+      if (key === 'judge_agent') doc.delete('judge_model');
       if (!doc.get('agent_config')) doc.set('agent_config', doc.createNode({}));
       doc.setIn(['agent_config', agent, 'model'], model);
     }
@@ -116,7 +121,9 @@ export async function pick(keys, cfg, dir) {
         else if (!modelOk(agent, m)) process.stderr.write(`${m} is not ${MODEL_RULE}\n`);
         else model = m;
       }
-      picks[key] = { agent, model, set: !cfg[key] };
+      // A judge on the worker's agent that picks another model keeps its own (judge_model); the worker's stays.
+      const worker = picks.agent ?? { agent: cfg.agent, model: cfg.agent_config?.[cfg.agent]?.model };
+      picks[key] = { agent, model, set: !cfg[key], split: key === 'judge_agent' && agent === worker.agent && !!worker.model && model !== worker.model };
     }
   } finally { rest(); }
   return picks;

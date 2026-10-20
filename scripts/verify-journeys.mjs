@@ -334,8 +334,9 @@ try {
   rmSync(join(fresh, 'docs', 'defects.md'));
   run('doctor-missing-log', process.execPath, [cli, 'doctor', '--dir', fresh], 1, { PATH: fakes });
   assert.match(readFileSync(join(evidence, 'doctor-missing-log.stdout'), 'utf8'), /^fail source log .*\n {5}fix: check sources\.log\.path in \S+\.learn-from-mistakes\.yaml, or create it: touch \S+\/docs\/defects\.md\n/m, 'doctor names no fix for the missing log');
-  run('init-one-agent-two-models', process.execPath, [cli, 'init', '--no-skill', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 2, { PATH: fakes });
-  assert.match(readFileSync(join(evidence, 'init-one-agent-two-models.stderr'), 'utf8'), /^error: --model umer-a and --judge-model umer-b both set the model of claude, and agent_config holds one model per agent\nnext: learn-from-mistakes-axi init --agent claude --model <model> --judge-agent claude /m, 'two models for one agent do not state the one-model rule');
+  run('init-one-agent-two-models', process.execPath, [cli, 'init', '--no-skill', '--json', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--judge-model', 'umer-b', '--dir', join(fresh, 'docs')], 0, { PATH: fakes });
+  const twoModels = parse(readFileSync(join(fresh, 'docs', '.learn-from-mistakes.yaml'), 'utf8'));
+  assert.deepEqual([twoModels.agent_config, twoModels.judge_model], [{ claude: { model: 'umer-a' } }, 'umer-b'], 'one agent with two models did not save the judge_model');
   run('init-one-agent-both-roles', process.execPath, [cli, 'init', '--no-skill', '--json', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 0, { PATH: fakes });
   assert.deepEqual(parse(readFileSync(join(fresh, 'docs', '.learn-from-mistakes.yaml'), 'utf8')).agent_config, { claude: { model: 'umer-a' } }, 'one agent in both roles did not save its one model');
   if (packageProof) {
