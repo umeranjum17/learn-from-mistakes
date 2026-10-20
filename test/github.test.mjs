@@ -420,6 +420,29 @@ test('a firstmate home reads data/metrics/prs.tsv and daily.tsv, counts steers f
   }
 });
 
+// A Firstmate home's data/chat.tsv holds the captain's chat lines: the ones with why, wrong or again are mistakes, each with
+// its text, time and the work it points at; the others, the ones outside the window and the ones with no time are not.
+test('a firstmate home turns the chat lines with why, wrong or again into mistake records that name their work', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), epoch = (days) => Math.floor(NOW / 1000 - days * 86_400);
+  mkdirSync(join(home, 'data'), { recursive: true });
+  mkdirSync(join(home, 'state'), { recursive: true });
+  writeFileSync(join(home, 'data', 'chat.tsv'), ['at\twork\ttext', `${epoch(1)}\tdemo-page\tWhy did the demo page ship with no title?`, `${epoch(2)}\tdemo-cli\tthat is wrong, the demo flag is --umer`,
+    `${epoch(2)}\tdemo-cli\tYou did it AGAIN`, `${epoch(1)}\tdemo-page\tthanks, looks good`, `${epoch(1)}\tdemo-page\tI am always wrongly spelled`, `${epoch(30)}\told-work\twhy was this late`, `soon\tdemo-page\twhy is there no time`].join('\n') + '\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
+  assert.match(lfm({}, 'doctor').stdout, /^ok\s+source home\s+firstmate: 0 decisions, 0 blocks, 0 steers, 0 defect records, 3 captain complaints, 1 skipped \(no time\)$/m);
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const run = JSON.parse(r.stdout).run.id, dir = join(p, '.lfm', 'runs', String(run));
+  const bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');
+  assert.match(bundle, /^- \[chat:2\] home at \S*chat\.tsv:2, \d{4}-\d\d-\d\d, about demo-page\n {2}> Why did the demo page ship with no title\?$/m);
+  assert.ok(bundle.includes('that is wrong, the demo flag is --umer') && bundle.includes('You did it AGAIN'));
+  for (const no of ['looks good', 'wrongly spelled', 'why was this late', 'no time']) assert.ok(!bundle.includes(no), `${no} in the bundle`);
+  const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((x) => x.data?.kind === 'complaint');
+  assert.deepEqual(records.map((x) => x.data.work).sort(), ['demo-cli', 'demo-cli', 'demo-page']);
+  assert.equal(JSON.parse(r.stdout).metrics.find((m) => m.name === 'defects').current, 3);
+});
+
 // A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
 // report's not-checked section says so.
 test('a markdown-log source with no dated record is named by doctor and by the report', () => {

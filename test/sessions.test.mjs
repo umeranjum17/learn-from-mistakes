@@ -614,7 +614,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.equal(query(p, `SELECT count(*) AS n FROM events WHERE run_id = ? AND id IN (${events})`, on.id)[0].n, events.length); // ids are store rows
   const quotes = on.text.match(/^  > .+$/gm);
   assert.ok(quotes.every((q) => q.length <= 304), 'an excerpt over 300 characters');
-  assert.equal(on.text.match(/^- \[(?!e\d+\])[^\]]+\] .+\n  > .+$/gm).length, records.length + 1, 'a record without its excerpt'); // + the Firstmate line
+  assert.equal(on.text.match(/^- \[(?!e\d+\] \S+ session )[^\]]+\] .+\n  > .+$/gm).length, records.length + 1, 'a record without its excerpt'); // + the Firstmate line
   assert.match(on.text, /^- \[e\d+\] .+\n  > Exit code 1 FAIL test\/fetch\.test\.js$/m); // an event's excerpt
   assert.ok(quotes.filter((q) => q.includes('[redacted]')).length >= 2 * one.length);
   assert.ok(!on.text.includes('[redacted]]'), 'a placeholder redacted twice');
@@ -659,7 +659,7 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   const texts = [...query(p, 'SELECT text FROM records WHERE run_id = ?', on.id).map((r) => r.text), ...query(p, `SELECT excerpt AS text FROM events WHERE run_id = ? AND excerpt != ''`, on.id).map((r) => r.text)];
   for (const t of texts) if (t.length >= 16) assert.ok(!off.text.includes(t.slice(0, 16)), `"${t.slice(0, 16)}" in bundle.md with excerpts off`);
   assert.ok(!off.text.includes('[redacted]') && !off.text.includes('Umer'));
-  assert.equal([...off.text.matchAll(/^- \[(?!e\d+\])[^\]]+\] /gm)].length, records.length + 1); // + the Firstmate line
+  assert.equal([...off.text.matchAll(/^- \[(?!e\d+\] \S+ session )[^\]]+\] /gm)].length, records.length + 1); // + the Firstmate line
   assert.equal([...off.text.matchAll(/^### \[c\d+\] /gm)].length, clusters.length);
 
   // A config in a subdirectory of the checkout counts this repo's gate rows, matched by its checkout, and no other repo's.

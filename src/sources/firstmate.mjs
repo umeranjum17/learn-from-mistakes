@@ -6,7 +6,9 @@
 // <home>/data/defects.md is read as a markdown-log defect log. <home>/data/metrics/prs.tsv (one merged PR a row: merged,
 // hours_to_merge, rework_*, reverted, escaped, bot, title) gives the PR metrics when no github source does, and
 // <home>/data/metrics/daily.tsv (one day and project a row: day, steers, s_correct) gives the steers, ahead of the inbox
-// messages, and the corrections. A home that lacks either file reads without it. A message with no at= line is timed by
+// messages, and the corrections. <home>/data/chat.tsv (header `at<TAB>work<TAB>text`, one chat line a row, at an epoch)
+// holds the captain's chat lines: each whose text has the word why, wrong or again is a complaint, a mistake record with its
+// text, time and work (the task or PR it points at); the other lines are no mistake. A home that lacks either file reads without it. A message with no at= line is timed by
 // the epoch its file name starts with, as Firstmate names handled messages `<epoch>-<id>.msg`. <home>/config/targets.tsv, one
 // `metric<TAB>op<TAB>target<TAB>owner<TAB>rule` line per target, overrides the config's targets.
 // A status line also opens a stage (src/stages.mjs) that lasts until the next line's stamp; its hours feed the stage metrics.
@@ -177,6 +179,9 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
     return lines.flatMap((l, i) => (l.trim() ? [{ line: i + 2, file, row: Object.fromEntries(l.split('\t').map((v, j) => [cols[j], v])) }] : []));
   };
   const num = (v) => Number(v) || 0;
+  for (const { line, file, row } of table('../chat.tsv')) {
+    if (/\b(why|wrong|again)\b/i.test(row.text ?? '')) add(/^\d+$/.test(row.at) ? Number(row.at) * 1000 : NaN, `chat:${line}`, `${file}:${line}`, 'complaint', row.text, undefined, row.work ? { work: redact(row.work) } : undefined);
+  }
   for (const { line, file, row } of table('prs.tsv')) {
     const hours = Number(row.hours_to_merge), ms = Number.isFinite(hours) ? Date.parse(row.merged) : NaN;
     add(ms, `pr:${line}`, `${file}:${line}`, 'pr', row.title ?? '', undefined, { bot: row.bot === '1', hours, rework_ci: num(row.rework_ci),
@@ -200,7 +205,7 @@ export function doctor(source, entry, ctx) {
   const fleet = homes ? `${homes.length} homes, ${lines_skipped} registry lines skipped (no local home), ` : '';
   const steers = n('daily') ? records.filter((r) => r.data.kind === 'daily').reduce((sum, r) => sum + r.data.steers, 0) : n('steer');
   const tables = n('pr') || n('daily') ? `, ${n('pr')} merged PRs and ${n('daily')} daily rows in data/metrics` : '';
-  return { level: 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${steers} steers, ${n('defect')} defect records${tables}, ${skipped} skipped (no time)` };
+  return { level: 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${steers} steers, ${n('defect')} defect records${n('complaint') ? `, ${n('complaint')} captain complaints` : ''}${tables}, ${skipped} skipped (no time)` };
 }
 
 // The hours the tasks spent in each stage in the window, by the day the stage began, and the tasks timed; n/a with no timed
@@ -230,8 +235,8 @@ export function metrics(rows, window, v) {
   const out = { decisions: of('decision').length, blocks: of('block').length, steers: steersIn(rows, window) };
   const prs = v.merged == null && kept('pr').length ? github.metrics(kept('pr'), window) : {}, merged = v.merged ?? prs.merged;
   const corrections = merged && kept('daily').length ? of('daily').reduce((n, r) => n + JSON.parse(r.data).corrections, 0) / merged : undefined;
-  const defects = rows.filter((r) => r.ts && JSON.parse(r.data).kind === 'defect');
+  const isDefect = (r) => ['defect', 'complaint'].includes(JSON.parse(r.data).kind), defects = rows.filter((r) => r.ts && isDefect(r));
   return { ...prs, ...out, ...stageHours(rows, window), ...(corrections !== undefined && { corrections_per_merge: corrections, ...(v.corrections_per_session == null && { corrections_per_session: corrections }) }),
     interventions_per_merge: merged ? (out.decisions + out.blocks + out.steers) / merged : null,
-    ...(defects.length && { defects: (v.defects ?? 0) + of('defect').length }) };
+    ...(defects.length && { defects: (v.defects ?? 0) + inWindow(rows.filter(isDefect), window).length }) };
 }

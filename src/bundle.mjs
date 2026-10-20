@@ -63,6 +63,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
     const key = keyed(r);
     return `at ${key ? redact(key) : 'an unknown path'}`;
   };
+  const work = (r) => (r.data && JSON.parse(r.data).work ? `, about ${redact(JSON.parse(r.data).work)}` : ''); // a captain complaint names the work it points at
   const sections = [
     ['Metrics', 'No metrics.', [...metrics].map(([name, v]) => `| ${redact(name)} | ${v.current ?? 'n/a'} | ${v.previous ?? 'n/a'} | ${redact(v.target ?? '')} |`),
       '| metric | this window | last window | target |\n| --- | --- | --- | --- |\n'],
@@ -74,7 +75,7 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
       return [`### [c${i + 1}] ${redact(key)}: ${es.length} events, ${new Set(es.map((e) => e.session_id)).size} sessions, ${new Set(es.map((e) => e.ts.slice(0, 10))).size} days, causes: ${causes}`, ...lines, ...more].join('\n');
     })],
     ['Unlabelled defect records', 'No record in this window lacks a label.', records.map((r) =>
-      `- [${r.record_id}] ${redact(r.source)} ${at(r)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${quote(r.text)}`)],
+      `- [${r.record_id}] ${redact(r.source)} ${at(r)}, ${r.ts ? redact(r.ts.slice(0, 10)) : 'no date'}${work(r)}${quote(r.text)}`)],
   ];
   // The headings are always written, so their length is kept out of the room for items first.
   const cap = cfg.caps.bundle_chars, heads = sections.map(([title, empty, list, head = '']) => `\n## ${title}\n\n${list.length ? head : `${empty}\n`}`);
