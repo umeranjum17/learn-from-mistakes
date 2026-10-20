@@ -757,7 +757,7 @@ test('init refuses a model that starts with a dash, at --model and --judge-model
   }
 });
 
-const SKILL = readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8');
+const SKILL = readFileSync(new URL('../skills/lfm-retro/SKILL.md', import.meta.url), 'utf8');
 const PICK2 = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'codex', '--judge-model', MODELS.codex];
 
 test('init installs the skill into each configured agent\'s own skills dir; a second init writes nothing; doctor shows the skill ok', () => {
@@ -765,7 +765,7 @@ test('init installs the skill into each configured agent\'s own skills dir; a se
   const out = JSON.parse(lfm('init', '-y', '--json', ...PICK2).stdout);
   assert.equal(out.skills.length, 2);
   for (const root of [join(env.HOME, '.claude', 'skills'), join(env.HOME, '.codex', 'skills')]) {
-    const file = join(root, 'learn-from-mistakes', 'SKILL.md');
+    const file = join(root, 'lfm-retro', 'SKILL.md');
     assert.ok(out.skills.includes(file), `${file} listed`);
     assert.equal(readFileSync(file, 'utf8'), SKILL);
   }
@@ -786,6 +786,25 @@ test('init installs the skill into each configured agent\'s own skills dir; a se
   assert.deepEqual(['skill claude', 'skill codex'].map((l) => doctor.checks.find((c) => c.label === l)?.level), ['ok', 'ok']);
 });
 
+test('init moves the learn-from-mistakes skill it wrote to lfm-retro once, and leaves one it did not write', () => {
+  const { lfm, env } = setup(['claude', 'codex']);
+  const old = join(env.HOME, '.claude', 'skills', 'learn-from-mistakes');
+  mkdirSync(old, { recursive: true });
+  writeFileSync(join(old, 'SKILL.md'), SKILL.replace('name: lfm-retro', 'name: learn-from-mistakes').replace(/version: .*/, 'version: 0.1.0'));
+  const handmade = join(env.HOME, '.codex', 'skills', 'learn-from-mistakes');
+  const mine = '---\nname: learn-from-mistakes\n---\nmy own skill\n';
+  mkdirSync(handmade, { recursive: true });
+  writeFileSync(join(handmade, 'SKILL.md'), mine);
+  const first = lfm('init', '-y', ...PICK2);
+  assert.equal(first.status, 0, first.stderr);
+  assert.ok(first.stdout.split('\n').includes(`skill: moved ${old} to lfm-retro`), first.stdout);
+  assert.ok(!existsSync(old), 'the old dir is gone');
+  assert.equal(readFileSync(join(env.HOME, '.claude', 'skills', 'lfm-retro', 'SKILL.md'), 'utf8'), SKILL);
+  assert.equal(readFileSync(join(handmade, 'SKILL.md'), 'utf8'), mine); // not written by this tool: untouched
+  assert.equal(readFileSync(join(env.HOME, '.codex', 'skills', 'lfm-retro', 'SKILL.md'), 'utf8'), SKILL);
+  assert.doesNotMatch(lfm('init').stdout, /moved/); // the move happens once
+});
+
 test('a symlinked skills dir gets one real file; --no-skill writes none; --project-skill writes the project dirs', () => {
   const { p, lfm, env } = setup(['claude', 'opencode']);
   mkdirSync(join(env.HOME, '.agents', 'skills'), { recursive: true });
@@ -794,18 +813,18 @@ test('a symlinked skills dir gets one real file; --no-skill writes none; --proje
   const out = JSON.parse(lfm('init', '-y', '--json', ...PICK_OP).stdout);
   assert.equal(out.skills.length, 2); // claude through the symlink, and opencode
   assert.equal(new Set(out.skills.map((f) => realpathSync(f))).size, 2);
-  assert.equal(realpathSync(join(env.HOME, '.claude', 'skills', 'learn-from-mistakes', 'SKILL.md')),
-    realpathSync(join(env.HOME, '.agents', 'skills', 'learn-from-mistakes', 'SKILL.md')));
-  const opencodeFile = join(env.HOME, '.config', 'opencode', 'skills', 'learn-from-mistakes', 'SKILL.md');
+  assert.equal(realpathSync(join(env.HOME, '.claude', 'skills', 'lfm-retro', 'SKILL.md')),
+    realpathSync(join(env.HOME, '.agents', 'skills', 'lfm-retro', 'SKILL.md')));
+  const opencodeFile = join(env.HOME, '.config', 'opencode', 'skills', 'lfm-retro', 'SKILL.md');
   const opencodeBytes = readFileSync(opencodeFile);
-  rmSync(join(env.HOME, '.agents', 'skills', 'learn-from-mistakes'), { recursive: true, force: true });
+  rmSync(join(env.HOME, '.agents', 'skills', 'lfm-retro'), { recursive: true, force: true });
   assert.deepEqual(JSON.parse(lfm('init', '-y', '--no-skill', '--json').stdout).skills, []);
-  assert.ok(!existsSync(join(env.HOME, '.agents', 'skills', 'learn-from-mistakes', 'SKILL.md')), '--no-skill wrote nothing');
+  assert.ok(!existsSync(join(env.HOME, '.agents', 'skills', 'lfm-retro', 'SKILL.md')), '--no-skill wrote nothing');
   assert.deepEqual(readFileSync(opencodeFile), opencodeBytes); // and changed nothing
   const proj = JSON.parse(lfm('init', '-y', '--project-skill', '--json').stdout).skills;
   assert.equal(proj.length, 2);
   for (const root of [join(p, '.claude', 'skills'), join(p, '.agents', 'skills')]) {
-    const file = join(root, 'learn-from-mistakes', 'SKILL.md');
+    const file = join(root, 'lfm-retro', 'SKILL.md');
     assert.ok(proj.includes(file), `${file} listed`);
     assert.equal(readFileSync(file, 'utf8'), SKILL);
   }

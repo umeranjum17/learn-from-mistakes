@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// The one source of skills/learn-from-mistakes/SKILL.md. `npm run build:skill` writes it;
+// The one source of skills/lfm-retro/SKILL.md. `npm run build:skill` writes it;
 // `npm run build:skill -- --check` exits 1 when the committed copy differs.
 // The skill is thin: init, doctor, retro, read report.txt, then record a change; `<bin> guide` prints the same steps for the installed version.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const file = new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url);
+const file = new URL('../skills/lfm-retro/SKILL.md', import.meta.url);
 const bin = pkg.name, npx = `npx -y ${bin}`;
 const description = `Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the ${bin} CLI. Use when the user asks what keeps going wrong, wants a retro, or wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills.`;
 
 const skill = `---
-name: learn-from-mistakes
+name: lfm-retro
 description: ${JSON.stringify(description)}
 license: ${pkg.license}
 metadata:
@@ -41,12 +41,12 @@ The user chooses the tool's agents and models; never choose one (full contract: 
 
 $ARGUMENTS
 
-If the request above is non-empty, the user invoked \`/learn-from-mistakes\` explicitly: run the steps above, then answer that request from the retro's report.
+If the request above is non-empty, the user invoked \`/lfm-retro\` explicitly: run the steps above, then answer that request from the retro's report.
 If it is empty, run the steps above in the project you are in.
 `;
 
 if (!process.argv.includes('--check')) writeFileSync(file, skill);
 else if (readFileSync(file, 'utf8') !== skill) {
-  console.error('skills/learn-from-mistakes/SKILL.md is stale\nnext: npm run build:skill   # regenerate it from scripts/build-skill.mjs');
+  console.error('skills/lfm-retro/SKILL.md is stale\nnext: npm run build:skill   # regenerate it from scripts/build-skill.mjs');
   process.exit(1);
 }

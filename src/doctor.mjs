@@ -11,7 +11,7 @@ import * as byokit from './runners/byokit.mjs';
 import { globalFile, loadConfig, PROJECT_FILE, SOURCES } from './config.mjs';
 import { agents, binName, chooseFix, detect, KEY, resolveRoles, runnerKey, RUNNERS, which } from './runners/index.mjs';
 import { atLeast, SIGNOFF_MIN } from './signoff.mjs';
-const SKILL = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
+const SKILL = fileURLToPath(new URL('../skills/lfm-retro/SKILL.md', import.meta.url));
 
 export async function doctor(dir, opts) {
   const checks = [];
@@ -96,8 +96,8 @@ export async function doctor(dir, opts) {
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.
   const used = new Set([roles.worker.runner, roles.judge.runner]);
   for (const a of list.filter((x) => used.has(x.runner) && x.usable && RUNNERS[x.runner].skills)) {
-    const home = join(RUNNERS[a.runner].skills(process.env), 'learn-from-mistakes');
-    const at = [home, join(dir, '.claude', 'skills', 'learn-from-mistakes'), join(dir, '.agents', 'skills', 'learn-from-mistakes')].find((d) => existsSync(join(d, 'SKILL.md')));
+    const home = join(RUNNERS[a.runner].skills(process.env), 'lfm-retro');
+    const at = [home, join(dir, '.claude', 'skills', 'lfm-retro'), join(dir, '.agents', 'skills', 'lfm-retro')].find((d) => existsSync(join(d, 'SKILL.md')));
     add(at ? 'ok' : 'warn', `skill ${a.runner}`, at ? join(at, 'SKILL.md') : `not installed in ${home}`, `mkdir -p ${shq(home)} && cp ${shq(SKILL)} ${shq(`${home}/`)}`);
   }
   // The peer minimum: an older sign-off-axi takes no finding, so its questions stay in report.txt like an absent one.

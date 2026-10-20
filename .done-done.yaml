@@ -12,3 +12,7 @@ journeys:
     command: "npm ci > \"$DONE_DONE_EVIDENCE_ROOT/npm-ci.log\" 2>&1 && node scripts/verify-journeys.mjs"
   package:
     command: "npm ci > \"$DONE_DONE_EVIDENCE_ROOT/npm-ci.log\" 2>&1 && node scripts/verify-journeys.mjs --package"
+# The sign-off board the journeys write keys each finding as lfm-<run>-<n>-<hash>: an id, not a secret.
+secrets:
+  allow:
+    - 'lfm-\d+-\d+-[0-9a-f]+'

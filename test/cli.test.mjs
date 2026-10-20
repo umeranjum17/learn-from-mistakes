@@ -2225,7 +2225,7 @@ test('the CLI, its guide and the shipped skill say the user sets the agents: no 
   assert.match(ask.stderr, /Then run the command that stopped again/);
   const check = spawnSync(process.execPath, [new URL('../scripts/build-skill.mjs', import.meta.url).pathname, '--check'], { encoding: 'utf8' });
   assert.equal(check.status, 0, check.stderr);
-  const skill = readFileSync(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url), 'utf8');
+  const skill = readFileSync(new URL('../skills/lfm-retro/SKILL.md', import.meta.url), 'utf8');
   for (const text of [raw('--help').stdout, raw('guide').stdout, skill]) {
     assert.doesNotMatch(text, /\bauto\b/);
     assert.doesNotMatch(text, /default model|cheap model|cheap default|as the default/);

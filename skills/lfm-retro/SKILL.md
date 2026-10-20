@@ -1,5 +1,5 @@
 ---
-name: learn-from-mistakes
+name: lfm-retro
 description: "Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro, or wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills."
 license: MIT
 metadata:
@@ -30,5 +30,5 @@ The user chooses the tool's agents and models; never choose one (full contract: 
 
 $ARGUMENTS
 
-If the request above is non-empty, the user invoked `/learn-from-mistakes` explicitly: run the steps above, then answer that request from the retro's report.
+If the request above is non-empty, the user invoked `/lfm-retro` explicitly: run the steps above, then answer that request from the retro's report.
 If it is empty, run the steps above in the project you are in.
