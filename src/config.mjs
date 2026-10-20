@@ -65,7 +65,7 @@ const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with an effort flag
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
 // in a cloned repo cannot run a program of its choosing.
-const AGENT_KEYS = ['agent', 'judge_agent', 'agent_config', 'agent_timeout'];
+const AGENT_KEYS = ['agent', 'judge_agent', 'judge_model', 'agent_config', 'agent_timeout'];
 const GLOBAL_ONLY = ['auto_fix', 'state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
 
 // Applies the agent keys one file sets onto cfg, and records that file in cfg.from as the place to change each one.
@@ -88,6 +88,14 @@ function agentKeys(cfg, g, file) {
     cfg.from[`agent_config.${a}`] = file;
     if (c.model !== undefined) cfg.from[`agent_config.${a}.model`] = file;
   }
+  // judge_model: the model the judge runs when it should differ from agent_config's model for its agent (a cheap worker and a
+  // stronger judge on one agent). It is checked against the judge agent in force once every file is read.
+  if (g.judge_model !== undefined) {
+    check(typeof g.judge_model === 'string', `${file}: judge_model`, MODEL_RULE);
+    cfg.judge_model = g.judge_model;
+    cfg.from.judge_model = file;
+  }
+  if (cfg.judge_model) check(modelOk(cfg.judge_agent, cfg.judge_model), `${cfg.from.judge_model}: judge_model`, MODEL_RULE);
   if (g.agent_timeout !== undefined) {
     check(typeof g.agent_timeout === 'string' && /^[1-9]\d*[smh]$/.test(g.agent_timeout), `${file}: agent_timeout`, 'a duration such as 90s, 20m or 1h');
     cfg.agent_timeout = g.agent_timeout;
@@ -108,7 +116,7 @@ export function loadGlobal() {
   const agent_args_override = mapping(g.agent_args_override ?? {}, [...AGENTS, 'acp'], `${file}: agent_args_override`);
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
-    agent: '', judge_agent: '', agent_config: {}, agent_timeout: '20m', auto_fix: 0, from: {} };
+    agent: '', judge_agent: '', judge_model: '', agent_config: {}, agent_timeout: '20m', auto_fix: 0, from: {} };
   if (g.auto_fix !== undefined) { check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)'); cfg.auto_fix = g.auto_fix; }
   return agentKeys(cfg, g, file);
 }

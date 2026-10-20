@@ -235,16 +235,25 @@ test('init states a saved model that replaces the model the other role ran', () 
   const first = a.lfm('init', '-y', '--no-skill'); // the global file holds the roles; the project file sets no agent keys
   assert.equal(first.status, 0, first.stderr);
   assert.equal(parse(readFileSync(a.config, 'utf8')).agent, undefined);
-  const r = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'claude-sonnet-6', '--no-skill');
+  // The judge on the worker's agent with another model keeps the worker's model: the judge's is judge_model.
+  const r = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'claude-sonnet-6', '--no-skill', '--json');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^note: worker on claude now uses claude-sonnet-6 \(was claude-haiku-5-5\): one model per agent$/m);
+  assert.deepEqual(JSON.parse(r.stdout).notes, []);
+  assert.deepEqual([JSON.parse(r.stdout).worker, JSON.parse(r.stdout).judge], [{ runner: 'claude', model: MODELS.claude }, { runner: 'claude', model: 'claude-sonnet-6' }]);
   const yaml = parse(readFileSync(a.config, 'utf8'));
-  assert.deepEqual([yaml.judge_agent, yaml.agent_config], ['claude', { claude: { model: 'claude-sonnet-6' } }]);
-  const again = a.lfm('init', '--judge-agent', 'claude', '--judge-model', 'gpt-6-luna', '--reconfigure', '--no-skill', '--json');
-  assert.equal(again.status, 0, again.stderr);
-  assert.deepEqual(JSON.parse(again.stdout).notes, ['worker on claude now uses gpt-6-luna (was claude-sonnet-6): one model per agent']);
+  assert.deepEqual([yaml.judge_agent, yaml.judge_model, yaml.agent_config], ['claude', 'claude-sonnet-6', undefined]);
+  // The judge's model the same as the worker's is no split: it replaces the judge_model, the worker's model stays.
+  const same = a.lfm('init', '--judge-agent', 'claude', '--judge-model', MODELS.claude, '--reconfigure', '--no-skill', '--json');
+  assert.equal(same.status, 0, same.stderr);
+  assert.deepEqual(JSON.parse(same.stdout).notes, []);
+  const reread = parse(readFileSync(a.config, 'utf8'));
+  assert.deepEqual([reread.judge_model, reread.agent_config.claude.model], [undefined, MODELS.claude]);
+  // A worker model that replaces the one the judge ran on the same agent (it has no judge_model) is stated.
+  const moved = a.lfm('init', '--agent', 'claude', '--model', 'gpt-6-luna', '--reconfigure', '--no-skill', '--json');
+  assert.equal(moved.status, 0, moved.stderr);
+  assert.deepEqual(JSON.parse(moved.stdout).notes, [`judge on claude now uses gpt-6-luna (was ${MODELS.claude}): one model per agent`]);
 
-  // The terminal pick: the judge picks the worker's already-configured agent, and its model replaces the worker's.
+  // The terminal pick: the judge picks the worker's already-configured agent and another model: it is the judge's own.
   const b = setup(['claude', 'opencode'], `agent: claude\nagent_config: { claude: { model: ${JSON.stringify(MODELS.claude)} } }\n`);
   const seeded = b.lfm('init', '-y', '--no-skill');
   assert.equal(seeded.status, 0, seeded.stderr);
@@ -252,8 +261,9 @@ test('init states a saved model that replaces the model the other role ran', () 
   const picked = spawnSync('/usr/bin/script', ['-qec', `${process.execPath} ${CLI} init --no-skill --dir ${b.p}`, '/dev/null'],
     { encoding: 'utf8', input: answers, env: { ...b.env, SHELL: '/bin/sh', TERM: 'dumb' }, cwd: b.tmp, timeout: 30000 });
   assert.equal(picked.status, 0, picked.stdout);
-  assert.match(picked.stdout, /note: worker on claude now uses claude-sonnet-6 \(was claude-haiku-5-5\): one model per agent/);
-  assert.deepEqual(parse(readFileSync(b.config, 'utf8')).agent_config, { claude: { model: 'claude-sonnet-6' } });
+  assert.doesNotMatch(picked.stdout, /note: /);
+  const pickedYaml = parse(readFileSync(b.config, 'utf8'));
+  assert.deepEqual([pickedYaml.judge_model, pickedYaml.agent_config], ['claude-sonnet-6', undefined]); // the worker's model stays in the global file
 });
 
 // The sessions question is asked once: an empty answer (none) is carried into the rerun that saves the roles, so the
@@ -446,10 +456,9 @@ test('an unusable judge is not named as seeing excerpts', () => {
   assert.match(r.stdout, /^excerpts on: the worker \(claude\) and the judge \(codex, not usable\) see redacted record excerpts/m);
 });
 
-test('init refuses two models for one agent, an unknown or unusable agent and a bad model, and writes nothing', () => {
+test('init refuses an unknown or unusable agent and a bad model, and writes nothing', () => {
   const { p, lfm, config, env } = setup(['claude', 'opencode', 'gemini']);
-  for (const [args, code, error] of [ // one agent in both roles with two models: agent_config holds one model per agent
-    [['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'claude', '--judge-model', 'claude-umer-2'], 2, `error: --model ${MODELS.claude} and --judge-model claude-umer-2 both set the model of claude, and agent_config holds one model per agent`],
+  for (const [args, code, error] of [
     [['--agent', 'umer'], 2, 'error: --agent "umer" must be an agent: claude, codex, opencode, pi, gemini, acp:<target> or byokit:<route>'],
     [['--model', MODELS.claude], 2, 'error: --model needs --agent'],
     [['--agent', 'opencode', '--model', 'muse'], 2, 'error: --model "muse" must be a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode'],
@@ -462,7 +471,6 @@ test('init refuses two models for one agent, an unknown or unusable agent and a 
     assert.match(r.stderr, /^next: /m);
     assert.ok(!existsSync(config), `${args.join(' ')} wrote a config`);
     assert.ok(!existsSync(join(env.LFM_HOME, 'config.yaml')), `${args.join(' ')} wrote the global config`);
-    if (args[5] === 'claude') assert.equal(r.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent claude --model <model> --judge-agent claude --dir ${p}   # ask the user which one model claude runs, or another agent for the judge`);
   }
   writeFileSync(config, `agent: claude\njudge_agent: opencode\nsources: {}\ncauses: {}\nagent_config: { claude: { model: ${MODELS.claude} }, opencode: { model: ${MODELS.opencode} } }\n`); // a set key is never rewritten: the flags that would change it are reported
   const pinned = lfm('init', '--agent', 'opencode', '--judge-agent', 'claude', '--json');

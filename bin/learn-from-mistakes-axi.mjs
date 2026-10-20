@@ -441,9 +441,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --agent <agent>     (init) save agent: <agent> in the project file; the user's choice, never
                       picked by the tool
   --model <model>     (init) save agent_config.<agent>.model for that agent
-  --judge-agent <agent>  (init) save judge_agent: <agent>; it may be the worker's agent, which
-                         then runs its one model (one model per agent)
-  --judge-model <model>  (init) save agent_config.<judge agent>.model
+  --judge-agent <agent>  (init) save judge_agent: <agent>; it may be the worker's agent
+  --judge-model <model>  (init) save the judge's model: agent_config.<judge agent>.model, or
+                         judge_model when the judge shares the worker's agent and the models differ
   --sessions <agent>,...  (init) read these agents' sessions (claude, codex, opencode, pi, gemini);
                            the user's choice, never picked by the tool
   --reconfigure       (init) re-apply --agent, --model, --judge-agent, --judge-model and --sessions
@@ -507,7 +507,8 @@ sources, AGENTS.md, CLAUDE.md or skills.
 6. Once the user has made a change: learn-from-mistakes-axi change applied
    --proposal <run>:<n> --ref <git sha>
 
-The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model);
+The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model, and
+judge_model: when the judge should run a stronger model than that);
 the tool never picks one. Both always run: there is no mode without them. A run whose worker or
 judge fails keeps no verdict; fix the agent, then run the command again.
 When a command stops with "ask the user which agent to use", ask the user which agent and model
