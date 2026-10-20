@@ -135,6 +135,8 @@ const globalText = `# learn-from-mistakes global configuration
 # state_root: ~/.learn-from-mistakes/state
 `;
 
+const FLEET_REPOS = ['muxr', 'sign-off', 'byokit', 'crewhouse', 'firstmate-addons'].map((r) => `umeranjum17/${r}`);
+
 // Writes the global file and the project config when each is missing; a file that exists is never rewritten, except
 // that the agents the user chose (--agent, --judge-agent and their --model flags, or a terminal's pick) are saved into a
 // project config that does not set them yet. The tool never picks an agent: with none chosen, a gap says to ask the user.
@@ -154,6 +156,7 @@ export async function init(dir, opts) {
   if (opts.firstmate) { // opt-in only: a Firstmate home is never detected
     if (!statSync(opts.firstmate, { throwIfNoEntry: false })?.isDirectory()) throw new UsageError(`--firstmate ${opts.firstmate}: not a directory`, 'learn-from-mistakes-axi init --firstmate <home>   # the Firstmate home folder that holds state/');
     found.home = { type: 'firstmate', path: opts.firstmate, ...(opts.fleet && { fleet: true }) };
+    if (found.prs) found.prs = { ...found.prs, repos: FLEET_REPOS }; // a Firstmate fleet merges in more than one repo
   }
   // The keys the flags choose: on a new project config, each one given; on one that exists, only a key the project file
   // does not set yet (its agent, or its agent's model), so a global agent never blocks a project override -- unless

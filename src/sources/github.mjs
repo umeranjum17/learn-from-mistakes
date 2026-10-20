@@ -3,6 +3,8 @@
 // record: its title and body (redacted; empty with `excerpts: off`), with the facts its metrics count in `data`. A later
 // merged PR whose title starts with "Revert" (Reverts, Reverted) and names #N reverts PR N; a later merged PR whose title
 // starts with "fix" (fix:, fix(scope):, Fixes, Fixed) and names #N is an escape from it.
+// With `repos: [owner/name, ...]` the source reads each of those repos instead (a PR's id and ref then carry its repo);
+// without it, the repo `origin` names.
 // A PR with more than 100 commits is read from its first 100 and marked partial.
 // The repo's GitHub Actions runs created in the read range are read through the REST API, one record each (data.kind
 // "ci", kept apart from the PRs so the agents never see them): its workflow, conclusion, attempts, and for a run that failed or was rerun, the jobs that failed in its last
@@ -11,7 +13,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
-import { mapping, PROJECT_FILE } from '../config.mjs';
+import { check, mapping, PROJECT_FILE } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
 import { which } from '../runners/index.mjs';
@@ -31,7 +33,11 @@ const JOB_RUNS = 200;
 const FAILED = ['failure', 'timed_out', 'startup_failure'], DONE = ['success', ...FAILED]; // a cancelled, skipped or neutral run is neither
 const lines = (p) => p.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
-export const validate = (s, where, dir) => ({ ...mapping(s, ['type'], where), dir });
+export function validate(s, where, dir) {
+  const { repos } = mapping(s, ['type', 'repos'], where);
+  if (repos !== undefined) check(Array.isArray(repos) && repos.length && repos.every((x) => typeof x === 'string' && /^[\w.-]+\/[\w.-]+$/.test(x)), `${where}.repos`, 'a list of owner/name');
+  return { ...s, dir };
+}
 
 // The host, owner and name of a GitHub `origin` (https, ssh or scp form); undefined for any other remote. The URL
 // itself is never shown: it can hold a token.
@@ -56,12 +62,26 @@ export function detect(dir) {
   return { prs: { type: 'github' } };
 }
 
-export async function read(source, { dir }, { readFrom = 0, excerpts = true, project = PROJECT_FILE } = {}) {
+export async function read(source, { dir, repos }, { readFrom = 0, excerpts = true, project = PROJECT_FILE } = {}) {
   const fail = (why, fix) => { throw new UsageError(`source ${source}: ${why}`, `remove sources.${source} from ${shq(project)}, or ${fix}`); };
-  const r = repo(dir);
-  if (!r) fail(`the project's git origin is not a GitHub repo`, 'git remote add origin https://github.com/<owner>/<repo>');
+  const origin = repos ? undefined : repo(dir);
+  if (!repos && !origin) fail(`the project's git origin is not a GitHub repo`, 'git remote add origin https://github.com/<owner>/<repo>');
   const bin = which('gh');
   if (!bin) fail('gh is not on PATH', 'install the GitHub CLI (https://cli.github.com), then gh auth login');
+  const host = repo(dir)?.host ?? 'github.com';
+  const list = origin ? [origin] : repos.map((x) => ({ host, owner: x.split('/')[0], name: x.split('/')[1] }));
+  const prs = [], ci = { rows: [], missing: [] };
+  for (const r of list) {
+    prs.push(...readPrs(bin, r, source, readFrom, excerpts, !!repos, fail));
+    const c = readRuns(bin, r, source, readFrom);
+    ci.rows.push(...c.rows);
+    ci.missing.push(...c.missing);
+  }
+  return { prs, ci: ci.rows, ...(ci.missing.length && { missing: ci.missing }), hash: createHash('sha256').update(JSON.stringify([prs, ci.rows])).digest('hex') };
+}
+
+// The PRs of one repo merged since `readFrom`; with `qualify` (a repos list) an id and ref carry the repo, as numbers repeat across repos.
+function readPrs(bin, r, source, readFrom, excerpts, qualify, fail) {
   const nodes = new Map(); // by number: a PR updated between two page reads moves up and comes back on the next page
   for (let after = null; ;) {
     const p = gh(bin, r, ['api', 'graphql', '-f', `query=${QUERY}`, '-f', `owner=${r.owner}`, '-f', `name=${r.name}`, ...(after ? ['-f', `after=${after}`] : [])]);
@@ -85,15 +105,15 @@ export async function read(source, { dir }, { readFrom = 0, excerpts = true, pro
     // A commit after the PR opened is rework; it is CI rework when the commit before it had failing checks.
     const own = commits.filter((c) => c.parents.totalCount < 2);
     const rework = own.map((c, i) => Date.parse(c.authoredDate) > opened && (['FAILURE', 'ERROR'].includes(own[i - 1]?.statusCheckRollup?.state) ? 'ci' : 'other'));
-    return { source, id: n.number, ts: n.mergedAt, ref: `PR #${n.number}`, text: excerpts ? redact(`${n.title}\n\n${n.body ?? ''}`.trim()) : '', data: {
+    const at = `${qualify ? `${r.owner}/${r.name}` : ''}#${n.number}`;
+    return { source, id: qualify ? at : n.number, ts: n.mergedAt, ref: `PR ${at}`, text: excerpts ? redact(`${n.title}\n\n${n.body ?? ''}`.trim()) : '', data: {
       bot: n.author?.__typename === 'Bot', hours: (Date.parse(n.mergedAt) - opened) / 3_600_000,
       rework_ci: rework.filter((x) => x === 'ci').length, rework_other: rework.filter((x) => x === 'other').length,
       reverted: later(/^revert(s|ed)?\b/i, n), escaped: later(/^fix(es|ed)?\b/i, n),
       partial: n.commits.totalCount > commits.length, labels: n.labels.nodes.map((l) => l.name),
       changes_requested: n.reviews.nodes.filter((v) => v.state === 'CHANGES_REQUESTED').length } };
   });
-  const ci = readRuns(bin, r, source, readFrom);
-  return { prs: rows, ci: ci.rows, ...(ci.missing.length && { missing: ci.missing }), hash: createHash('sha256').update(JSON.stringify([rows, ci.rows])).digest('hex') };
+  return rows;
 }
 
 // The Actions runs created since `readFrom`, as records; `missing` names what could not be read. GitHub lists at most 1000 runs a search.

@@ -223,6 +223,27 @@ test('a missing or logged-out gh and a non-GitHub origin fail the source with th
   assert.deepEqual([JSON.parse(init.stdout).sources, JSON.parse(init.stdout).skipped], [{}, []]);
 });
 
+test('a repos list reads each repo\'s PRs and Actions runs; init --firstmate defaults to the fleet\'s five', () => {
+  const { tmp, p, lfm, calls } = setup();
+  const home = join(tmp, 'fm-home');
+  mkdirSync(join(home, 'state'), { recursive: true });
+  const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', home, '--json');
+  assert.equal(init.status, 0, init.stderr);
+  assert.deepEqual(parse(readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')).sources.prs.repos, ['muxr', 'sign-off', 'byokit', 'crewhouse', 'firstmate-addons'].map((r) => `umeranjum17/${r}`));
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github, repos: [umer/app-a, umer/app-b] }\n');
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const run = JSON.parse(r.stdout);
+  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 26 }]); // 13 merged PRs and a PR number each repo shares, kept apart by repo
+  const names = calls().flatMap((c) => c.filter((a) => a.startsWith('name=')));
+  assert.deepEqual([...new Set(names)].sort(), ['name=app-a', 'name=app-b']);
+  const m = Object.fromEntries(run.metrics.map((x) => [x.name, x.current]));
+  assert.equal(m['ci_failure_rate:umer/app-a'], 50);
+  assert.equal(m['ci_failure_rate:umer/app-b'], 50);
+  assert.equal(m.merged, 20);
+  assert.match(lfm({}, 'doctor').stdout, /26 PRs merged/);
+});
+
 // A synthetic Firstmate home: 3 status files (one with CRLF ends) and 5 inbox messages (one acknowledged into handled/), a
 // defect log and a targets file. Lines with no stamp take the one above; an entry with no time, a stamp that is not digits
 // or one out of range is skipped.
