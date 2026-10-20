@@ -9,6 +9,7 @@
 // messages, and the corrections. A home that lacks either file reads without it. A message with no at= line is timed by
 // the epoch its file name starts with, as Firstmate names handled messages `<epoch>-<id>.msg`. <home>/config/targets.tsv, one
 // `metric<TAB>op<TAB>target<TAB>owner<TAB>rule` line per target, overrides the config's targets.
+// A status line also opens a stage (src/stages.mjs) that lasts until the next line's stamp; its hours feed the stage metrics.
 // An entry with no time is skipped and counted.
 // With fleet: true the source reads the whole fleet: the home it names (the main home, whose targets count) and each
 // secondmate home its data/secondmates.md lists, one `- <id> - <summary> (home: <absolute path>; ...)` line each; a
@@ -23,6 +24,7 @@ import { readText, shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs
 import { pathSource, RULE } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 import { excerpt, redact } from '../redact.mjs';
+import { STAGES, STAGE_METRICS, stageOf, WORKING } from '../stages.mjs';
 import * as github from './github.mjs';
 import * as markdownLog from './markdown-log.mjs';
 
@@ -138,12 +140,21 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
   };
   for (const f of files.filter((n) => /^[^/]+\.status$/.test(n))) {
     let when = NaN;
+    const lines = [];
     (read1(join(state, f)) ?? '').split(/\r?\n/).forEach((line, i) => {
       const m = line.match(/^([a-z-]+)((?: \[[^\]]*\])*): (.*)$/);
       if (!m) return;
       const stamp = m[2].match(/\[at=([^\]]*)\]/)?.[1];
       if (stamp !== undefined) when = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : NaN; // a stamp that is not digits is no time
       if (Object.hasOwn(KINDS, m[1])) add(when, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
+      lines.push({ when, line: i + 1, stage: stageOf(m[1], m[3]) });
+    });
+    // Each line's stage lasts until the next line's stamp. The last line has no end, and a line with no stamp, or a stamp
+    // before the line above, times nothing; so a task still open, or a file with no stamps, adds no stage.
+    const task = createHash('sha256').update(f).digest('hex').slice(0, 8);
+    lines.slice(0, -1).forEach(({ when: from, line, stage }, i) => {
+      const hours = (lines[i + 1].when - from) / 3_600_000;
+      if (stage && Number.isFinite(from) && hours > 0) add(from, `${f}:${line}:stage`, `${join(state, f)}:${line}`, 'stage', '', undefined, { stage, hours, task });
     });
   }
   for (const f of files.filter((n) => /^[^/]+\.inbox\/(handled\/)?[^/]+\.msg$/.test(n))) {
@@ -192,13 +203,25 @@ export function doctor(source, entry, ctx) {
   return { level: 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${steers} steers, ${n('defect')} defect records${tables}, ${skipped} skipped (no time)` };
 }
 
+// The hours the tasks spent in each stage in the window, by the day the stage began, and the tasks timed; n/a with no timed
+// stage. The hours a merged PR stayed open (prs.tsv) give the merge wait when the home keeps that table, else the status
+// lines that wait on a merge do.
+function stageHours(rows, window) {
+  const kind = (k) => inWindow(rows.filter((r) => JSON.parse(r.data).kind === k), window).map((r) => JSON.parse(r.data));
+  const stages = kind('stage'), prs = kind('pr').filter((p) => Number.isFinite(p.hours));
+  const sum = (name) => stages.filter((x) => x.stage === name).reduce((n, x) => n + x.hours, 0);
+  if (!stages.length) return Object.fromEntries(STAGE_METRICS.map((m) => [m, null]));
+  return { [WORKING.metric]: sum('working'), ...Object.fromEntries(Object.entries(STAGES).map(([name, s]) => [s.metric, name === 'merge' && prs.length ? prs.reduce((n, p) => n + p.hours, 0) : sum(name)])),
+    tasks_timed: new Set(stages.map((x) => x.task)).size };
+}
+
 // decisions, blocks and steers in the window; interventions_per_merge is their sum over the PRs merged (n/a with no
 // merge). The home's dated defect records add to defects. With no github source, its prs.tsv gives the PR metrics (as the
 // github source computes them) and its daily.tsv gives corrections_per_session, over the PRs merged since the home
 // records no session count; a sessions source's own number wins. corrections_per_merge is the same corrections over the PRs
 // merged, whichever source counts the merges.
 export const metricNames = ['decisions', 'blocks', 'steers', 'interventions_per_merge', 'merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge',
-  'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped', 'corrections_per_session', 'corrections_per_merge'];
+  'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped', 'corrections_per_session', 'corrections_per_merge', ...STAGE_METRICS];
 export const addsTo = ['defects']; // the follow-up step reads this source's records for these metrics too
 export const metricRows = 'records';
 export function metrics(rows, window, v) {
@@ -208,7 +231,7 @@ export function metrics(rows, window, v) {
   const prs = v.merged == null && kept('pr').length ? github.metrics(kept('pr'), window) : {}, merged = v.merged ?? prs.merged;
   const corrections = merged && kept('daily').length ? of('daily').reduce((n, r) => n + JSON.parse(r.data).corrections, 0) / merged : undefined;
   const defects = rows.filter((r) => r.ts && JSON.parse(r.data).kind === 'defect');
-  return { ...prs, ...out, ...(corrections !== undefined && { corrections_per_merge: corrections, ...(v.corrections_per_session == null && { corrections_per_session: corrections }) }),
+  return { ...prs, ...out, ...stageHours(rows, window), ...(corrections !== undefined && { corrections_per_merge: corrections, ...(v.corrections_per_session == null && { corrections_per_session: corrections }) }),
     interventions_per_merge: merged ? (out.decisions + out.blocks + out.steers) / merged : null,
     ...(defects.length && { defects: (v.defects ?? 0) + of('defect').length }) };
 }

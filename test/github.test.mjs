@@ -106,7 +106,7 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.equal(r.status, 0, r.stderr);
   const run = JSON.parse(r.stdout);
   assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 13 }]); // 13 PRs merged in the range; #2 is older
-  const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries|cause_count:|gate_failures|decisions|blocks|steers|interventions)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
+  const numbers = Object.fromEntries(run.metrics.filter((m) => !/^(defects|tool_error|corrections|interrupts|retries|cause_count:|gate_failures|decisions|blocks|steers|interventions|hours_|tasks_timed)/.test(m.name)).map((m) => [m.name, [m.current, m.previous]]));
   assert.deepEqual(numbers, {
     merged: [10, 3], first_pass: [77.8, 33.3], p50_hours_to_merge: [1, 5], p90_hours_to_merge: [5, 10],
     rework_ci: [1, 0], rework_other: [1, 0], rework_per_merge: [0.2, 0], reverted: [1, 1], escaped: [1, 1],
@@ -430,4 +430,53 @@ test('a markdown-log source with no dated record is named by doctor and by the r
   const r = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(r.status, 0, r.stderr);
   assert.match(readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8'), /^- Source gate read 2 records and none has a date, so the window placed none of them\./m);
+});
+
+// Where the time goes: a Firstmate home's status lines give each task's stages (a line's stage lasts until the next line's
+// stamp), so the retro prints hours a stage and ranks the three longest waits with their cause and fix. A task still open
+// adds no stage for its last line, a line with no stamp adds none, and prs.tsv gives the merge wait when the home has it.
+test('a firstmate home times the stages of its tasks and the report names the three slowest waits', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), hoursAgo = (h) => `at=${Math.floor(NOW / 1000 - h * 3600)}`;
+  const put = (file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
+  put('state/alpha.status', [`working [${hoursAgo(30)}]: start`, `needs-decision [${hoursAgo(28)}]: pick a name`, `working [${hoursAgo(24)}]: name picked`,
+    `paused [${hoursAgo(20)}]: waiting on the pipeline checks`, `working [${hoursAgo(17)}]: checks green`, `blocked [${hoursAgo(16)}]: waiting for review round 1`,
+    `working [${hoursAgo(13)}]: review fixed`, `done [${hoursAgo(10)}]: PR open`].join('\n') + '\n');
+  put('state/beta.status', [`queued [${hoursAgo(40)}]: waiting for a slot`, `working [${hoursAgo(36)}]: start`, `blocked [${hoursAgo(34)}]: waiting on the tool host`,
+    `resolved [${hoursAgo(33)}]: host back`, 'working: a line with no stamp', `working [${hoursAgo(31)}]: still on it`].join('\n') + '\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
+  const retro = () => {
+    const r = lfm({}, 'retro', '--foreground', '--json');
+    assert.equal(r.status, 0, r.stderr);
+    const run = JSON.parse(r.stdout);
+    return { metrics: Object.fromEntries(run.metrics.map((x) => [x.name, x.current])), report: readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8') };
+  };
+  const stages = ['hours_working', 'hours_queued', 'hours_waiting_captain', 'hours_waiting_ci', 'hours_in_review', 'hours_blocked', 'hours_merge_wait', 'tasks_timed'];
+  let { metrics, report } = retro();
+  assert.deepEqual(stages.map((n) => metrics[n]), [14, 4, 4, 3, 3, 1, 0, 2]);
+  assert.match(report, /^- Where the time goes: 14 hours of work and 15 hours of waiting, over 2 tasks\.$/m);
+  assert.match(report, /^- Slowest wait 1, queued before a worker started: 4 hours, 27% of the waiting\.\n {3}Cause: .+\n {3}Fix: .+\n- Slowest wait 2, waiting for the captain: 4 hours, 27% of the waiting\.\n/m);
+  assert.match(report, /^- Slowest wait 3, waiting for CI: 3 hours, 20% of the waiting\.$/m);
+  assert.doesNotMatch(report, /Slowest wait 4/);
+
+  const day = (h) => new Date(NOW - h * 3_600_000).toISOString();
+  const row = (hours) => `umer\tdemo\t1\t${day(hours + 5)}\t${day(hours)}\t${hours}\t0\t1\t0\t0\t0\t0\t0\t0\t1\t\tUmer's demo page`;
+  put('data/metrics/prs.tsv', ['home\trepo\tpr\tcreated\tmerged\thours_to_merge\tbuild_hours\tcommits\tcommits_after_open\trework_ci\trework_pipeline\trework_other\treverted\tescaped\tfirst_pass\tbot\ttitle', row(2), row(4)].join('\n') + '\n');
+  ({ metrics, report } = retro());
+  assert.deepEqual([metrics.hours_merge_wait, metrics.hours_working], [6, 14]); // the PRs' open hours are the merge wait
+  assert.match(report, /^- Where the time goes: 14 hours of work and 21 hours of waiting, over 2 tasks\.$/m);
+  assert.match(report, /^- Slowest wait 1, with the PR open until merged: 6 hours, 29% of the waiting\.$/m);
+});
+
+test('a firstmate home whose tasks have one status line has no stage numbers and no time section', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home');
+  mkdirSync(join(home, 'state'), { recursive: true });
+  writeFileSync(join(home, 'state', 'alpha.status'), `needs-decision [at=${Math.floor(NOW / 1000 - 3600)}]: pick a name\nworking: no stamp\n`); // a stamped open task and a line with no stamp time nothing
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const run = JSON.parse(r.stdout);
+  assert.deepEqual(run.metrics.filter((m) => /^(hours_|tasks_)/.test(m.name)).map((m) => m.current), Array(8).fill('n/a'));
+  assert.doesNotMatch(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8'), /Where the time goes|Slowest wait/);
 });

@@ -9,9 +9,10 @@ import { isAbsolute, join, relative } from 'node:path';
 import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { counts, plain, RAW, splitSentences } from './check.mjs';
-import { inWindow } from './metrics.mjs';
+import { inWindow, rounded } from './metrics.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
+import { STAGES, WORKING } from './stages.mjs';
 
 const EVIDENCE = 3; // pointers shown per item; the rest are counted
 const DO = { keep: 'Keep it.', fix: 'Change it. The metric got better, but it missed the tripwire.', rollback: 'Roll it back.',
@@ -76,6 +77,14 @@ export function reportText(cfg, db, id, dir, window, run) {
   // Failing CI jobs by name, the worst first; the rest are counted.
   for (const m of jobs.slice(0, EVIDENCE * 3)) lines.push(`- CI job ${m.name.slice(JOB.length)}: failed ${plural(m.current, 'time')} this window, ${m.previous} last window, trend ${trend(m)}.`);
   if (jobs.length > EVIDENCE * 3) lines.push(`- ${plural(jobs.length - EVIDENCE * 3, 'more failing CI job')} not shown.`);
+  // Where the time goes: the work against the waits, then the three longest waits with their cause and the fix.
+  const hours = (metric) => run.metrics.find((m) => m.name === metric)?.current;
+  const waits = Object.values(STAGES).map((s) => ({ ...s, hours: hours(s.metric) })).filter((s) => typeof s.hours === 'number' && s.hours > 0).sort((a, b) => b.hours - a.hours);
+  if (typeof hours(WORKING.metric) === 'number') {
+    const waiting = waits.reduce((n, s) => n + s.hours, 0);
+    lines.push(`- Where the time goes: ${rounded(hours(WORKING.metric))} hours of work and ${rounded(waiting)} hours of waiting, over ${plural(hours('tasks_timed'), 'task')}.`);
+    waits.slice(0, 3).forEach((s, i) => lines.push(`- Slowest wait ${i + 1}, ${s.label}: ${rounded(s.hours)} hours, ${Math.round(100 * s.hours / waiting)}% of the waiting.`, `   Cause: ${s.cause}`, `   Fix: ${s.fix}`));
+  }
   // Each home of a fleet, by salted id: its share of the fleet numbers above, this window.
   const homes = new Map(run.sources.flatMap((s) => s.homes ?? []).map((h) => [h, {}]));
   for (const r of inWindow(all('SELECT ts, data FROM records WHERE run_id = ? AND ts IS NOT NULL'), { start: Date.parse(window.current_start) })) {
