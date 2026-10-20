@@ -4,25 +4,36 @@
 
 <p align="center">Find the mistakes your coding agents keep repeating, with evidence and a short list of changes to stop them.</p>
 
+<p align="center"><b><a href="https://umeranjum17.github.io/learn-from-mistakes/">Landing page</a></b> · <a href="https://www.npmjs.com/package/learn-from-mistakes-axi">npm</a> · part of the family with <a href="https://github.com/umeranjum17/sign-off">sign-off</a>, <a href="https://github.com/umeranjum17/first-draft">first-draft</a> and <a href="https://github.com/umeranjum17/done-done-axi">done-done</a></p>
+
+<p align="center"><img src="docs/media/retro.webp" width="560" alt="Terminal: the end of a retro run, with two repeated causes and three findings with the judge's verdicts"></p>
+
 `learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and names findings. A judge role checks each finding, then the worker proposes fixes for the findings the judge did not refute, and the judge checks each fix. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
 
 You, or your calling agent, start the retro and read its report. **Do not label or judge records yourself.** Unread records stay unlabelled, not guessed. Recommendations do not change your project by default.
 
 **The worker and the judge always run.** There is no judge-less or agent-less mode. With no agent set, the command stops and asks you to set one. If an agent is not ready, the retro does not start. If the worker or the judge fails, or the judge leaves a claim without a verdict, the run fails with an error and a `next:` line. A run that does not complete keeps no verdict, label, finding or fix.
 
-## Quick start
+## Install in 3 steps
 
 Requires Node **22.13+**, project records to read, and a ready agent for each of the two roles, with models **you choose**; one agent may run both roles. Install and sign in to those agents yourself. No skill, sign-off service or fleet manager is required.
 
 ```sh
+# 1. Install
 npm install -g learn-from-mistakes-axi
+
+# 2. Set up, in your project
 cd /path/to/your/project
 learn-from-mistakes-axi init --no-skill
 learn-from-mistakes-axi doctor
+
+# 3. Run the retro and read the report
 learn-from-mistakes-axi retro --wait 8m
 learn-from-mistakes-axi status
 learn-from-mistakes-axi report
 ```
+
+<p align="center"><img src="docs/media/doctor.webp" width="560" alt="Terminal: learn-from-mistakes-axi doctor lists ok lines for node, git, config, source, worker, judge and sign-off"></p>
 
 1. `init` asks for the worker, judge and their models in a terminal. It writes `.learn-from-mistakes.yaml` and a fully commented `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`). It detects supported sources, adds four editable starter causes, and asks which local agents' sessions you want read; none are preselected. Inspect the written sources before starting a retro.
 2. `doctor` checks config, sources, state, agents, login presence and model choices without calling a model. Follow each `fix:` under a `fail`, then run it again. A missing skill or sign-off peer is a warning, not a prerequisite.
@@ -31,9 +42,13 @@ learn-from-mistakes-axi report
 
 The report contains a short answer, numbers, follow-ups on previous changes, repeated mistakes with evidence, checked fixes, what was not checked, and questions for you. An empty result is not proof that nothing went wrong: check its coverage and omissions.
 
+<p align="center"><img src="docs/media/report.webp" width="560" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></p>
+
+The shots on this page come from a real run of the packed CLI on a small sample defect log, with MiniMax-M3 as both the worker and the judge, called through BYOKit; only the project path is shortened. A model can say different things about your project.
+
 ### No terminal, or no agent/model selected?
 
-Without a terminal, missing choices stop with exit **2** and an `ask the user` / `next:` line. Ask for both roles and their model names; never pick a fallback. With the user's answers in `WORKER`, `WORKER_MODEL`, `JUDGE` and `JUDGE_MODEL`, replace the quick start's init command with:
+Without a terminal, missing choices stop with exit **2** and an `ask the user` / `next:` line. Ask for both roles and their model names; never pick a fallback. With the user's answers in `WORKER`, `WORKER_MODEL`, `JUDGE` and `JUDGE_MODEL`, replace step 2's init command with:
 
 ```sh
 learn-from-mistakes-axi init --no-skill \
@@ -62,6 +77,16 @@ A `markdown-log` source with `review: true` is a review log: its records do not 
 Without installing globally, use `npx -y learn-from-mistakes-axi <command>` for any command above. Ask your agent to run `guide`, then drive init → doctor → retro → report and read `report.txt` to you. The caller does not perform the retro's analysis.
 
 The optional discovery skill uses the [Agent Skills](https://agentskills.io) format. Omit `--no-skill` from init to install it for configured usable agent CLIs; `--project-skill` installs project-local copies instead. In harnesses with slash commands, invoke `/learn-from-mistakes`. The skill points to the installed CLI's `guide` and `--help`, not a separate manual workflow.
+
+## Alone, with the family, inside or outside Firstmate
+
+Each tool works on its own, with or without the other three and with or without an agent supervisor. They meet through small written contracts, and none reaches into another's state.
+
+- **Alone:** the 3 steps above are the whole setup. A defect log or your agents' own sessions are enough.
+- **With [sign-off](https://github.com/umeranjum17/sign-off):** `signoff post` sends each kept fix to the sign-off board as an Apply or Skip choice, and `signoff answers` saves your answers. See `Sign-off` below.
+- **With [done-done](https://github.com/umeranjum17/done-done-axi):** a `done-done` source reads the failed, inconclusive or overridden steps of its verify runs as retro records.
+- **With [first-draft](https://github.com/umeranjum17/first-draft):** no direct link. Its mock-ups land on the same sign-off board, so one board holds the design questions and the retro's fixes.
+- **Inside Firstmate:** opt in with `init --firstmate <home> --no-skill` (see `Firstmate` below). **Outside it:** nothing changes; there is no private-marker auto-detection.
 
 ## Runners and user-chosen models
 
@@ -175,6 +200,6 @@ npm test
 npm run build:skill -- --check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the full suite on every PR and skips it for docs-only changes.
+The README, `skills/` and `docs/` (icon, shots, landing page) ship with the code: a change that makes one of them stale updates it in the same PR. CI (`.github/workflows/ci.yml`) runs the full suite on every PR and skips it for docs-only changes.
 
 `.done-done.yaml` defines the existing `cli` and `package` verification journeys. `scripts/verify-journeys.mjs` drives synthetic CLI/process-boundary checks, including the README setup-to-report path; `--package` also installs and exercises the packed CLI. Synthetic agent replies prove orchestration, not hosted-model quality. Keep evidence outside the checkout.
