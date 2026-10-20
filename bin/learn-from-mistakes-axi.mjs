@@ -498,7 +498,9 @@ sources, AGENTS.md, CLAUDE.md or skills.
 3. Run learn-from-mistakes-axi retro --wait 8m. While the run is still running, run
    learn-from-mistakes-axi attach until it ends.
 4. Read the run's report.txt (report prints its path as report_txt) and tell the user what it
-   says in plain words.
+   says in plain words, as a blameless retro: each number with its trend; whether each past fix
+   worked (roll back what did not help); each repeated mistake with its cost, how often it came
+   back, its why chain to the root cause and its fix.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions;
    else ask the user the questions in section 7.
 6. Once the user has made a change: learn-from-mistakes-axi change applied

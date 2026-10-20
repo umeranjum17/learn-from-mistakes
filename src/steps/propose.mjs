@@ -81,7 +81,7 @@ export async function propose(cfg, db, id, dir, window, log) {
   db.prepare('DELETE FROM signoff WHERE proposal_id IN (SELECT id FROM proposals WHERE run_id = ?)').run(id);
   db.prepare('DELETE FROM proposals WHERE run_id = ?').run(id); // a step run again starts empty
   db.prepare('UPDATE followups SET reason = NULL WHERE run_id = ?').run(id);
-  const findings = db.prepare(`SELECT cause, summary, refs_json, verdict FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`).all(id);
+  const findings = db.prepare(`SELECT cause, summary, refs_json, verdict, whys_json, cost FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`).all(id);
   const followups = db.prepare(`SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? AND verdict != 'keep' ORDER BY rowid`).all(id);
   // A fix whose branch has not reached the default branch is not live yet: it keeps
   // the followup step's plain reason, and the worker is never asked to explain it.
@@ -103,7 +103,7 @@ export async function propose(cfg, db, id, dir, window, log) {
   const fill = {
     metrics: `${METRIC_RULE}; use cause_count:<cause> only for ${Object.keys(cfg.causes).join(', ') || 'no cause'}, and for any other cause use defects, blocks or decisions`,
     causes: list([...counts(cfg, db, id, window).causes].filter(([c]) => !refuted.has(c)).map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
-    findings: list(findings.map((f) => `- ${f.cause}, ${f.verdict} by the judge: ${f.summary} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
+    findings: list(findings.map((f) => `- ${f.cause}, ${f.verdict} by the judge: ${f.summary} Root cause: ${JSON.parse(f.whys_json ?? '[]').at(-1) ?? 'not named'} Cost: ${f.cost ?? 'not named'} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
     followups: list(pending.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
   };
   const changes = pending.map((f) => f.change_id);

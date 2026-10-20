@@ -16,6 +16,8 @@ import { which } from './runners/index.mjs';
 const EVIDENCE = 3; // pointers shown per item; the rest are counted
 const DO = { keep: 'Keep it.', fix: 'Change it. The metric got better, but it missed the tripwire.', rollback: 'Roll it back.',
   delete: 'Delete it. It did not change the metric.', 'no-data': 'Wait for more data.' };
+// This window against the last, in words; two numbers are needed to compare.
+const trend = ({ current: a, previous: b }) => (typeof a !== 'number' || typeof b !== 'number' ? 'unknown' : a === b ? 'flat' : a > b ? 'up' : 'down');
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 // Free text from an agent or the config, on its own line; text that breaks the sentence rule or names a RAW item is left out.
 const said = (text) => {
@@ -55,7 +57,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     return `   Evidence: ${ps.slice(0, EVIDENCE).join('; ') || 'none'}${ps.length > EVIDENCE ? `; and ${ps.length - EVIDENCE} more` : ''}`;
   };
   const { causes } = counts(cfg, db, id, window);
-  const findings = all(`SELECT cause, summary, refs_json, verdict FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
+  const findings = all(`SELECT cause, summary, refs_json, verdict, whys_json, cost FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
   const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
   const reasons = new Map(all('SELECT change_id, reason FROM followups WHERE run_id = ?').map((f) => [f.change_id, f.reason]));
   const applied = appliedFixes(db, id);
@@ -68,7 +70,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     `- ${plural(fixes.length, 'fix', 'fixes')} passed the rules. The judge confirmed ${fixes.filter((f) => f.verdict === 'confirmed').length} of them.`,
     `- ${plural(missed, 'metric')} missed the target.`, '', '2. Numbers'];
   const measured = run.metrics.filter((m) => m.target || m.current !== 'n/a' || m.previous !== 'n/a'); // the rest have no data
-  for (const m of measured) lines.push(`- ${m.name}: this window ${m.current}, last window ${m.previous}, ${m.target ? `target ${m.target}, ${m.met === 'n/a' ? 'no data' : m.met}` : 'no target'}.`);
+  for (const m of measured) lines.push(`- ${m.name}: this window ${m.current}, last window ${m.previous}, trend ${trend(m)}, ${m.target ? `target ${m.target}, ${m.met === 'n/a' ? 'no data' : m.met}` : 'no target'}.`);
   if (!measured.length) lines.push('- No metric has data.');
   // Each home of a fleet, by salted id: its share of the fleet numbers above, this window.
   const homes = new Map(run.sources.flatMap((s) => s.homes ?? []).map((h) => [h, {}]));
@@ -89,7 +91,14 @@ export function reportText(cfg, db, id, dir, window, run) {
       ...all('SELECT record_id FROM records WHERE run_id = ? AND cause = ?', cause).map((r) => r.record_id),
       ...all('SELECT id FROM events WHERE run_id = ? AND cause = ?', cause).map((e) => `e${e.id}`),
       ...findings.filter((f) => f.cause === cause).flatMap((f) => JSON.parse(f.refs_json))];
-    lines.push(`- ${cause}: ${plural(c.count, 'time')} on ${plural(c.days, 'day')}.`, evidence(refs));
+    // The retro method per mistake: its cost, how often it came back, the root cause the why chain reached, and its fix.
+    const finding = findings.find((f) => f.cause === cause && f.whys_json), whys = finding ? JSON.parse(finding.whys_json) : [];
+    const fix = fixes.filter((f) => f.cause === cause).map((f) => f.n);
+    lines.push(`- ${cause}: ${plural(c.count, 'time')} on ${plural(c.days, 'day')}.`,
+      `   Cost: ${finding ? said(finding.cost).trim() : 'No finding gave a cost.'}`,
+      ...whys.slice(0, -1).map((w, i) => `   Why ${i + 1}: ${said(w).trim()}`),
+      `   Root cause: ${whys.length ? said(whys.at(-1)).trim() : 'No finding gave a root cause.'}`,
+      `   Fix: ${fix.length ? `see fix ${fix.join(', ')} in section 5.` : 'No fix passed the rules for this mistake.'}`, evidence(refs));
   }
   if (!repeated.length) lines.push('- None.');
   // Records exist but none is dated inside the window: say so, so an empty report does not read as a quiet week.

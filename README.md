@@ -44,6 +44,8 @@ The report contains a short answer, numbers, follow-ups on previous changes, rep
 
 <p align="center"><img src="docs/media/report.webp" width="560" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></p>
 
+The report follows a blameless retro method. Section 2 gives every number with this window, the last window and a trend (up, down, flat or unknown). Section 3 checks whether each past fix worked, with the number before and after, and says what to roll back. Section 4 gives each repeated mistake its cost, how often it came back, the why chain down to its root cause and its fix. The worker must give each finding a chain of 3 to 5 whys and a cost, in wording that names a process, rule, tool or check and never a person or an agent; the judge checks the chain, and a finding without them is not kept (the report then says "No finding gave" a cost or root cause).
+
 The shots on this page come from a real run of the packed CLI on a small sample defect log, with MiniMax-M3 as both the worker and the judge, called through BYOKit; only the project path is shortened. A model can say different things about your project.
 
 ### No terminal, or no agent/model selected?

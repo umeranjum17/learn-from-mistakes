@@ -8,6 +8,9 @@ Do the work in this order.
 1. Read each claim. The worker's claims are not evidence. Only the bundle items are evidence.
 2. Check each claim against the bundle items it cites in refs. Find each item by its id in the bundle.
    - A finding names a cause and its mechanism. Check that the cited items show that mechanism.
+   - A finding also gives a why chain and a cost. Check each answer in the chain against the cited items.
+     Each answer must follow from the one before. Weaken the finding when a step has no support, the last answer is not a
+     root cause, the cost is more than the items show, or the wording blames a person or an agent.
    - A fix names a change for a cause. Check that the cited items show the cause.
      Then check that the change, the metric and the tripwire fit that cause.
    - A shared keyword is not a shared cause. A consequence of an incident is not a repeat of it.

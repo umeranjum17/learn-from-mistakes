@@ -454,7 +454,7 @@ test('private canary prose never reaches default, --json, --full or stderr; the 
   assert.deepEqual(labels, [...at.keys()].toSorted());
   for (const r of logged(offId).filter((x) => at.has(x.record_id))) assert.equal(r.ref, at.get(r.record_id));
   const text = reportOf(run.p, offId);
-  assert.deepEqual(text.match(/^- shared-cache-lock: .+\n {3}Evidence: (.+)$/m)[1].split('; ').toSorted(), labels.map((l) => at.get(l).replace(/^.*\//, '')).toSorted());
+  assert.deepEqual(text.match(/^- shared-cache-lock: .+\n(?: {3}(?!Evidence).+\n)+ {3}Evidence: (.+)$/m)[1].split('; ').toSorted(), labels.map((l) => at.get(l).replace(/^.*\//, '')).toSorted());
   const salt = Buffer.from(run.query('SELECT salt FROM secret')[0].salt);
   for (const s of [bundle, text, ...[off, ...outs].map((o) => o.stdout + o.stderr)]) assert.ok(!s.includes(salt.toString('hex')) && !s.includes(salt.toString('base64')), 'the store salt in an output');
 });
@@ -495,13 +495,13 @@ test('verify runs before propose: a finding the judge refuted never reaches the 
   assert.deepEqual(query('SELECT step FROM invocations WHERE run_id = ? ORDER BY id', id).map((r) => r.step), ['analyse', 'verify', 'propose', 'verify-fixes']);
   const [prompt] = asked(id);
   assert.doesNotMatch(prompt, /First twin failed alone/);
-  assert.match(prompt, /^Findings of the analyse step that the judge did not refute, each with its verdict:\n- shared-cache-lock, confirmed by the judge: Second twin failed alone\. Refs: \S+\.\n\n/m);
+  assert.match(prompt, /^Findings of the analyse step that the judge did not refute, each with its verdict:\n- shared-cache-lock, confirmed by the judge: Second twin failed alone\. Root cause: No check names the variable\. Cost: Three runs failed\. Refs: \S+\.\n\n/m);
   assert.deepEqual(refs(id, 'proposals'), [refs(id, 'findings')[1]]);
   assert.deepEqual(query('SELECT verdict FROM findings WHERE run_id = ? ORDER BY id', id).map((f) => f.verdict), ['refuted', 'confirmed']);
   assert.match(lfm({}, 'report').stdout, /^finding: shared-cache-lock \(0\/0 days, refuted\)$/m); // the refuted finding is still in the report
   // A weakened finding still reaches the worker, with its verdict, and gets its fix.
   const weak = retro({ FAKE_REFUTE: 'f1', FAKE_WEAKEN: 'f2' });
-  assert.match(asked(weak)[0], /^- shared-cache-lock, weakened by the judge: Second twin failed alone\. Refs: \S+\.$/m);
+  assert.match(asked(weak)[0], /^- shared-cache-lock, weakened by the judge: Second twin failed alone\. Root cause: No check names the variable\. Cost: Three runs failed\. Refs: \S+\.$/m);
   assert.deepEqual(refs(weak, 'proposals'), [refs(weak, 'findings')[1]]);
   // With every finding refuted and no follow-up to explain, the worker is not asked to propose.
   const none = retro({ FAKE_REFUTE: 'f1,f2' });
@@ -1284,6 +1284,11 @@ function reportOf(p, id) {
   const text = readFileSync(join(p, '.lfm', 'runs', String(id), 'report.txt'), 'utf8');
   const heads = text.split('\n').filter((l) => /^\d\. [A-Z][a-z ]+$/.test(l));
   assert.deepEqual(heads, ['1. Short answer', '2. Numbers', '3. Last changes', '4. Repeated mistakes', '5. Fixes', '6. Not checked', '7. Questions for you']);
+  // The retro method, pinned: a trend on every number and, under every repeated mistake, its cost, root cause and fix.
+  const section = (n) => text.split(/^\d\. .+$/m)[n].split('\n').filter(Boolean);
+  for (const line of section(2).filter((l) => /^- [\w:.-]+: this window /.test(l))) assert.match(line, /, last window \S+, trend (?:up|down|flat|unknown),/, line);
+  const mistakes = section(4).reduce((acc, l) => (/^- \S+: \d+ times? on /.test(l) ? [...acc, [l]] : l.startsWith('   ') ? [...acc.slice(0, -1), [...acc.at(-1), l]] : acc), []);
+  for (const m of mistakes) for (const need of ['Cost: ', 'Root cause: ', 'Fix: ', 'Evidence: ']) assert.ok(m.some((l) => l.startsWith(`   ${need}`)), `${m[0]} lacks ${need}`);
   const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }), gate = new DatabaseSync(join(p, 'gate.sqlite'), { readOnly: true });
   try {
     for (const line of text.split('\n')) {
@@ -1513,7 +1518,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.ok(judge.stdin.startsWith(`lfm-run:${run.id}:verify\nYou are the judge of a retro.`), judge.stdin.slice(0, 200));
   assert.ok(fixJudge.stdin.startsWith(`lfm-run:${run.id}:verify-fixes\nYou are the judge of a retro.`), fixJudge.stdin.slice(0, 200));
   assert.match(judge.stdin, /The worker's claims are not evidence\./);
-  assert.match(judge.stdin, /^- f1: finding for cause umer-fixtures-unset\. The tests fail when UMER_FIXTURES is unset\. No doc names it\. Refs: \S+\.$/m);
+  assert.match(judge.stdin, /^- f1: finding for cause umer-fixtures-unset\. The tests fail when UMER_FIXTURES is unset\. No doc names it\. Why chain: 1\. The run failed\. 2\. The setup step skipped a variable\. 3\. No check names the variable\. Cost: Three runs failed\. Refs: \S+\.$/m);
   assert.doesNotMatch(judge.stdin, /^- p\d+: /m);
   assert.match(fixJudge.stdin, /^- p2: fix for cause shared-cache-lock\. Target: launch script 2\. Owner: maintainer\. Change: .+ Metric: cause_count:shared-cache-lock\. Tripwire: <= 0\. Refs: .+\.$/m);
   assert.doesNotMatch(fixJudge.stdin, /^- f\d+: /m);
@@ -1545,8 +1550,8 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   // report.txt: the kept fixes with the judge's verdict and note, what was not checked, and with no sign-off-axi an Apply or Skip question per fix.
   const text = reportOf(p, run.id);
   assert.match(text, /^- 2 mistakes came back in this window\.\n- 5 fixes passed the rules\. The judge confirmed 4 of them\.\n- 1 metric missed the target\.$/m);
-  assert.match(text, /^- defects: this window 2, last window 0, target <= 0, missed\.$/m);
-  assert.match(text, /^- shared-cache-lock: 2 times on 1 day\.\n {3}Evidence: defects\.md:\d+; defects\.md:\d+$/m);
+  assert.match(text, /^- defects: this window 2, last window 0, trend up, target <= 0, missed\.$/m);
+  assert.match(text, /^- shared-cache-lock: 2 times on 1 day\.\n {3}Cost: No finding gave a cost\.\n {3}Root cause: No finding gave a root cause\.\n {3}Fix: see fix 1, 2, 3, 4, 5 in section 5\.\n {3}Evidence: defects\.md:\d+; defects\.md:\d+$/m);
   assert.match(text, /^Fix 5, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory\.\n[\s\S]*?^- The judge's verdict: weakened\.\n {2}The cited items show this only once for Umer\.$/m);
   assert.match(text, /^6\. Not checked\n- The rules left out 3 fixes\.\n {3}The fix for shared-cache-lock: the judge refuted it\.\n {3}The fix for umer-fixtures-unset: its cause did not repeat; propose only for repeated causes\.\n {3}The fix for shared-cache-lock: no tripwire\.\n- The judge weakened 1 item\.$/m);
   assert.deepEqual(text.split('\n').filter((l) => /^\d\. Apply/.test(l)), [1, 2, 3, 4, 5].map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`));
@@ -2356,4 +2361,31 @@ process.exit(0);`;
   const r = spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env });
   assert.equal(r.status, 0, r.stdout);
   assert.deepEqual(readdirSync(log).sort(), ['claude.jsonl']); // codex, gemini, opencode, pi and acpx were never started
+});
+
+test('retro method: the prompts ask for blameless 5 whys; the report gives every number a trend and every mistake its cost, why chain, root cause and fix; a finding with no chain or with blame is not kept', () => {
+  const { p, lfm, query, calls, lines } = agentSetup(), yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const agents = { FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'twins', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'findings' };
+  const retro = (extra) => { const r = lfm({ ...agents, ...extra }, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout).run.id; };
+  const id = retro({});
+  // The worker, the judge and the proposer are told the method.
+  const asked = (step, agent = 'claude') => calls(agent).find((c) => c.stdin.startsWith(`lfm-run:${id}:${step}\n`)).stdin; // the judge is the fake codex
+  assert.match(asked('analyse'), /Write blameless\. A mistake is a gap in a process, a rule, a tool or a check\. Never blame a person or an agent\./);
+  assert.match(asked('analyse'), /Ask why five times\. Put the answers in whys, 3 to 5 of them/);
+  assert.match(asked('verify', 'codex'), /Check each answer in the chain against the cited items\./);
+  assert.match(asked('propose'), /A fix closes the root cause of its finding/);
+  // The report: a trend on each number, and each repeated mistake with its cost, why chain, root cause and fix.
+  const text = reportOf(p, id);
+  assert.match(text, /^- shared-cache-lock: 2 times on 1 day\.\n {3}Cost: Three runs failed\.\n {3}Why 1: The run failed\.\n {3}Why 2: The setup step skipped a variable\.\n {3}Root cause: No check names the variable\.\n {3}Fix: see fix 1, 2 in section 5\.\n {3}Evidence: /m);
+  assert.match(text, /^- \S+: this window \S+, last window \S+, trend (?:up|down|flat|unknown),/m);
+  // A finding with no why chain, or one that blames, is sent back once, then dropped and logged; none is stored.
+  for (const [FAKE_FINDING_BREAK, problem] of [['nowhys', 'findings[0].whys must be a list of 3 to 5 answers'], ['blame', 'findings[0].whys[2] blames: "careless"']]) {
+    const broken = retro({ FAKE_FINDING_BREAK });
+    assert.deepEqual(query('SELECT count(*) AS n FROM findings WHERE run_id = ?', broken), [{ n: 0 }]);
+    const log = lines('analyse', broken);
+    assert.ok(log.some((l) => l.startsWith('worker answer 1 is not valid:') && l.includes(problem)), log.join('\n'));
+    assert.ok(log.some((l) => l.startsWith('problem: ') && l.includes(problem)), log.join('\n'));
+    assert.match(reportOf(p, broken), /^- shared-cache-lock: 2 times on 1 day\.\n {3}Cost: No finding gave a cost\.\n {3}Root cause: No finding gave a root cause\.\n {3}Fix: No fix passed the rules for this mistake\.\n/m);
+  }
 });

@@ -1,10 +1,11 @@
 // The analyse step: the worker reads the bundle, names the causes and hidden problems it finds (`findings`, each with
-// refs to bundle items) and labels each defect record in it by the v1 label rules (`labels`). The answer's shape and its
+// refs to bundle items, a 5-whys chain to the root cause and the cost) and labels each defect record in it by the v1 label rules (`labels`). The answer's shape and its
 // free text (STE100: short sentences, plain words, active voice) are checked, and a bad answer is sent back once. A label or a ref that
 // names no bundle item is a problem: it is counted and logged, and the label or finding that holds it is not kept.
+// A finding with no why chain or cost, or with wording that blames a person or an agent, is not kept either.
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';
-import { readBundle, bundleIds, plain } from '../check.mjs';
+import { readBundle, bundleIds, methodProblems, plain } from '../check.mjs';
 import { redact } from '../redact.mjs';
 import { agentStep } from './agent-step.mjs';
 
@@ -21,7 +22,7 @@ function check(cfg, v, attempt = 1) {
     const at = `findings[${i}]`;
     if (!f || typeof f !== 'object') return p.push(`${at} must be an object`);
     if (typeof f.cause !== 'string' || !(Object.hasOwn(cfg.causes, f.cause) || KEY.test(f.cause))) p.push(`${at}.cause must be a configured cause key or a new key: lowercase letters, digits and dashes`);
-    if (attempt < 2) p.push(plain(f.summary, `${at}.summary`, { sentences: 3 }));
+    if (attempt < 2) p.push(plain(f.summary, `${at}.summary`, { sentences: 3 }), ...methodProblems(f, at));
     if (!Array.isArray(f.refs) || !f.refs.length || !f.refs.every((r) => typeof r === 'string')) p.push(`${at}.refs must be a non-empty list of bundle ids`);
   });
   const seen = new Set();
@@ -56,6 +57,8 @@ export async function analyse(cfg, db, id, dir, log) {
   const problems = [];
   const findings = v.findings.filter((f, i) => {
     if (plain(f.summary, '', { sentences: 3 })) { problems.push(`findings[${i}] has a summary that breaks the plain-language rules`); return false; }
+    const method = methodProblems(f, `findings[${i}]`); // the retro method: a finding without its why chain, cost and blameless wording is not kept
+    if (method.length) { problems.push(...method); return false; }
     const bad = f.refs.findIndex((r) => !ids.has(r));
     if (bad >= 0) problems.push(`findings[${i}]: ref ${bad + 1} names no bundle item`);
     return bad < 0;
@@ -66,11 +69,12 @@ export async function analyse(cfg, db, id, dir, log) {
     return !bad;
   });
   const label = db.prepare('INSERT INTO labels (run_id, record_id, event, cause, why, duplicate_of, occurrences, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const finding = db.prepare('INSERT INTO findings (run_id, cause, summary, refs_json) VALUES (?, ?, ?, ?)');
+  const finding = db.prepare('INSERT INTO findings (run_id, cause, summary, refs_json, whys_json, cost) VALUES (?, ?, ?, ?, ?, ?)');
   db.exec('BEGIN');
   try {
     for (const l of labels) label.run(id, l.id, l.event ? 1 : 0, l.cause ?? null, l.why.trim(), l.duplicate_of ?? null, l.occurrences ?? null, l.confidence ?? null);
-    for (const f of findings) finding.run(id, f.cause, redact(f.summary).replace(/\s+/g, ' ').trim(), JSON.stringify(f.refs));
+    const clean = (t) => redact(t).replace(/\s+/g, ' ').trim();
+    for (const f of findings) finding.run(id, f.cause, clean(f.summary), JSON.stringify(f.refs), JSON.stringify(f.whys.map(clean)), clean(f.cost));
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');

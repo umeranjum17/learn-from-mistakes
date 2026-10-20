@@ -49,8 +49,8 @@ export async function verify(cfg, db, id, dir, table, log) {
   const refs = (r) => JSON.parse(r).join(', ');
   // Claim ids: f<n> for the run's findings and p<n> for its fixes, each in table order.
   const claims = new Map(table === 'findings'
-    ? db.prepare('SELECT id, cause, summary, refs_json FROM findings WHERE run_id = ? ORDER BY id').all(id)
-      .map((f, i) => [`f${i + 1}`, { id: f.id, text: `finding for cause ${f.cause}. ${f.summary} Refs: ${refs(f.refs_json)}.` }])
+    ? db.prepare('SELECT id, cause, summary, refs_json, whys_json, cost FROM findings WHERE run_id = ? ORDER BY id').all(id)
+      .map((f, i) => [`f${i + 1}`, { id: f.id, text: `finding for cause ${f.cause}. ${f.summary} Why chain: ${JSON.parse(f.whys_json ?? '[]').map((w, k) => `${k + 1}. ${w}`).join(' ')} Cost: ${f.cost ?? 'not named'} Refs: ${refs(f.refs_json)}.` }])
     : db.prepare('SELECT id, cause, target, owner, change, metric, tripwire, refs_json FROM proposals WHERE run_id = ? ORDER BY id').all(id)
       .map((f, i) => [`p${i + 1}`, { id: f.id, text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
         + `Metric: ${f.metric?.trim() || defaultMetric(cfg, f.cause)}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]));
