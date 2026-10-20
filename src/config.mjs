@@ -49,7 +49,7 @@ export function pathSource(s, where, dir, keys = []) {
   if (typeof s.path !== 'string') throw new UsageError(`${where}.path must be a string`);
   return { ...s, path: expand(s.path, dir) };
 }
-const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} must be ${rule}`); };
+export const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${where} must be ${rule}`); };
 // The model rule every path that sets a model obeys: a --model flag, the config file and the terminal pick.
 export const MODEL_RULE = 'a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode';
 export const modelOk = (agent, model) => /^[\w.@+][\w.\/:@+-]{0,199}$/.test(model) && (agent !== 'opencode' || model.includes('/'));
