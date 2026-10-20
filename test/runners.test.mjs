@@ -134,13 +134,13 @@ test('agents lists only the configured agents with version, login presence and m
 
 test('the judge may be the worker\'s agent and model, or that vendor\'s BYOKit sign-in route: both resolve', () => {
   const { lfm, config } = setup();
-  for (const yaml of ['agent: claude\njudge_agent: claude\n',
-    `agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: ${MODELS.claude} } }\n`]) {
+  for (const [yaml, judgeModel] of [['agent: claude\njudge_agent: claude\n', 'claude-sonnet-5-5'], // the default judge model, not the worker's
+    [`agent: claude\njudge_agent: "byokit:claude"\nagent_config: { claude: { model: ${MODELS.claude} }, "byokit:claude": { model: ${MODELS.claude} } }\n`, MODELS.claude]]) {
     config(yaml);
     const r = lfm({}, 'agents', '--json');
     assert.equal(r.status, 0, r.stderr);
     const { worker, judge } = JSON.parse(r.stdout);
-    assert.deepEqual([worker.model, judge.model, judge.problem || ''], [MODELS.claude, MODELS.claude, '']);
+    assert.deepEqual([worker.model, judge.model, judge.problem || ''], [MODELS.claude, judgeModel, '']);
   }
 });
 

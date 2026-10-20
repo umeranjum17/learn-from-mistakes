@@ -14,7 +14,7 @@
 // FAKE_DUP=1 makes every label after the first a duplicate of the first record; FAKE_OCC=n gives the first label n occurrences.
 // The verify and verify-fixes steps (their marker lines) get a verdict for each claim they list: refuted for a claim id in FAKE_REFUTE (a comma
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
-// FAKE_JUDGE=fail makes the judge's call fail: an error line on stderr and exit 1, with no answer.
+// FAKE_JUDGE=fail makes the judge's call fail: an error line on stderr and exit 1, with no answer. FAKE_JUDGE=passive gives every verdict a passive reason.
 // FAKE_PROPOSE=findings gives one fix per finding the propose step lists, for its cause and citing its refs; FAKE_METRIC sets every fix's metric.
 // FAKE_FINDINGS=newcause gives one finding for FAKE_FINDING_CAUSE citing every record.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
@@ -37,7 +37,7 @@ else if (/^lfm-run:\d+:verify(-fixes)?\n/.test(stdin)) {
   const claims = [...stdin.slice(stdin.indexOf('Claims to judge:'), stdin.indexOf('Reply with one JSON object')).matchAll(/^- (\w+):/gm)].map((m) => m[1]);
   const has = (v, item) => (process.env[v] ?? '').split(',').includes(item);
   reply(JSON.stringify({ verdicts: claims.filter((item) => !has('FAKE_UNJUDGED', item)).map((item) => (has('FAKE_REFUTE', item) ? { item, verdict: 'refuted', reason: 'The cited items show a different failure for Umer.' }
-    : has('FAKE_WEAKEN', item) ? { item, verdict: 'weakened', reason: 'The cited items show this only once for Umer.' } : { item, verdict: 'confirmed', reason: 'The cited items show this for Umer.' })) }));
+    : has('FAKE_WEAKEN', item) ? { item, verdict: 'weakened', reason: 'The cited items show this only once for Umer.' } : { item, verdict: 'confirmed', reason: process.env.FAKE_JUDGE === 'passive' ? 'This is shown by the cited items.' : 'The cited items show this for Umer.' })) }));
 }
 // The apply step (its marker line) appends its rule line to each named file. FAKE_APPLY=cut returns a reply cut off
 // mid-line (each file truncated to half, no stop reason reported), length returns whole file text with the result envelope

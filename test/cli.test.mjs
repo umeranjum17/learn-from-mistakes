@@ -2066,7 +2066,20 @@ test('retro and rerun stop before a run when the judge is not ready; a judge on 
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.equal(out.run.status, 'completed');
-  assert.match(lines('verify', out.run.id)[0], /^judge claude claude-haiku-5-5: answered/);
+  assert.match(lines('verify', out.run.id)[0], /^judge claude claude-sonnet-5-5: answered/); // no judge_model: not the worker's cheap model
+  assert.ok(out.fixes.length && out.fixes.every((f) => f.verdict === 'confirmed'), r.stdout);
+});
+
+test('a judge reason that breaks the plain-language rules is a warning: the verdict stands and the run completes', () => {
+  const { p, env, lfm, lines } = agentSetup();
+  writeFileSync(join(env.LFM_HOME, 'config.yaml'), 'agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n');
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight', FAKE_JUDGE: 'passive' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.run.status, 'completed');
+  assert.match(lines('verify', out.run.id).join('\n'), /^warning: verdicts\[0\]\.reason: sentence 1 is passive \("is shown"\); rewrite it in the active voice$/m);
   assert.ok(out.fixes.length && out.fixes.every((f) => f.verdict === 'confirmed'), r.stdout);
 });
 
