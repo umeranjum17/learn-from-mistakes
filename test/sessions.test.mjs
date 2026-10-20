@@ -138,7 +138,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
   const TARGETS = { tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', first_pass: '>= 70', p90_hours_to_merge: '<= 8', escaped: '<= 0' }; // the defaults
   assert.deepEqual(decode(empty.stdout).metrics, ['defects', 'gate_failures', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
     'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped', 'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs',
-    'decisions', 'blocks', 'steers', 'interventions_per_merge', 'corrections_per_merge']
+    'decisions', 'blocks', 'steers', 'interventions_per_merge', 'corrections_per_merge', 'hours_working', 'hours_queued', 'hours_waiting_captain', 'hours_waiting_ci', 'hours_in_review', 'hours_blocked', 'hours_merge_wait', 'tasks_timed']
     .map((name) => ({ name, current: 'n/a', previous: 'n/a', target: TARGETS[name] ?? '', met: TARGETS[name] ? 'n/a' : '' }))); // the numbers of the types with no source here; n/a is never met or missed
 
   const r = lfm('retro', '--foreground');
@@ -157,7 +157,7 @@ test('a retro reads this repo\'s Claude Code sessions, skips its own runs and ke
     ['corrections_per_session', 0.25, 2, '<= 0.3', 'met'], ['interrupts', 1, 0, '> 1', 'missed'], ['retries', 1, 0, '', ''],
     ...['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped', 'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs']
       .map((name) => [name, 'n/a', 'n/a', { first_pass: '>= 70', p90_hours_to_merge: '<= 8', escaped: '<= 0' }[name] ?? '', name in { first_pass: 1, p90_hours_to_merge: 1, escaped: 1 } ? 'n/a' : '']),
-    ...['decisions', 'blocks', 'steers', 'interventions_per_merge', 'corrections_per_merge'].map((name) => [name, 'n/a', 'n/a', '', '']),
+    ...['decisions', 'blocks', 'steers', 'interventions_per_merge', 'corrections_per_merge', 'hours_working', 'hours_queued', 'hours_waiting_captain', 'hours_waiting_ci', 'hours_in_review', 'hours_blocked', 'hours_merge_wait', 'tasks_timed'].map((name) => [name, 'n/a', 'n/a', '', '']),
     ['cause_count:fetch-test-fails', 1, 0, '<= 1', 'met'], ['cause_count:missing-file', 0, 3, '= 0', 'met'], ['cause_count:server-memory-kill', 'n/a', 'n/a', '<= 0', 'n/a'],
     ['cause_count:shared-cache-lock', 'n/a', 'n/a', '', ''], ['cause_count:agent-exit-wait', 0, 0, '', '']]
     .map(([name, current, previous, target, met]) => ({ name, current, previous, target, met })));
@@ -218,7 +218,7 @@ test('two defect logs of one type sum into defects; a config with only a no-mist
   assert.equal(gate.status, 0, gate.stderr);
   assert.deepEqual(decode(gate.stdout).metrics.filter((m) => !m.name.startsWith('gate_failures')).map(({ name, current, previous }) => ({ name, current, previous })), ['defects', 'tool_error_rate', 'corrections_per_session', 'interrupts', 'retries', 'merged', 'first_pass',
     'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped', 'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs',
-    'decisions', 'blocks', 'steers', 'interventions_per_merge', 'corrections_per_merge']
+    'decisions', 'blocks', 'steers', 'interventions_per_merge', 'corrections_per_merge', 'hours_working', 'hours_queued', 'hours_waiting_captain', 'hours_waiting_ci', 'hours_in_review', 'hours_blocked', 'hours_merge_wait', 'tasks_timed']
     .map((name) => ({ name, current: 'n/a', previous: 'n/a' })));
 });
 

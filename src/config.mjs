@@ -22,7 +22,8 @@ export const PROJECT_FILE = '.learn-from-mistakes.yaml';
 // A source slice adds one line here.
 export const SOURCES = { 'markdown-log': markdownLog, 'no-mistakes': noMistakes, sessions, github, 'done-done': doneDone, firstmate };
 const METRICS = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'rework_per_merge', 'reverted', 'escaped',
-  'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs', 'tool_error_rate', 'corrections_per_session', 'corrections_per_merge', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge'];
+  'ci_runs', 'ci_failure_rate', 'ci_reruns', 'ci_flaky_jobs', 'tool_error_rate', 'corrections_per_session', 'corrections_per_merge', 'interrupts', 'retries', 'defects', 'gate_failures', 'decisions', 'blocks', 'steers', 'interventions_per_merge',
+  'hours_working', 'hours_queued', 'hours_waiting_captain', 'hours_waiting_ci', 'hours_in_review', 'hours_blocked', 'hours_merge_wait', 'tasks_timed'];
 // A metric name: one of METRICS, cause_count:<a configured cause>, gate_failures:<a step no-mistakes read>, or a CI repo or job a github source read. Targets and the ledger's --metric take these.
 export const isMetric = (name, causes) => METRICS.includes(name)
   || (name.startsWith('cause_count:') && Object.hasOwn(causes, name.slice(12)))
