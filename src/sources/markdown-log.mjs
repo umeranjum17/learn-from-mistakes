@@ -65,14 +65,18 @@ export function read(source, { path }, { project, salt }) {
     if (n > 1) id += `~${n}`;
     records.push({ id, source, line: i + 1, date: body.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? date, text: body });
   });
-  return { records, hash: createHash('sha256').update(text).digest('hex') };
+  return { records, undated: records.length && records.every((r) => !r.date) ? records.length : 0, hash: createHash('sha256').update(text).digest('hex') };
 }
+
+// The sentence for a log in which no bullet has a date, so a windowed retro places none of its records.
+export const undatedNote = (source, n) => `source ${source} has ${n} records and none has a date, so the retro window places none of them and the log adds nothing to its counts`;
 
 // doctor: readable, the records dated in the window, and the bullets with no date, which the window cannot place.
 export function doctor(source, entry, { readFrom, project, salt }) {
-  const { records } = read(source, entry, { project, salt });
+  const { records, undated: all } = read(source, entry, { project, salt });
   const undated = records.filter((r) => !r.date).length;
   const inWin = records.filter((r) => Date.parse(r.date) >= readFrom).length;
+  if (all) return { level: 'warn', detail: `${records.length} records, 0 in the window, ${undated} skipped (no date): ${undatedNote(source, all)}`, fix: `add a "## YYYY-MM-DD" heading above the bullets of ${entry.path}` };
   return { level: 'ok', detail: `${records.length} records, ${inWin} in the window, ${undated} skipped (no date)` };
 }
 

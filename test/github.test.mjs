@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -339,4 +339,58 @@ test('init --firstmate <home> --fleet reads every home of the fleet; home names 
   assert.equal(soloRun.status, 0, soloRun.stderr);
   const soloReport = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(soloRun.stdout).run.id), 'report.txt'), 'utf8');
   assert.ok(soloReport.includes(`- Home ${id(solo)}: 0 decisions, 1 block, 0 steers, 0 defects this window.`));
+});
+
+// A Firstmate home with data/metrics tables and no github source: the PR metrics come from prs.tsv, steers and corrections
+// from daily.tsv (the inbox messages are not added on top), and with no daily.tsv the steers come from the handled
+// messages, timed by the epoch their file name starts with. Entries that vanish mid-walk are skipped, and a folder that
+// cannot be read is named by its path.
+test('a firstmate home reads data/metrics/prs.tsv and daily.tsv, counts steers from them or from handled inboxes, and names an unreadable path', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), day = (days) => new Date(NOW - days * 86_400_000).toISOString(), at = (days) => `at=${Math.floor(NOW / 1000 - days * 86_400)}`;
+  const put = (file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
+  const prHead = 'home\trepo\tpr\tcreated\tmerged\thours_to_merge\tbuild_hours\tcommits\tcommits_after_open\trework_ci\trework_pipeline\trework_other\treverted\tescaped\tfirst_pass\tbot\ttitle';
+  const prRow = (days, hours, { other = 0, escaped = 0, bot = '', first = 1 } = {}) => `umer\tdemo\t1\t${day(days + 1)}\t${day(days)}\t${hours}\t0\t1\t${other}\t0\t0\t${other}\t0\t${escaped}\t${first}\t${bot}\tUmer's demo page`;
+  put('data/metrics/prs.tsv', [prHead, prRow(2, 2), prRow(3, 4, { other: 1, first: 0 }), prRow(1, 1, { escaped: 1, first: 0 }), prRow(1, 0.5, { bot: 1 }),
+    prRow(9, 8), prRow(4, 1).replace(day(4), 'not-a-time')].join('\n') + '\n'); // the last row has no merge time: skipped
+  const dayOf = (days) => day(days).slice(0, 10);
+  put('data/metrics/daily.tsv', ['day\thome\tsteers\ts_correct', `${dayOf(1)}\tdemo\t5\t2`, `${dayOf(1)}\tother\t7\t1`, `${dayOf(5)}\tdemo\t0\t0`, `${dayOf(9)}\tdemo\t3\t1`].join('\n') + '\n');
+  put('state/alpha.status', `needs-decision [${at(1)}]: pick a name\n`);
+  put(`state/alpha.inbox/handled/${Math.floor(NOW / 1000 - 86_400)}-ab12.msg`, '[steer] use the demo data\n'); // no at= line: the file name times it
+  put(`state/alpha.inbox/${Math.floor(NOW / 1000 - 2 * 86_400)}-cd34.msg`, '[steer] rename it\n');
+  put('state/.fm-lease-command.lock.owner.1/pid', '1\n'); // a lock folder: never entered
+  symlinkSync(join(tmp, 'nowhere'), join(home, 'state', 'gone.status')); // listed, then gone when read
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
+  const doctor = lfm({}, 'doctor').stdout;
+  assert.match(doctor, /^ok\s+source home\s+firstmate: 1 decisions, 0 blocks, 15 steers, 0 defect records, 5 merged PRs and 4 daily rows in data\/metrics, 1 skipped \(no time\)$/m);
+  const metricsOf = () => {
+    const r = lfm({}, 'retro', '--foreground', '--json');
+    assert.equal(r.status, 0, r.stderr);
+    return Object.fromEntries(JSON.parse(r.stdout).metrics.map((x) => [x.name, [x.current, x.previous, x.target, x.met]]));
+  };
+  let m = metricsOf();
+  assert.deepEqual([m.merged, m.first_pass, m.p50_hours_to_merge, m.p90_hours_to_merge, m.rework_ci, m.rework_other, m.reverted, m.escaped],
+    [[4, 1, '', ''], [33.3, 100, '>= 70', 'missed'], [1, 8, '', ''], [4, 8, '<= 8', 'met'], [0, 0, '', ''], [1, 0, '', ''], [0, 0, '', ''], [1, 0, '<= 0', 'missed']]);
+  assert.deepEqual([m.steers, m.corrections_per_session, m.interventions_per_merge], [[12, 3, '', ''], [0.75, 1, '<= 0.3', 'missed'], [3.25, 3, '', '']]);
+  unlinkSync(join(home, 'data', 'metrics', 'daily.tsv')); // no daily table: the two handled and pending messages are the steers
+  m = metricsOf();
+  assert.deepEqual([m.steers, m.corrections_per_session, m.merged], [[2, 0, '', ''], ['n/a', 'n/a', '<= 0.3', 'n/a'], [4, 1, '', '']]);
+  if (process.getuid?.() !== 0) { // a folder that cannot be read is no vanished entry: the error names its path
+    const locked = join(home, 'state', 'locked.inbox');
+    mkdirSync(locked);
+    chmodSync(locked, 0o000);
+    try { assert.match(lfm({}, 'doctor').stdout, /^fail\s+source home\s+firstmate: cannot read \S+\/state\/locked\.inbox \(EACCES\)/m); } finally { chmodSync(locked, 0o755); }
+  }
+});
+
+// A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
+// report's not-checked section says so.
+test('a markdown-log source with no dated record is named by doctor and by the report', () => {
+  const { p, lfm } = setup();
+  writeFileSync(join(p, 'gate.md'), '# Gate report\n\n- [tests] A demo flake.\n- [lint] Umer\'s lint failure.\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'name: umer-app\nsources:\n  gate: { type: markdown-log, path: gate.md }\n');
+  assert.match(lfm({}, 'doctor').stdout, /^warn\s+source gate\s+markdown-log: 2 records, 0 in the window, 2 skipped \(no date\): source gate has 2 records and none has a date, so the retro window places none of them/m);
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8'), /^- Source gate read 2 records and none has a date, so the window placed none of them\./m);
 });

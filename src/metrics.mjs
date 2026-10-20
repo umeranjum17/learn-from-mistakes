@@ -23,7 +23,7 @@ export function values(cfg, events, records, w) {
   const v = {};
   for (const [type, src] of Object.entries(SOURCES)) {
     if (!src.metricNames) continue;
-    if (!types.has(type)) for (const name of src.metricNames) v[name] = null;
+    if (!types.has(type)) for (const name of src.metricNames) v[name] ??= null; // firstmate shares some names with github and sessions
     else Object.assign(v, src.metrics(src.metricRows === 'events' ? events : records.filter((r) => cfg.sources[r.source]?.type === type), w, v, cfg.sources));
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {

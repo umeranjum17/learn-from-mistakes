@@ -3,7 +3,11 @@
 // `<state> [at=<epoch>] [<tag>...]: <text>` line per entry, where a line with no at= stamp takes the last stamp above
 // it; each *.msg file in a *.inbox folder (or its handled/ folder) is one inbox message, timed by its `at=<epoch>`
 // line and tagged by its first [tag]. A needs-decision line is a decision, a blocked line a block, a message a steer.
-// <home>/data/defects.md is read as a markdown-log defect log. <home>/config/targets.tsv, one
+// <home>/data/defects.md is read as a markdown-log defect log. <home>/data/metrics/prs.tsv (one merged PR a row: merged,
+// hours_to_merge, rework_*, reverted, escaped, bot, title) gives the PR metrics when no github source does, and
+// <home>/data/metrics/daily.tsv (one day and project a row: day, steers, s_correct) gives the steers, ahead of the inbox
+// messages, and the corrections. A home that lacks either file reads without it. A message with no at= line is timed by
+// the epoch its file name starts with, as Firstmate names handled messages `<epoch>-<id>.msg`. <home>/config/targets.tsv, one
 // `metric<TAB>op<TAB>target<TAB>owner<TAB>rule` line per target, overrides the config's targets.
 // An entry with no time is skipped and counted.
 // With fleet: true the source reads the whole fleet: the home it names (the main home, whose targets count) and each
@@ -14,11 +18,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { readText, shq, UsageError } from '../../bin/learn-from-mistakes-axi.mjs';
 import { pathSource, RULE } from '../config.mjs';
 import { inWindow } from '../metrics.mjs';
 import { excerpt, redact } from '../redact.mjs';
+import * as github from './github.mjs';
 import * as markdownLog from './markdown-log.mjs';
 
 const KINDS = { 'needs-decision': 'decision', blocked: 'block' };
@@ -98,19 +103,40 @@ export function read(source, entry, ctx) {
 // One home's records; with a home id, each record's id starts with it and its data names it.
 function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }, home, fix, listed) {
   const state = join(path, 'state'), records = [], text = (t) => (excerpts ? excerpt(t) : ''), at = home ? `${home}/` : '';
-  let files, skipped = 0;
-  try { files = readdirSync(state, { recursive: true }).sort(); } catch (e) {
-    if (!listed || e.code !== 'ENOENT' || !existsSync(path)) throw new UsageError(`source ${source}: cannot read ${state} (${e.code})`, fix ?? `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
-    files = [];
-  }
-  const add = (ms, id, ref, kind, body, tag) => {
-    if (Number.isNaN(new Date(ms).getTime())) skipped += 1; // no stamp, or one that is not a time
-    else if (ms >= readFrom) records.push({ id: at + id, source, ref, date: new Date(ms).toISOString().slice(0, 10), text: text(body), data: { kind, ...(home && { home }), ...(tag && excerpts && { tag: redact(tag) }) } });
+  const unreadable = (file, e) => new UsageError(`source ${source}: cannot read ${file} (${e.code})`, fix ?? `set sources.${source}.path in ${shq(project)} to the Firstmate home that holds state/, or remove that source`);
+  // An entry that vanishes between the listing and its read (a lock folder, a message acknowledged into handled/) is no entry.
+  const list = (dir, top) => {
+    try { return readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)); } catch (e) {
+      if (top ? !listed || e.code !== 'ENOENT' || !existsSync(path) : !['ENOENT', 'ENOTDIR'].includes(e.code)) throw unreadable(dir, e);
+      return [];
+    }
   };
-  const read1 = (f) => readText(join(state, f), `source ${source}`, `chmod -R u+r ${shq(state)}   # the tool only reads it`);
+  // Only the status files and the inbox folders are opened: the lock folders that churn beside them are never entered.
+  const files = [];
+  let skipped = 0;
+  for (const e of list(state, true)) {
+    if (e.name.endsWith('.status') && !e.isDirectory()) files.push(e.name);
+    else if (e.name.endsWith('.inbox') && e.isDirectory()) {
+      const dir = join(state, e.name);
+      for (const m of list(dir)) {
+        if (m.name.endsWith('.msg') && !m.isDirectory()) files.push(`${e.name}/${m.name}`);
+        else if (m.name === 'handled' && m.isDirectory()) for (const h of list(join(dir, 'handled'))) if (h.name.endsWith('.msg') && !h.isDirectory()) files.push(`${e.name}/handled/${h.name}`);
+      }
+    }
+  }
+  const add = (ms, id, ref, kind, body, tag, extra) => {
+    if (Number.isNaN(new Date(ms).getTime())) skipped += 1; // no stamp, or one that is not a time
+    else if (ms >= readFrom) records.push({ id: at + id, source, ref, date: new Date(ms).toISOString().slice(0, 10), text: text(body), data: { kind, ...(home && { home }), ...(tag && excerpts && { tag: redact(tag) }), ...extra } });
+  };
+  const read1 = (file) => {
+    try { return readFileSync(file, 'utf8'); } catch (e) {
+      if (e.code === 'ENOENT') return undefined;
+      throw new UsageError(`source ${source}: cannot read ${file} (${e.code})`, `chmod -R u+r ${shq(dirname(file))}   # the tool only reads it`);
+    }
+  };
   for (const f of files.filter((n) => /^[^/]+\.status$/.test(n))) {
     let when = NaN;
-    read1(f).split(/\r?\n/).forEach((line, i) => {
+    (read1(join(state, f)) ?? '').split(/\r?\n/).forEach((line, i) => {
       const m = line.match(/^([a-z-]+)((?: \[[^\]]*\])*): (.*)$/);
       if (!m) return;
       const stamp = m[2].match(/\[at=([^\]]*)\]/)?.[1];
@@ -119,7 +145,9 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
     });
   }
   for (const f of files.filter((n) => /^[^/]+\.inbox\/(handled\/)?[^/]+\.msg$/.test(n))) {
-    const body = read1(f), stamp = body.match(/^at=(\d+)\r?$/m)?.[1];
+    const body = read1(join(state, f));
+    if (body === undefined) continue;
+    const stamp = body.match(/^at=(\d+)\r?$/m)?.[1] ?? f.match(/\/(\d{9,})-[^/]*\.msg$/)?.[1];
     add(stamp ? Number(stamp) * 1000 : NaN, f, join(state, f), 'steer', body.replace(/^at=\d+\r?$/m, ''), body.match(/^(?:at=\d+\r?\n)?\[([^\]\s]+)\]/)?.[1]);
   }
   const log = join(path, 'data', 'defects.md');
@@ -128,26 +156,57 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
     for (const r of markdownLog.read(source, { path: log }, { project, salt }).records)
       records.push({ ...r, id: `${at}defects:${r.id}`, ref: `${log}:${r.line}`, data: { kind: 'defect', ...(home && { home }) } });
   }
+  // The home's metrics tables, one object a row keyed by its header, with the row's line number.
+  const table = (name) => {
+    const file = join(path, 'data', 'metrics', name), body = existsSync(file) ? read1(file) : undefined;
+    if (!body) return [];
+    const [head, ...lines] = body.split(/\r?\n/), cols = head.split('\t');
+    return lines.flatMap((l, i) => (l.trim() ? [{ line: i + 2, file, row: Object.fromEntries(l.split('\t').map((v, j) => [cols[j], v])) }] : []));
+  };
+  const num = (v) => Number(v) || 0;
+  for (const { line, file, row } of table('prs.tsv')) {
+    const hours = Number(row.hours_to_merge), ms = Number.isFinite(hours) ? Date.parse(row.merged) : NaN;
+    add(ms, `pr:${line}`, `${file}:${line}`, 'pr', row.title ?? '', undefined, { bot: row.bot === '1', hours, rework_ci: num(row.rework_ci),
+      rework_other: num(row.rework_other) + num(row.rework_pipeline), reverted: num(row.reverted), escaped: num(row.escaped) });
+  }
+  for (const { line, file, row } of table('daily.tsv')) add(Date.parse(row.day), `daily:${line}`, `${file}:${line}`, 'daily', '', undefined, { steers: num(row.steers), corrections: num(row.s_correct) });
   return { records, skipped };
 }
+
+// The steers in the window: the daily table's, when the home keeps one, else the inbox messages'; the two are never added,
+// as a daily row already counts the messages of its day.
+const steersIn = (rows, window) => {
+  const kind = (k) => rows.filter((r) => JSON.parse(r.data).kind === k);
+  return kind('daily').length ? inWindow(kind('daily'), window).reduce((n, r) => n + JSON.parse(r.data).steers, 0) : inWindow(kind('steer'), window).length;
+};
 
 // doctor: readable, the decisions, blocks and steers in the window, and the entries with no time; for a fleet, its homes
 // and the registry lines with no local home.
 export function doctor(source, entry, ctx) {
   const { records, skipped, homes, lines_skipped } = read(source, entry, ctx), n = (kind) => records.filter((r) => r.data.kind === kind).length;
   const fleet = homes ? `${homes.length} homes, ${lines_skipped} registry lines skipped (no local home), ` : '';
-  return { level: 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${n('steer')} steers, ${n('defect')} defect records, ${skipped} skipped (no time)` };
+  const steers = n('daily') ? records.filter((r) => r.data.kind === 'daily').reduce((sum, r) => sum + r.data.steers, 0) : n('steer');
+  const tables = n('pr') || n('daily') ? `, ${n('pr')} merged PRs and ${n('daily')} daily rows in data/metrics` : '';
+  return { level: 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${steers} steers, ${n('defect')} defect records${tables}, ${skipped} skipped (no time)` };
 }
 
 // decisions, blocks and steers in the window; interventions_per_merge is their sum over the PRs merged (n/a with no
-// github source or no merge). The home's dated defect records add to defects.
-export const metricNames = ['decisions', 'blocks', 'steers', 'interventions_per_merge'];
+// merge). The home's dated defect records add to defects. With no github source, its prs.tsv gives the PR metrics (as the
+// github source computes them) and its daily.tsv gives corrections_per_session, over the PRs merged since the home
+// records no session count; a sessions source's own number wins.
+export const metricNames = ['decisions', 'blocks', 'steers', 'interventions_per_merge', 'merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge',
+  'rework_ci', 'rework_other', 'reverted', 'escaped', 'corrections_per_session'];
 export const addsTo = ['defects']; // the follow-up step reads this source's records for these metrics too
 export const metricRows = 'records';
 export function metrics(rows, window, v) {
   const of = (kind) => inWindow(rows.filter((r) => JSON.parse(r.data).kind === kind), window);
-  const out = { decisions: of('decision').length, blocks: of('block').length, steers: of('steer').length };
+  const kept = (kind) => rows.filter((r) => JSON.parse(r.data).kind === kind);
+  const out = { decisions: of('decision').length, blocks: of('block').length, steers: steersIn(rows, window) };
+  const prs = v.merged == null && kept('pr').length ? github.metrics(kept('pr'), window) : {}, merged = v.merged ?? prs.merged;
+  const corrections = v.corrections_per_session == null && merged && kept('daily').length
+    ? of('daily').reduce((n, r) => n + JSON.parse(r.data).corrections, 0) / merged : undefined;
   const defects = rows.filter((r) => r.ts && JSON.parse(r.data).kind === 'defect');
-  return { ...out, interventions_per_merge: v.merged ? (out.decisions + out.blocks + out.steers) / v.merged : null,
+  return { ...prs, ...out, ...(corrections !== undefined && { corrections_per_session: corrections }),
+    interventions_per_merge: merged ? (out.decisions + out.blocks + out.steers) / merged : null,
     ...(defects.length && { defects: (v.defects ?? 0) + of('defect').length }) };
 }
