@@ -30,8 +30,11 @@ export function which(name) {
 
 export const binName = (cfg, runner) => (runner === 'acp' ? cfg.acpx_path : cfg.agent_path_override?.[runner]) ?? RUNNERS[runner].bin ?? runner;
 // The model agent_config gives an agent (claude, acp:<target>, byokit:<route>), or "": none set, and no call is made.
-// The judge runs judge_model when the user set one, so it may differ from the worker's model on the same agent.
-export const agentModel = (cfg, agent, role = 'worker') => (role === 'judge' && cfg.judge_model) || (cfg.agent_config?.[agent]?.model ?? '');
+// The judge runs judge_model when the user set one, so it may differ from the worker's model on the same agent. A judge on
+// claude that has no model of its own (none set, or the worker's on the same agent) runs JUDGE_MODEL: a cheap worker's model is too weak to judge.
+export const JUDGE_MODEL = 'claude-sonnet-5-5';
+export const agentModel = (cfg, agent, role = 'worker') => (role === 'judge' && (cfg.judge_model || (agent === 'claude' && (cfg.agent === 'claude' || !cfg.agent_config?.claude?.model) && JUDGE_MODEL)))
+  || (cfg.agent_config?.[agent]?.model ?? '');
 // The file to change a key in: the file that set it; a key no file sets goes to the project file, else the global file.
 export const fileOf = (cfg, key) => shq(cfg.from?.[key] ?? (cfg.dir ? join(cfg.dir, PROJECT_FILE) : cfg.globalPath));
 // The fix for an agent or its model the user has not set, or that is not ready: the user chooses, and the file and key are named.

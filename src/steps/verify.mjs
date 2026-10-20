@@ -1,8 +1,9 @@
 // The verify steps: the judge (the judge_agent role, which may be the worker's agent and model, in a fresh session) tries to refute each finding
 // of the analyse step (verify, before propose) or each fix of the propose step (verify-fixes). The worker's claims are not evidence: the judge checks each claim
 // against the bundle items it cites and answers confirmed, weakened or refuted, with a reason (`verdict` and `judge_note`
-// in the findings and proposals tables). The answer's shape and its reasons (STE100) are checked and a bad answer is sent
-// back once; a second one fails the step, so no finding or fix goes on without the judge's verdict. The step logs ids
+// in the findings and proposals tables). The answer's shape is checked and a bad answer is sent back once; a second one
+// fails the step, so no finding or fix goes on without the judge's verdict. A reason that breaks the plain-language rules
+// (STE100) is a warning: the verdict stands and the report hides the text. The step logs ids
 // and verdicts only, never the judge's text. With no claim it asks no agent.
 import { readFileSync } from 'node:fs';
 import { defaultMetric, plain } from '../check.mjs';
@@ -17,8 +18,8 @@ function verdictProblems(v, i, claims) {
   const p = [];
   if (!claims.has(v.item)) p.push(`${at}.item must be the id of a claim to judge`);
   if (!VERDICTS.includes(v.verdict)) p.push(`${at}.verdict must be confirmed, weakened or refuted`);
-  p.push(plain(v.reason, `${at}.reason`, { words: 25 }));
-  return p.filter(Boolean);
+  if (typeof v.reason !== 'string' || !v.reason.trim()) p.push(`${at}.reason must be a non-empty string`);
+  return p;
 }
 
 // Keeps the verdicts that follow the rules, one per claim; `bad` names each one that does not, with its problem.
@@ -62,6 +63,7 @@ export async function verify(cfg, db, id, dir, table, log) {
   const items = [...claims].map(([k, c]) => `- ${k}: ${c.text}`).join('\n');
   const answer = await agentStep(cfg, db, id, dir, { step: table === 'findings' ? 'verify' : 'verify-fixes', role: 'judge', prompt: PROMPT.replace('{{items}}', () => items), check: (x) => check(x, claims), log });
   const { verdicts } = sift(answer, claims);
+  for (const [i, v] of answer.verdicts.entries()) if (verdicts.includes(v)) { const w = plain(v.reason, `verdicts[${i}].reason`, { words: 25 }); if (w) log(`warning: ${w}`); }
   db.exec('BEGIN');
   try {
     for (const v of verdicts) {
