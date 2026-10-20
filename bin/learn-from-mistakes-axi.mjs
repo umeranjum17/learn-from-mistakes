@@ -242,7 +242,7 @@ export async function ingest(cfg, db) {
       throw sourceError(id, e, count);
     }
     sources.push({ id, type: s.type, items: (got.records ?? got.rows ?? got.events ?? got.prs).length, hash: got.hash,
-      ...(got.events && { sessions: got.sessions, skipped: got.skipped }), ...(got.homes && { homes: got.homes, lines_skipped: got.lines_skipped }) });
+      ...(got.events && { sessions: got.sessions, skipped: got.skipped }), ...(got.homes && { homes: got.homes, lines_skipped: got.lines_skipped }), ...(got.undated && { undated: got.undated }) });
   }
   const jsonl = (a) => a.map((x) => JSON.stringify(x)).join('\n') + (a.length ? '\n' : '');
   // records.jsonl holds a record's text only with excerpts on, redacted; with excerpts off it has no text field.
