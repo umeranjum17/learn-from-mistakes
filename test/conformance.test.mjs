@@ -188,3 +188,11 @@ test('a missing run evidence file names the file and the fix, never a broken cit
   assert.doesNotMatch(err, STACK, 'a missing evidence file ended in a stack trace');
   assert.doesNotMatch(readFileSync(join(p, '.lfm', 'runs', '1', 'worker.log'), 'utf8'), STACK);
 });
+
+test('the skill and the guide teach the retro method: blameless, numbers with a trend, past fixes checked, cost and why chain per mistake', () => {
+  const skill = readFileSync(join(REPO, 'skills/lfm-retro/SKILL.md'), 'utf8');
+  const guide = spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8' }).stdout;
+  assert.match(skill, /^## The retro method$/m);
+  for (const need of [/Blameless/, /trend \(up, down, flat or unknown\)/, /did each past fix work\?/, /roll back or delete/, /cost, how often it came back, the why chain down to its root cause, and its fix/, /never a person or an agent/]) assert.match(skill, need);
+  for (const need of [/blameless retro/, /trend/, /roll back what did not help/, /cost, how often it came back, its why chain to the root cause and its fix/]) assert.match(guide.replace(/\s+/g, ' '), need);
+});

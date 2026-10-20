@@ -79,14 +79,17 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const bundle = stdin.slice(stdin.indexOf('# Retro bundle'));
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
   const first = bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1];
+  // Every finding carries the retro method's why chain and cost; FAKE_FINDING_BREAK=nowhys drops the chain, blame blames a person.
+  const method = (f) => ({ whys: process.env.FAKE_FINDING_BREAK === 'nowhys' ? undefined : ['The run failed.', 'The setup step skipped a variable.', process.env.FAKE_FINDING_BREAK === 'blame' ? 'Umer was careless.' : 'No check names the variable.'],
+    cost: 'Three runs failed.', ...f });
   const answer = mode === 'blank' ? '' : mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] }
     : mode === 'outside' ? { findings: [], labels: [{ id: 'nowhere-9', event: true, cause: 'other', why: 'The run failed for Umer.' }] } : {
-      findings: process.env.FAKE_FINDINGS === 'newcause' ? [{ cause: process.env.FAKE_FINDING_CAUSE, summary: 'Every record failed for the same reason.', refs: records }]
+      findings: (process.env.FAKE_FINDINGS === 'newcause' ? [{ cause: process.env.FAKE_FINDING_CAUSE, summary: 'Every record failed for the same reason.', refs: records }]
         : process.env.FAKE_FINDINGS?.startsWith('twins') ? [{ cause: process.env.FAKE_CAUSE, summary: 'First twin failed alone.', refs: [records[0]] },
         { cause: process.env.FAKE_CAUSE, summary: 'Second twin failed alone.', refs: [records[1]] },
         ...(process.env.FAKE_FINDINGS === 'twins-other' ? [{ cause: 'agent-exit-wait', summary: 'The agent exit wait failed for Umer alone.', refs: [first] }] : [])]
         : [{ cause: 'umer-fixtures-unset', summary: mode === 'passive' ? 'The tests fail. A doc is needed.' : 'The tests fail when UMER_FIXTURES is unset. No doc names it.', refs: [first] },
-          { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }],
+          { cause: 'made-up', summary: 'This finding cites an item the bundle does not have.', refs: [first, 'c99'] }]).map(method),
       labels: records.map((id, i) => ({ id, event: true, cause: process.env.FAKE_CAUSE || 'other', why: mode === 'passive' && i === 0 ? 'The lock was held by us.' : 'The run failed for Umer.', duplicate_of: i > 0 && process.env.FAKE_DUP ? records[0] : null, occurrences: i === 0 && process.env.FAKE_OCC ? Number(process.env.FAKE_OCC) : null, confidence: null })),
     });
   reply(answer);

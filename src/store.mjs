@@ -67,6 +67,9 @@ const MIGRATIONS = [
   // calls only, so a resume is never refused for the calls a discarded attempt made. The rows stay: a source that reads
   // sessions skips the ones the run's own agents held.
   'ALTER TABLE runs ADD COLUMN discarded_at TEXT',
+  // A finding's 5-whys chain (a JSON list, the last the root cause) and its cost in plain words. A finding from before
+  // this entry has neither; the report says so.
+  'ALTER TABLE findings ADD COLUMN whys_json TEXT; ALTER TABLE findings ADD COLUMN cost TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

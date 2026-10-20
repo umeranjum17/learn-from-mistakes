@@ -22,6 +22,15 @@ You do not need it installed: run `npx -y learn-from-mistakes-axi <command>`. If
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7 of `report.txt`.
 6. Once the user has made a change, record it with `npx -y learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <git sha>`; the next retro checks whether it worked.
 
+## The retro method
+
+Tell the user the report as a blameless retro, in this order, in plain words. Use only what `report.txt` says; never add a number or a cause of your own.
+
+1. Numbers (section 2): for each number, this window, last window and the trend (up, down, flat or unknown). Say which direction is worse.
+2. Last changes (section 3): did each past fix work? Give the number before and after and the verdict. A change that did not help (roll back or delete) is a result, not a fault: ask the user to undo it, and keep a change that worked.
+3. Repeated mistakes (section 4): for each one give its cost, how often it came back, the why chain down to its root cause, and its fix (section 5). A fix must close the root cause, not hide the symptom.
+4. Blameless: name the process, rule, tool or check that had the gap, never a person or an agent. The tool refuses a finding that blames, or that has no why chain or no cost; say when the report shows "No finding gave" a cost or root cause.
+
 The user chooses the tool's agents and models; never choose one (full contract: the learn-from-mistakes README section `Runners and user-chosen models`). When a command stops with "ask the user which agent to use", ask the user which agent and model to use for each role, then run the init command it printed with their answer, then run the stopped command again. The worker and the judge always run: there is no mode without them, and a run whose agent fails keeps no verdict. The judge may use the worker's agent and model if the user sets it so. Never answer in their place; fix the agent the error names, then run the command again.
 
 `npx -y learn-from-mistakes-axi guide` prints these steps for the installed version, and `npx -y learn-from-mistakes-axi --help` lists the commands.
