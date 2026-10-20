@@ -411,7 +411,7 @@ test('a firstmate home reads data/metrics/prs.tsv and daily.tsv, counts steers f
   assert.deepEqual([m.steers, m.corrections_per_session, m.merged], [[2, 0, '', ''], ['n/a', 'n/a', '<= 0.3', 'n/a'], [4, 1, '', '']]);
   assert.equal(m.corrections_per_merge[0], 'n/a');
   const gone = JSON.parse(lfm({}, 'retro', '--foreground', '--json').stdout); // the report names the table that is missing
-  assert.deepEqual(gone.sources[0].missing, ['rows in daily.tsv under data/metrics of the home']);
+  assert.deepEqual(gone.sources[0].missing, ['rows in daily.tsv under data/metrics of the home', 'rows in chat.tsv under data of the home']);
   if (process.getuid?.() !== 0) { // a folder that cannot be read is no vanished entry: the error names its path
     const locked = join(home, 'state', 'locked.inbox');
     mkdirSync(locked);
@@ -441,6 +441,13 @@ test('a firstmate home turns the chat lines with why, wrong or again into mistak
   const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((x) => x.data?.kind === 'complaint');
   assert.deepEqual(records.map((x) => x.data.work).sort(), ['demo-cli', 'demo-cli', 'demo-page']);
   assert.equal(JSON.parse(r.stdout).metrics.find((m) => m.name === 'defects').current, 3);
+  const notChecked = (res) => readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(res.stdout).run.id), 'report.txt'), 'utf8').match(/^- Source home gave no rows in chat\.tsv/m);
+  assert.ok(!notChecked(r), 'chat.tsv has rows, so the report does not name it');
+  writeFileSync(join(home, 'state', 'alpha.status'), `needs-decision [at=${epoch(1)}]: pick a name\n`); // keeps a record, so the retro still runs
+  unlinkSync(join(home, 'data', 'chat.tsv')); // a missing chat table must not read as a clean pass
+  const gone = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(gone.status, 0, gone.stderr);
+  assert.ok(notChecked(gone), 'the report names the missing chat.tsv under Not checked');
 });
 
 // A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
