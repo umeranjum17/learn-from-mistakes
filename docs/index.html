@@ -90,18 +90,18 @@ learn-from-mistakes-axi report</pre></li>
 
   <h2>A real run</h2>
   <figure>
-    <div class="shot"><img src="media/doctor.webp" width="842" height="433" alt="Terminal: learn-from-mistakes-axi doctor lists ok lines for node, git, config, source, worker, judge and skills"></div>
+    <div class="shot"><img src="media/doctor.webp" width="776" height="391" alt="Terminal: learn-from-mistakes-axi doctor lists ok lines for node, git, config, source, worker, judge and sign-off"></div>
     <figcaption><code>doctor</code> checks config, sources, state and both agents before a retro starts. No model call.</figcaption>
   </figure>
   <figure>
-    <div class="shot"><img src="media/retro.webp" width="776" height="391" alt="Terminal: the end of a retro run, with two repeated causes and three findings, each confirmed"></div>
-    <figcaption><code>retro</code> counts repeated causes and lists the findings the judge confirmed.</figcaption>
+    <div class="shot"><img src="media/retro.webp" width="776" height="391" alt="Terminal: the end of a retro run, with two repeated causes and three findings with the judge's verdicts"></div>
+    <figcaption><code>retro</code> counts repeated causes and lists each finding with the judge's verdict.</figcaption>
   </figure>
   <figure>
-    <div class="shot"><img src="media/report.webp" width="936" height="1252" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></div>
+    <div class="shot"><img src="media/report.webp" width="1030" height="1315" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></div>
     <figcaption><code>report.txt</code>: a short answer, numbers, repeated mistakes with evidence, checked fixes, what was not checked, and questions for you.</figcaption>
   </figure>
-  <p class="tile">These shots come from a run of the packed CLI on a small sample defect log, with scripted stand-ins for the two agents and the project path shortened. They show the shape of the output, not what a hosted model would say about your project.</p>
+  <p class="tile">These shots come from a real run of the packed CLI on a small sample defect log. Both the worker and the judge were MiniMax-M3, called through BYOKit. Only the project path is shortened. A hosted model can say different things about your project.</p>
 
   <h2>Alone, or with the family</h2>
   <p style="color:var(--muted);margin-top:0">Each tool works on its own, with or without the others and with or without an agent supervisor. They meet through small written contracts.</p>

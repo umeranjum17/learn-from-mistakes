@@ -6,7 +6,7 @@
 
 <p align="center"><b><a href="https://umeranjum17.github.io/learn-from-mistakes/">Landing page</a></b> · <a href="https://www.npmjs.com/package/learn-from-mistakes-axi">npm</a> · part of the family with <a href="https://github.com/umeranjum17/sign-off">sign-off</a>, <a href="https://github.com/umeranjum17/first-draft">first-draft</a> and <a href="https://github.com/umeranjum17/done-done-axi">done-done</a></p>
 
-<p align="center"><img src="docs/media/retro.webp" width="560" alt="Terminal: the end of a retro run, with two repeated causes and three findings, each confirmed"></p>
+<p align="center"><img src="docs/media/retro.webp" width="560" alt="Terminal: the end of a retro run, with two repeated causes and three findings with the judge's verdicts"></p>
 
 `learn-from-mistakes-axi` runs a saved retrospective on a project's defect logs, failed checks and agent sessions. Its own worker reads the records and names findings. A judge role checks each finding, then the worker proposes fixes for the findings the judge did not refute, and the judge checks each fix. The CLI merges duplicates, counts repeated causes and writes a plain-text report.
 
@@ -33,7 +33,7 @@ learn-from-mistakes-axi status
 learn-from-mistakes-axi report
 ```
 
-<p align="center"><img src="docs/media/doctor.webp" width="560" alt="Terminal: learn-from-mistakes-axi doctor lists ok lines for node, git, config, source, worker, judge and skills"></p>
+<p align="center"><img src="docs/media/doctor.webp" width="560" alt="Terminal: learn-from-mistakes-axi doctor lists ok lines for node, git, config, source, worker, judge and sign-off"></p>
 
 1. `init` asks for the worker, judge and their models in a terminal. It writes `.learn-from-mistakes.yaml` and a fully commented `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`). It detects supported sources, adds four editable starter causes, and asks which local agents' sessions you want read; none are preselected. Inspect the written sources before starting a retro.
 2. `doctor` checks config, sources, state, agents, login presence and model choices without calling a model. Follow each `fix:` under a `fail`, then run it again. A missing skill or sign-off peer is a warning, not a prerequisite.
@@ -44,7 +44,7 @@ The report contains a short answer, numbers, follow-ups on previous changes, rep
 
 <p align="center"><img src="docs/media/report.webp" width="560" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></p>
 
-The shots on this page come from a run of the packed CLI on a small sample defect log, with scripted stand-ins for the two agents and the project path shortened. They show the shape of the output, not what a hosted model would say about your project.
+The shots on this page come from a real run of the packed CLI on a small sample defect log, with MiniMax-M3 as both the worker and the judge, called through BYOKit; only the project path is shortened. A model can say different things about your project.
 
 ### No terminal, or no agent/model selected?
 
