@@ -114,8 +114,8 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
     'ci_job_failures:umer/umer-app / CI / lint': [1, 1], 'ci_job_failures:umer/umer-app / CI / test': [2, 0],
   });
   const text = readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8');
-  assert.match(text, /^- ci_failure_rate: this window 50, last window 50, no target\.$/m);
-  assert.match(text, /^- CI job umer\/umer-app \/ CI \/ test: failed 2 times this window, 0 last window\.$/m);
+  assert.match(text, /^- ci_failure_rate: this window 50, last window 50, trend flat, no target\.$/m);
+  assert.match(text, /^- CI job umer\/umer-app \/ CI \/ test: failed 2 times this window, 0 last window, trend up\.$/m);
   assert.ok(text.indexOf('CI / test') < text.indexOf('CI / lint'), 'the job that fails most comes first');
   assert.ok(!/Actions runs/.test(text.split('6. Not checked')[1]), 'no gap line when the runs were read');
   const gql = calls().filter((c) => c[1] === 'graphql');

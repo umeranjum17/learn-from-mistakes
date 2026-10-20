@@ -74,7 +74,7 @@ export function reportText(cfg, db, id, dir, window, run) {
   for (const m of measured.filter((x) => !x.name.startsWith(JOB))) lines.push(`- ${m.name}: this window ${m.current}, last window ${m.previous}, trend ${trend(m)}, ${m.target ? `target ${m.target}, ${m.met === 'n/a' ? 'no data' : m.met}` : 'no target'}.`);
   if (!measured.length) lines.push('- No metric has data.');
   // Failing CI jobs by name, the worst first; the rest are counted.
-  for (const m of jobs.slice(0, EVIDENCE * 3)) lines.push(`- CI job ${m.name.slice(JOB.length)}: failed ${plural(m.current, 'time')} this window, ${m.previous} last window.`);
+  for (const m of jobs.slice(0, EVIDENCE * 3)) lines.push(`- CI job ${m.name.slice(JOB.length)}: failed ${plural(m.current, 'time')} this window, ${m.previous} last window, trend ${trend(m)}.`);
   if (jobs.length > EVIDENCE * 3) lines.push(`- ${plural(jobs.length - EVIDENCE * 3, 'more failing CI job')} not shown.`);
   // Each home of a fleet, by salted id: its share of the fleet numbers above, this window.
   const homes = new Map(run.sources.flatMap((s) => s.homes ?? []).map((h) => [h, {}]));
