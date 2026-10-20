@@ -93,16 +93,18 @@ export function checkHomes(sources, project) {
 
 export function read(source, entry, ctx) {
   const fleet = entry.fleet && fleetHomes(source, entry.path, ctx.project), records = [], ids = [];
-  let skipped = 0;
+  let skipped = 0, chat = 0;
   for (const [i, home] of (fleet ? fleet.homes : [entry.path]).entries()) {
     const id = fleet && markdownLog.saltedId(ctx.salt, home);
     const got = readHome(source, home, ctx, id, i ? `fix or remove the line of ${home} in ${shq(fleet.file)}, the fleet registry source ${source} reads` : undefined, i > 0);
     for (const r of got.records) records.push(r); // one push per record, as below
     skipped += got.skipped;
+    chat += got.chat;
     ids.push(id);
   }
   // The metrics tables the first home lacks (a fleet's other homes may keep none), named so the report says which source is missing.
   const missing = ['prs.tsv', 'daily.tsv'].filter((t) => !records.some((r) => r.data.kind === (t === 'prs.tsv' ? 'pr' : 'daily'))).map((t) => `rows in ${t} under data/metrics of the home`);
+  if (!chat) missing.push('rows in chat.tsv under data of the home'); // no chat lines read: the captain's complaints are unchecked, not absent
   return { records, skipped, ...(missing.length && { missing }), ...(fleet && { homes: ids, lines_skipped: fleet.lines }), hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
 }
 
@@ -179,7 +181,8 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
     return lines.flatMap((l, i) => (l.trim() ? [{ line: i + 2, file, row: Object.fromEntries(l.split('\t').map((v, j) => [cols[j], v])) }] : []));
   };
   const num = (v) => Number(v) || 0;
-  for (const { line, file, row } of table('../chat.tsv')) {
+  const chatRows = table('../chat.tsv');
+  for (const { line, file, row } of chatRows) {
     if (/\b(why|wrong|again)\b/i.test(row.text ?? '')) add(/^\d+$/.test(row.at) ? Number(row.at) * 1000 : NaN, `chat:${line}`, `${file}:${line}`, 'complaint', row.text, undefined, row.work ? { work: redact(row.work) } : undefined);
   }
   for (const { line, file, row } of table('prs.tsv')) {
@@ -188,7 +191,7 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
       rework_other: num(row.rework_other) + num(row.rework_pipeline), reverted: num(row.reverted), escaped: num(row.escaped) });
   }
   for (const { line, file, row } of table('daily.tsv')) add(Date.parse(row.day), `daily:${line}`, `${file}:${line}`, 'daily', '', undefined, { steers: num(row.steers), corrections: num(row.s_correct) });
-  return { records, skipped };
+  return { records, skipped, chat: chatRows.length };
 }
 
 // The steers in the window: the daily table's, when the home keeps one, else the inbox messages'; the two are never added,
