@@ -76,7 +76,7 @@ A `markdown-log` source with `review: true` is a review log: its records do not 
 
 Without installing globally, use `npx -y learn-from-mistakes-axi <command>` for any command above. Ask your agent to run `guide`, then drive init → doctor → retro → report and read `report.txt` to you. The caller does not perform the retro's analysis.
 
-The optional discovery skill uses the [Agent Skills](https://agentskills.io) format. Omit `--no-skill` from init to install it for configured usable agent CLIs; `--project-skill` installs project-local copies instead. In harnesses with slash commands, invoke `/learn-from-mistakes`. The skill points to the installed CLI's `guide` and `--help`, not a separate manual workflow.
+The optional discovery skill uses the [Agent Skills](https://agentskills.io) format. Omit `--no-skill` from init to install it for configured usable agent CLIs; `--project-skill` installs project-local copies instead. The skill is named `lfm-retro`; init moves a `learn-from-mistakes` skill dir it wrote earlier to `lfm-retro` once and leaves any other skill alone. In harnesses with slash commands, invoke `/lfm-retro`. The skill points to the installed CLI's `guide` and `--help`, not a separate manual workflow.
 
 ## Alone, with the family, inside or outside Firstmate
 

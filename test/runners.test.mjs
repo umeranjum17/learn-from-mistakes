@@ -230,7 +230,7 @@ test('the skill row looks where the agent CLI reads skills: its login check\'s c
   config('agent: pi\njudge_agent: claude\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   const r = lfm({ PI_CODING_AGENT_DIR: join(tmp, 'pi-agent') }, 'doctor', '--json');
   const row = JSON.parse(r.stdout).checks.find((c) => c.label === 'skill pi');
-  assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'learn-from-mistakes')}`);
+  assert.equal(row.detail, `not installed in ${join(tmp, 'pi-agent', 'skills', 'lfm-retro')}`);
 });
 
 test('init writes no agent or model the user did not choose', () => {

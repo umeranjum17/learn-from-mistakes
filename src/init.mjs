@@ -1,7 +1,7 @@
 // init: write the global $LFM_HOME/config.yaml and a project's .learn-from-mistakes.yaml, each once and never over a
 // file that exists. The global file holds the agent keys, fully commented, in no-mistakes' shape; the project file
 // holds the sources the registry's detect hooks find and the agents the user chose.
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
@@ -12,7 +12,7 @@ import { configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from
 import { checkHomes } from './sources/firstmate.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
-const SKILL_SRC = fileURLToPath(new URL('../skills/learn-from-mistakes/SKILL.md', import.meta.url));
+const SKILL_SRC = fileURLToPath(new URL('../skills/lfm-retro/SKILL.md', import.meta.url));
 // The flags --reconfigure re-applies to an existing config; the ignored line names the flag only for these.
 export const RECONFIGURABLE = ['--agent', '--model', '--judge-agent', '--judge-model', '--sessions'];
 const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an installed agent CLI or byokit:<route>; agents --test <agent> checks one`;
@@ -21,8 +21,22 @@ const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an i
 // skills dir (the runner skills() paths, as `npx skills` lays them out); `--project-skill` writes the project's
 // .claude/skills and .agents/skills instead, `--no-skill` writes none. Each real file is written once: roots that
 // resolve to one dir share it, and a file holding the same bytes is left alone. A failed write is a skip, never fatal.
+// The skill used to be written as learn-from-mistakes: a dir this tool wrote (only its SKILL.md, with the name and the
+// tags the generator wrote) is removed once and the file lands in lfm-retro; any other learn-from-mistakes dir is left.
+const OLD_SKILL = ['name: learn-from-mistakes\n', 'hermes-tags: retrospective, defects, agents, instructions\n'];
+function moveOldSkill(root) {
+  const old = join(root, 'learn-from-mistakes');
+  try {
+    if (readdirSync(old).join() !== 'SKILL.md') return;
+    const text = readFileSync(join(old, 'SKILL.md'), 'utf8');
+    if (!OLD_SKILL.every((l) => text.includes(l))) return;
+    unlinkSync(join(old, 'SKILL.md'));
+    rmdirSync(old);
+    return old;
+  } catch { /* no old skill, or not ours to move */ }
+}
 export function installSkills(cfg, agents, dir, opts) {
-  if (opts['no-skill']) return { written: [], updated: [], failed: [], roots: 0 };
+  if (opts['no-skill']) return { written: [], updated: [], failed: [], moved: [], roots: 0 };
   const roots = opts['project-skill']
     ? [join(dir, '.claude', 'skills'), join(dir, '.agents', 'skills')]
     : [...new Set([cfg.agent, cfg.judge_agent].filter(Boolean))].flatMap((name) => {
@@ -31,10 +45,12 @@ export function installSkills(cfg, agents, dir, opts) {
       return agents.find((x) => x.runner === key)?.usable ? [RUNNERS[key].skills(process.env)] : [];
     });
   const text = readFileSync(SKILL_SRC, 'utf8');
-  const written = [], updated = [], failed = [], done = new Set();
+  const written = [], updated = [], failed = [], moved = [], done = new Set();
   for (const root of roots) {
     try {
-      const target = join(root, 'learn-from-mistakes');
+      const old = moveOldSkill(root);
+      if (old) moved.push(old);
+      const target = join(root, 'lfm-retro');
       mkdirSync(target, { recursive: true });
       const real = realpathSync(target);
       if (done.has(real)) continue;
@@ -47,7 +63,7 @@ export function installSkills(cfg, agents, dir, opts) {
       if (exists) updated.push(file);
     } catch (e) { failed.push(`${root}: ${e.message}`); }
   }
-  return { written, updated, failed, roots: roots.length };
+  return { written, updated, failed, moved, roots: roots.length };
 }
 const scalar = (v) => JSON.stringify(v); // a JSON string is a YAML scalar
 const flow = (o) => `{ ${Object.entries(o).map(([k, v]) => `${k}: ${scalar(v)}`).join(', ')} }`;
@@ -229,7 +245,7 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
   stateDir(cfg);
   const missing = unset(cfg);
   const { worker, judge } = await resolveRoles(cfg, agents);
-  const { written: skills, updated: skills_updated, failed: skills_skipped, roots: skills_roots } = installSkills(cfg, agents, dir, opts);
+  const { written: skills, updated: skills_updated, failed: skills_skipped, moved: skills_moved, roots: skills_roots } = installSkills(cfg, agents, dir, opts);
   const gaps = [...(missing.length ? [`agents: ask the user which agent and model to use, then run ${saveCommand(missing, opts.dir)}`] : []),
     ...Object.entries({ worker, judge }).filter(([name, r]) => r.problem && !missing.includes(KEY[name])).map(([name, r]) => `${name}: ${r.problem}${r.fix ? `; ${r.fix}` : ''}`),
     ...(!has && !reads?.length && !asked ? [sessionsAsk(local, opts.dir)] : []),
@@ -241,6 +257,6 @@ ${Object.entries(found).map(([id, s]) => `  ${id}: ${flow(s)}\n`).join('')}`, { 
     causes: Object.keys(cfg.causes),
     worker: { runner: worker.runner, model: worker.model }, judge: { runner: judge.runner, model: judge.model }, workerBin: worker.bin, judgeBin: judge.bin, missing,
     excerpts: cfg.excerpts, sources: Object.fromEntries(Object.entries(cfg.sources).map(([id, s]) => [id, s.path ? { type: s.type, path: s.path, ...(s.fleet && { fleet: true }) } : { type: s.type }])),
-    gaps, skipped, skills, skills_updated, skills_skipped, skills_roots,
+    gaps, skipped, skills, skills_updated, skills_skipped, skills_moved, skills_roots,
   };
 }

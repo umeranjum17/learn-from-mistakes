@@ -1,4 +1,4 @@
-// Conformance: every command and worked example the skill (skills/learn-from-mistakes/SKILL.md) and the README show
+// Conformance: every command and worked example the skill (skills/lfm-retro/SKILL.md) and the README show
 // runs as written, from a fresh packed install, and every guard refuses bad input with `error:` + `next:`, never a
 // stack trace and never a broken-citation message for a missing evidence file. Integration style: it drives the real
 // CLI, like cli.test.mjs.
@@ -48,7 +48,7 @@ function refuses(result, why) {
 }
 
 test('every command the skill and README show is a real command the CLI accepts', () => {
-  const docs = ['skills/learn-from-mistakes/SKILL.md', 'README.md'].map((f) => readFileSync(join(REPO, f), 'utf8')).join('\n');
+  const docs = ['skills/lfm-retro/SKILL.md', 'README.md'].map((f) => readFileSync(join(REPO, f), 'utf8')).join('\n');
   const commands = new Set([...docs.matchAll(/learn-from-mistakes-axi (?:-y )?((?:change applied|signoff (?:post|answers)|[a-z][a-z-]*))/g)].map((m) => m[1]));
   assert.ok(commands.has('init') && commands.has('retro') && commands.has('report'), 'the docs no longer show the core commands');
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-conformance-docs-'));
