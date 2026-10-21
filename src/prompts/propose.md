@@ -13,6 +13,7 @@ Do the work in this order.
    - Name its kind: doc (documentation), rule (an instruction) or code (a program change).
    - The target is the file, tool or process to change. The owner is the role that makes the change.
    - When the change edits a file, put its path from the repository root in the target.
+   - A rule for this project's agents may go in the project's learned skill: then the target is only {{skill}}.
    - Give the metric that shows whether the fix worked: {{metrics}}.
    - Give the tripwire: the value that metric must reach, "<op> <number>" such as "<= 0".
    - Give the check: one command on one line that tests or measures whether the fix worked, such as the project's test command.

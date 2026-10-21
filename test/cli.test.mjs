@@ -1907,6 +1907,48 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.deepEqual([reportOf(p, auto1.run.id), calls().length], [report, before2], 'the branch is kept, so the worker is not called again');
 });
 
+test('apply: an accepted fix aimed at the project skill creates learn-from-mistakes-<name> with its rule, evidence and fix; the next retro measures the merged change and updates that skill, and one that finds it did not help retires it', () => {
+  const { p, lfm, git, bin, fake, calls } = applyRepo();
+  const skill = '.agents/skills/learn-from-mistakes-example/SKILL.md', ago = (days) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const defects = (days, n) => `\n## ${ago(days).slice(0, 10)}\n\n${Array.from({ length: n }, (_, i) => `- [cache] Umer's build ${days}-${i} waited on the cache lock.\n`).join('')}`;
+  // 4 defects 5 days ago and 3 today: the before and after windows of a fix that went live 3 days ago.
+  appendFileSync(join(p, 'defects.md'), defects(5, 4) + defects(0, 1)); git('commit', '-qam', 'more defects');
+  const { run } = JSON.parse(lfm({ ...fake, FAKE_TARGET: skill, FAKE_METRIC: 'defects' }, 'retro', '--foreground', '--json').stdout);
+  assert.ok(calls().find((c) => c.stdin.startsWith(`lfm-run:${run.id}:propose\n`)).stdin.includes(`then the target is only ${skill}.`), 'the propose prompt names the project skill');
+  // The skill is apply's one new file, and an untracked file at its path is never overwritten.
+  mkdirSync(join(p, '.agents', 'skills', 'learn-from-mistakes-example'), { recursive: true }); writeFileSync(join(p, skill), 'Umer is still writing this.\n');
+  const taken = lfm({}, 'apply', '--fix', '1'); assert.equal(taken.status, 1, taken.stderr);
+  assert.match(taken.stderr, new RegExp(`^error: fix ${run.id}:1 would create ${skill}, but an untracked file is there; apply never overwrites it$`, 'm'));
+  assert.deepEqual([git('branch', '--list', 'lfm/*'), JSON.parse(lfm({}, 'changes', '--json').stdout).changes.length], ['', 0]);
+  rmSync(join(p, skill));
+  const before = calls().length, ok = lfm({ GIT_AUTHOR_DATE: ago(4), GIT_COMMITTER_DATE: ago(4) }, 'apply', '--fix', '1'); assert.equal(ok.status, 0, ok.stderr);
+  const branch = `lfm/example-e3b0c4/${run.id}-1`;
+  assert.equal(ok.stdout, `applied: fix ${run.id}:1 on branch ${branch}, commit ${git('rev-parse', branch).slice(0, 12)}, ledger chg-1\n`);
+  assert.equal(calls().length, before, 'the tool writes the skill: the worker is not called');
+  assert.deepEqual([git('diff', '--name-status', `HEAD..${branch}`), existsSync(join(p, skill)), git('status', '--porcelain')], [`A\t${skill}`, false, '']);
+  const created = git('show', `${branch}:${skill}`);
+  assert.match(created, new RegExp(`^---\nname: learn-from-mistakes-example\ndescription: "Rules the example project learned from its own repeated mistakes, [^\n]+"\n---\n\n# Learned rules\n\n[^\n]+\n\n## Fix ${run.id}:1, for shared-cache-lock\n\nGive each worker its own cache directory\\.\n\n- Evidence: defects\\.md:\\d+(; defects\\.md:\\d+)*\n- Measured by: defects, tripwire <= 0\n- Result: not measured yet$`));
+  for (const [, line] of created.matchAll(/defects\.md:(\d+)/g)) assert.match(readFileSync(join(p, 'defects.md'), 'utf8').split('\n')[line - 1], /^- /, `evidence line ${line} is a defect record`);
+  // As if apply ran 4 days ago and the user merged its branch a day later.
+  const ledger = join(p, '.lfm', 'changes.jsonl'); writeFileSync(ledger, readFileSync(ledger, 'utf8').replace(/"at":"[^"]+"/, `"at":"${ago(4)}"`));
+  execFileSync(join(bin, 'git'), ['-C', p, 'merge', '--no-ff', '-qm', 'merge the learned skill', branch], { env: { ...process.env, GIT_AUTHOR_DATE: ago(3), GIT_COMMITTER_DATE: ago(3) } });
+
+  // The next retro measures the change from its merge: the defects fell but missed the tripwire, so that same skill gets the result.
+  const second = JSON.parse(lfm({ FAKE_ANALYSE: 'empty' }, 'retro', '--foreground', '--json').stdout), measured = `lfm/example-e3b0c4/${second.run.id}-skill`;
+  assert.deepEqual(second.followups.map((f) => [f.change, f.metric, f.before, f.after, f.verdict]), [['chg-1', 'defects', 4, 3, 'fix']]);
+  assert.deepEqual([git('rev-parse', `${measured}^`), git('diff', '--name-status', `HEAD..${measured}`)], [git('rev-parse', 'HEAD'), `M\t${skill}`]);
+  assert.equal(git('show', `${measured}:${skill}`), created.replace('- Result: not measured yet', `- Result: run ${second.run.id} measured change chg-1: defects 4 before, 3 after, verdict fix`));
+  assert.match(reportOf(p, second.run.id), new RegExp(`^3\\. Last changes\n- Change chg-1, metric defects: 4 before, 3 after\\.[^\n]*\n(?: {2,3}[^\n]*\n)* {3}skill: run ${second.run.id} measured the project skill on branch ${measured}, commit [0-9a-f]{12}\n\n4\\.`, 'm'));
+  assert.equal(git('status', '--porcelain'), '', 'the measure never touches the work tree');
+
+  // Merged, then more defects than before: the change did not help, so the next retro retires the rule and, with it, the skill.
+  git('merge', '--no-ff', '-qm', 'merge the measured skill', measured);
+  appendFileSync(join(p, 'defects.md'), defects(0, 3)); git('commit', '-qam', 'three more defects');
+  const third = JSON.parse(lfm({ FAKE_ANALYSE: 'empty' }, 'retro', '--foreground', '--json').stdout), retired = `lfm/example-e3b0c4/${third.run.id}-skill`;
+  assert.deepEqual(third.followups.map((f) => [f.change, f.before, f.after, f.verdict]), [['chg-1', 4, 6, 'rollback']]);
+  assert.deepEqual([git('rev-parse', `${retired}^`), git('diff', '--name-status', `HEAD..${retired}`)], [git('rev-parse', 'HEAD'), `D\t${skill}`]);
+});
+
 test('apply: a cut-off reply is refused with no branch and no ledger change; trailing-newline-only and normal-stop replies still apply', () => {
   const { p, lfm, calls, git, fake } = applyRepo();
   appendFileSync(join(p, '.learn-from-mistakes.yaml'), 'caps: { invocations: 16 }\n'); git('commit', '-qam', 'caps'); // the retro's calls and every apply call below count on one run

@@ -1,12 +1,12 @@
 // The run's report for a person: <run dir>/report.txt, plain text in the seven sections of the plan. Each line a person
 // reads is STE100: sentences of at most 20 words in plain words and the active voice, with no record id, session id or path. Those go only on the
 // `Evidence:` lines, as pointers a person can open: file:line, `session <id> at <time>`, `PR #N` or a gate store row, and on the `applied:`
-// line of a fix the run's apply step applied (its branch, commit and ledger id) and the `refused:` line of one it could not apply
-// (the refusal and its `next:`).
+// line of a fix the run's apply step applied (its branch, commit and ledger id), the `refused:` line of one it could not apply
+// (the refusal and its `next:`) and the `skill:` line of the project skill the run measured (its branch and commit).
 // Text an agent or the config wrote is redacted and shown only when it keeps the plain-language rule.
 import { writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
-import { appliedFixes, appliedLine } from './apply.mjs';
+import { appliedFixes, appliedLine, skillLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { bundleIds, counts, plain, RAW, readBundle, splitSentences } from './check.mjs';
 import { inWindow, rounded } from './metrics.mjs';
@@ -42,10 +42,11 @@ const changeLines = (text, at) => {
     : [`  This text breaks the report rules, so the report hides it.`, `   Proposal ${at} holds the text.`];
 };
 
-// `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.
-export function reportText(cfg, db, id, dir, window, run) {
-  const all = (sql, ...args) => db.prepare(sql).all(id, ...args);
-  const records = new Map(all('SELECT record_id, source, ref, text, data FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
+// The `Evidence:` line for a list of refs: each ref's pointer a person can open, the first `cap` and the rest counted.
+// The report and the project skill apply writes (src/apply.mjs, every pointer) share it.
+export function evidenceOf(cfg, db, id, window, cap = EVIDENCE) {
+  const all = (sql) => db.prepare(sql).all(id);
+  const records = new Map(all('SELECT record_id, source, ref FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
   const events = new Map(all('SELECT id, session_id, ts FROM events WHERE run_id = ?').map((e) => [`e${e.id}`, e]));
   const groups = clusters(db, id, Date.parse(window.current_start));
   const pointer = (ref) => {
@@ -54,10 +55,17 @@ export function reportText(cfg, db, id, dir, window, run) {
     const row = /^db:(\w+):(.+)$/.exec(r?.ref ?? ''), file = (f) => (isAbsolute(f) && !relative(cfg.dir, f).startsWith('..') ? relative(cfg.dir, f) : f);
     return row ? `${file(cfg.sources[r.source]?.path ?? r.source)} ${row[1]} row ${row[2]}` : r && file(r.ref);
   };
-  const evidence = (refs) => {
+  return (refs) => {
     const ps = [...new Set(refs.flatMap((ref) => /^c\d+$/.test(ref) ? (groups[ref.slice(1) - 1]?.[1] ?? []).map((e) => `e${e.id}`) : [ref]).map(pointer).filter(Boolean))];
-    return `   Evidence: ${ps.slice(0, EVIDENCE).join('; ') || 'none'}${ps.length > EVIDENCE ? `; and ${ps.length - EVIDENCE} more` : ''}`;
+    return `Evidence: ${ps.slice(0, cap).join('; ') || 'none'}${ps.length > cap ? `; and ${ps.length - cap} more` : ''}`;
   };
+}
+
+// `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.
+export function reportText(cfg, db, id, dir, window, run) {
+  const all = (sql, ...args) => db.prepare(sql).all(id, ...args);
+  const records = new Map(all('SELECT record_id, text, data FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
+  const line = evidenceOf(cfg, db, id, window), evidence = (refs) => `   ${line(refs)}`;
   const labelled = new Map(all('SELECT record_id, cause, why FROM labels WHERE run_id = ?').map((l) => [l.record_id, l]));
   const { causes } = counts(cfg, db, id, window);
   const findings = all(`SELECT cause, summary, refs_json, verdict, whys_json, cost FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
@@ -103,6 +111,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     if (reasons.get(f.change)) lines.push(said(reasons.get(f.change)));
   }
   if (!run.followups.length) lines.push('- No applied change has a follow-up yet.');
+  if (step('apply').skill) lines.push(`   ${skillLine(id, step('apply').skill)}`);
   lines.push('', '4. Repeated mistakes');
   for (const [cause, c] of repeated) {
     const refs = [...all('SELECT record_id FROM labels WHERE run_id = ? AND cause = ? AND event = 1', cause).map((l) => l.record_id),

@@ -11,3 +11,4 @@ The repo's maintained verification map; a proof that drives one entry point is i
 - [Count a captain complaint as a repeated cause](count-a-captain-complaint-as-a-repeated-cause.md): Run the cli journey; the retro-complaint drive runs a retro over one captain chat line
 - [Name the records no finding cites](name-records-no-finding-cites.md): Run the cli journey; the retro-uncited drive runs a retro over one captain chat line and two defects, with one finding that cites one defect (`scripts/verify-journeys.mjs`)
 - [Post the report to sign-off](post-the-report-to-sign-off.md): Run the cli journey; the signoff-report drive posts the run's whole report with the fake sign-off-axi, then retries it (`scripts/verify-journeys.mjs`)
+- [Keep a learned project skill](keep-a-learned-project-skill.md): Run the cli journey; the retro-skill drives run three retros in a plain git project whose accepted fix targets the project skill (`scripts/verify-journeys.mjs`)

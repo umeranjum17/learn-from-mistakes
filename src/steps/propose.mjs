@@ -15,6 +15,7 @@ import { liveAt, NOT_RECORDED } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
 import { counts, evidenceFor, plain, quoteProblem, quoteRuns, rawProblem, readBundle, refutedCauses } from '../check.mjs';
+import { projectSkill } from '../apply.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/propose.md', import.meta.url), 'utf8');
@@ -103,6 +104,7 @@ export async function propose(cfg, db, id, dir, window, log) {
   const list = (lines) => (lines.length ? lines.join('\n') : 'None.');
   const refuted = refutedCauses(db, id);
   const fill = {
+    skill: projectSkill(cfg),
     metrics: `${METRIC_RULE}; use cause_count:<cause> only for ${Object.keys(cfg.causes).join(', ') || 'no cause'}, and for any other cause use defects, blocks or decisions`,
     causes: list([...counts(cfg, db, id, window).causes].filter(([c]) => !refuted.has(c)).map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
     findings: list(findings.map((f) => `- ${f.cause}, ${f.verdict} by the judge: ${f.summary} Root cause: ${JSON.parse(f.whys_json ?? '[]').at(-1) ?? 'not named'} Cost: ${f.cost ?? 'not named'} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
