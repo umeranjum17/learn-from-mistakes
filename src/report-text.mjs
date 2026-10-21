@@ -4,11 +4,12 @@
 // line of a fix the run's apply step applied (its branch, commit and ledger id), the `refused:` line of one it could not apply
 // (the refusal and its `next:`) and the `skill:` line of the project skill the run measured (its branch and commit).
 // Text an agent or the config wrote is redacted and shown only when it keeps the plain-language rule.
-import { writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { writeFileSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { appliedFixes, appliedLine, skillLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { bundleIds, counts, plain, RAW, readBundle, splitSentences } from './check.mjs';
+import { REASONS } from './context.mjs';
 import { inWindow, rounded } from './metrics.mjs';
 import { excerpt, redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
@@ -69,12 +70,31 @@ export function reportText(cfg, db, id, dir, window, run) {
   const labelled = new Map(all('SELECT record_id, cause, why FROM labels WHERE run_id = ?').map((l) => [l.record_id, l]));
   const { causes } = counts(cfg, db, id, window);
   const findings = all(`SELECT cause, summary, refs_json, verdict, whys_json, cost FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
-  const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note, check_cmd FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
+  const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note, check_cmd, current_rule, rule_ref FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
   const reasons = new Map(all('SELECT change_id, reason FROM followups WHERE run_id = ?').map((f) => [f.change_id, f.reason]));
   const checks = new Map(all('SELECT change_id, stages FROM followups WHERE run_id = ?').map((f) => [f.change_id, JSON.parse(f.stages ?? '{}').check]));
   const applied = appliedFixes(db, id);
   const step = (name) => JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, name)?.output_json ?? '{}');
   const refused = new Map((step('apply').refused ?? []).map((r) => [r.fix, r]));
+  // The project context the run read before it proposed fixes, and what it did not read.
+  const ctx = step('context');
+  // The line of a project file that holds a rule: the line with the most of the rule's words on it. The report points
+  // at it, so a reader lands on the rule the fix replaces.
+  const ruleAt = (ref, rule) => {
+    if (!ref || !rule) return '';
+    const file = resolve(cfg.dir, ref), rel = relative(cfg.dir, file);
+    if (rel.startsWith('..') || isAbsolute(rel)) return ''; // a rule outside the project is never pointed at
+    let text;
+    try { text = readFileSync(file, 'utf8'); } catch { return ''; }
+    const words = rule.toLowerCase().match(/[a-z]{4,}/g) ?? [];
+    if (!words.length) return '';
+    let best = 0, score = 0;
+    text.split('\n').forEach((line, i) => {
+      const low = line.toLowerCase(), n = words.filter((w) => low.includes(w)).length;
+      if (n > score) { score = n; best = i + 1; }
+    });
+    return best ? `${ref}:${best}` : '';
+  };
   const repeated = [...causes].filter(([, c]) => c.repeated);
   const missed = run.metrics.filter((m) => m.met === 'missed').length;
   const lines = ['Retro report', '', '1. Short answer',
@@ -132,13 +152,17 @@ export function reportText(cfg, db, id, dir, window, run) {
   const dated = [...all('SELECT ts FROM events WHERE run_id = ? AND ts IS NOT NULL'), ...all('SELECT ts FROM records WHERE run_id = ? AND ts IS NOT NULL')];
   if (!repeated.length && dated.length && !inWindow(dated, { start: Date.parse(window.current_start) }).length) lines.push(`- The sources have records, but all fall outside the ${parseInt(cfg.window, 10)}-day window.`);
   lines.push('', '5. Fixes');
+  if (ctx.read?.length) lines.push(`The run read ${plural(ctx.read.length, 'project file')} before it proposed these fixes.`,
+    `   Evidence: ${ctx.read.map((f) => `${f.path}:${f.line}`).join('; ')}`);
   for (const f of fixes) {
     const refs = JSON.parse(f.refs_json);
     const finding = findings.find((x) => x.cause === f.cause && JSON.parse(x.refs_json).some((r) => refs.includes(r))) ?? findings.find((x) => x.cause === f.cause);
     const shown = run.fixes.find((x) => x.n === f.n);
     const target = run.metrics.find((m) => m.name === shown.metric)?.target;
+    const rule = f.current_rule ? ruleAt(f.rule_ref, f.current_rule) : '';
     lines.push(`Fix ${f.n}, for ${f.cause}:`, '- Finding:', said(finding?.summary ?? cfg.causes[f.cause]?.description), '- Owner:', said(f.owner), '- Change:',
       ...changeLines(f.change, `${id}:${f.n}`),
+      ...(f.current_rule ? ['- Current rule:', said(f.current_rule), ...(rule ? [`   Evidence: ${rule}`] : [])] : []),
       `- Metric: ${shown.metric}, ${target ? `target ${target}` : 'no target'}. Tripwire: ${shown.tripwire}.`, ...(f.check_cmd ? [`- Check: ${f.check_cmd}`] : []), `- The judge's verdict: ${shown.verdict}.`);
     if (f.judge_note) lines.push(said(f.judge_note));
     lines.push(evidence(JSON.parse(f.refs_json)));
@@ -170,7 +194,11 @@ export function reportText(cfg, db, id, dir, window, run) {
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]
       .filter(([n]) => n).flatMap(([n, what, word = 'item', many]) => [`- ${what} ${plural(n, word, many)}.`,
         ...(what === 'The worker broke the style rules in' ? ['   The run kept them, and the report hides any wording that breaks the rules.'] : []),
-        ...(what === 'The rules left out' ? all('SELECT cause, problem FROM proposals WHERE run_id = ? AND problem IS NOT NULL ORDER BY id').map((f) => `   The fix for ${f.cause}: ${f.problem}.`) : [])])];
+        ...(what === 'The rules left out' ? all('SELECT cause, problem FROM proposals WHERE run_id = ? AND problem IS NOT NULL ORDER BY id').map((f) => `   The fix for ${f.cause}: ${f.problem}.`) : [])]),
+    // The project context the run did not read: what it did not read, and why. The files it read are named in section 5.
+    ...(ctx.off ? ['- The project context is off for this project, so the run saw no project rule.'] : ctx.read ? ctx.read.length ? [] : ['- The project context read no project file, so the run saw no project rule.'] : []),
+    ...(ctx.skipped?.length ? [`- The project context did not read ${plural(ctx.skipped.length, 'file')}: ${[...new Set(ctx.skipped.map((f) => f.why))].map((w) => `${ctx.skipped.filter((f) => f.why === w).length} ${REASONS[w].short}`).join(', ')}.`,
+      ...(ctx.skipped.filter((f) => f.size).length ? [`   Evidence: ${ctx.skipped.filter((f) => f.size).map((f) => `${f.path}:1`).join('; ')}`] : [])] : [])];
   lines.push('', '6. Not checked', ...(gaps.length ? gaps : ['- Nothing. The run read all sources and checked all items.']), '', '7. Questions for you');
   const open = fixes.filter((f) => !applied.has(f.n)); // a fix the run applied is never asked about
   const signoff = Boolean(cfg.signoff !== 'off' && which('sign-off-axi') && open.length); // sign-off asks Apply or Skip for each open fix

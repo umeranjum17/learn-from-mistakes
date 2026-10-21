@@ -15,6 +15,7 @@ import { analyse } from './steps/analyse.mjs';
 import { propose } from './steps/propose.mjs';
 import { verify } from './steps/verify.mjs';
 import { check, counts } from './check.mjs';
+import { context } from './context.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { postReport } from './signoff.mjs';
@@ -64,6 +65,12 @@ const STEPS = {
   // The judge tries to refute each finding against the bundle items it cites: confirmed, weakened or refuted. It runs
   // before propose, so no fix rests on a finding the judge refuted.
   verify: (cfg, db, id, log) => verify(cfg, db, id, runDir(cfg, id), 'findings', log),
+  // The project's own context, read in a bounded way: the docs, the skills and the code the incidents point at. The
+  // propose step reads it, so a fix names the project rule it replaces or extends.
+  context: (cfg, db, id, log) => {
+    if (cfg.context.off) { log('the project context is off'); return { off: true, read: [], skipped: [] }; }
+    return context(cfg, db, id, runDir(cfg, id), log);
+  },
   // The worker proposes fixes for the repeated causes and gives the reason for each follow-up that is not keep.
   propose: (cfg, db, id, log) => propose(cfg, db, id, runDir(cfg, id), collected(db, id), log),
   // The judge tries to refute each fix the same way.

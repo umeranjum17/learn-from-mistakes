@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { recordId, UsageError } from '../bin/learn-from-mistakes-axi.mjs';
+import { projectSkill } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { isMetric, RULE } from './config.mjs';
 import { meets } from './metrics.mjs';
@@ -241,10 +242,15 @@ export function check(cfg, db, id, dir, window, log) {
   const { causes, findings } = counts(cfg, db, id, window);
   const refuted = refutedCauses(db, id);
   const ids = bundleIds(readBundle(dir, id));
+  // The project context the run read: a fix that changes a file of the project names the rule it replaces or extends.
+  // The project's learned skill is the tool's own file: a fix that writes it adds a rule, it replaces none.
+  const ctx = JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, 'context')?.output_json ?? '{}');
+  const read = ctx && !ctx.off ? ctx.read : [], learned = projectSkill(cfg);
+  const edits = (f) => read.filter((r) => !learned.endsWith(r.path) && f.target?.includes(r.path));
   // How far each metric this window misses its target; 0 when it meets it or has none.
   const gaps = new Map(db.prepare(`SELECT name, value, target FROM metrics WHERE run_id = ? AND window = 'current' AND target IS NOT NULL AND value IS NOT NULL`).all(id)
     .filter((m) => !meets(m.value, m.target)).map((m) => [m.name, Math.abs(m.value - Number(RULE.exec(m.target)[2]))]));
-  const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json, verdict FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
+  const fixes = db.prepare('SELECT id, cause, target, owner, metric, tripwire, refs_json, verdict, kind, current_rule, rule_ref FROM proposals WHERE run_id = ? ORDER BY id').all(id).map((f, i) => {
     const refs = JSON.parse(f.refs_json), missing = refs.filter((r) => !ids.has(r)).length, c = causes.get(f.cause);
     const metric = f.metric?.trim() || defaultMetric(cfg, f.cause), trip = RULE.exec(f.tripwire?.trim() ?? '');
     const bad = f.verdict === 'refuted' ? 'the judge refuted it' : !f.verdict ? 'the judge gave it no verdict' : refuted.has(f.cause) ? 'the judge refuted every finding for its cause' : !c?.count ? 'its cause has no counted events'
@@ -252,7 +258,8 @@ export function check(cfg, db, id, dir, window, log) {
       : !c.repeated ? 'its cause did not repeat; propose only for repeated causes'
       : !f.target.trim() ? 'no target' : !f.owner.trim() ? 'no owner'
       : !isMetric(metric, cfg.causes) ? `its metric is not measurable: cause_count needs a cause the config lists`
-      : !f.tripwire?.trim() ? 'no tripwire' : !trip ? 'its tripwire is not "<op> <number>", such as "<= 0"' : '';
+      : !f.tripwire?.trim() ? 'no tripwire' : !trip ? 'its tripwire is not "<op> <number>", such as "<= 0"'
+       : f.kind === 'rule' && edits(f).length && !(f.current_rule?.trim() && f.rule_ref?.trim()) ? 'it names no current project rule' : '';
     return { id: f.id, i, metric, tripwire: trip ? `${trip[1]} ${trip[2]}` : f.tripwire, count: c?.count ?? 0, gap: gaps.get(metric) ?? 0, unconfirmed: f.verdict !== 'confirmed', bad };
   });
   const kept = fixes.filter((f) => !f.bad).sort((a, b) => a.unconfirmed - b.unconfirmed || b.count - a.count || b.gap - a.gap || a.i - b.i);

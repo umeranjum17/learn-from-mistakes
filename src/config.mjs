@@ -3,7 +3,7 @@
 // an unknown key is a usage error.
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import * as doneDone from './sources/done-done.mjs';
@@ -54,6 +54,9 @@ export const check = (ok, where, rule) => { if (!ok) throw new UsageError(`${whe
 export const MODEL_RULE = 'a model id (letters, digits and . _ / : @ + -, not starting with -), and <provider>/<model> for opencode';
 export const modelOk = (agent, model) => /^[\w.@+][\w.\/:@+-]{0,199}$/.test(model) && (agent !== 'opencode' || model.includes('/'));
 const posInt = (v, where) => check(Number.isInteger(v) && v >= 1, where, 'a positive integer');
+// The project's own context, read before the worker proposes fixes: the docs it lists, the project's skills and the
+// code the incident records point at. Bounded: at most max_files files and max_chars characters, never a secret file.
+export const CONTEXT = { max_files: 12, max_chars: 20000, docs: ['README.md', 'AGENTS.md', 'CLAUDE.md'], skills: ['.agents/skills', 'skills'] };
 
 // The agent keys, with no-mistakes' names and meanings. agent and judge_agent: one agent each, which the user sets: the
 // tool never picks an agent (no auto, no detection) and never tries another when the one set is not ready.
@@ -131,7 +134,7 @@ sources:
   log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi init   # writes the config for this project');
   if (p.name !== undefined) check(typeof p.name === 'string', `${file}: name`, 'a string');
   for (const k of GLOBAL_ONLY) if (Object.hasOwn(p, k)) throw new UsageError(`${file}: ${k} is global-only: set it in ${global.globalPath}`);
-  mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', 'signoff_report', ...AGENT_KEYS], file);
+  mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'context', 'signoff', 'signoff_report', ...AGENT_KEYS], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
     const where = `${file}: sources.${id}`;
@@ -171,6 +174,19 @@ sources:
     for (const [k, n] of Object.entries(v)) if (typeof defaults[k] === 'number') posInt(n, `${file}: ${key}.${k}`);
     return v;
   };
+  // The context block: the caps and the files to read, each with its default. `context: off` turns the whole thing off.
+  const contextBlock = (value) => {
+    const where = `${file}: context`;
+    if (value === undefined) return { ...CONTEXT };
+    const v = { ...CONTEXT, ...mapping(value, Object.keys(CONTEXT), where) };
+    posInt(v.max_files, `${where}.max_files`);
+    posInt(v.max_chars, `${where}.max_chars`);
+    check(v.max_chars >= 1000, `${where}.max_chars`, 'at least 1000');
+    for (const k of ['docs', 'skills']) check(Array.isArray(v[k]) && v[k].every((p) => typeof p === 'string' && p && !isAbsolute(p) && !p.split('/').includes('..')),
+      `${where}.${k}`, 'a list of paths inside the project');
+    return v;
+  };
+  const context = p.context === 'off' ? { off: true, ...CONTEXT } : { off: false, ...contextBlock(p.context) };
   const one = (key, allowed) => {
     if (p[key] !== undefined) check(allowed.includes(p[key]), `${file}: ${key}`, allowed.join(' or '));
     return p[key] ?? allowed[0];
@@ -192,7 +208,7 @@ sources:
     name: p.name ?? basename(dir), sources, causes, repeat: block('repeat', { min_incidents: 3, min_days: 2 }),
     window: p.window ?? '7d',
     targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets, ...Object.assign({}, ...Object.values(sources).map((s) => s.targets)) },
-    followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps,
+    followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps, context,
     signoff: one('signoff', ['on', 'off']), signoff_report: one('signoff_report', ['off', 'on']), ...agentKeys(global, p, file),
   };
   if (global.state_root) return { ...cfg, state: join(expand(String(global.state_root), global.home), cfg.name) };

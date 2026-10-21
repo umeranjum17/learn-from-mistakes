@@ -16,13 +16,14 @@ import { rounded } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
 import { counts, evidenceFor, plain, quoteProblem, quoteRuns, rawProblem, readBundle, refutedCauses } from '../check.mjs';
 import { projectSkill } from '../apply.mjs';
+import { readContext } from '../context.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/propose.md', import.meta.url), 'utf8');
 const str = (v) => typeof v === 'string';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function proposalProblems(f, i, runs) {
+function proposalProblems(f, i, runs, read) {
   const at = `proposals[${i}]`;
   if (!f || typeof f !== 'object') return [`${at} must be an object`];
   const p = [];
@@ -36,6 +37,19 @@ function proposalProblems(f, i, runs) {
   for (const k of ['metric', 'tripwire']) if (f[k] != null && !str(f[k])) p.push(`${at}.${k} must be a string`);
   if (f.check != null && !(str(f.check) && /^[^\p{Cc}\u2028\u2029]{1,200}$/u.test(f.check.trim()))) p.push(`${at}.check must be one command on one line, at most 200 characters`);
   if (!Array.isArray(f.refs) || !f.refs.every(str)) p.push(`${at}.refs must be a list of bundle ids`);
+  // The current project rule a fix replaces or extends, and the file it is in: the rule is shown to a person, so it
+  // follows the report's rules too, and the file must be one the run read.
+  if (f.current_rule != null) {
+    if (!str(f.current_rule)) p.push(`${at}.current_rule must be a string`);
+    else {
+      p.push(plain(f.current_rule, `${at}.current_rule`, { words: 30 }));
+      p.push(rawProblem(redact(f.current_rule), `${at}.current_rule`));
+    }
+  }
+  if (f.rule_ref != null) {
+    if (!str(f.rule_ref)) p.push(`${at}.rule_ref must be a string`);
+    else if (read.length && !read.includes(f.rule_ref)) p.push(`${at}.rule_ref must name a file the run read: ${read.join(', ')}`);
+  }
   return p.filter(Boolean);
 }
 
@@ -49,10 +63,10 @@ function reasonProblems(r, i, changes) {
 }
 
 // Keeps the proposals and reasons that follow the rules; `bad` names each one that does not, with its problem.
-function sift(v, changes, runs) {
+function sift(v, changes, runs, read) {
   const bad = [];
   const proposals = v.proposals.filter((f, i) => {
-    const p = proposalProblems(f, i, runs);
+    const p = proposalProblems(f, i, runs, read);
     bad.push(...p);
     return !p.length;
   });
@@ -69,12 +83,12 @@ function sift(v, changes, runs) {
 }
 
 // The first answer must be fully valid; on the second only a list that is not a list fails the step.
-function check(v, changes, attempt, runs) {
+function check(v, changes, attempt, runs, read) {
   const p = [];
   if (!Array.isArray(v.proposals)) p.push('proposals must be a list');
   if (!Array.isArray(v.reasons)) p.push('reasons must be a list');
   if (p.length || attempt > 1) return p;
-  const { reasons, bad } = sift(v, changes, runs);
+  const { reasons, bad } = sift(v, changes, runs, read);
   for (const c of changes) if (!reasons.some((r) => r.change === c)) bad.push(`reasons has no reason for ${c}`);
   return bad;
 }
@@ -103,12 +117,16 @@ export async function propose(cfg, db, id, dir, window, log) {
   }
   const list = (lines) => (lines.length ? lines.join('\n') : 'None.');
   const refuted = refutedCauses(db, id);
+  // The project's own context, read by the step before this one: the files a fix may name a current rule from.
+  const ctx = JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, 'context')?.output_json ?? '{}');
+  const read = (ctx && !ctx.off ? ctx.read : []).map((f) => f.path);
   const fill = {
     skill: projectSkill(cfg),
     metrics: `${METRIC_RULE}; use cause_count:<cause> only for ${Object.keys(cfg.causes).join(', ') || 'no cause'}, and for any other cause use defects, blocks or decisions`,
     causes: list([...counts(cfg, db, id, window).causes].filter(([c]) => !refuted.has(c)).map(([c, n]) => `- ${c}: ${plural(n.count, 'incident')} on ${plural(n.days, 'day')}, ${n.repeated ? 'repeated' : 'did not repeat'}`)),
     findings: list(findings.map((f) => `- ${f.cause}, ${f.verdict} by the judge: ${f.summary} Root cause: ${JSON.parse(f.whys_json ?? '[]').at(-1) ?? 'not named'} Cost: ${f.cost ?? 'not named'} Refs: ${JSON.parse(f.refs_json).join(', ')}.`)),
     followups: list(pending.map((f) => `- ${f.change_id}: metric ${f.metric}, ${rounded(f.before)} before, ${rounded(f.after)} after, tripwire ${f.tripwire ?? 'none'}, verdict ${f.verdict}`)),
+    context: ctx && !ctx.off ? readContext(dir, id) : 'The project context is off for this project.',
   };
   const changes = pending.map((f) => f.change_id);
   // The stored record texts this run read: with excerpts off the bundle holds no record text, so the quote rule
@@ -116,15 +134,16 @@ export async function propose(cfg, db, id, dir, window, log) {
   const recordTexts = [...db.prepare('SELECT text FROM records WHERE run_id = ?').all(id).map((r) => r.text),
     ...db.prepare('SELECT excerpt FROM events WHERE run_id = ?').all(id).map((e) => e.excerpt)];
   const runs = quoteRuns(recordTexts);
-  const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt, runs), log,
+  const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt, runs, read), log,
     text: evidenceFor(readBundle(dir, id), findings.flatMap((f) => JSON.parse(f.refs_json))) }); // the parts of the bundle that hold the cited items
-  const { proposals, reasons, bad } = sift(answer, changes, runs);
+  const { proposals, reasons, bad } = sift(answer, changes, runs, read);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
-  const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind, check_cmd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind, check_cmd, current_rule, rule_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const reason = db.prepare('UPDATE followups SET reason = ? WHERE run_id = ? AND change_id = ?');
   db.exec('BEGIN');
   try {
-    for (const f of proposals) add.run(id, f.cause, f.target, f.owner, f.change.trim(), f.metric ?? null, f.tripwire ?? null, JSON.stringify(f.refs), f.kind, f.check ? redact(f.check.trim()) : null);
+    for (const f of proposals) add.run(id, f.cause, f.target, f.owner, f.change.trim(), f.metric ?? null, f.tripwire ?? null, JSON.stringify(f.refs), f.kind, f.check ? redact(f.check.trim()) : null,
+      f.current_rule ? f.current_rule.trim() : null, f.rule_ref ? f.rule_ref.trim() : null);
     for (const r of reasons) reason.run(r.reason.trim(), id, r.change);
     db.exec('COMMIT');
   } catch (e) {
