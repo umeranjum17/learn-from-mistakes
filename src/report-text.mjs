@@ -59,8 +59,9 @@ export function reportText(cfg, db, id, dir, window, run) {
   };
   const { causes } = counts(cfg, db, id, window);
   const findings = all(`SELECT cause, summary, refs_json, verdict, whys_json, cost FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
-  const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
+  const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note, check_cmd FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
   const reasons = new Map(all('SELECT change_id, reason FROM followups WHERE run_id = ?').map((f) => [f.change_id, f.reason]));
+  const checks = new Map(all('SELECT change_id, stages FROM followups WHERE run_id = ?').map((f) => [f.change_id, JSON.parse(f.stages ?? '{}').check]));
   const applied = appliedFixes(db, id);
   const step = (name) => JSON.parse(db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, name)?.output_json ?? '{}');
   const refused = new Map((step('apply').refused ?? []).map((r) => [r.fix, r]));
@@ -95,6 +96,8 @@ export function reportText(cfg, db, id, dir, window, run) {
   lines.push('', '3. Last changes');
   for (const f of run.followups) {
     lines.push(`- Change ${f.change}, metric ${f.metric}: ${f.before} before, ${f.after} after. The verdict is ${f.verdict}. ${DO[f.verdict]}`);
+    lines.push(`   Proposal checked: ${f.checked}. Fix applied: ${f.applied}. Fix shipped: ${f.shipped}. Fix worked: ${f.worked}.`);
+    if (checks.get(f.change)) lines.push(`   Check: ${checks.get(f.change)}`);
     if (reasons.get(f.change)) lines.push(said(reasons.get(f.change)));
   }
   if (!run.followups.length) lines.push('- No applied change has a follow-up yet.');
@@ -125,7 +128,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     const target = run.metrics.find((m) => m.name === shown.metric)?.target;
     lines.push(`Fix ${f.n}, for ${f.cause}:`, '- Finding:', said(finding?.summary ?? cfg.causes[f.cause]?.description), '- Owner:', said(f.owner), '- Change:',
       ...changeLines(f.change, `${id}:${f.n}`),
-      `- Metric: ${shown.metric}, ${target ? `target ${target}` : 'no target'}. Tripwire: ${shown.tripwire}.`, `- The judge's verdict: ${shown.verdict}.`);
+      `- Metric: ${shown.metric}, ${target ? `target ${target}` : 'no target'}. Tripwire: ${shown.tripwire}.`, ...(f.check_cmd ? [`- Check: ${f.check_cmd}`] : []), `- The judge's verdict: ${shown.verdict}.`);
     if (f.judge_note) lines.push(said(f.judge_note));
     lines.push(evidence(JSON.parse(f.refs_json)));
     if (applied.has(f.n)) lines.push(`   ${appliedLine(id, applied.get(f.n))}`);

@@ -401,6 +401,9 @@ export async function runs(cfg) {
   return { runs: db ? db.prepare(`SELECT ${RUN} FROM runs ORDER BY id DESC LIMIT 10`).all().map((r) => ({ ...r })) : [] };
 }
 
+// A follow-up's four states (checked, applied, shipped, worked); the check command stays in report.txt, not in the run's JSON.
+const states = (stages) => { const { check, ...s } = JSON.parse(stages ?? '{}'); return s; };
+
 // The run, its steps, what each source read once collect is done, the numbers once metrics is done, each
 // applied change's verdict once followup is done, the kept fixes once check is done, each with the judge's verdict, and once
 // report is done the result:
@@ -424,8 +427,8 @@ function show(db, id) {
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),
     ...(collect && { sources: JSON.parse(collect).sources.map(({ hash, ...s }) => s) }),
     ...(window && { window: JSON.parse(window), metrics: [...metrics.values()] }),
-    ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
-      .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
+    ...(out('followup') && { followups: db.prepare('SELECT change_id, metric, before, after, tripwire, verdict, stages FROM followups WHERE run_id = ? ORDER BY rowid').all(id)
+      .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict, ...states(f.stages) })) }),
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
     ...(applyOut?.refused?.length && { refused: applyOut.refused }),
     ...(signoffReport && { signoff_report: { ...signoffReport } }),

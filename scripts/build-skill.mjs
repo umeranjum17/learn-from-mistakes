@@ -31,14 +31,14 @@ You do not need it installed: run \`${npx} <command>\`. If its output shows a co
 3. Run \`${npx} retro --wait 8m\`. While the run is still running, run \`${npx} attach\` (or \`status\`) until it ends.
 4. Read the run's \`report.txt\` (\`${npx} report\` prints its path as \`report_txt\`) and tell the user what it says in plain words.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions (the whole report goes there only with signoff_report: on, or \`signoff report\`); else ask the user the questions in section 7 of \`report.txt\`.
-6. Once the user has made a change, record it with \`${npx} change applied --proposal <run>:<n> --ref <git sha>\`; the next retro checks whether it worked.
+6. Once the user has made a change, record it with \`${npx} change applied --proposal <run>:<n> --ref <git sha>\`; it records the fix's check command (\`--check\` sets another), and the next retro checks whether it worked.
 
 ## The retro method
 
 Tell the user the report as a blameless retro, in this order, in plain words. Use only what \`report.txt\` says; never add a number or a cause of your own.
 
 1. Numbers (section 2): for each number, this window, last window and the trend (up, down, flat or unknown). Say which direction is worse.
-2. Last changes (section 3): did each past fix work? Give the number before and after and the verdict. A change that did not help (roll back or delete) is a result, not a fault: ask the user to undo it, and keep a change that worked.
+2. Last changes (section 3): did each past fix work? Give the number before and after, the verdict, and the four states apart: proposal checked, fix applied, fix shipped, fix worked. Name the check command, and tell the user about an accepted fix that no change records. A change that did not help (roll back or delete) is a result, not a fault: ask the user to undo it, and keep a change that worked.
 3. Repeated mistakes (section 4): for each one give its cost, how often it came back, the why chain down to its root cause, and its fix (section 5). A fix must close the root cause, not hide the symptom.
 4. Blameless: name the process, rule, tool or check that had the gap, never a person or an agent. The tool refuses a finding that blames, or that has no why chain or no cost; say when the report shows "No finding gave" a cost or root cause.
 

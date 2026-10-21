@@ -120,7 +120,7 @@ test('each applied change gets before and after numbers and a verdict; the secon
   const first = retro();
   assert.deepEqual(first.steps.map((s) => [s.name, s.status]), [['collect', 'completed'], ['metrics', 'completed'], ['followup', 'completed'], ['bundle', 'completed'], ['analyse', 'completed'], ['verify', 'completed'], ['propose', 'completed'], ['verify-fixes', 'completed'], ['check', 'completed'], ['apply', 'completed'], ['report', 'completed']]);
   const row = (change, metric, before, after, tripwire, verdict) => ({ change, metric, before, after, tripwire, verdict });
-  assert.deepEqual(first.followups, [
+  assert.deepEqual(first.followups.map(({ checked, applied, shipped, worked, ...r }) => r), [
     row('chg-1', 'cause_count:missing-file', 4, 0, '<= 0', 'keep'),
     row('chg-2', 'cause_count:bad-search', 4, 5, '<= 0', 'rollback'),
     row('chg-3', 'cause_count:bad-glob', 2, 2, '<= 0', 'rollback'),
@@ -221,9 +221,10 @@ test('an apply-branch fix is measured from when it reaches the default branch, n
 
   // While neither branch is merged the fixes are not live: n/a numbers and no-data, never a verdict.
   const first = retro();
-  const row = (change, metric, before, after, tripwire, verdict) => ({ change, metric, before, after, tripwire, verdict });
+  // The four states stay apart: applied, but not shipped, so it has not worked yet.
+  const row = (change, metric, before, after, tripwire, verdict, shipped, worked) => ({ change, metric, before, after, tripwire, verdict, checked: 'none', applied: 'yes', shipped, worked });
   for (const [change, tripwire] of [['chg-13', '<= 0'], ['chg-14', '<= 1']]) {
-    assert.deepEqual(first.followups.find((f) => f.change === change), row(change, 'cause_count:bad-search', 'n/a', 'n/a', tripwire, 'no-data'));
+    assert.deepEqual(first.followups.find((f) => f.change === change), row(change, 'cause_count:bad-search', 'n/a', 'n/a', tripwire, 'no-data', 'no', 'not yet'));
   }
   const log = JSON.parse(lfm('logs', '--step', 'followup', '--json').stdout);
   assert.ok(log.log.some((l) => l.line === `chg-13 cause_count:bad-search: n/a before, n/a after, no-data: ${NOT_LIVE}`), JSON.stringify(log.log));
@@ -239,6 +240,40 @@ test('an apply-branch fix is measured from when it reaches the default branch, n
   execFileSync('git', ['-C', p, 'commit', '-qm', 'squash fix 1:2'],
     { encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: ago(1.2) } });
   const second = retro();
-  assert.deepEqual(second.followups.find((f) => f.change === 'chg-13'), row('chg-13', 'cause_count:bad-search', 9, 0, '<= 0', 'keep'));
-  assert.deepEqual(second.followups.find((f) => f.change === 'chg-14'), row('chg-14', 'cause_count:bad-search', 9, 0, '<= 1', 'keep'));
+  assert.deepEqual(second.followups.find((f) => f.change === 'chg-13'), row('chg-13', 'cause_count:bad-search', 9, 0, '<= 0', 'keep', 'yes', 'yes'));
+  assert.deepEqual(second.followups.find((f) => f.change === 'chg-14'), row('chg-14', 'cause_count:bad-search', 9, 0, '<= 1', 'keep', 'yes', 'yes'));
+});
+
+test('an accepted fix records its check command, and its follow-up shows proposal checked, fix applied, fix shipped and fix worked apart: a useful fix is kept, an ineffective one is rolled back, an accepted fix no change records is its own row', () => {
+  const { p, lfm, retro } = journey();
+  const first = retro();
+  // Three fixes of run 1 that the user accepted (Apply), made-up numbers 6 to 8: a useful one, an ineffective one, and one never recorded.
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  const fix = db.prepare(`INSERT INTO proposals (run_id, n, cause, target, owner, change, metric, tripwire, refs_json, kind, verdict, check_cmd) VALUES (?1, ?2, ?3, 'AGENTS.md', 'maintainer', 'Give each worker its own cache directory.', 'cause_count:' || ?3, '<= 0', '[]', 'doc', 'confirmed', ?4)`);
+  const accept = db.prepare(`INSERT INTO signoff (proposal_id, message, answer) SELECT id, '{}', 'apply' FROM proposals WHERE run_id = ? AND n = ?`);
+  for (const [n, cause, check] of [[6, 'missing-file', 'npm test'], [7, 'bad-search', null], [8, 'bad-glob', 'npm run lint']]) { fix.run(first.run.id, n, cause, check); accept.run(first.run.id, n); }
+  db.close();
+  const record = (n, ...flags) => {
+    const r = lfm('change', 'applied', '--proposal', `${first.run.id}:${n}`, '--ref', 'abc1234', '--at', ago(3), ...flags);
+    assert.equal(r.status, 0, r.stderr);
+  };
+  record(6); // the fix's own check command is recorded with it
+  record(7, '--check', 'node --test'); // --check overrides it
+  const hand = lfm('change', 'applied', '--cause', 'no-rule', '--ref', 'abc1234'); // no check given: the retro that measures it
+  assert.equal(hand.status, 0, hand.stderr);
+  const changes = JSON.parse(lfm('changes', '--json').stdout).changes.slice(-3);
+  assert.deepEqual(changes.map((c) => c.check), ['npm test', 'node --test', 'learn-from-mistakes-axi retro --wait 15m']);
+
+  const second = retro();
+  const states = (change) => { const { checked, applied, shipped, worked, verdict } = second.followups.find((f) => f.change === change); return { checked, applied, shipped, worked, verdict }; };
+  assert.deepEqual(states('chg-13'), { checked: 'confirmed', applied: 'yes', shipped: 'yes', worked: 'yes', verdict: 'keep' }); // 4 -> 0
+  assert.deepEqual(states('chg-14'), { checked: 'confirmed', applied: 'yes', shipped: 'yes', worked: 'no', verdict: 'rollback' }); // 4 -> 5
+  assert.deepEqual(states(`${first.run.id}:8`), { checked: 'confirmed', applied: 'no', shipped: 'no', worked: 'not yet', verdict: 'no-data' });
+  assert.deepEqual(states('chg-15'), { checked: 'none', applied: 'yes', shipped: 'yes', worked: 'not yet', verdict: 'no-data' });
+  // The check command reaches the run's report, never its JSON.
+  const report = readFileSync(join(p, '.lfm', 'runs', String(second.run.id), 'report.txt'), 'utf8');
+  assert.match(report, /^- Change chg-13, .*\n {3}Proposal checked: confirmed\. Fix applied: yes\. Fix shipped: yes\. Fix worked: yes\.\n {3}Check: npm test$/m);
+  assert.match(report, /^ {3}Proposal checked: confirmed\. Fix applied: no\. Fix shipped: no\. Fix worked: not yet\.\n {3}Check: npm run lint$/m);
+  assert.match(report, /^ {2}You accepted the fix, but no change records it yet, so there is nothing to measure\.$/m);
+  assert.ok(!JSON.stringify(second).includes('npm test'));
 });

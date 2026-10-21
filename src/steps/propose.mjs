@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLedger } from '../../bin/learn-from-mistakes-axi.mjs';
 import { METRIC_RULE } from '../config.mjs';
-import { liveAt } from '../merge-time.mjs';
+import { liveAt, NOT_RECORDED } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
 import { counts, evidenceFor, plain, quoteProblem, quoteRuns, rawProblem, readBundle, refutedCauses } from '../check.mjs';
@@ -33,6 +33,7 @@ function proposalProblems(f, i, runs) {
   if (str(f.change)) p.push(rawProblem(redact(f.change), `${at}.change`));
   for (const k of ['target', 'owner', 'change']) if (str(f[k])) p.push(quoteProblem(f[k], `${at}.${k}`, runs));
   for (const k of ['metric', 'tripwire']) if (f[k] != null && !str(f[k])) p.push(`${at}.${k} must be a string`);
+  if (f.check != null && !(str(f.check) && /^[^\p{Cc}\u2028\u2029]{1,200}$/u.test(f.check.trim()))) p.push(`${at}.check must be one command on one line, at most 200 characters`);
   if (!Array.isArray(f.refs) || !f.refs.every(str)) p.push(`${at}.refs must be a list of bundle ids`);
   return p.filter(Boolean);
 }
@@ -88,7 +89,8 @@ export async function propose(cfg, db, id, dir, window, log) {
   const ledger = new Map(readLedger(join(cfg.state, 'changes.jsonl')).entries.map((e) => [e.id, e]));
   const unmerged = new Map();
   for (const f of followups) {
-    const live = liveAt(cfg.dir, ledger.get(f.change_id) ?? {});
+    if (!ledger.has(f.change_id)) { unmerged.set(f.change_id, NOT_RECORDED); continue; } // an accepted fix no change records
+    const live = liveAt(cfg.dir, ledger.get(f.change_id));
     if (!live.live) unmerged.set(f.change_id, live.reason);
   }
   const setPlain = db.prepare('UPDATE followups SET reason = ? WHERE run_id = ? AND change_id = ?');
@@ -116,11 +118,11 @@ export async function propose(cfg, db, id, dir, window, log) {
     text: evidenceFor(readBundle(dir, id), findings.flatMap((f) => JSON.parse(f.refs_json))) }); // the parts of the bundle that hold the cited items
   const { proposals, reasons, bad } = sift(answer, changes, runs);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
-  const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind, check_cmd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const reason = db.prepare('UPDATE followups SET reason = ? WHERE run_id = ? AND change_id = ?');
   db.exec('BEGIN');
   try {
-    for (const f of proposals) add.run(id, f.cause, f.target, f.owner, f.change.trim(), f.metric ?? null, f.tripwire ?? null, JSON.stringify(f.refs), f.kind);
+    for (const f of proposals) add.run(id, f.cause, f.target, f.owner, f.change.trim(), f.metric ?? null, f.tripwire ?? null, JSON.stringify(f.refs), f.kind, f.check ? redact(f.check.trim()) : null);
     for (const r of reasons) reason.run(r.reason.trim(), id, r.change);
     db.exec('COMMIT');
   } catch (e) {

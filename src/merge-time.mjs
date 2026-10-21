@@ -18,6 +18,8 @@ export function branchOf(change) {
 // person can read in the report, with no branch, hash or path in it (the report
 // leaves text naming those out).
 export const NOT_LIVE = 'The fix is not on the default branch yet, so there is no after window.';
+// The same for a fix the user accepted that no change records yet (nothing says it was applied).
+export const NOT_RECORDED = 'You accepted the fix, but no change records it yet, so there is nothing to measure.';
 
 const branches = new Map(); // the default branch ref per project dir; its tip is read anew each time
 function git(dir, bin, args, input) {
