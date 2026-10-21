@@ -7,3 +7,5 @@ The repo's maintained verification map; a proof that drives one entry point is i
 - [Record an applied change and export the ledger](record-an-applied-change-and-export-the-.md): Run the cli journey; the change drives run before any retro that reads the ledger
 - [Cancel a running retro](cancel-a-running-retro.md): Start a detached retro in the staged project with the test-only LFM_TEST_SLOW_STEP=report:20000 setting, so the run is still going
 - [Print the agent procedure](print-the-agent-procedure.md): Run the cli journey; the guide drive needs no project config
+- [Split a full retro bundle into parts](split-a-full-retro-bundle-into-parts.md): Run the cli journey; the retro-parts drive runs a retro over 40 defect lines with `caps.bundle_chars: 1000`
+- [Count a captain complaint as a repeated cause](count-a-captain-complaint-as-a-repeated-cause.md): Run the cli journey; the retro-complaint drive runs a retro over one captain chat line
