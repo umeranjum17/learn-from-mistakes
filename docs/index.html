@@ -34,8 +34,6 @@ pre { margin:0; padding:12px 14px; white-space:pre-wrap; overflow-wrap:anywhere;
 code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.9em; }
 pre code { font:inherit; }
 .note { color:var(--muted); font-size:13px; margin:12px 0; }
-.integration { font-size:13px; margin:0; padding-left:12px; border-left:2px solid var(--accent); }
-.integration a { white-space:nowrap; }
 figure { margin:0; min-width:0; }
 figure > a { display:block; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#141720; }
 figure img { display:block; width:100%; height:auto; }
@@ -80,11 +78,10 @@ footer p { margin:0; }
 learn-from-mistakes-axi init
 learn-from-mistakes-axi retro --wait</code></pre></div>
   <p class="note">Node 22.13+. Bring signed-in agents. <code>init</code> asks you to choose a worker, a judge and their models. <a href="https://github.com/umeranjum17/learn-from-mistakes#start-in-your-project">Setup guide →</a></p>
-  <p class="integration"><strong>Works on its own.</strong> Firstmate can optionally add task logs and messages. <a href="#integrations">How that works ↓</a></p>
  </div>
  <figure>
-  <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/demo.md" aria-label="Read the demo inputs and capture notes"><picture><source media="(max-width:600px)" srcset="media/retro-demo-mobile.webp"><img src="media/retro-demo.webp" width="680" height="440" alt="Real saved report excerpt: three test failures on three days, with defect-log evidence. No fix passed; the judge weakened one item."></picture></a>
-  <figcaption>Actual report excerpt from three made-up defects. Claude Code with Sonnet 5.5 ran both roles. No fix passed in this run. <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/demo.md">See the inputs and limits →</a></figcaption>
+  <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/demo.md" aria-label="Read the demo inputs and capture notes"><picture><source media="(max-width:600px)" srcset="media/retro-demo-mobile.webp"><img src="media/retro-demo.webp" width="680" height="718" alt="Real saved report excerpt: test-failed repeated six times over four days, with its cost, why chain and root cause, then a kept fix that makes the merge gate wait for the integration check. The judge confirmed it."></picture></a>
+  <figcaption>Actual report excerpt from six made-up defects. Claude Code with Sonnet 5.5 ran both roles. The report kept one fix and the judge confirmed it. <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/demo.md">See the inputs and limits →</a></figcaption>
  </figure>
 </section>
 <section aria-labelledby="how"><h2 id="how">Fix the pattern, not just the latest failure.</h2>

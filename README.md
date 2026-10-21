@@ -12,14 +12,12 @@ For developers tired of fixing the same agent mistakes.
 
 Needs **Node 22.13+**, project records and signed-in agents. Review the sources `init` writes before the first run.
 
-**Integrations:** works on its own. [Firstmate](docs/reference.md#firstmate) can add task logs and messages, only if you opt in.
-
 <picture>
   <source media="(max-width: 600px)" srcset="docs/media/retro-demo-mobile.webp">
-  <img src="docs/media/retro-demo.webp" width="680" alt="Real saved report excerpt: test-failed repeated three times over three days, with defect-log line references. No fix passed the rules; the judge weakened one item.">
+  <img src="docs/media/retro-demo.webp" width="680" alt="Real saved report excerpt: test-failed repeated six times over four days, with its cost, why chain and root cause, then a kept fix that makes the merge gate wait for the integration check. The judge confirmed it.">
 </picture>
 
-*Real report excerpt, not a mock-up. Three made-up defect records, read by Claude Code with Sonnet 5.5 as worker and judge. In this run, no fix passed. [Demo inputs and capture notes](docs/demo.md).*
+*Real report excerpt, not a mock-up. Six made-up defect records, read by Claude Code with Sonnet 5.5 as worker and judge. The report kept one fix and the judge confirmed it. [Demo inputs and capture notes](docs/demo.md).*
 
 ## From repeated failures to a checked report
 
@@ -40,6 +38,12 @@ learn-from-mistakes-axi report
 ```
 
 Open the file named by `report_txt` in your editor. The terminal summary is not the full report. Check **Not checked** before drawing conclusions; an empty result does not prove nothing went wrong.
+
+## With or without Firstmate
+
+**On its own:** the tool reads the sources you set for your project: a defect log, failed checks or the sessions of agents you name. Nothing else is needed.
+
+**With Firstmate:** you can opt in to also read its task logs and messages as extra records. It is never turned on for you. [Integration setup →](docs/reference.md#firstmate)
 
 ## Need help with setup?
 
