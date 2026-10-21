@@ -95,14 +95,21 @@ export function plain(text, where, { words, sentences }) {
 
 // The retro method on one finding: blameless wording (a process, rule or missing check, never a person or an agent at
 // fault) and the 5-whys chain: 3 to 5 short answers, each the cause of the one before, the last the root cause, plus the
-// cost. Returns the problems, each naming the field; [] when the finding holds.
+// cost. Returns the problems, each naming the field; [] when the finding holds. A finding with a problem here is not kept.
 const BLAME = /\b(?:blam\w*|fault|careless\w*|lazy|sloppy|negligen\w+|incompeten\w+|stupid|idiot\w*|should have known)\b/i;
+const text = (t) => typeof t === 'string' && t.trim();
 export function methodProblems(f, at) {
   if (!Array.isArray(f.whys) || f.whys.length < 3 || f.whys.length > 5 || !f.whys.every((w) => typeof w === 'string')) return [`${at}.whys must be a list of 3 to 5 answers, each the cause of the one before, the last the root cause`];
   const texts = [['summary', f.summary], ['cost', f.cost], ...f.whys.map((w, i) => [`whys[${i}]`, w])];
-  return [...f.whys.map((w, i) => plain(w, `${at}.whys[${i}]`, { sentences: 1 })), plain(f.cost, `${at}.cost`, { sentences: 2 }),
-    ...texts.filter(([, t]) => BLAME.test(t ?? '')).map(([k, t]) => `${at}.${k} blames: "${BLAME.exec(t)[0]}"; name the process, rule or missing check instead`)].filter(Boolean);
+  return [...texts.filter(([, t]) => !text(t)).map(([k]) => `${at}.${k} must be a non-empty string`),
+    ...texts.filter(([, t]) => BLAME.test(t ?? '')).map(([k, t]) => `${at}.${k} blames: "${BLAME.exec(t)[0]}"; name the process, rule or missing check instead`)];
 }
+
+// The style misses in one finding's wording (the plain() rule on its summary, cost and why answers). A finding with a style
+// miss is kept and the miss is named under Not checked; the first answer is still sent back to fix it.
+export const styleProblems = (f, at) => [['summary', f.summary, { sentences: 3 }], ['cost', f.cost, { sentences: 2 }],
+  ...(Array.isArray(f.whys) ? f.whys.map((w, i) => [`whys[${i}]`, w, { sentences: 1 }]) : [])]
+  .filter(([, t]) => text(t)).map(([k, t, rule]) => plain(t, `${at}.${k}`, rule)).filter(Boolean);
 
 // The sentences of one free text, split where plain() splits them ("e.g. the" does not end a sentence), so the
 // report's trim and this rule always read the same sentence boundaries.
