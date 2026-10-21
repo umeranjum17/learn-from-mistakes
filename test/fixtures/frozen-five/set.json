@@ -1,0 +1,98 @@
+{
+  "note": "The frozen quality set: five made-up mistakes in fixed words, and the recorded answer the retro gets for them. Every text here is invented for this test: no captain data, chat text, transcript or private project name is in it. The days count back from the day the test runs, so the records stay inside the retro window and the standing does not move with the calendar. A case with a finding is a mistake a finding names in plain words; a case without one is a mistake only the Not checked section can show.",
+  "cases": [
+    {
+      "id": "rollout-gap",
+      "name": "tool rollout missing in some homes",
+      "kind": "repeated cause",
+      "cause": "rollout-gap",
+      "cause_description": "The build tool reaches only some homes, so the lanes in them fail.",
+      "names": ["tool rollout missing in some homes"],
+      "key": "build tool",
+      "why": "The rollout does not check each home for the build tool.",
+      "records": [
+        { "area": "rollout", "day": 1, "text": "The build tool was not installed in every home, so three lanes ran without it." },
+        { "area": "rollout", "day": 2, "text": "The build tool stayed missing in one home after the rollout, so its lane failed." },
+        { "area": "rollout", "day": 1, "text": "The build tool was missing in two homes again, and no check named them." }
+      ],
+      "finding": {
+        "cause": "rollout-gap",
+        "summary": "The tool rollout missing in some homes left three lanes without the build tool.",
+        "whys": [
+          "Three lanes ran without the build tool because the rollout skipped some homes.",
+          "The rollout step does not check each home after it installs.",
+          "No rule asks the rollout to check every home."
+        ],
+        "cost": "Three lanes ran without the build tool across two days."
+      }
+    },
+    {
+      "id": "unchosen-key",
+      "name": "default model used on an unchosen key",
+      "kind": "single complaint",
+      "complaint": true,
+      "cause": "unchosen-key",
+      "cause_description": "A run uses the default model because no one chose one.",
+      "names": ["default model used on an unchosen key"],
+      "key": "a key that nobody chose",
+      "why": "The run used the default model because no one chose a model.",
+      "records": [
+        { "area": "model", "day": 1, "work": "sample-page", "text": "Why did the run use the default model? The worker ran with the default model on a key that nobody chose." }
+      ]
+    },
+    {
+      "id": "no-owner-ask",
+      "name": "board cards with no owner ask",
+      "kind": "one-time defect",
+      "cause": "no-owner-ask",
+      "cause_description": "Board work starts without an owner and without a question about it.",
+      "names": ["board cards with no owner ask"],
+      "key": "board cards had no owner",
+      "why": "Nobody asked for an owner before the board work started.",
+      "records": [
+        { "area": "board", "day": 3, "text": "The board cards had no owner, and nobody asked who owns them before the work started." }
+      ]
+    },
+    {
+      "id": "tag-before-check",
+      "name": "release tag moved before a check",
+      "kind": "one-time defect",
+      "cause": "tag-before-check",
+      "cause_description": "A release tag moves before a check reads the commit.",
+      "names": ["release tag moved before a check"],
+      "key": "release tag moved before the check",
+      "why": "The tag moved before the check, so the check read the wrong commit.",
+      "records": [
+        { "area": "release", "day": 3, "text": "The release tag moved before the check ran, so the check ran against the wrong commit." }
+      ]
+    },
+    {
+      "id": "phone-scroll",
+      "name": "double scroll at phone width",
+      "kind": "one-time defect",
+      "cause": "phone-scroll",
+      "cause_description": "A panel scrolls inside a page that scrolls too.",
+      "names": ["double scroll at phone width"],
+      "key": "scrolled twice at phone width",
+      "why": "The panel scrolled inside the page, so the page scrolled twice.",
+      "records": [
+        { "area": "layout", "day": 4, "text": "The page scrolled twice at phone width, because the panel scrolled inside the page." }
+      ]
+    }
+  ],
+  "bystander": {
+    "area": "tests",
+    "day": 2,
+    "text": "The test suite skipped its slow test, so a broken path went unchecked.",
+    "finding": {
+      "cause": "other",
+      "summary": "The test suite skipped its slow test, so a broken path went unchecked.",
+      "whys": [
+        "The slow test stood in the skip list of the suite.",
+        "No check reads the skip list before a run starts.",
+        "No rule asks a run to read its own skip list."
+      ],
+      "cost": "One run passed without its slow test."
+    }
+  }
+}

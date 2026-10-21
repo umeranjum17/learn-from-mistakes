@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+// The recorded agent of the frozen quality test: it plays the answer the frozen set records, so the retro runs with no
+// model, no key and no network (CI-safe). It reads the bundle in the prompt, finds each case's records by their words
+// and answers with the set's findings and labels; the judge confirms every claim; the propose step offers no fix.
+// The bundle ids are salted per run, so the answer names the cases by their words and takes the ids from the bundle.
+// LFM_FROZEN_UNRELATED=0 leaves the finding about the bystander record out, so a test can show that it counts for
+// none of the five cases.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { basename } from 'node:path';
+
+const args = process.argv.slice(2), name = basename(process.argv[1]);
+if (args[0] === '--version') { console.log('1.0.0 (recorded)'); process.exit(0); }
+if (!args.length) process.exit(0); // no prompt to answer: the test runner may run this file on its own
+
+const set = JSON.parse(readFileSync(new URL('./set.json', import.meta.url), 'utf8'));
+const stdin = readFileSync(0, 'utf8');
+const step = /^lfm-run:\d+:([\w-]+)/.exec(stdin)?.[1] ?? '';
+const flat = (s) => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// The bundle's record items: the id in the brackets and the excerpt under it. The session events (e12) are not records.
+function items(text) {
+  const lines = text.split('\n'), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const id = /^- \[([^\]]+)\]/.exec(lines[i])?.[1];
+    if (!id || /^e\d+$/.test(id)) continue;
+    out.push({ id, excerpt: /^\s+> (.*)$/.exec(lines[i + 1] ?? '')?.[1] ?? '' });
+  }
+  return out;
+}
+
+// The answer the analyse step gets: a label for every record of a case, and a finding for each case the set gives one.
+function analyse() {
+  const found = items(stdin.slice(stdin.indexOf('# Retro bundle')));
+  const labels = [], refs = new Map();
+  for (const item of found) {
+    const c = set.cases.find((c) => flat(item.excerpt).includes(flat(c.key)));
+    if (!c) continue;
+    labels.push({ id: item.id, event: true, cause: c.cause, why: c.why });
+    refs.set(c.id, [...(refs.get(c.id) ?? []), item.id]);
+  }
+  const findings = set.cases.filter((c) => c.finding && refs.has(c.id)).map((c) => ({ ...c.finding, refs: refs.get(c.id) }));
+  if (process.env.LFM_FROZEN_UNRELATED !== '0') {
+    const item = found.find((i) => flat(i.excerpt).includes(flat(set.bystander.text)));
+    if (item) findings.push({ ...set.bystander.finding, refs: [item.id] });
+  }
+  return { findings, labels };
+}
+
+// The judge confirms every claim: the frozen test measures what the report shows, not the judge's taste.
+function judge() {
+  const between = stdin.slice(stdin.indexOf('Claims to judge:'), stdin.indexOf('Reply with one JSON object'));
+  const items = [...between.matchAll(/^- (\w+):/gm)].map((m) => m[1]);
+  return { verdicts: items.map((item) => ({ item, verdict: 'confirmed', reason: 'The cited items show this for the frozen test.' })) };
+}
+
+const answer = step === 'analyse' ? analyse()
+  : step === 'verify' || step === 'verify-fixes' ? judge()
+    : { proposals: [], reasons: [] };
+const text = JSON.stringify(answer);
+if (name === 'codex') {
+  const out = args[args.indexOf('-o') + 1];
+  if (!out) { console.error('recorded agent: no output file'); process.exit(1); }
+  writeFileSync(out, text);
+} else console.log(JSON.stringify({ type: 'result', is_error: false, result: text, session_id: 'recorded-session', usage: { input_tokens: 10, output_tokens: 5 } }));
