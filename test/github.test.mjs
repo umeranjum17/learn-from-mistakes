@@ -465,6 +465,9 @@ test('a firstmate home turns the chat lines with why, wrong or again into mistak
   const notChecked = (res) => readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(res.stdout).run.id), 'report.txt'), 'utf8').match(/^- Source home gave no rows in chat\.tsv/m);
   assert.ok(!notChecked(r), 'chat.tsv has rows, so the report does not name it');
   writeFileSync(join(home, 'state', 'alpha.status'), `needs-decision [at=${epoch(1)}]: pick a name\n`); // keeps a record, so the retro still runs
+  writeFileSync(join(home, 'data', 'chat.tsv'), ['at work text', `${epoch(1)} demo-page why did the demo page ship with no title`].join('\n') + '\n'); // rows that all fail to parse into text read nothing
+  assert.match(lfm({}, 'doctor').stdout, /^warn\s+source home\s+firstmate: .*chat\.tsv has 1 rows and none parsed into text/m);
+  assert.ok(notChecked(lfm({}, 'retro', '--foreground', '--json')), 'a chat.tsv whose rows all fail to parse is named under Not checked');
   unlinkSync(join(home, 'data', 'chat.tsv')); // a missing chat table must not read as a clean pass
   const gone = lfm({}, 'retro', '--foreground', '--json');
   assert.equal(gone.status, 0, gone.stderr);
