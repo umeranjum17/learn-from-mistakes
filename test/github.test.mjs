@@ -500,6 +500,24 @@ test('a captain complaint the worker labels as one incident still counts as a re
   assert.match(readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8'), /^- nested-scroll: 1 time on 1 day\.$/m);
 });
 
+// A complaint or defect record that no finding cites must not vanish: the report's Not checked section names it.
+test('the report names each complaint and defect record that no finding cites, and not a cited one', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), day = (n) => ago(24 * n).slice(0, 10);
+  mkdirSync(join(home, 'data'), { recursive: true });
+  mkdirSync(join(home, 'state'), { recursive: true });
+  writeFileSync(join(home, 'data', 'chat.tsv'), `${ago(24)}\tdemo-page\tWhy does the demo list scroll inside the demo panel?\n`);
+  writeFileSync(join(p, 'defects.md'), `# Defects\n\n## ${day(2)}\n\n- [layout] The demo header overlaps the menu -> lost 5 minutes -> OPEN.\n\n## ${day(4)}\n\n- [tests] The demo suite fails without a fixture folder -> lost 9 minutes -> OPEN.\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n  log: { type: markdown-log, path: defects.md }\n`);
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'last' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const report = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8');
+  const notChecked = report.slice(report.indexOf('6. Not checked'), report.indexOf('7. Questions'));
+  assert.match(notChecked, /^- No finding cites 1 captain complaint\.\n {3}Evidence: .*chat\.tsv/m);
+  assert.match(notChecked, /^- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:5$/m); // the newer defect; the older one, on line 9, is cited
+  assert.doesNotMatch(notChecked, /defects\.md:9/);
+});
+
 // A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
 // report's not-checked section says so.
 test('a markdown-log source with no dated record is named by doctor and by the report', () => {

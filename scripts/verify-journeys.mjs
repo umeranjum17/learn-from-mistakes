@@ -193,6 +193,17 @@ try {
   writeFileSync(join(chat, '.learn-from-mistakes.yaml'), stringify({ name: 'chat', sources: { home: { type: 'firstmate', path: fm } }, causes: { 'nested-scroll': { description: 'A list scrolls inside a panel that scrolls' } }, ...workers }));
   run('retro-complaint', process.execPath, [cli, 'retro', '--foreground', '--dir', chat], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_CAUSE: 'nested-scroll' });
   assert.match(readFileSync(join(evidence, 'retro-complaint.stdout'), 'utf8'), /summary: "repeated: nested-scroll \(1 time\/1 day\)"/, 'one captain complaint did not repeat its cause');
+  // A complaint and a defect record that no finding cites are named under Not checked; the cited record is not.
+  const uncited = join(scratch, 'uncited');
+  mkdirSync(uncited, { recursive: true });
+  writeFileSync(join(uncited, 'defects.md'), `# Defects\n\n## ${day(2)}\n\n- [layout] The demo header overlaps the menu -> lost 5 minutes -> OPEN.\n\n## ${day(4)}\n\n- [tests] The demo suite fails without a fixture folder -> lost 9 minutes -> OPEN.\n`);
+  writeFileSync(join(uncited, '.learn-from-mistakes.yaml'), stringify({ name: 'uncited', sources: { home: { type: 'firstmate', path: fm }, log: { type: 'markdown-log', path: 'defects.md' } }, ...workers }));
+  run('retro-uncited', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', uncited], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'last' });
+  const notChecked = readFileSync(join(uncited, '.lfm', 'runs', String(runId('retro-uncited')), 'report.txt'), 'utf8').split('6. Not checked')[1].split('7. Questions')[0];
+  assert.match(notChecked, /- No finding cites 1 captain complaint\.\n {3}Evidence: .*chat\.tsv/);
+  assert.match(notChecked, /- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:5\n/);
+  assert.doesNotMatch(notChecked, /defects\.md:9/); // the older defect is cited
+  save('report-uncited.txt', notChecked);
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
