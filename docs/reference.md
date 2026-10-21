@@ -28,7 +28,7 @@ learn-from-mistakes-axi report
 3. `retro --wait 8m` starts a background worker and waits up to eight minutes. **A return with `running` is not completion.** The worker continues after the terminal or calling agent ends. Run `learn-from-mistakes-axi attach` to follow it until it ends, or poll `status`. Do not start another retro while it runs.
 4. After `completed`, `report` prints the saved run's counts, verdicts and `report_txt` path. Open that file, normally `.lfm/runs/<id>/report.txt`, with your editor or `cat`. This is the report to read, not the compact stdout summary.
 
-The report contains a short answer, numbers, follow-ups on previous changes, repeated mistakes with evidence, checked fixes, what was not checked, and questions for you. Every captain complaint and defect record the worker read is either cited by a finding or named under "Not checked" with a pointer to it. An empty result is not proof that nothing went wrong: check its coverage and omissions.
+The report contains a short answer, numbers, follow-ups on previous changes, repeated mistakes with evidence, checked fixes, what was not checked, and questions for you. Every captain complaint and defect record the worker read is either cited by a finding or named under "Not checked" with a pointer to it and its own text, cut to 100 characters (left out when `excerpts` is `off`). A defect record the worker labelled `other` is named there with the worker's reason. Each kind lists at most 10 records; the header line keeps the full count. An empty result is not proof that nothing went wrong: check its coverage and omissions.
 
 <p align="center"><img src="media/report.webp" width="560" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></p>
 
@@ -157,16 +157,19 @@ To read a whole fleet in one retro, opt in with `init --firstmate <main-home> --
 
 ### Sign-off
 
-No peer is needed: questions stay in section 7 of `report.txt`. `doctor` warns if `sign-off-axi` is absent; `signoff: off` keeps that check quiet. A retro does not post automatically.
+No peer is needed: questions stay in section 7 of `report.txt`. `doctor` warns if `sign-off-axi` is absent; `signoff: off` keeps that check quiet. A retro posts nothing unless you set `signoff_report: on`.
 
 Only when you want a handoff, run:
 
 ```sh
 learn-from-mistakes-axi signoff post
+learn-from-mistakes-axi signoff report
 learn-from-mistakes-axi signoff answers
 ```
 
 `post` sends the completed run's kept fixes as finding messages with Apply/Skip choices; a fix the run applied itself is printed as applied, never asked. Without the binary it prints one `kept: <key>` line per fix, the install hint and the `report.txt` path; nothing was posted and the fix text stays in `report.txt`. `answers` saves received answers, or reports no peer/no new answers. It applies nothing. Setting `signoff: off` does not disable a command you explicitly run.
+
+`report` sends the run's whole report as one report card, apart from the Apply/Skip cards: the repeated mistakes, the kept fixes and what was not checked, with no choices on it. Set `signoff_report: on` (default `off`) to post it when a run ends. The run always completes; `status` then shows `signoff_report` as `posted`, `skipped` (no `sign-off-axi`; the report stays in `report.txt`) or `failed` with the peer's refusal. Run `signoff report` to retry: the card has the key `lfm-report-<run>` and the same text every time, so the board keeps one. The report card needs a `sign-off-axi` that takes a report (schema 3).
 
 ### Apply only when requested
 
