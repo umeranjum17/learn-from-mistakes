@@ -474,6 +474,17 @@ test('a firstmate home turns the chat lines with why, wrong or again into mistak
   assert.ok(notChecked(gone), 'the report names the missing chat.tsv under Not checked');
 });
 
+// The fleet writes data/chat.tsv with no header row and ISO-8601 times; those lines read as the documented form does.
+test('a firstmate home reads a headerless chat.tsv with ISO-8601 times', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), iso = (days) => new Date(NOW - days * 86_400_000).toISOString();
+  mkdirSync(join(home, 'data'), { recursive: true });
+  mkdirSync(join(home, 'state'), { recursive: true });
+  writeFileSync(join(home, 'data', 'chat.tsv'), [`${iso(1)}\tdemo-page\tWhy did the demo page ship with no title?`, `${iso(2)}\tdemo-cli\tthanks, looks good`].join('\n') + '\n');
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
+  assert.match(lfm({}, 'doctor').stdout, /^ok\s+source home\s+firstmate: .*, 1 captain complaints, 0 skipped \(no time\)$/m);
+});
+
 // A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
 // report's not-checked section says so.
 test('a markdown-log source with no dated record is named by doctor and by the report', () => {

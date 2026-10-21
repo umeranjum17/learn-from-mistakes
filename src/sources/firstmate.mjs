@@ -6,7 +6,7 @@
 // <home>/data/defects.md is read as a markdown-log defect log. <home>/data/metrics/prs.tsv (one merged PR a row: merged,
 // hours_to_merge, rework_*, reverted, escaped, bot, title) gives the PR metrics when no github source does, and
 // <home>/data/metrics/daily.tsv (one day and project a row: day, steers, s_correct) gives the steers, ahead of the inbox
-// messages, and the corrections. <home>/data/chat.tsv (header `at<TAB>work<TAB>text`, one chat line a row, at an epoch)
+// messages, and the corrections. <home>/data/chat.tsv (header `at<TAB>work<TAB>text`, or no header row; one chat line a row, at an epoch or an ISO-8601 time)
 // holds the captain's chat lines: each whose text has the word why, wrong or again, or asks a question (a ?, or a start with who, what, which, where, when or how), is a complaint, a mistake record with its
 // text, time and work (the task or PR it points at); the other lines are no mistake. A home that lacks either file reads without it. A message with no at= line is timed by
 // the epoch its file name starts with, as Firstmate names handled messages `<epoch>-<id>.msg`. <home>/config/targets.tsv, one
@@ -177,16 +177,17 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
       records.push({ ...r, id: `${at}defects:${r.id}`, ref: `${log}:${r.line}`, data: { kind: 'defect', ...(home && { home }) } });
   }
   // The home's metrics tables, one object a row keyed by its header, with the row's line number.
-  const table = (name) => {
+  // With `fixed` columns, a file whose first row starts with a time (an epoch or an ISO-8601 time) reads as headerless, its first row data.
+  const table = (name, fixed) => {
     const file = join(path, 'data', 'metrics', name), body = existsSync(file) ? read1(file) : undefined;
     if (!body) return [];
-    const [head, ...lines] = body.split(/\r?\n/), cols = head.split('\t');
-    return lines.flatMap((l, i) => (l.trim() ? [{ line: i + 2, file, row: Object.fromEntries(l.split('\t').map((v, j) => [cols[j], v])) }] : []));
+    const all = body.split(/\r?\n/), headless = fixed && Number.isFinite(Number(all[0].split('\t')[0]) || Date.parse(all[0].split('\t')[0])), [head, ...lines] = headless ? [fixed.join('\t'), ...all] : all, cols = head.split('\t');
+    return lines.flatMap((l, i) => (l.trim() ? [{ line: headless ? i + 1 : i + 2, file, row: Object.fromEntries(l.split('\t').map((v, j) => [cols[j], v])) }] : []));
   };
   const num = (v) => Number(v) || 0;
-  const chatRows = table('../chat.tsv');
+  const chatRows = table('../chat.tsv', ['at', 'work', 'text']);
   for (const { line, file, row } of chatRows) {
-    if (COMPLAINT.test(row.text ?? '')) add(/^\d+$/.test(row.at) ? Number(row.at) * 1000 : NaN, `chat:${line}`, `${file}:${line}`, 'complaint', row.text, undefined, row.work ? { work: redact(row.work) } : undefined);
+    if (COMPLAINT.test(row.text ?? '')) add(/^\d+$/.test(row.at) ? Number(row.at) * 1000 : Date.parse(row.at), `chat:${line}`, `${file}:${line}`, 'complaint', row.text, undefined, row.work ? { work: redact(row.work) } : undefined);
   }
   for (const { line, file, row } of table('prs.tsv')) {
     const hours = Number(row.hours_to_merge), ms = Number.isFinite(hours) ? Date.parse(row.merged) : NaN;
