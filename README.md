@@ -23,7 +23,7 @@ Needs **Node 22.13+**, project records and signed-in agents. Review the sources 
 
 1. **Read the records.** The worker reads your configured sources and finds repeated causes. Unread records stay unlabelled.
 2. **Check the claims.** A judge checks each finding, then each proposed fix. Both roles always run; a failed role fails the retro.
-3. **Keep the evidence.** The report names the records behind each finding, the fixes that passed and what was not checked. You decide what to change. **Your project is not changed by default.**
+3. **Keep the evidence.** The report names the records behind each finding, the fixes that passed and what was not checked. Before it proposes fixes the retro reads a bounded set of your project's own files, and the report names the project rule each fix replaces or extends. You decide what to change. **Your project is not changed by default.**
 
 `--wait` waits up to eight minutes. If the result is still `running`, let it finish:
 

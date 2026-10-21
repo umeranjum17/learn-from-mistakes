@@ -75,6 +75,9 @@ const MIGRATIONS = [
   // The check command a fix names, and a follow-up's four states (proposal checked, fix applied, fix shipped, fix worked)
   // with the change's check command, as JSON.
   'ALTER TABLE proposals ADD COLUMN check_cmd TEXT; ALTER TABLE followups ADD COLUMN stages TEXT',
+  // The current project rule a fix replaces or extends, and the file that rule is in: the context the run read before
+  // it proposed the fix.
+  'ALTER TABLE proposals ADD COLUMN current_rule TEXT; ALTER TABLE proposals ADD COLUMN rule_ref TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

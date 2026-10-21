@@ -16,6 +16,8 @@
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
 // FAKE_JUDGE=fail makes the judge's call fail: an error line on stderr and exit 1, with no answer. FAKE_JUDGE=passive gives every verdict a passive reason.
 // FAKE_PROPOSE=findings gives one fix per finding the propose step lists, for its cause and citing its refs; FAKE_METRIC sets every fix's metric.
+// FAKE_PROPOSE=context gives one fix of kind rule that names the current project rule it replaces: the first rule line
+// of the first file the project's own context read, with that file in rule_ref. FAKE_RULE_REF names another file instead.
 // FAKE_FINDINGS=last gives one finding for FAKE_CAUSE citing only the last record.
 // FAKE_FINDINGS=newcause gives one finding for FAKE_FINDING_CAUSE citing every record.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
@@ -63,6 +65,10 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const records = [...bundle.slice(bundle.indexOf('## Unlabelled defect records')).matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
   const refs = records.length ? records : [bundle.match(/^(?:### |- )\[([^\]]+)\]/m)?.[1]];
   const followups = stdin.slice(stdin.indexOf('Follow-ups to explain:'), stdin.indexOf('Reply with one JSON object'));
+  // The project's own context, as the propose prompt holds it: the first file it read and that file's first rule line.
+  const context = stdin.indexOf('## Files read') < 0 ? '' : stdin.slice(stdin.indexOf('## Files read'), stdin.indexOf('## Files not read'));
+  const files = context.split(/^### /m).slice(1).map((f) => ({ file: f.split('\n')[0].trim(), rule: f.split('\n').slice(1).find((l) => l.trim().startsWith('- '))?.replace(/^\s*-\s*/, '').trim() }));
+  const named = files.find((f) => f.rule) ?? { file: '', rule: undefined };
   const fix = (target, more) => ({ cause: process.env.FAKE_CAUSE || 'other', target: process.env.FAKE_TARGET || target, kind: process.env.FAKE_KIND || 'code', owner: 'maintainer', change: 'Give each worker its own cache directory.', metric: process.env.FAKE_METRIC ?? null, tripwire: '<= 0', check: 'npm test', refs, ...more });
   const proposals = process.env.FAKE_PROPOSE === 'long' ? [fix('launch script 1'), fix('launch script 2', { change: 'Give each worker its own cache directory. Keep the lock out of it. Run the launch script alone. Check the result.' })]
     : process.env.FAKE_PROPOSE === 'plain' ? [fix('launch script 1'), fix('launch script 2', { change: 'We will utilize the cache.' }), fix('launch script 3', { change: 'The lock was held by us.' })]
@@ -71,6 +77,8 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
     : process.env.FAKE_PROPOSE === 'twin' ? [fix('launch script 1', { refs: records.slice(1, 2) })]
     : process.env.FAKE_PROPOSE === 'findings' ? [...stdin.slice(stdin.indexOf('Findings of the analyse step'), stdin.indexOf('Follow-ups to explain:'))
       .matchAll(/^- ([\w-]+), \w+ by the judge: .* Refs: (.+)\.$/gm)].map((m, i) => fix(`launch script ${i + 1}`, { cause: m[1], refs: m[2].split(', ') }))
+    : process.env.FAKE_PROPOSE === 'context' ? [fix('AGENTS.md', { kind: 'rule', change: 'Add a check that runs the tests before a PR.', current_rule: named.rule, rule_ref: process.env.FAKE_RULE_REF || named.file })]
+    : process.env.FAKE_PROPOSE === 'norule' ? [fix('AGENTS.md', { kind: 'rule', change: 'Add a check that runs the tests before a PR.' })]
     : process.env.FAKE_PROPOSE !== 'eight' ? [] :[...[1, 2, 3, 4, 5].map((k) => fix(`launch script ${k}`)),
     fix('launch script 6', { metric: 'defects' }), fix('test setup', { cause: 'umer-fixtures-unset' }), fix('cache config', { tripwire: null })];
   const answer = { proposals,

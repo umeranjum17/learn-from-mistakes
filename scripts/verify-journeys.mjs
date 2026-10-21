@@ -246,6 +246,28 @@ try {
   assert.deepEqual(third.followups.map((x) => [x.change, x.before, x.after, x.verdict]), [['chg-1', 4, 6, 'rollback']], 'the third retro did not find the change unhelpful');
   save('skill-retired.txt', lgit(['diff', '--name-status', `HEAD..${retired}`]));
   assert.equal(readFileSync(join(evidence, 'skill-retired.txt'), 'utf8'), `D\t${skill}`, 'a rollback did not retire the skill');
+  // The project's own context: the retro reads the docs and the skills in a bounded way, does not read a secret file
+  // or a file over the cap, and a fix of kind rule names the project rule it replaces.
+  const ctx = join(scratch, 'context');
+  for (const dir of [join(ctx, '.agents', 'skills', 'demo'), join(ctx, 'src')]) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(ctx, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');
+  writeFileSync(join(ctx, 'README.md'), '# Demo project\n\nA small project.\n');
+  writeFileSync(join(ctx, '.agents', 'skills', 'demo', 'SKILL.md'), '# Demo skill\n\nAlways run the tests.\n');
+  writeFileSync(join(ctx, 'src', 'big.ts'), `// a big file\n${'const x = 1;\n'.repeat(400)}`); // over the character cap
+  writeFileSync(join(ctx, 'deploy.key'), 'KEY=secret\n'); // a secret file
+  writeFileSync(join(ctx, 'defects.md'), `# Defects\n\n## ${day(1)}\n\n- [tests] The demo suite failed in src/big.ts and the key deploy.key was missing -> lost 5 minutes -> OPEN.\n`);
+  writeFileSync(join(ctx, '.learn-from-mistakes.yaml'), stringify({ name: 'context', sources: { log: { type: 'markdown-log', path: 'defects.md' } },
+    causes: { 'test-fixtures': { description: 'A test runs without the fixture it needs.' } }, repeat: { min_incidents: 1, min_days: 1 },
+    context: { max_files: 4, max_chars: 2000 }, ...workers }));
+  run('retro-context', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', ctx], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_CAUSE: 'test-fixtures', FAKE_PROPOSE: 'context' });
+  const contextText = readFileSync(join(ctx, '.lfm', 'runs', String(runId('retro-context')), 'context.md'), 'utf8');
+  assert.match(contextText, /^- deploy\.key: a secret file is never read$/m);
+  assert.match(contextText, /^- src\/big\.ts: too large for the context cap$/m);
+  const contextReport = readFileSync(join(ctx, '.lfm', 'runs', String(runId('retro-context')), 'report.txt'), 'utf8');
+  assert.match(contextReport, /^The run read 3 project files before it proposed these fixes\.\n {3}Evidence: README\.md:1; AGENTS\.md:1; \.agents\/skills\/demo\/SKILL\.md:1$/m);
+  assert.match(contextReport, /^- The project context did not read 2 files: 1 held a secret, 1 was too large\./m);
+  assert.match(contextReport, /^- Current rule:\n {2}Run the tests before a PR\.\n {3}Evidence: AGENTS\.md:3$/m);
+  save('report-context.txt', contextReport);
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
