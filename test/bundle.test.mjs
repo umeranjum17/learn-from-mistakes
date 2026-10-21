@@ -100,3 +100,22 @@ test('a full bundle names the records it left out, newest first', async () => {
   assert.match(text, /^- \[log:newest\]/m);
   assert.match(text, /^Left out, newest first: log:middle, log:oldest\.$/m);
 });
+
+test('a full bundle keeps an old captain complaint ahead of newer records', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
+  after(() => rmSync(state, { recursive: true }));
+  const db = await openStore(state, true);
+  const now = Date.now(), iso = (days) => new Date(now - days * 86_400_000).toISOString();
+  db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', iso(0), iso(0));
+  const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, text, record_id, data) VALUES (1, ?, ?, ?, ?, ?, ?)');
+  for (const [days, name] of [[1, 'status-a'], [2, 'status-b'], [3, 'status-c']]) record.run('fm', iso(days), `state/${name}`, 'x', `fm:${name}`, JSON.stringify({ kind: 'block' }));
+  record.run('fm', iso(6), 'data/chat.tsv:4', 'why did this break again', 'fm:chat:4', JSON.stringify({ kind: 'complaint' }));
+  const file = join(state, 'bundle.md');
+  const window = { current_start: iso(7), previous_start: iso(14) };
+  bundle({ excerpts: 'off', caps: { bundle_chars: 750 } }, db, 1, file, window); // room for the headings, one record and the reserved lines only
+  db.close();
+
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /^- \[fm:chat:4\]/m);
+  assert.match(text, /^Left out, newest first: fm:status-a, fm:status-b, fm:status-c\.$/m);
+});
