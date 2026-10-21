@@ -375,8 +375,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   (no command)        print the last run's status and its summary line
   signoff post       explicitly post a completed run's kept fixes its apply step did not apply
                      (optional sign-off-axi)
-  signoff report     post a completed run's whole report to sign-off as a report card, apart from the
-                     Apply/Skip cards; safe to repeat (signoff_report: on posts it when a run ends)
+  signoff report    post a run's whole report to sign-off as one card, apart from the Apply/Skip
+                     cards; safe to repeat (signoff_report: on posts it when a run ends)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
   apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch
                       lfm/<project>-<hash>/<run>-<n> from HEAD, and records it;
@@ -505,7 +505,8 @@ sources, AGENTS.md, CLAUDE.md or skills.
    worked (roll back what did not help); each repeated mistake with its cost, how often it came
    back, its why chain to the root cause and its fix.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions;
-   else ask the user the questions in section 7.
+   else ask the user the questions in section 7. The whole report goes to sign-off only with
+   signoff_report: on, or learn-from-mistakes-axi signoff report.
 6. Once the user has made a change: learn-from-mistakes-axi change applied
    --proposal <run>:<n> --ref <git sha>
 

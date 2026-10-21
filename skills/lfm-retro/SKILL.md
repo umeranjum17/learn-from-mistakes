@@ -19,7 +19,7 @@ You do not need it installed: run `npx -y learn-from-mistakes-axi <command>`. If
 2. Run `npx -y learn-from-mistakes-axi doctor`. Fix each `fail` line with the `fix:` line under it, then run doctor again.
 3. Run `npx -y learn-from-mistakes-axi retro --wait 8m`. While the run is still running, run `npx -y learn-from-mistakes-axi attach` (or `status`) until it ends.
 4. Read the run's `report.txt` (`npx -y learn-from-mistakes-axi report` prints its path as `report_txt`) and tell the user what it says in plain words.
-5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions; else ask the user the questions in section 7 of `report.txt`.
+5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions (the whole report goes there only with signoff_report: on, or `signoff report`); else ask the user the questions in section 7 of `report.txt`.
 6. Once the user has made a change, record it with `npx -y learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <git sha>`; the next retro checks whether it worked.
 
 ## The retro method
