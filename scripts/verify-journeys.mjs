@@ -203,6 +203,8 @@ try {
   assert.match(notChecked, /- No finding cites 1 captain complaint\.\n {3}Evidence: .*chat\.tsv/);
   assert.match(notChecked, /- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:5\n/);
   assert.doesNotMatch(notChecked, /defects\.md:9/); // the older defect is cited
+  assert.doesNotMatch(notChecked, /Text:/); // this config has excerpts: off, so no record text is shown
+  assert.match(notChecked, /Evidence: defects\.md:5\n {3}The worker labelled it other/); // and the other label is named
   save('report-uncited.txt', notChecked);
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');

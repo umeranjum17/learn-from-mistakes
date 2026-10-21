@@ -516,6 +516,10 @@ test('the report names each complaint and defect record that no finding cites, a
   assert.match(notChecked, /^- No finding cites 1 captain complaint\.\n {3}Evidence: .*chat\.tsv/m);
   assert.match(notChecked, /^- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:5$/m); // the newer defect; the older one, on line 9, is cited
   assert.doesNotMatch(notChecked, /defects\.md:9/);
+  // Each listed record shows its own text, and the defect the worker labelled other says so; the cited one's text is absent.
+  assert.match(notChecked, /^ {3}Text: Why does the demo list scroll inside the demo panel\?$/m);
+  assert.match(notChecked, /^ {3}Evidence: defects\.md:5\n {3}Text: \[layout\] The demo header overlaps the menu.*\n {3}The worker labelled it other: /m);
+  assert.doesNotMatch(notChecked, /fixture folder/);
 });
 
 // A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the

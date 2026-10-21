@@ -10,11 +10,12 @@ import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
 import { bundleIds, counts, plain, RAW, readBundle, splitSentences } from './check.mjs';
 import { inWindow, rounded } from './metrics.mjs';
-import { redact } from './redact.mjs';
+import { excerpt, redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 import { STAGES, WORKING } from './stages.mjs';
 
 const EVIDENCE = 3; // pointers shown per item; the rest are counted
+const UNCITED = 10, QUOTE = 100; // records listed per kind under Not checked (the rest are counted), and characters of each one's text
 const DO = { keep: 'Keep it.', fix: 'Change it. The metric got better, but it missed the tripwire.', rollback: 'Roll it back.',
   delete: 'Delete it. It did not change the metric.', 'no-data': 'Wait for more data.' };
 // This window against the last, in words; two numbers are needed to compare.
@@ -44,7 +45,7 @@ const changeLines = (text, at) => {
 // `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.
 export function reportText(cfg, db, id, dir, window, run) {
   const all = (sql, ...args) => db.prepare(sql).all(id, ...args);
-  const records = new Map(all('SELECT record_id, source, ref, data FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
+  const records = new Map(all('SELECT record_id, source, ref, text, data FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
   const events = new Map(all('SELECT id, session_id, ts FROM events WHERE run_id = ?').map((e) => [`e${e.id}`, e]));
   const groups = clusters(db, id, Date.parse(window.current_start));
   const pointer = (ref) => {
@@ -57,6 +58,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     const ps = [...new Set(refs.flatMap((ref) => /^c\d+$/.test(ref) ? (groups[ref.slice(1) - 1]?.[1] ?? []).map((e) => `e${e.id}`) : [ref]).map(pointer).filter(Boolean))];
     return `   Evidence: ${ps.slice(0, EVIDENCE).join('; ') || 'none'}${ps.length > EVIDENCE ? `; and ${ps.length - EVIDENCE} more` : ''}`;
   };
+  const labelled = new Map(all('SELECT record_id, cause, why FROM labels WHERE run_id = ?').map((l) => [l.record_id, l]));
   const { causes } = counts(cfg, db, id, window);
   const findings = all(`SELECT cause, summary, refs_json, verdict, whys_json, cost FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`);
   const fixes = all('SELECT n, cause, owner, change, refs_json, verdict, judge_note FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n');
@@ -143,7 +145,12 @@ export function reportText(cfg, db, id, dir, window, run) {
     ...run.sources.filter((s) => s.lines_skipped).map((s) => `- Source ${s.id} skipped ${plural(s.lines_skipped, 'home line')} with no local home.`),
     ...[[true, 'captain complaint'], [false, 'defect record']].flatMap(([complaint, word]) => {
       const rs = uncited.filter((r) => (JSON.parse(records.get(r).data ?? '{}').kind === 'complaint') === complaint);
-      return rs.length ? [`- No finding cites ${plural(rs.length, word)}.`, ...rs.map((r) => evidence([r]))] : [];
+      // Each record shows its own text (cut short, and only when excerpts are on) so a reader knows which mistake it is; a worker's `other` label is named with its reason.
+      const quote = (t) => { const e = excerpt(t ?? ''); return e.length > QUOTE ? `${e.slice(0, QUOTE - 3)}...` : e; };
+      return rs.length ? [`- No finding cites ${plural(rs.length, word)}.`, ...rs.slice(0, UNCITED).flatMap((r) => [evidence([r]),
+        ...(cfg.excerpts === 'off' || !records.get(r).text ? [] : [`   Text: ${quote(records.get(r).text)}`]),
+        ...(labelled.get(r)?.cause === 'other' ? [`   The worker labelled it other${labelled.get(r).why ? `: ${quote(labelled.get(r).why)}` : '.'}`] : [])]),
+        ...(rs.length > UNCITED ? [`   And ${rs.length - UNCITED} more.`] : [])] : [];
     }),
     ...[[step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [step('analyse').findings_style, 'The worker broke the style rules in', 'finding'],
