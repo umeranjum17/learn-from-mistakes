@@ -1,15 +1,20 @@
 // Applies a retro's kept fixes, each on its own branch: the worker (agent:, never the judge) answers each fix with the new text
 // of the repo files its target names, and the tool commits that from HEAD with git's plumbing on lfm/<project>-<hash>/<run>-<n> and records it
 // as `change applied --proposal <run>:<n>` does. The user's branch, index and work tree are never touched; nothing is pushed.
+// A fix whose target is the project's learned skill (projectSkill) is written by the tool, not the worker: its rule, evidence and
+// fix id go into that one SKILL.md, the only file apply may create. A later run's apply step puts the measured result of each
+// rule there, or retires the rule, on lfm/<project>-<hash>/<run>-skill.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, posix } from 'node:path';
-import { EmptyError, InputError, readLedger, recordableCauses, recordChange, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
+import { EmptyError, InputError, measure, readLedger, recordableCauses, recordChange, UsageError, withContext } from '../bin/learn-from-mistakes-axi.mjs';
 import { PROJECT_FILE } from './config.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 import { agentStep } from './steps/agent-step.mjs';
+import { evidenceOf } from './report-text.mjs';
+import { rounded } from './metrics.mjs';
 import { openStore } from './store.mjs';
 
 const PROMPT = readFileSync(new URL('./prompts/apply.md', import.meta.url), 'utf8');
@@ -35,11 +40,49 @@ function git(dir, args, { input, env } = {}) {
   return r.stdout.trim();
 }
 
+// The paths a target names, each as a path from the repo root would read.
+const targetWords = (target) => [...new Set(target.split(/[\s,;`'"()]+/).map((w) => posix.normalize(w.replace(/:\d+$/, '').replace(/[.:]+$/, '')).replace(/^\.\//, '')))];
 // The tracked regular files the target names, by their path from the repo root, with their git mode.
 function targetFiles(top, target) {
   const tracked = new Map(git(top, ['ls-files', '-s', '-z']).split('\0').filter(Boolean).map((l) => [l.slice(l.indexOf('\t') + 1), l.slice(0, 6)]));
-  const paths = [...new Set(target.split(/[\s,;`'"()]+/).map((w) => posix.normalize(w.replace(/:\d+$/, '').replace(/[.:]+$/, '')).replace(/^\.\//, '')).filter((w) => ['100644', '100755'].includes(tracked.get(w))))];
-  return paths.map((path) => ({ path, mode: tracked.get(path) }));
+  return targetWords(target).filter((w) => ['100644', '100755'].includes(tracked.get(w))).map((path) => ({ path, mode: tracked.get(path) }));
+}
+
+// The project's one learned skill, learn-from-mistakes-<name>, by its path from the repo root (from the project dir outside git).
+export const skillName = (cfg) => `learn-from-mistakes-${cfg.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'project'}`;
+export function projectSkill(cfg) {
+  const prefix = spawnSync(which('git') ?? 'git', ['rev-parse', '--show-prefix'], { cwd: cfg.dir, encoding: 'utf8' }).stdout?.trim() ?? '';
+  return posix.join(prefix, '.agents', 'skills', skillName(cfg), 'SKILL.md');
+}
+const headText = (top, path) => { const r = spawnSync(which('git'), ['show', `HEAD:${path}`], { cwd: top, encoding: 'utf8' }); return r.status === 0 ? r.stdout : undefined; };
+// A rule's section of the skill, from its `## Fix <run>:<n>` heading to the next heading or the end.
+const section = (fix) => new RegExp(String.raw`^## Fix ${fix}, for [^\n]*\n[\s\S]*?(?=^## |(?![\s\S]))`, 'm');
+
+// The skill's text with the fix's rule added: the change the judge checked, the evidence it cites, the fix id the ledger
+// records (`fix <run>:<n> on branch ...`) and how a later run measures it. A new skill starts from its own header.
+function learned(cfg, db, run, fix, old) {
+  const window = JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(run).output_json);
+  const head = old ?? `---\nname: ${skillName(cfg)}\ndescription: "Rules the ${cfg.name.replace(/["\\\n]/g, ' ')} project learned from its own repeated mistakes, each with its evidence and measured result. Use for any work in this project."\n---\n\n`
+    + '# Learned rules\n\nlearn-from-mistakes-axi writes this skill from retro fixes the user accepted. A later retro measures each rule: it records the result, or retires a rule that did not help.\n';
+  return `${head.replace(/\n*$/, '\n')}\n## Fix ${run}:${fix.n}, for ${fix.cause}\n\n${redact(fix.change).trim()}\n\n- ${evidenceOf(cfg, db, run, window, Infinity)(JSON.parse(fix.refs_json))}\n`
+    + `- Measured by: ${measure(fix).metric}, tripwire ${fix.tripwire ?? 'none'}\n- Result: not measured yet\n`;
+}
+
+// Commits HEAD's tree with each file's new text (null removes it) on a new branch, through a private index: the user's own
+// index is never read or written.
+function writeBranch(top, head, index, files, message, branch) {
+  const env = { GIT_INDEX_FILE: index };
+  try {
+    git(top, ['read-tree', head], { env });
+    for (const f of files) {
+      if (f.content === null) { git(top, ['update-index', '--force-remove', '--', f.path], { env }); continue; }
+      const blob = git(top, ['hash-object', '-w', '--stdin', '--path', f.path], { input: f.content });
+      git(top, ['update-index', '--add', '--cacheinfo', `${f.mode},${blob},${f.path}`], { env });
+    }
+    const commit = git(top, ['commit-tree', git(top, ['write-tree'], { env }), '-p', head, '-m', message]);
+    git(top, ['branch', branch, commit]);
+    return commit;
+  } finally { rmSync(index, { force: true }); }
 }
 
 // An agent failure is not a refusal of the fix: the worker was asked and failed (timeout, no JSON, runner
@@ -81,6 +124,13 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     if (tip && entries.some((e) => e.ref === tip)) { branch = legacy; commit = tip; }
   }
   if (commit && git(top, ['show', '-s', '--format=%B', commit]) !== message) throw new InputError(`branch ${branch} holds ${commit.slice(0, 7)} instead of the fix ${at} apply commit`, `git branch -D ${branch}   # delete or rename the stale branch, then apply again`);
+  const skill = projectSkill(cfg);
+  if (!commit && targetWords(fix.target).includes(skill)) {
+    const old = headText(top, skill);
+    if (old === undefined && existsSync(join(top, skill))) throw new InputError(`fix ${at} would create ${skill}, but an untracked file is there; apply never overwrites it`, `git add ${skill} && git commit   # or move it away, then apply again`);
+    const dir = join(cfg.state, 'runs', String(run)); mkdirSync(dir, { recursive: true });
+    commit = writeBranch(top, head, join(dir, `apply-${fix.n}.index`), [{ path: skill, mode: targetFiles(top, skill)[0]?.mode ?? '100644', content: learned(cfg, db, run, fix, old) }], message, branch);
+  }
   if (!commit) {
     const files = targetFiles(top, fix.target); const gone = files.filter((f) => !existsSync(join(top, f.path)));
     if (gone.length) throw new InputError(`fix ${at} names a tracked file that is not checked out in the worktree: ${gone.map((f) => f.path).join(', ')}`, `git update-index --no-skip-worktree <path> && git checkout HEAD -- <path>   # apply reads the file from the worktree`);
@@ -130,30 +180,46 @@ async function applyOne(cfg, db, run, fix, log, opts = {}) {
     try {
       answer = await agentStep(cfg, db, run, dir, { step: `apply-${fix.n}`, role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check, log, bundle: false });
     } catch (e) { workerFailed(db, run, fix, made, e); }
-    // A private index: the new tree is HEAD's with the worker's files, and the user's own index is never read or written.
-    const env = { GIT_INDEX_FILE: join(dir, `apply-${fix.n}.index`) };
-    try {
-      git(top, ['read-tree', head], { env });
-      for (const f of answer.files) {
-        const blob = git(top, ['hash-object', '-w', '--stdin', '--path', f.path], { input: f.content });
-        git(top, ['update-index', '--cacheinfo', `${files.find((x) => x.path === f.path).mode},${blob},${f.path}`], { env });
-      }
-      const tree = git(top, ['write-tree'], { env });
-      commit = git(top, ['commit-tree', tree, '-p', head, '-m', message]);
-      git(top, ['branch', branch, commit]);
-    } finally { rmSync(env.GIT_INDEX_FILE, { force: true }); }
+    commit = writeBranch(top, head, join(dir, `apply-${fix.n}.index`), answer.files.map((f) => ({ ...f, mode: files.find((x) => x.path === f.path).mode })), message, branch);
   }
   const change = entries.find((e) => e.ref === commit)?.id
     ?? (await recordChange(cfg, { proposal: at, ref: commit, kind: fix.kind ?? undefined, what: `fix ${at} on branch ${branch}` })).id;
   return { fix: fix.n, branch, commit, change };
 }
 export const appliedLine = (run, a) => `applied: fix ${run}:${a.fix} on branch ${a.branch}, commit ${a.commit.slice(0, 12)}, ledger ${a.change}`;
+export const skillLine = (run, s) => `skill: run ${run} measured the project skill on branch ${s.branch}, commit ${s.commit.slice(0, 12)}`;
+
+// The run's measured results, put into the project skill at HEAD: each rule whose change has a verdict gets it on its
+// Result line, and a rollback or delete retires the rule (and the skill with its last rule). It commits on its own
+// lfm/<project>-<hash>/<run>-skill branch, kept on a resume, and changes nothing without git or a skill at HEAD.
+function measureSkill(cfg, db, id, log) {
+  const rows = db.prepare(`SELECT change_id, metric, before, after, verdict FROM followups WHERE run_id = ? AND verdict != 'no-data'`).all(id);
+  const top = rows.length && which('git') && spawnSync(which('git'), ['rev-parse', '--show-toplevel'], { cwd: cfg.dir, encoding: 'utf8' }).stdout?.trim();
+  const skill = top && projectSkill(cfg), old = skill && headText(top, skill);
+  if (!old) return;
+  const ledger = new Map(readLedger(join(cfg.state, 'changes.jsonl')).entries.map((e) => [e.id, e]));
+  let text = old;
+  for (const r of rows) {
+    const fix = /^fix (\d+:\d+) on branch /.exec(ledger.get(r.change_id)?.what ?? '')?.[1];
+    if (!fix || !section(fix).test(text)) continue;
+    text = ['rollback', 'delete'].includes(r.verdict) ? text.replace(section(fix), '')
+      : text.replace(section(fix), (s) => s.replace(/^- Result: .*$/m, `- Result: run ${id} measured change ${r.change_id}: ${r.metric} ${rounded(r.before)} before, ${rounded(r.after)} after, verdict ${r.verdict}`));
+  }
+  if (text === old) return;
+  const branch = `lfm/${projectKey(cfg, git(cfg.dir, ['rev-parse', '--show-prefix']))}/${id}-skill`, dir = join(cfg.state, 'runs', String(id));
+  const commit = branchTip(top, branch) || (mkdirSync(dir, { recursive: true }), writeBranch(top, git(top, ['rev-parse', '--verify', 'HEAD']), join(dir, 'skill.index'),
+    [{ path: skill, mode: targetFiles(top, skill)[0]?.mode ?? '100644', content: /^## Fix /m.test(text) ? text : null }], `learn-from-mistakes: run ${id} measured the project skill\n\n${skill}`, branch));
+  log(skillLine(id, { branch, commit }));
+  return { branch, commit };
+}
 // The fixes the run's own apply step applied, by fix number: report.txt and signoff post name them and ask nothing about them.
 export const appliedFixes = (db, id) => new Map((JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'apply'`).get(id)?.output_json ?? '{}').applied ?? []).map((a) => [a.fix, a]));
 
 // The run's apply step: with auto_fix: n, the top n kept fixes, without an answer; 0 (the default) proposes only.
 export async function autoApply(cfg, db, id, log) {
-  if (!cfg.auto_fix) { log('auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply'); return { applied: [] }; }
+  let skill;
+  try { skill = measureSkill(cfg, db, id, log); } catch (e) { if (!(e instanceof UsageError)) throw e; log(`refused: the project skill was not measured: ${e.message}`); }
+  if (!cfg.auto_fix) { log('auto_fix: 0, so nothing is applied: answer Apply on a fix, then learn-from-mistakes-axi apply'); return { applied: [], ...(skill && { skill }) }; }
   const applied = [], refused = [];
   for (const fix of db.prepare(KEPT).all(id).filter((f) => f.answer !== 'skip').slice(0, cfg.auto_fix)) {
     try { applied.push(await applyOne(cfg, db, id, fix, log)); log(appliedLine(id, applied.at(-1))); } catch (e) {
@@ -163,7 +229,7 @@ export async function autoApply(cfg, db, id, log) {
       throw e;
     }
   }
-  return { applied, ...(refused.length && { refused }) };
+  return { applied, ...(refused.length && { refused }), ...(skill && { skill }) };
 }
 
 // The run apply works on: --run, else the last run with kept fixes. The one lookup apply and the CLI's ask-ahead check

@@ -27,7 +27,7 @@ You do not need it installed: run `npx -y learn-from-mistakes-axi <command>`. If
 Tell the user the report as a blameless retro, in this order, in plain words. Use only what `report.txt` says; never add a number or a cause of your own.
 
 1. Numbers (section 2): for each number, this window, last window and the trend (up, down, flat or unknown). Say which direction is worse.
-2. Last changes (section 3): did each past fix work? Give the number before and after, the verdict, and the four states apart: proposal checked, fix applied, fix shipped, fix worked. Name the check command, and tell the user about an accepted fix that no change records. A change that did not help (roll back or delete) is a result, not a fault: ask the user to undo it, and keep a change that worked.
+2. Last changes (section 3): did each past fix work? Give the number before and after, the verdict, and the four states apart: proposal checked, fix applied, fix shipped, fix worked. Name the check command, and tell the user about an accepted fix that no change records. A change that did not help (roll back or delete) is a result, not a fault: ask the user to undo it, and keep a change that worked. A `skill:` line names the branch where the run wrote these results into the project's learned skill: ask the user to review and merge it.
 3. Repeated mistakes (section 4): for each one give its cost, how often it came back, the why chain down to its root cause, and its fix (section 5). A fix must close the root cause, not hide the symptom.
 4. Blameless: name the process, rule, tool or check that had the gap, never a person or an agent. The tool refuses a finding that blames, or that has no why chain or no cost; say when the report shows "No finding gave" a cost or root cause.
 

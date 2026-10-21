@@ -206,6 +206,36 @@ try {
   assert.doesNotMatch(notChecked, /Text:/); // this config has excerpts: off, so no record text is shown
   assert.match(notChecked, /Evidence: defects\.md:5\n {3}The worker labelled it other/); // and the other label is named
   save('report-uncited.txt', notChecked);
+  // The project-skill loop in a plain git project: an accepted fix aimed at the project skill creates it, the next retro
+  // measures the merged change and updates that same skill, and one that finds it did not help retires it.
+  const learned = join(scratch, 'learned'), skill = '.agents/skills/learn-from-mistakes-learned/SKILL.md', ago = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
+  const lgit = (args, extra = {}) => { const r = spawnSync(join(agentBin, 'git'), ['-C', learned, ...args], { env: { ...env, ...extra }, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
+  const cacheDefects = (days, n) => `\n## ${day(days)}\n\n${Array.from({ length: n }, (_, i) => `- [cache] Build ${days}-${i} waited on the shared cache lock -> lost 10 minutes -> OPEN.\n`).join('')}`;
+  mkdirSync(learned);
+  writeFileSync(join(learned, 'defects.md'), `# Defects\n${cacheDefects(30, 1)}${cacheDefects(5, 4)}${cacheDefects(0, 3)}`);
+  writeFileSync(join(learned, '.learn-from-mistakes.yaml'), stringify({ name: 'learned', sources: { log: { type: 'markdown-log', path: 'defects.md' } },
+    causes: { 'cache-lock': { description: 'Builds share one cache and wait on its lock' } }, repeat: { min_incidents: 2, min_days: 1 }, ...workers, excerpts: 'on' }));
+  for (const a of [['init', '-q', '-b', 'main'], ['config', 'user.name', 'Umer'], ['config', 'user.email', 'umer@example.com'], ['add', '-A'], ['commit', '-qm', 'start']]) lgit(a);
+  const skillRun = (name, extra) => { run(name, process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', learned], 0, { ...lab, ...extra }); return JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')); };
+  const first = skillRun('retro-skill', { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'cache-lock', FAKE_PROPOSE: 'eight', FAKE_TARGET: skill, FAKE_METRIC: 'defects' });
+  run('apply-skill', process.execPath, [cli, 'apply', '--fix', '1', '--dir', learned], 0, { ...lab, GIT_AUTHOR_DATE: ago(4), GIT_COMMITTER_DATE: ago(4) });
+  const created = `lfm/learned-e3b0c4/${first.run.id}-1`;
+  assert.equal(lgit(['diff', '--name-status', `HEAD..${created}`]), `A\t${skill}`, 'apply did not create the project skill');
+  save('skill-created.md', lgit(['show', `${created}:${skill}`]));
+  // As if apply ran 4 days ago and the user merged its branch a day later.
+  const ledger = join(learned, '.lfm', 'changes.jsonl'); writeFileSync(ledger, readFileSync(ledger, 'utf8').replace(/"at":"[^"]+"/, `"at":"${ago(4)}"`));
+  lgit(['merge', '--no-ff', '-qm', 'merge the learned skill', created], { GIT_AUTHOR_DATE: ago(3), GIT_COMMITTER_DATE: ago(3) });
+  const second = skillRun('retro-skill-measured', { FAKE_ANALYSE: 'empty' }), measured = `lfm/learned-e3b0c4/${second.run.id}-skill`;
+  assert.deepEqual(second.followups.map((x) => [x.change, x.before, x.after, x.verdict]), [['chg-1', 4, 3, 'fix']], 'the next retro did not measure the merged change');
+  save('skill-measured.md', lgit(['show', `${measured}:${skill}`]));
+  save('skill-measured.diff', lgit(['diff', `HEAD..${measured}`]));
+  assert.match(readFileSync(join(evidence, 'skill-measured.diff'), 'utf8'), new RegExp(`^-- Result: not measured yet\n\\+- Result: run ${second.run.id} measured change chg-1: defects 4 before, 3 after, verdict fix$`, 'm'), 'the measure did not update that same skill');
+  lgit(['merge', '--no-ff', '-qm', 'merge the measured skill', measured]);
+  appendFileSync(join(learned, 'defects.md'), cacheDefects(0, 3)); lgit(['commit', '-qam', 'three more defects']);
+  const third = skillRun('retro-skill-retired', { FAKE_ANALYSE: 'empty' }), retired = `lfm/learned-e3b0c4/${third.run.id}-skill`;
+  assert.deepEqual(third.followups.map((x) => [x.change, x.before, x.after, x.verdict]), [['chg-1', 4, 6, 'rollback']], 'the third retro did not find the change unhelpful');
+  save('skill-retired.txt', lgit(['diff', '--name-status', `HEAD..${retired}`]));
+  assert.equal(readFileSync(join(evidence, 'skill-retired.txt'), 'utf8'), `D\t${skill}`, 'a rollback did not retire the skill');
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
