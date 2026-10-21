@@ -310,6 +310,11 @@ try {
     const posted = JSON.parse(readFileSync(join(signDir, 'board.json'), 'utf8'));
     writeFileSync(join(signDir, 'answers.json'), JSON.stringify({ [posted[0].key]: { answer: 'apply', label: 'Apply', close: 'done', at: '2026-10-13T22:00:52Z' }, [posted[1].key]: { answer: 'skip', label: 'Skip', close: 'done', at: '2026-10-13T22:00:52Z' } }));
     run('signoff-answers', process.execPath, [cli, 'signoff', 'answers', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });
+    for (const name of ['signoff-report', 'signoff-report-retry']) run(name, process.execPath, [cli, 'signoff', 'report', '--dir', staged], 0, { PATH: agentBin, FAKE_SIGNOFF_DIR: signDir });
+    const cards = JSON.parse(readFileSync(join(signDir, 'board.json'), 'utf8')).filter((m) => m.kind === 'report');
+    assert.equal(cards.length, 1, 'a retry added a second report card');
+    assert.ok(!('options' in cards[0]), 'the report card carries Apply or Skip choices');
+    assert.match(readFileSync(join(evidence, 'signoff-report-retry.stdout'), 'utf8'), /^posted: lfm-report-\d+$/m);
     save('signoff-board.json', posted); save('signoff-calls.jsonl', readFileSync(join(signDir, 'calls.jsonl'), 'utf8'));
     const git = (...a) => spawnSync(join(agentBin, 'git'), ['-C', staged, ...a], { encoding: 'utf8' }).stdout.trim(); writeFileSync(join(staged, 'AGENTS.md'), '# Rules\n');
     for (const a of [['init', '-q'], ['config', 'user.name', 'Umer'], ['config', 'user.email', 'umer@example.com'], ['add', '-A'], ['commit', '-qm', 'start']]) git(...a);

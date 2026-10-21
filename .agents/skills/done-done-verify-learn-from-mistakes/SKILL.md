@@ -29,6 +29,7 @@ Harness: A shell: the run is a single node command whose exit code and the files
 - [Split a full retro bundle into parts](features/split-a-full-retro-bundle-into-parts.md): Run the cli journey; the retro-parts drive runs a retro over 40 defect lines with `caps.bundle_chars: 1000` (`scripts/verify-journeys.mjs`)
 - [Count a captain complaint as a repeated cause](features/count-a-captain-complaint-as-a-repeated-cause.md): Run the cli journey; the retro-complaint drive runs a retro over one captain chat line (`scripts/verify-journeys.mjs`)
 - [Name the records no finding cites](features/name-records-no-finding-cites.md): Run the cli journey; the retro-uncited drive runs a retro over one captain chat line and two defects, with one finding that cites one defect (`scripts/verify-journeys.mjs`)
+- [Post the report to sign-off](features/post-the-report-to-sign-off.md): Run the cli journey; the signoff-report drive posts the run's whole report with the fake sign-off-axi, then retries it (`scripts/verify-journeys.mjs`)
 
 ## Evidence
 
