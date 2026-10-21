@@ -1554,7 +1554,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.match(text, /^- defects: this window 2, last window 0, trend up, target <= 0, missed\.$/m);
   assert.match(text, /^- shared-cache-lock: 2 times on 1 day\.\n {3}Cost: No finding gave a cost\.\n {3}Root cause: No finding gave a root cause\.\n {3}Fix: see fix 1, 2, 3, 4, 5 in section 5\.\n {3}Evidence: defects\.md:\d+; defects\.md:\d+$/m);
   assert.match(text, /^Fix 5, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory\.\n[\s\S]*?^- The judge's verdict: weakened\.\n {2}The cited items show this only once for Umer\.$/m);
-  assert.match(text, /^6\. Not checked\n- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:30\n- The rules left out 3 fixes\.\n {3}The fix for shared-cache-lock: the judge refuted it\.\n {3}The fix for umer-fixtures-unset: its cause did not repeat; propose only for repeated causes\.\n {3}The fix for shared-cache-lock: no tripwire\.\n- The judge weakened 1 item\.$/m);
+  assert.match(text, /^6\. Not checked\n- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:30\n {3}Text: \[tests\] They failed again for the same reason\.\n- The rules left out 3 fixes\.\n {3}The fix for shared-cache-lock: the judge refuted it\.\n {3}The fix for umer-fixtures-unset: its cause did not repeat; propose only for repeated causes\.\n {3}The fix for shared-cache-lock: no tripwire\.\n- The judge weakened 1 item\.$/m);
   assert.deepEqual(text.split('\n').filter((l) => /^\d\. Apply/.test(l)), [1, 2, 3, 4, 5].map((n) => `${n}. Apply fix ${n}, for shared-cache-lock? Answer Apply or Skip.`));
   assert.match(lines('report', run.id).at(-1), /^report\.txt: \d+ lines, 5 questions$/);
 
@@ -2204,7 +2204,7 @@ test('propose: a fix quoting record text is sent back once naming the field, the
   assert.deepEqual(lines('check', run.id), ['fixes: 1 kept of 1, problems: 0']);
   const text = reportOf(p, run.id);
   assert.match(text, /^Fix 1, for shared-cache-lock:\n[\s\S]*?^- Change:\n {2}Give each worker its own cache directory for every lane\.\n/m);
-  assert.doesNotMatch(text, /nightly backlog/, 'no quoted record text reaches report.txt');
+  assert.doesNotMatch(text.split('6. Not checked')[0], /nightly backlog/, 'no quoted record text reaches the fixes in report.txt'); // Not checked shows an uncited record's own text
 
   // With excerpts off the bundle holds no record text, but the stored records still refuse the quote.
   writeFileSync(yaml, `${readFileSync(yaml, 'utf8')}excerpts: off\n`);
