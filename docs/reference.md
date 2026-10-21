@@ -32,7 +32,7 @@ The report contains a short answer, numbers, follow-ups on previous changes, rep
 
 <p align="center"><img src="media/report.webp" width="560" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></p>
 
-The report follows a blameless retro method. Section 2 gives every number with this window, the last window and a trend (up, down, flat or unknown). Section 3 checks whether each past fix worked, with the number before and after, and says what to roll back. Section 4 gives each repeated mistake its cost, how often it came back, the why chain down to its root cause and its fix. The worker must give each finding a chain of 3 to 5 whys and a cost, in wording that names a process, rule, tool or check and never a person or an agent; the judge checks the chain, and a finding without them is not kept (the report then says "No finding gave" a cost or root cause).
+The report follows a blameless retro method. Section 2 gives every number with this window, the last window and a trend (up, down, flat or unknown). Section 3 checks whether each past fix worked, with the number before and after, and says what to roll back. It keeps four states apart for each change: proposal checked (the judge's verdict), fix applied, fix shipped (live on the default branch) and fix worked (yes for keep, not yet for no data, no otherwise), and names the check command. A fix you accepted that no change records yet gets its own row, with fix applied: no. Section 4 gives each repeated mistake its cost, how often it came back, the why chain down to its root cause and its fix. The worker must give each finding a chain of 3 to 5 whys and a cost, in wording that names a process, rule, tool or check and never a person or an agent; the judge checks the chain, and a finding without them is not kept (the report then says "No finding gave" a cost or root cause).
 
 The shots on this page come from a real run of the packed CLI on a small sample defect log, with MiniMax-M3 as both the worker and the judge, called through BYOKit; only the project path is shortened. A model can say different things about your project.
 
@@ -175,7 +175,9 @@ learn-from-mistakes-axi signoff answers
 
 Default `auto_fix: 0` proposes only. `apply` commits kept fixes answered Apply (or a particular `--fix <n>`) on separate `lfm/<project>-<hash>/<run>-<n>` branches. It refuses a dirty tree, does not change your current branch/index/worktree, and never pushes or merges. Global `auto_fix: <n>` explicitly enables applying the top n kept fixes during retro, except those answered Skip. The run applies them before it writes `report.txt`, which names each one's branch, commit and ledger id and asks only about the rest.
 
-To track a change you made yourself, use `change applied --cause <configured-cause> --ref <commit>`; `--proposal <run>:<n>` can identify a kept fix instead. Optional `--metric`, `--tripwire`, `--kind`, `--what` and `--why` record how to evaluate it. `changes --json` exports `lfm-changes.v1`; the next retro measures follow-ups. See `--help` for accepted values.
+Each project can keep one learned skill, `.agents/skills/learn-from-mistakes-<name>/SKILL.md`; the propose step tells the worker its path. A kept fix whose target is that path is written by the tool, not the worker: `apply` adds the fix's rule with every evidence pointer, its fix id `<run>:<n>` (the ledger names it too) and its metric, and creates the file on first use. It is the only file `apply` creates, and it never overwrites an untracked file there. Once you merge the branch, each later retro measures the change from its merge. When the follow-up gives a verdict, the run writes it on the rule's `Result:` line, or retires the rule on a rollback or delete verdict (the whole skill with its last rule). It commits that on `lfm/<project>-<hash>/<run>-skill`, which `report.txt` names in section 3.
+
+To track a change you made yourself, use `change applied --cause <configured-cause> --ref <commit>`; `--proposal <run>:<n>` can identify a kept fix instead. Optional `--metric`, `--tripwire`, `--kind`, `--what` and `--why` record how to evaluate it. Every change also records a check command, the test or measurement that shows whether it worked: the worker names one for each fix, shown under the fix in `report.txt`, and `--check <command>` sets another (the default is `retro`). `changes --json` exports `lfm-changes.v1`, with each change's `check`; the next retro measures follow-ups. See `--help` for accepted values.
 
 ## Exit codes and automation
 
@@ -199,3 +201,26 @@ npm run build:skill -- --check
 The README, `skills/` and `docs/` (icon, shots, landing page) ship with the code: a change that makes one of them stale updates it in the same PR. CI (`.github/workflows/ci.yml`) runs the full suite on every PR and skips it for docs-only changes.
 
 `.done-done.yaml` defines the existing `cli` and `package` verification journeys. `scripts/verify-journeys.mjs` drives synthetic CLI/process-boundary checks, including the README setup-to-report path; `--package` also installs and exercises the packed CLI. Synthetic agent replies prove orchestration, not hosted-model quality. Keep evidence outside the checkout.
+
+### The frozen quality test
+
+`scripts/frozen-five.mjs` runs five made-up mistakes, in fixed words, through the real retro and scores each one. It is the yardstick for a change that touches the report: a moving window or a new model grouping hides whether the change helped.
+
+```sh
+npm run frozen-five
+```
+
+```text
+case                                   plain      firstmate
+tool rollout missing in some homes     found      found
+default model used on an unchosen key  listed     listed
+board cards with no owner ask          listed     listed
+release tag moved before a check       listed     listed
+double scroll at phone width           listed     listed
+```
+
+- **found**: a kept finding names the mistake in plain words.
+- **listed**: the `Not checked` section of `report.txt` carries its words: the start of the record's own text (the report cuts it short) or the worker's stored explanation of it. A pointer alone is not enough: the reader cannot tell which mistake it names.
+- **missing**: neither, so the mistake left no readable name and no listing.
+
+The set holds one repeated cause, one single captain complaint and three one-time defects. It runs twice: over a plain defect log, and over the same log with a Firstmate home that adds the complaint. The worker's and the judge's answers are recorded in `test/fixtures/frozen-five/set.json`, so the command calls no model and needs no key or network: it is safe in CI. The standing is pinned in `test/fixtures/frozen-five/baseline.json`; `--check` fails when it moves and `--update` writes the new one.
