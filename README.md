@@ -7,7 +7,7 @@ For developers tired of fixing the same agent mistakes.
 ### Start in your project
 
 <p><code>npm install -g learn-from-mistakes-axi</code><br>
-<code>learn-from-mistakes-axi init --no-skill</code><br>
+<code>learn-from-mistakes-axi init</code><br>
 <code>learn-from-mistakes-axi retro --wait</code></p>
 
 Needs **Node 22.13+**, project records and signed-in agents. Review the sources `init` writes before the first run.
@@ -43,7 +43,7 @@ Open the file named by `report_txt` in your editor. The terminal summary is not 
 
 ## Need help with setup?
 
-`init` asks you to choose a worker, a judge and their models. One agent can fill both roles. Models use your own subscription or paid provider.
+`init` asks you to choose a worker, a judge and their models. One agent can fill both roles. It also installs a discovery skill for the agents you select; `init --no-skill` skips that optional install. Models use your own subscription or paid provider.
 
 ```sh
 learn-from-mistakes-axi doctor
