@@ -1701,6 +1701,73 @@ test('signoff post without the peer prints keys only: a canary change sentence r
   assert.ok(readFileSync(join(p, '.lfm', 'runs', String(run.id), 'report.txt'), 'utf8').includes(canary), 'report.txt lost the fix text');
 });
 
+test('signoff_report: a run posts its whole report to sign-off when asked, shows the outcome, and a retry adds no card', () => {
+  const { p, bin, lfm, query } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml'), base = readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }');
+  const fake = { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' };
+  const signDir = join(p, '..', 'signoff'); mkdirSync(signDir);
+  const peerEnv = { FAKE_SIGNOFF_DIR: signDir };
+  const retro = (extra) => { const r = lfm({ ...fake, ...extra }, 'retro', '--foreground', '--json'); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout); };
+  const calls = () => (existsSync(join(signDir, 'calls.jsonl')) ? readFileSync(join(signDir, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+  const board = () => JSON.parse(readFileSync(join(signDir, 'board.json'), 'utf8'));
+  // Off by default: no post, no outcome, even with the peer installed.
+  writeFileSync(yaml, base);
+  symlinkSync(new URL('./fake-agent/sign-off-axi', import.meta.url).pathname, join(bin, 'sign-off-axi'));
+  const off = retro(peerEnv);
+  assert.equal(off.signoff_report, undefined);
+  assert.equal(calls().length, 0, 'the report reached sign-off with signoff_report unset');
+  // On, with no peer: the run completes and says in one line that nothing was posted; the command says the same.
+  writeFileSync(yaml, `${base}signoff_report: on\n`);
+  rmSync(join(bin, 'sign-off-axi'));
+  const alone = retro();
+  assert.equal(alone.run.status, 'completed');
+  assert.deepEqual([alone.signoff_report.state, alone.signoff_report.key], ['skipped', `lfm-report-${alone.run.id}`]);
+  assert.match(alone.signoff_report.why, /sign-off-axi is not installed; the report stays in report\.txt/);
+  const aloneCmd = lfm({}, 'signoff', 'report');
+  assert.equal(aloneCmd.status, 0, aloneCmd.stderr);
+  assert.match(aloneCmd.stdout, /^skipped: lfm-report-\d+ \(sign-off-axi is not installed/m);
+  // On, with a peer: one report card, no Apply or Skip options, and the outcome in status.
+  symlinkSync(new URL('./fake-agent/sign-off-axi', import.meta.url).pathname, join(bin, 'sign-off-axi'));
+  const posted = retro(peerEnv);
+  assert.deepEqual([posted.run.status, posted.signoff_report.state, posted.signoff_report.why], ['completed', 'posted', null]);
+  assert.deepEqual(calls().map((c) => c.args), [['post', '--kind', 'report', '--from', '-']]);
+  const [card] = board(), first = readFileSync(join(signDir, 'board.json'), 'utf8');
+  assert.equal(board().length, 1);
+  assert.deepEqual([card.contract, card.kind, card.schema, card.key, card.filer], [1, 'report', 3, `lfm-report-${posted.run.id}`, 'learn-from-mistakes']);
+  assert.ok(!('options' in card) && !JSON.stringify(card).includes('"apply"'), 'the report carries Apply or Skip choices');
+  assert.match(card.title, /^Retro for .*: 2 repeated mistakes, 5 fixes kept$/);
+  assert.deepEqual(card.sections.map((x) => x.id), ['mistakes', 'fixes', 'not-checked']);
+  assert.equal(card.sections[1].items.length, 5);
+  assert.match(card.sections[1].items[0].more, /Give each worker its own cache directory/);
+  assert.deepEqual(JSON.parse(lfm({}, 'status', '--json').stdout).signoff_report, { key: card.key, state: 'posted', why: null });
+  // A retry sends the same message again and the board keeps one card with the same bytes.
+  const retry = lfm(peerEnv, 'signoff', 'report');
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(retry.stdout.trim(), `posted: ${card.key}`);
+  assert.equal(readFileSync(join(signDir, 'board.json'), 'utf8'), first);
+  assert.equal(calls().length, 2);
+  assert.equal(calls()[0].stdin, calls()[1].stdin);
+  // The Apply or Skip cards stay a separate command with their own keys.
+  assert.equal(lfm(peerEnv, 'signoff', 'post').status, 0);
+  assert.equal(board().length, 6);
+  assert.deepEqual(board().filter((m) => m.kind === 'finding').length, 5);
+  assert.equal(board().filter((m) => m.kind === 'report').length, 1);
+  // A peer that refuses the report fails nothing but the post: the run completes, status names the cause, a retry posts.
+  const refused = retro({ ...peerEnv, FAKE_SIGNOFF_REFUSE: '1' });
+  assert.equal(refused.run.status, 'completed');
+  assert.deepEqual([refused.signoff_report.state, refused.signoff_report.key], ['failed', `lfm-report-${refused.run.id}`]);
+  assert.match(refused.signoff_report.why, /sign-off-axi: exit 2/);
+  assert.equal(board().filter((m) => m.key === refused.signoff_report.key).length, 0);
+  const again = lfm(peerEnv, 'signoff', 'report');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(board().filter((m) => m.key === refused.signoff_report.key).length, 1);
+  assert.deepEqual(query('SELECT state, why FROM signoff_report WHERE run_id = ?', refused.run.id), [{ state: 'posted', why: null }]);
+  const failedCmd = lfm({ ...peerEnv, FAKE_SIGNOFF_REFUSE: '1' }, 'signoff', 'report', '--run', String(refused.run.id));
+  assert.equal(failedCmd.status, 1);
+  assert.match(failedCmd.stdout, /^failed: lfm-report-\d+ \(sign-off-axi: exit 2\)$/m);
+  assert.equal(lfm(peerEnv, 'signoff', 'report', '--run', '999').status, 2);
+});
+
 function applyRepo() {
   const s = agentSetup(), yaml = join(s.p, '.learn-from-mistakes.yaml');
   writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }')); writeFileSync(join(s.p, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');

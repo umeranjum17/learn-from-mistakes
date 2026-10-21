@@ -375,6 +375,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   (no command)        print the last run's status and its summary line
   signoff post       explicitly post a completed run's kept fixes its apply step did not apply
                      (optional sign-off-axi)
+  signoff report    post a run's whole report to sign-off as one card, apart from the Apply/Skip
+                     cards; safe to repeat (signoff_report: on posts it when a run ends)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
   apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch
                       lfm/<project>-<hash>/<run>-<n> from HEAD, and records it;
@@ -503,7 +505,8 @@ sources, AGENTS.md, CLAUDE.md or skills.
    worked (roll back what did not help); each repeated mistake with its cost, how often it came
    back, its why chain to the root cause and its fix.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions;
-   else ask the user the questions in section 7.
+   else ask the user the questions in section 7. The whole report goes to sign-off only with
+   signoff_report: on, or learn-from-mistakes-axi signoff report.
 6. Once the user has made a change: learn-from-mistakes-axi change applied
    --proposal <run>:<n> --ref <git sha>
 
@@ -540,6 +543,7 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
   'signoff-post': 'learn-from-mistakes-axi signoff post [--run <id>] [--dir <dir>]',
+  'signoff-report': 'learn-from-mistakes-axi signoff report [--run <id>] [--dir <dir>]',
   'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
   apply: 'learn-from-mistakes-axi apply [--run <id>] [--fix <n>] [--dir <dir>]',
 };
@@ -563,7 +567,7 @@ async function main(ctx) {
     cmd = 'change-applied';
   }
   if (cmd === 'signoff') {
-    if (!['post', 'answers'].includes(argv[0])) throw new UsageError('signoff needs post or answers', FORMS['signoff-post']);
+    if (!['post', 'report', 'answers'].includes(argv[0])) throw new UsageError('signoff needs post, report or answers', FORMS['signoff-post']);
     cmd = `signoff-${argv.shift()}`;
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns

@@ -70,6 +70,8 @@ const MIGRATIONS = [
   // A finding's 5-whys chain (a JSON list, the last the root cause) and its cost in plain words. A finding from before
   // this entry has neither; the report says so.
   'ALTER TABLE findings ADD COLUMN whys_json TEXT; ALTER TABLE findings ADD COLUMN cost TEXT',
+  // Whether a run's report reached sign-off: posted, skipped (no peer) or failed (with the peer's refusal). One row per run, so a retry updates it.
+  'CREATE TABLE IF NOT EXISTS signoff_report (run_id INTEGER PRIMARY KEY REFERENCES runs(id), key TEXT NOT NULL, state TEXT NOT NULL, why TEXT)',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).
