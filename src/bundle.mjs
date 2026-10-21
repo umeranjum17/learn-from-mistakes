@@ -1,6 +1,6 @@
 // The bundle step: the one file the run's own agents read, <state dir>/runs/<id>/bundle.md. It holds the metrics,
 // the follow-ups, the top signal clusters (this window's session events with a failure signal, by tool and signal)
-// and the records with no label, this window's and the undated ones (a Firstmate home's PR and daily metric rows, a stage row and an Actions run, only feed the metrics). Each item has an id and refs (an event's id
+// and the records with no label, captain complaints first, then this window's and the undated ones (a Firstmate home's PR and daily metric rows, a stage row and an Actions run, only feed the metrics). Each item has an id and refs (an event's id
 // is its store row id, for reference only; a record's is the id its label takes) and, with `excerpts: on`, a redacted excerpt; with `excerpts: off` it has
 // pointers and counts only. Every string it writes goes through redact(), but a record id: it is the source's config id
 // and a number or a hash, never record text, and the worker must cite it as the store keeps it. A fleet record's home
@@ -29,6 +29,8 @@ export function clusters(db, id, start) {
   return [...by].sort(([, a], [, b]) => b.length - a.length);
 }
 
+const isComplaint = (r) => (r.data && JSON.parse(r.data).kind) === 'complaint';
+
 export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   const window = { start: Date.parse(current_start) }, on = cfg.excerpts === 'on';
   // A done-done id from before the salt is plain: its part after the first colon holds a slash, which a salted id never does, and its ref is the run.json.
@@ -46,7 +48,8 @@ export function bundle(cfg, db, id, file, { current_start, previous_start }) {
   // Unlabelled means no row in the labels table, the same meaning report coverage counts; a record's cause does not decide it.
   const records = db.prepare(`SELECT record_id, source, ts, ref, text, data FROM records r WHERE run_id = ?
     AND NOT EXISTS (SELECT 1 FROM labels l WHERE l.run_id = r.run_id AND l.record_id = r.record_id) ORDER BY ts DESC, id`).all(id)
-    .filter((r) => (!r.ts || Date.parse(r.ts) >= window.start) && !['pr', 'daily', 'ci', 'stage'].includes(r.data && JSON.parse(r.data).kind)); // a Firstmate metrics row is a number, not a mistake
+    .filter((r) => (!r.ts || Date.parse(r.ts) >= window.start) && !['pr', 'daily', 'ci', 'stage'].includes(r.data && JSON.parse(r.data).kind)) // a Firstmate metrics row is a number, not a mistake
+    .sort((a, b) => isComplaint(b) - isComplaint(a)); // a captain complaint goes first: the cap drops from the end, so an old complaint outlives a newer status line (the sort is stable, so each group stays newest first)
   const { salt } = db.prepare('SELECT salt FROM secret').get();
   // A done-done record's ref goes out with its home and app folder replaced; when that form cannot be derived (the
   // source moved, changed type or is gone), the path is withheld rather than leaking the plain app name to the model.
