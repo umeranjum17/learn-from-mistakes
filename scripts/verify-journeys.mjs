@@ -81,7 +81,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'skills/lfm-retro/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'scripts/frozen-five.mjs', 'skills/lfm-retro/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', 'test/frozen-five.test.mjs', 'test/fixtures/frozen-five/set.json', 'test/fixtures/frozen-five/baseline.json', 'test/fixtures/frozen-five/recorded-agent', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
 const staged = join(scratch, 'project');
@@ -113,6 +113,16 @@ try {
   const lab = { PATH: agentBin };
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
   run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
+  // The frozen quality test: five made-up mistakes, scored with and without Firstmate sources. It drives the real
+  // retro with a recorded worker and judge, so it calls no model and needs no key or network.
+  run('frozen-five', process.execPath, [join(repo, 'scripts', 'frozen-five.mjs'), '--json'], 0);
+  const frozen = JSON.parse(readFileSync(join(evidence, 'frozen-five.stdout'), 'utf8'));
+  assert.deepEqual(frozen.cases.map((c) => c.id), ['rollout-gap', 'unchosen-key', 'no-owner-ask', 'tag-before-check', 'phone-scroll'], 'the frozen five set does not hold its five cases');
+  for (const env of ['plain', 'firstmate']) {
+    assert.deepEqual(Object.keys(frozen.environments[env].verdicts), frozen.cases.map((c) => c.id), `the frozen five set scores other cases in ${env}`);
+    assert.equal(frozen.environments[env].verdicts['rollout-gap'], 'found', `the frozen five set found no case in ${env}`);
+  }
+  save('frozen-five.json', frozen);
   for (const args of [['ingest'], ['count'], ['report', '--labels', 'x.jsonl'], ['report', '--proposals', 'x.jsonl']])
     run(`removed-${(args[1] ?? args[0]).replace(/^--/, '')}`, process.execPath, [cli, ...args, '--dir', staged], 2, lab); // the manual flow is gone
   run('report-no-run', process.execPath, [cli, 'report', '--dir', staged], 3, lab); // no completed run yet

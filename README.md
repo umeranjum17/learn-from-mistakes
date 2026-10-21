@@ -213,3 +213,26 @@ npm run build:skill -- --check
 The README, `skills/` and `docs/` (icon, shots, landing page) ship with the code: a change that makes one of them stale updates it in the same PR. CI (`.github/workflows/ci.yml`) runs the full suite on every PR and skips it for docs-only changes.
 
 `.done-done.yaml` defines the existing `cli` and `package` verification journeys. `scripts/verify-journeys.mjs` drives synthetic CLI/process-boundary checks, including the README setup-to-report path; `--package` also installs and exercises the packed CLI. Synthetic agent replies prove orchestration, not hosted-model quality. Keep evidence outside the checkout.
+
+### The frozen quality test
+
+`scripts/frozen-five.mjs` runs five made-up mistakes, in fixed words, through the real retro and scores each one. It is the yardstick for a change that touches the report: a moving window or a new model grouping hides whether the change helped.
+
+```sh
+npm run frozen-five
+```
+
+```text
+case                                   plain      firstmate
+tool rollout missing in some homes     found      found
+default model used on an unchosen key  listed     listed
+board cards with no owner ask          listed     listed
+release tag moved before a check       listed     listed
+double scroll at phone width           listed     listed
+```
+
+- **found**: a kept finding names the mistake in plain words.
+- **listed**: the `Not checked` section of `report.txt` carries its words: the start of the record's own text (the report cuts it short) or the worker's stored explanation of it. A pointer alone is not enough: the reader cannot tell which mistake it names.
+- **missing**: neither, so the mistake left no readable name and no listing.
+
+The set holds one repeated cause, one single captain complaint and three one-time defects. It runs twice: over a plain defect log, and over the same log with a Firstmate home that adds the complaint. The worker's and the judge's answers are recorded in `test/fixtures/frozen-five/set.json`, so the command calls no model and needs no key or network: it is safe in CI. The standing is pinned in `test/fixtures/frozen-five/baseline.json`; `--check` fails when it moves and `--update` writes the new one.

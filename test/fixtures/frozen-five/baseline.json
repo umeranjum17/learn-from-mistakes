@@ -1,0 +1,19 @@
+{
+  "note": "The standing the frozen set measured. Regenerate with node scripts/frozen-five.mjs --update.",
+  "environments": {
+    "plain": {
+      "rollout-gap": "found",
+      "unchosen-key": "listed",
+      "no-owner-ask": "listed",
+      "tag-before-check": "listed",
+      "phone-scroll": "listed"
+    },
+    "firstmate": {
+      "rollout-gap": "found",
+      "unchosen-key": "listed",
+      "no-owner-ask": "listed",
+      "tag-before-check": "listed",
+      "phone-scroll": "listed"
+    }
+  }
+}
