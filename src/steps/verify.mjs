@@ -6,7 +6,7 @@
 // (STE100) is a warning: the verdict stands and the report hides the text. The step logs ids
 // and verdicts only, never the judge's text. With no claim it asks no agent.
 import { readFileSync } from 'node:fs';
-import { defaultMetric, plain } from '../check.mjs';
+import { defaultMetric, evidenceFor, plain, readBundle } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/verify.md', import.meta.url), 'utf8');
@@ -51,9 +51,9 @@ export async function verify(cfg, db, id, dir, table, log) {
   // Claim ids: f<n> for the run's findings and p<n> for its fixes, each in table order.
   const claims = new Map(table === 'findings'
     ? db.prepare('SELECT id, cause, summary, refs_json, whys_json, cost FROM findings WHERE run_id = ? ORDER BY id').all(id)
-      .map((f, i) => [`f${i + 1}`, { id: f.id, text: `finding for cause ${f.cause}. ${f.summary} Why chain: ${JSON.parse(f.whys_json ?? '[]').map((w, k) => `${k + 1}. ${w}`).join(' ')} Cost: ${f.cost ?? 'not named'} Refs: ${refs(f.refs_json)}.` }])
+      .map((f, i) => [`f${i + 1}`, { id: f.id, refs: JSON.parse(f.refs_json), text: `finding for cause ${f.cause}. ${f.summary} Why chain: ${JSON.parse(f.whys_json ?? '[]').map((w, k) => `${k + 1}. ${w}`).join(' ')} Cost: ${f.cost ?? 'not named'} Refs: ${refs(f.refs_json)}.` }])
     : db.prepare('SELECT id, cause, target, owner, change, metric, tripwire, refs_json FROM proposals WHERE run_id = ? ORDER BY id').all(id)
-      .map((f, i) => [`p${i + 1}`, { id: f.id, text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
+      .map((f, i) => [`p${i + 1}`, { id: f.id, refs: JSON.parse(f.refs_json), text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
         + `Metric: ${f.metric?.trim() || defaultMetric(cfg, f.cause)}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]));
   const none = { asked: false, confirmed: 0, weakened: 0, refuted: 0 };
   if (!claims.size) {
@@ -61,7 +61,8 @@ export async function verify(cfg, db, id, dir, table, log) {
     return none;
   }
   const items = [...claims].map(([k, c]) => `- ${k}: ${c.text}`).join('\n');
-  const answer = await agentStep(cfg, db, id, dir, { step: table === 'findings' ? 'verify' : 'verify-fixes', role: 'judge', prompt: PROMPT.replace('{{items}}', () => items), check: (x) => check(x, claims), log });
+  const answer = await agentStep(cfg, db, id, dir, { step: table === 'findings' ? 'verify' : 'verify-fixes', role: 'judge', prompt: PROMPT.replace('{{items}}', () => items), check: (x) => check(x, claims), log,
+    text: evidenceFor(readBundle(dir, id), [...claims.values()].flatMap((c) => c.refs)) }); // the judge reads the parts of the bundle that hold the cited items
   const { verdicts } = sift(answer, claims);
   for (const [i, v] of answer.verdicts.entries()) if (verdicts.includes(v)) { const w = plain(v.reason, `verdicts[${i}].reason`, { words: 25 }); if (w) log(`warning: ${w}`); }
   db.exec('BEGIN');

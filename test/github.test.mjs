@@ -485,6 +485,21 @@ test('a firstmate home reads a headerless chat.tsv with ISO-8601 times', () => {
   assert.match(lfm({}, 'doctor').stdout, /^ok\s+source home\s+firstmate: .*, 1 captain complaints, 0 skipped \(no time\)$/m);
 });
 
+// One captain complaint is a finding: the repeat rule (3 incidents on 2 days) must not hide a cause the captain wrote once.
+test('a captain complaint the worker labels as one incident still counts as a repeated cause', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home');
+  mkdirSync(join(home, 'data'), { recursive: true });
+  mkdirSync(join(home, 'state'), { recursive: true });
+  writeFileSync(join(home, 'data', 'chat.tsv'), `${new Date(NOW - 86_400_000).toISOString()}\tdemo-page\tWhy does the demo list scroll inside the demo panel?\n`);
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\ncauses:\n  nested-scroll: { description: A list scrolls inside a panel that scrolls }\nrepeat: { min_incidents: 3, min_days: 2 }\n`);
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'nested-scroll' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(lfm({}, 'report', '--json').stdout).repeated, [{ cause: 'nested-scroll', count: 1, days: 1 }]); // the summary line, section 4 and the status agree
+  assert.equal(JSON.parse(lfm({}, 'status', '--json').stdout).result.summary, 'repeated: nested-scroll (1 time/1 day)');
+  assert.match(readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8'), /^- nested-scroll: 1 time on 1 day\.$/m);
+});
+
 // A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
 // report's not-checked section says so.
 test('a markdown-log source with no dated record is named by doctor and by the report', () => {

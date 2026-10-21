@@ -1203,7 +1203,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
   const lines = attached.stdout.split('\n');
   const at = (re) => lines.findIndex((l) => re.test(l));
   const order = [/^collect: log +markdown-log +13 items$/, /^collect: gate +no-mistakes +5 items$/, /^collect: completed$/,
-    /^bundle: bundle\.md: \d+ items, 0 dropped, \d+ characters$/, /^report: running$/, /^report: repeated: /, /^report: completed$/, /^run:$/];
+    /^bundle: bundle\.md: \d+ items, 1 part, \d+ characters$/, /^report: running$/, /^report: repeated: /, /^report: completed$/, /^run:$/];
   assert.ok(order.every((re) => at(re) >= 0), attached.stdout);
   assert.deepEqual(order.map(at), order.map(at).toSorted((a, b) => a - b), attached.stdout);
   assert.doesNotMatch(attached.stdout, /sha256/);

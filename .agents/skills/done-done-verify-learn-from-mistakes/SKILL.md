@@ -26,6 +26,8 @@ Harness: A shell: the run is a single node command whose exit code and the files
 - [Record an applied change and export the ledger](features/record-an-applied-change-and-export-the-.md): Run the cli journey; the change drives run before any retro that reads the ledger (`scripts/verify-journeys.mjs`)
 - [Cancel a running retro](features/cancel-a-running-retro.md): Start a detached retro in the staged project with the test-only LFM_TEST_SLOW_STEP=report:20000 setting, so the run is still going (`scripts/verify-journeys.mjs`)
 - [Print the agent procedure](features/print-the-agent-procedure.md): Run the cli journey; the guide drive needs no project config (`scripts/verify-journeys.mjs`)
+- [Split a full retro bundle into parts](features/split-a-full-retro-bundle-into-parts.md): Run the cli journey; the retro-parts drive runs a retro over 40 defect lines with `caps.bundle_chars: 1000` (`scripts/verify-journeys.mjs`)
+- [Count a captain complaint as a repeated cause](features/count-a-captain-complaint-as-a-repeated-cause.md): Run the cli journey; the retro-complaint drive runs a retro over one captain chat line (`scripts/verify-journeys.mjs`)
 
 ## Evidence
 

@@ -138,7 +138,7 @@ export function reportText(cfg, db, id, dir, window, run) {
     ...run.sources.filter((s) => s.undated).map((s) => `- Source ${s.id} read ${plural(s.undated, 'record')} and none has a date, so the window placed none of them. Add a "## YYYY-MM-DD" heading above its bullets, or a date in each bullet.`),
     ...run.sources.flatMap((s) => (s.missing ?? []).map((m) => `- Source ${s.id} gave no ${m}.`)),
     ...run.sources.filter((s) => s.lines_skipped).map((s) => `- Source ${s.id} skipped ${plural(s.lines_skipped, 'home line')} with no local home.`),
-    ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
+    ...[[step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [step('analyse').findings_style, 'The worker broke the style rules in', 'finding'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]

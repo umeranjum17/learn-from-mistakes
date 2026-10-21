@@ -55,7 +55,7 @@ const STEPS = {
   // The file the run's agents read: <run dir>/bundle.md, with its counts in the step log.
   bundle: (cfg, db, id, log) => {
     const out = bundle(cfg, db, id, join(runDir(cfg, id), 'bundle.md'), collected(db, id));
-    log(`bundle.md: ${out.items} items, ${out.dropped} dropped, ${out.chars} characters`);
+    log(`bundle.md: ${out.items} items, ${out.parts} ${out.parts === 1 ? 'part' : 'parts'}, ${out.chars} characters`);
     return out;
   },
   // The worker reads the bundle: it names the causes it finds and labels the defect records (the labels and findings tables).

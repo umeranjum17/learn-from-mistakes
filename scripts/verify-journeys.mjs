@@ -176,6 +176,23 @@ try {
   run('retro-judge-same-agent', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, lab);
   assert.equal(JSON.parse(readFileSync(join(evidence, 'retro-judge-same-agent.stdout'), 'utf8')).run.status, 'completed', 'a judge on the worker\'s agent did not complete the retro');
   Object.assign(config, { judge_agent: 'codex', agent_config: { ...config.agent_config, codex: { model: 'umer-judge-model' } } }); // the drives below call the judge
+  // A bundle over caps.bundle_chars is written in parts that keep every item; one captain chat line, labelled once, repeats its cause. Each runs in its own project.
+  const day = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  const small = join(scratch, 'parts'), chat = join(scratch, 'chat'), fm = join(scratch, 'fm-home');
+  for (const dir of [small, chat, join(fm, 'data'), join(fm, 'state')]) mkdirSync(dir, { recursive: true });
+  const workers = { agent: 'claude', judge_agent: 'codex', agent_config: { claude: { model: 'umer-worker-model' }, codex: { model: 'umer-judge-model' } }, excerpts: 'off' };
+  writeFileSync(join(small, 'defects.md'), `# Defect log\n${Array.from({ length: 40 }, (_, i) => `${i % 4 ? '' : `\n## ${day(Math.floor(i / 4) % 6)}\n\n`}- [area${i}] Defect number ${i} broke the fixture run -> lost ${i} minutes -> OPEN.\n`).join('')}`);
+  writeFileSync(join(small, '.learn-from-mistakes.yaml'), stringify({ name: 'parts', sources: { log: { type: 'markdown-log', path: 'defects.md' } }, ...workers, caps: { invocations: 60, bundle_chars: 1000 } }));
+  run('retro-parts', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', small], 0, lab);
+  const parted = readFileSync(join(small, '.lfm', 'runs', String(runId('retro-parts')), 'bundle.md'), 'utf8'), pieces = parted.split(/^(?=# Retro bundle)/m);
+  assert.ok(pieces.length > 1 && pieces.every((piece) => piece.length <= 1000), 'the bundle is not in parts within the cap');
+  assert.equal(parted.match(/^- \[/gm).length, 40, 'the parts do not hold all 40 defect records');
+  assert.doesNotMatch(parted, /^Dropped /m);
+  save('bundle-parts.md', parted);
+  writeFileSync(join(fm, 'data', 'chat.tsv'), `at\twork\ttext\n${Math.floor(Date.now() / 1000) - 86_400}\tdemo-page\tWhy does the demo list scroll inside the demo panel?\n`);
+  writeFileSync(join(chat, '.learn-from-mistakes.yaml'), stringify({ name: 'chat', sources: { home: { type: 'firstmate', path: fm } }, causes: { 'nested-scroll': { description: 'A list scrolls inside a panel that scrolls' } }, ...workers }));
+  run('retro-complaint', process.execPath, [cli, 'retro', '--foreground', '--dir', chat], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_CAUSE: 'nested-scroll' });
+  assert.match(readFileSync(join(evidence, 'retro-complaint.stdout'), 'utf8'), /summary: "repeated: nested-scroll \(1 time\/1 day\)"/, 'one captain complaint did not repeat its cause');
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
