@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
-import { counts, plain, RAW, splitSentences } from './check.mjs';
+import { bundleIds, counts, plain, RAW, readBundle, splitSentences } from './check.mjs';
 import { inWindow, rounded } from './metrics.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
@@ -44,7 +44,7 @@ const changeLines = (text, at) => {
 // `run` is the run as `status` shows it before the report step: its metrics, follow-ups, fixes and sources.
 export function reportText(cfg, db, id, dir, window, run) {
   const all = (sql, ...args) => db.prepare(sql).all(id, ...args);
-  const records = new Map(all('SELECT record_id, source, ref FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
+  const records = new Map(all('SELECT record_id, source, ref, data FROM records WHERE run_id = ?').map((r) => [r.record_id, r]));
   const events = new Map(all('SELECT id, session_id, ts FROM events WHERE run_id = ?').map((e) => [`e${e.id}`, e]));
   const groups = clusters(db, id, Date.parse(window.current_start));
   const pointer = (ref) => {
@@ -133,11 +133,18 @@ export function reportText(cfg, db, id, dir, window, run) {
   }
   if (!fixes.length) lines.push('- No fix passed the rules.');
   const judged = (verdict) => [...fixes, ...findings].filter((x) => x.verdict === verdict).length; // the kept fixes and the findings counted above
+  // Every complaint and defect record the worker read is cited by a kept finding or named here, so none vanishes without a trace.
+  const cited = new Set(findings.flatMap((f) => JSON.parse(f.refs_json)));
+  const uncited = [...bundleIds(readBundle(dir, id))].filter((r) => records.has(r) && !cited.has(r));
   const gaps = [...run.sources.filter((s) => !s.items).map((s) => `- Source ${s.id} gave no records.`),
     ...run.sources.filter((s) => s.skipped).map((s) => `- Source ${s.id} skipped ${plural(s.skipped, 'session')}.`),
     ...run.sources.filter((s) => s.undated).map((s) => `- Source ${s.id} read ${plural(s.undated, 'record')} and none has a date, so the window placed none of them. Add a "## YYYY-MM-DD" heading above its bullets, or a date in each bullet.`),
     ...run.sources.flatMap((s) => (s.missing ?? []).map((m) => `- Source ${s.id} gave no ${m}.`)),
     ...run.sources.filter((s) => s.lines_skipped).map((s) => `- Source ${s.id} skipped ${plural(s.lines_skipped, 'home line')} with no local home.`),
+    ...[[true, 'captain complaint'], [false, 'defect record']].flatMap(([complaint, word]) => {
+      const rs = uncited.filter((r) => (JSON.parse(records.get(r).data ?? '{}').kind === 'complaint') === complaint);
+      return rs.length ? [`- No finding cites ${plural(rs.length, word)}.`, ...rs.map((r) => evidence([r]))] : [];
+    }),
     ...[[step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
       [step('analyse').findings_style, 'The worker broke the style rules in', 'finding'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],

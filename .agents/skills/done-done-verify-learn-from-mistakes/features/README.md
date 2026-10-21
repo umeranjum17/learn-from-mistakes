@@ -9,3 +9,4 @@ The repo's maintained verification map; a proof that drives one entry point is i
 - [Print the agent procedure](print-the-agent-procedure.md): Run the cli journey; the guide drive needs no project config
 - [Split a full retro bundle into parts](split-a-full-retro-bundle-into-parts.md): Run the cli journey; the retro-parts drive runs a retro over 40 defect lines with `caps.bundle_chars: 1000`
 - [Count a captain complaint as a repeated cause](count-a-captain-complaint-as-a-repeated-cause.md): Run the cli journey; the retro-complaint drive runs a retro over one captain chat line
+- [Name the records no finding cites](name-records-no-finding-cites.md): Run the cli journey; the retro-uncited drive runs a retro over one captain chat line and two defects, with one finding that cites one defect (`scripts/verify-journeys.mjs`)

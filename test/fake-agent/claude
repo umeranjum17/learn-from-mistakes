@@ -16,6 +16,7 @@
 // list), weakened for one in FAKE_WEAKEN, none for one in FAKE_UNJUDGED (left out every time), else confirmed.
 // FAKE_JUDGE=fail makes the judge's call fail: an error line on stderr and exit 1, with no answer. FAKE_JUDGE=passive gives every verdict a passive reason.
 // FAKE_PROPOSE=findings gives one fix per finding the propose step lists, for its cause and citing its refs; FAKE_METRIC sets every fix's metric.
+// FAKE_FINDINGS=last gives one finding for FAKE_CAUSE citing only the last record.
 // FAKE_FINDINGS=newcause gives one finding for FAKE_FINDING_CAUSE citing every record.
 // Linked as `codex` it is a fake Codex, the judge: it writes the answer to its -o file, as `codex exec` does.
 // FAKE_LOG, when set, is a dir that gets each call's argv, cwd and stdin, in <name>.jsonl. FAKE_CANARY, when set, is
@@ -85,6 +86,7 @@ else if (/^lfm-run:\d+:propose\n/.test(stdin)) {
   const answer = mode === 'blank' ? '' : mode === 'prose' ? 'I read the bundle. Nothing looks wrong.' : JSON.stringify(mode === 'empty' ? { findings: [], labels: [] }
     : mode === 'outside' ? { findings: [], labels: [{ id: 'nowhere-9', event: true, cause: 'other', why: 'The run failed for Umer.' }] } : {
       findings: (process.env.FAKE_FINDINGS === 'newcause' ? [{ cause: process.env.FAKE_FINDING_CAUSE, summary: 'Every record failed for the same reason.', refs: records }]
+        : process.env.FAKE_FINDINGS === 'last' ? [{ cause: process.env.FAKE_CAUSE || 'other', summary: 'Only the last record failed.', refs: [records.at(-1)] }]
         : process.env.FAKE_FINDINGS?.startsWith('twins') ? [{ cause: process.env.FAKE_CAUSE, summary: 'First twin failed alone.', refs: [records[0]] },
         { cause: process.env.FAKE_CAUSE, summary: 'Second twin failed alone.', refs: [records[1]] },
         ...(process.env.FAKE_FINDINGS === 'twins-other' ? [{ cause: 'agent-exit-wait', summary: 'The agent exit wait failed for Umer alone.', refs: [first] }] : [])]
