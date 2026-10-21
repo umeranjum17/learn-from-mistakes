@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 // The CLI loads first: src/config.mjs and src/init.mjs import each other, so a test that starts at src/bundle.mjs crashes.
 import { InputError } from '../bin/learn-from-mistakes-axi.mjs';
+import { bundleIds, bundleParts } from '../src/check.mjs';
 import { bundle } from '../src/bundle.mjs';
 import { saltedId } from '../src/sources/markdown-log.mjs';
 import { openStore } from '../src/store.mjs';
@@ -83,25 +84,7 @@ test('a firstmate inbox message whose id holds a slash is not a pre-salt done-do
   assert.match(readFileSync(file, 'utf8'), /^- \[fm:alpha\.inbox\/handled\/1\.msg\] fm at /m);
 });
 
-test('a full bundle names the records it left out, newest first', async () => {
-  const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
-  after(() => rmSync(state, { recursive: true }));
-  const db = await openStore(state, true);
-  const now = Date.now(), iso = (days) => new Date(now - days * 86_400_000).toISOString();
-  db.prepare('INSERT INTO runs (id, status, created_at, updated_at) VALUES (1, ?, ?, ?)').run('running', iso(0), iso(0));
-  const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, text, record_id) VALUES (1, ?, ?, ?, ?, ?)');
-  for (const [days, name] of [[1, 'newest'], [2, 'middle'], [3, 'oldest']]) record.run('log', iso(days), `defects.md:${days}`, 'x', `log:${name}`);
-  const file = join(state, 'bundle.md');
-  const window = { current_start: iso(7), previous_start: iso(14) };
-  bundle({ excerpts: 'off', caps: { bundle_chars: 750 } }, db, 1, file, window); // room for the headings, the first record and the reserved lines only
-  db.close();
-
-  const text = readFileSync(file, 'utf8');
-  assert.match(text, /^- \[log:newest\]/m);
-  assert.match(text, /^Left out, newest first: log:middle, log:oldest\.$/m);
-});
-
-test('a full bundle keeps an old captain complaint ahead of newer records', async () => {
+test('a full bundle splits into parts that keep every record, a captain complaint first', async () => {
   const state = mkdtempSync(join(tmpdir(), 'lfm-bundle-'));
   after(() => rmSync(state, { recursive: true }));
   const db = await openStore(state, true);
@@ -112,10 +95,13 @@ test('a full bundle keeps an old captain complaint ahead of newer records', asyn
   record.run('fm', iso(6), 'data/chat.tsv:4', 'why did this break again', 'fm:chat:4', JSON.stringify({ kind: 'complaint' }));
   const file = join(state, 'bundle.md');
   const window = { current_start: iso(7), previous_start: iso(14) };
-  bundle({ excerpts: 'off', caps: { bundle_chars: 750 } }, db, 1, file, window); // room for the headings, one record and the reserved lines only
+  const out = bundle({ excerpts: 'off', caps: { bundle_chars: 500 } }, db, 1, file, window); // room for the headings and about one record a part
   db.close();
 
-  const text = readFileSync(file, 'utf8');
-  assert.match(text, /^- \[fm:chat:4\]/m);
-  assert.match(text, /^Left out, newest first: fm:status-a, fm:status-b, fm:status-c\.$/m);
+  const text = readFileSync(file, 'utf8'), parts = bundleParts(text);
+  assert.ok(parts.length > 1 && out.parts === parts.length, `${parts.length} parts`);
+  assert.ok(parts.every((part) => part.length <= 750), 'a part over the cap');
+  assert.deepEqual([...bundleIds(text)], ['fm:chat:4', 'fm:status-a', 'fm:status-b', 'fm:status-c']); // none left out, the complaint first
+  assert.ok(parts.every((part) => /^## Unlabelled defect records$/m.test(part) || !/^- \[/m.test(part)), 'a part with records and no heading');
+  assert.doesNotMatch(text, /^Dropped /m);
 });

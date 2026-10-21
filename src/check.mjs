@@ -1,7 +1,7 @@
 // The counting and the rules after the run's agent steps. `repeats` counts each cause from the labels: a duplicate is
 // one incident with the record it repeats, a record with occurrences is that many, and a cause repeats when it has
 // repeat.min_incidents incidents on repeat.min_days days, from the labels or from the items a match rule tagged; `other`
-// never repeats. `counts` adds the findings: a finding's items are the events, cluster events and records its refs name.
+// never repeats. A captain complaint repeats its cause on its own: the captain wrote it once and that is enough. `counts` adds the findings: a finding's items are the events, cluster events and records its refs name.
 // The check step keeps only the fixes that follow the rules, ranks them by how often their cause came back and how far
 // their metric misses its target, and keeps the top five.
 import { readFileSync } from 'node:fs';
@@ -19,6 +19,14 @@ export const defaultMetric = (cfg, cause) => (Object.hasOwn(cfg.causes, cause) ?
 
 // The ids a bundle cites: its clusters, events and records.
 export const bundleIds = (text) => new Set([...text.matchAll(/^(?:### |- )\[([^\]\n]+)\]/gm)].map((m) => m[1]));
+
+// A bundle file holds one or more parts, each opening with the title line (see bundle()). An agent step reads one part
+// at a time or, for a claim, the parts that hold the items it cites; a bundle of one part is read whole.
+export const bundleParts = (text) => text.split(/^(?=# Retro bundle\b)/m);
+export function evidenceFor(text, refs) {
+  const parts = bundleParts(text);
+  return parts.length === 1 ? text : parts.filter((p) => { const ids = bundleIds(p); return refs.some((r) => ids.has(r)); }).join('');
+}
 
 // The run's own evidence file, <run dir>/bundle.md, the one its agents read and its check step counts refs against.
 // A missing or unreadable file names the file and the fix: it never fails a real claim as a ref to a bundle item
@@ -152,7 +160,7 @@ export function quoteProblem(text, where, runs) {
   return '';
 }
 
-// records: id -> { date }; labels: id -> label; rows: the items a match rule tagged ({ source, id, cause, at }).
+// records: id -> { date, data }; labels: id -> label; rows: the items a match rule tagged ({ source, id, cause, at }).
 export function repeats(cfg, records, labels, rows) {
   // A duplicate collapses into the record it repeats; that root is one incident, or `occurrences` of them.
   const root = (id, seen = new Set()) => {
@@ -161,13 +169,14 @@ export function repeats(cfg, records, labels, rows) {
   };
   const groups = Object.create(null);
   const group = (cause) => (groups[cause] ??= { cause, description: cfg.causes[cause]?.description ?? 'Events no listed cause names.',
-    log: { roots: new Map(), records: [], days: new Set() }, store: { rows: [], days: new Set() } });
+    log: { roots: new Map(), records: [], days: new Set(), complaint: false }, store: { rows: [], days: new Set() } });
   for (const l of labels.values()) {
     if (!l.event) continue;
     const g = group(l.cause).log, r = records.get(l.id), k = root(l.id);
     g.roots.set(k, labels.get(k).occurrences ?? 1);
     g.records.push({ ...r, label: l });
     if (r.date) g.days.add(r.date);
+    if (r.data?.kind === 'complaint') g.complaint = true; // a record's data, as records.jsonl and the store keep it
   }
   for (const [cause, c] of Object.entries(cfg.causes)) {
     if (!c.match) continue;
@@ -179,7 +188,7 @@ export function repeats(cfg, records, labels, rows) {
   const { min_incidents: mi, min_days: md } = cfg.repeat;
   return Object.values(groups).map((g) => {
     const incidents = [...g.log.roots.values()].reduce((a, b) => a + b, 0);
-    const logRepeated = incidents >= mi && g.log.days.size >= md, storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
+    const logRepeated = g.log.complaint || (incidents >= mi && g.log.days.size >= md), storeRepeated = g.store.rows.length >= mi && g.store.days.size >= md;
     return { ...g, incidents, repeated: g.cause !== 'other' && (logRepeated || storeRepeated), by: [logRepeated && 'log', storeRepeated && 'store'].filter(Boolean) };
   }).sort((a, b) => b.repeated - a.repeated || Math.max(b.incidents, b.store.rows.length) - Math.max(a.incidents, a.store.rows.length));
 }
@@ -187,9 +196,9 @@ export function repeats(cfg, records, labels, rows) {
 // Each cause's incidents, days and whether it repeated, from this run's labels, tagged items and findings; and each
 // finding's count and days. A finding the judge refuted is dropped: it counts nothing.
 export function counts(cfg, db, id, { current_start }) {
-  const recs = db.prepare('SELECT record_id, source, ts, cause FROM records WHERE run_id = ?').all(id);
+  const recs = db.prepare('SELECT record_id, source, ts, cause, data FROM records WHERE run_id = ?').all(id);
   const evs = db.prepare('SELECT id, ts, cause FROM events WHERE run_id = ?').all(id);
-  const records = new Map(recs.map((r) => [r.record_id, { date: r.ts?.slice(0, 10) }]));
+  const records = new Map(recs.map((r) => [r.record_id, { date: r.ts?.slice(0, 10), data: r.data ? JSON.parse(r.data) : undefined }]));
   const labels = new Map(db.prepare('SELECT record_id, event, cause, duplicate_of, occurrences FROM labels WHERE run_id = ?').all(id)
     .map((l) => [l.record_id, { id: l.record_id, event: Boolean(l.event), cause: l.cause, duplicate_of: l.duplicate_of, occurrences: l.occurrences }]));
   const rows = [...recs.filter((r) => r.cause).map((r) => ({ source: r.source, id: r.record_id.slice(r.source.length + 1), cause: r.cause, at: r.ts })),

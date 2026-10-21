@@ -17,13 +17,13 @@ const LENGTH_STOP = /\b(length|max[_-]?output[_-]?tokens?|max[_-]?tokens?|token[
 // `stop` is the runner's reported stop reason (null when none), so a step whose answer must be whole can refuse a reply
 // the output limit cut off. A problem a retry cannot fix (a cut reply: the same limit applies again) is thrown as a fatal
 // InputError instead, which ends the step at once.
-export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log, bundle = true }) {
+export async function agentStep(cfg, db, id, dir, { step, role, prompt, check, log, bundle = true, text }) {
   const key = KEY[role];
   const r = (await resolveRoles(cfg, detect(cfg)))[role];
   const fix = r.fix ?? chooseFix(cfg, key, r.runner);
   const problem = r.problem || (!r.model && `no model set in agent_config for ${r.runner}`);
   if (problem) throw new InputError(`${role}: ${problem}; ${fix}`);
-  const data = bundle ? `\n\n${readBundle(dir, id)}` : '';
+  const data = bundle ? `\n\n${text ?? readBundle(dir, id)}` : ''; // `text`: the part of the bundle this call reads
   const invalid = db.prepare(`UPDATE invocations SET exit_status = 'invalid' WHERE id = ?`);
   let ask = prompt, problems;
   for (let attempt = 1; attempt <= 2; attempt++) {

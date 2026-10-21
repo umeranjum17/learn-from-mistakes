@@ -6,7 +6,7 @@
 // breaks the style rules is kept: the miss is logged and counted (`findings_style`) for the report's Not checked.
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';
-import { readBundle, bundleIds, methodProblems, plain, styleProblems } from '../check.mjs';
+import { bundleIds, bundleParts, methodProblems, plain, readBundle, styleProblems } from '../check.mjs';
 import { redact } from '../redact.mjs';
 import { agentStep } from './agent-step.mjs';
 
@@ -47,14 +47,20 @@ function check(cfg, v, attempt = 1) {
 export async function analyse(cfg, db, id, dir, log) {
   db.prepare('DELETE FROM labels WHERE run_id = ?').run(id); // a step run again starts empty
   db.prepare('DELETE FROM findings WHERE run_id = ?').run(id);
-  const ids = bundleIds(readBundle(dir, id));
+  const bundle = readBundle(dir, id), ids = bundleIds(bundle);
   if (!ids.size) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
     return { asked: false, labels: 0, labels_dropped: 0, findings: 0, findings_style: 0, problems: 0 };
   }
   const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
-  const v = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x, attempt) => check(cfg, x, attempt), log });
+  // The worker reads the bundle one part at a time, so every item reaches it; its answers are joined.
+  const v = { findings: [], labels: [] };
+  for (const text of bundleParts(bundle).filter((part) => bundleIds(part).size)) { // a part with only metrics has nothing to cite
+    const part = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x, attempt) => check(cfg, x, attempt), log, text });
+    v.findings.push(...part.findings);
+    v.labels.push(...part.labels);
+  }
   const problems = [];
   let findingsStyle = 0;
   const findings = v.findings.filter((f, i) => {
@@ -66,9 +72,11 @@ export async function analyse(cfg, db, id, dir, log) {
     if (style.length) { problems.push(...style); findingsStyle++; }
     return true;
   });
+  const labelled = new Set(); // one label for a record: a part's answer may label a record that another part holds
   const labels = v.labels.filter((l, i) => {
-    const bad = plain(l.why, '', { words: 25 }) ? 'has a why that breaks the plain-language rules' : !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of != null && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
+    const bad = labelled.has(l.id) ? 'is a second label for one record' : plain(l.why, '', { words: 25 }) ? 'has a why that breaks the plain-language rules' : !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of != null && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
     if (bad) problems.push(`labels[${i}] ${bad}`);
+    else labelled.add(l.id);
     return !bad;
   });
   const label = db.prepare('INSERT INTO labels (run_id, record_id, event, cause, why, duplicate_of, occurrences, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');

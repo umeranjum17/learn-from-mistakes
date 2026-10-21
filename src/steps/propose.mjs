@@ -14,7 +14,7 @@ import { METRIC_RULE } from '../config.mjs';
 import { liveAt } from '../merge-time.mjs';
 import { rounded } from '../metrics.mjs';
 import { redact } from '../redact.mjs';
-import { counts, plain, quoteProblem, quoteRuns, rawProblem, refutedCauses } from '../check.mjs';
+import { counts, evidenceFor, plain, quoteProblem, quoteRuns, rawProblem, readBundle, refutedCauses } from '../check.mjs';
 import { agentStep } from './agent-step.mjs';
 
 const PROMPT = readFileSync(new URL('../prompts/propose.md', import.meta.url), 'utf8');
@@ -112,7 +112,8 @@ export async function propose(cfg, db, id, dir, window, log) {
   const recordTexts = [...db.prepare('SELECT text FROM records WHERE run_id = ?').all(id).map((r) => r.text),
     ...db.prepare('SELECT excerpt FROM events WHERE run_id = ?').all(id).map((e) => e.excerpt)];
   const runs = quoteRuns(recordTexts);
-  const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt, runs), log });
+  const answer = await agentStep(cfg, db, id, dir, { step: 'propose', role: 'worker', prompt: PROMPT.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]), check: (x, attempt) => check(x, changes, attempt, runs), log,
+    text: evidenceFor(readBundle(dir, id), findings.flatMap((f) => JSON.parse(f.refs_json))) }); // the parts of the bundle that hold the cited items
   const { proposals, reasons, bad } = sift(answer, changes, runs);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
   const add = db.prepare('INSERT INTO proposals (run_id, cause, target, owner, change, metric, tripwire, refs_json, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');

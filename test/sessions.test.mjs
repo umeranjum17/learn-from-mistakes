@@ -676,21 +676,27 @@ test('the bundle has ids, refs and redacted excerpts, pointers and counts only w
   assert.ok(mine > 0, 'no failed gate step of this repo');
   assert.equal(decode(nested.stdout).sources.find((s) => s.type === 'no-mistakes').items, mine);
 
-  // The cap: items that would pass it are dropped, and counted.
-  writeFileSync(cfg, `${examples}caps: { bundle_chars: 1000 }\n`);
-  const capped = bundleOf(lfm('retro', '--foreground'));
-  assert.ok(capped.text.length <= 1000, `${capped.text.length} characters`);
+  // The cap sizes a part, not what the bundle keeps: every item is in the file, each part is within the cap, and the worker is asked once per part.
+  const caps = (cap) => `${examples}caps: { invocations: 200, bundle_chars: ${cap} }\n`;
+  const items = (t) => t.match(/^(?:### |- )\[/gm).length;
+  writeFileSync(cfg, caps(60000));
+  const whole = bundleOf(lfm('retro', '--foreground'));
+  assert.equal(whole.text.match(/^# Retro bundle/gm).length, 1);
   const more = Array.from({ length: 40 }, (_, i) => `  c${i}: { description: d }\n`).join('');
-  writeFileSync(cfg, `${examples.replace('causes:\n', `causes:\n${more}`)}caps: { bundle_chars: 1000 }\n`);
-  const metricsOnly = bundleOf(lfm('retro', '--foreground')); // the metrics fill it; the later headings still fit
-  assert.ok(metricsOnly.text.length <= 1000 && metricsOnly.text.includes('## Unlabelled defect records'), `${metricsOnly.text.length} characters`);
-  assert.match(capped.text, /^Dropped \d+ items to keep the bundle under 1000 characters\.$/m);
-  for (let cap = 1000; cap <= 4000; cap += 150) { // once a cluster does not fit, no smaller one below it is admitted
-    writeFileSync(cfg, `${examples}caps: { bundle_chars: ${cap} }\n`);
+  writeFileSync(cfg, caps(1000).replace(examples, examples.replace('causes:\n', `causes:\n${more}`)));
+  const metricsOnly = bundleOf(lfm('retro', '--foreground')); // the metrics fill the first parts; the later headings still come
+  assert.ok(metricsOnly.text.includes('## Unlabelled defect records') && !/^Dropped /m.test(metricsOnly.text));
+  for (let cap = 1000; cap <= 4000; cap += 150) {
+    writeFileSync(cfg, caps(cap));
     const b = bundleOf(lfm('retro', '--foreground'));
+    const parts = b.text.split(/^(?=# Retro bundle)/m);
+    assert.ok(parts.every((part) => part.length <= cap), `a part over ${cap} characters`);
+    assert.equal(items(b.text), items(whole.text), `items lost under ${cap}`);
     const nums = [...b.text.matchAll(/^### \[c(\d+)\]/gm)].map((c) => Number(c[1]));
     assert.deepEqual(nums, nums.map((_, i) => i + 1), `clusters ${nums} under ${cap}`);
-    assert.ok(b.text.length <= cap, `${b.text.length} characters under ${cap}`);
+    const asked = query(p, `SELECT count(*) AS n FROM invocations WHERE run_id = ? AND step = 'analyse'`, b.id)[0].n;
+    const cited = parts.filter((part) => /^(?:### |- )\[/m.test(part)).length; // a part with only metrics has nothing to cite and is not asked
+    assert.ok(asked >= cited, `${asked} analyse calls for ${cited} parts under ${cap}`);
   }
   writeFileSync(cfg, `${examples}caps: { bundle_chars: 999 }\n`);
   assert.match(lfm('retro', '--foreground').stderr, /caps\.bundle_chars must be at least 1000$/m);
