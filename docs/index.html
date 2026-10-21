@@ -2,118 +2,104 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>learn-from-mistakes</title>
-<meta name="description" content="Find the mistakes your coding agents keep repeating, with evidence and a short list of changes to stop them.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>learn-from-mistakes — Find the failures that keep coming back</title>
+<meta name="description" content="A CLI that finds repeated coding-agent mistakes and proposes evidence-backed fixes. For developers using coding agents.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
-  /* The sign-off look: a grey page with white tiles, Apple-grade type, one blue for links, a black page with #161617 tiles in dark. */
-  :root { color-scheme: light dark;
-    --page: #F5F5F7; --tile: #FFFFFF; --sunk: #E8E8ED; --line: #D2D2D7;
-    --text: #1D1D1F; --muted: #6E6E73; --accent: #0066CC; --action: #0071E3; --on-accent: #FFFFFF; --brand: #4E5BC9; }
-  @media (prefers-color-scheme: dark) { :root {
-    --page: #000000; --tile: #161617; --sunk: #2C2C2E; --line: #424245;
-    --text: #F5F5F7; --muted: #86868B; --accent: #2997FF; } }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-  body { margin: 0; background: var(--page); color: var(--text); overflow-wrap: anywhere; -webkit-font-smoothing: antialiased;
-    font: 1.0625rem/1.4706 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif; letter-spacing: -0.022em; }
-  a { color: var(--accent); }
-  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-  main, header, footer { max-width: 62rem; margin: 0 auto; padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1rem; padding-bottom: 1rem; }
-  .brand { display: flex; align-items: center; gap: .625rem; font-weight: 600; color: var(--text); text-decoration: none; }
-  .brand img { width: 2rem; height: 2rem; display: block; }
-  nav { display: flex; gap: 1.25rem; font-size: .9375rem; }
-  nav a { text-decoration: none; }
-  .hero { text-align: center; padding: 2.5rem 0 2rem; }
-  .hero img.icon { width: 5rem; height: 5rem; }
-  h1 { font-size: 2.25rem; line-height: 1.1; font-weight: 700; letter-spacing: -0.03em; margin: 1rem 0 .75rem; }
-  .hero p { color: var(--muted); font-size: 1.1875rem; max-width: 40rem; margin: 0 auto 1.25rem; }
-  .cta { display: inline-block; background: var(--action); color: var(--on-accent); padding: .75rem 1.5rem; border-radius: 999px; font-weight: 600; text-decoration: none; }
-  .cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  h2 { font-size: 1.625rem; line-height: 1.15; font-weight: 700; letter-spacing: -0.025em; margin: 3rem 0 1rem; }
-  .tile { background: var(--tile); border-radius: 1.125rem; padding: 1.25rem; margin: 0 0 .75rem; }
-  .tile h3 { margin: 0 0 .5rem; font-size: 1.0625rem; font-weight: 600; }
-  .tile p { margin: 0 0 .5rem; color: var(--muted); }
-  .tile p:last-child { margin-bottom: 0; }
-  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; counter-reset: s; }
-  .steps li { counter-increment: s; background: var(--tile); border-radius: 1.125rem; padding: 1.25rem; }
-  .steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--brand); color: #fff; font-weight: 600; font-size: .9375rem; margin-bottom: .5rem; }
-  .steps h3 { margin: 0 0 .5rem; font-size: 1.0625rem; font-weight: 600; }
-  .steps li, .tile { min-width: 0; }
-  pre { margin: 0; padding: .875rem 1rem; background: var(--sunk); border-radius: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; font: .875rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
-  code { font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
-  .grid { display: grid; gap: .75rem; }
-  figure { margin: 0 0 1.25rem; }
-  .shot { overflow-x: auto; border-radius: .75rem; background: #1d1d1f; }
-  .shot img { display: block; width: 100%; min-width: 40rem; height: auto; }
-  figcaption { color: var(--muted); font-size: .9375rem; margin-top: .5rem; }
-  footer { color: var(--muted); font-size: .9375rem; padding-top: 2rem; padding-bottom: calc(2.5rem + env(safe-area-inset-bottom)); }
-  @media (min-width: 48rem) {
-    h1 { font-size: 3.25rem; }
-    .hero { padding: 4rem 0 3rem; }
-    .grid.three { grid-template-columns: repeat(3, 1fr); }
-  }
+:root { color-scheme: light dark; --bg:#fafafc; --panel:#fff; --ink:#20212c; --muted:#565b70; --line:#dedfeb; --accent:#4e5bc9; --soft:#eeeffc; }
+@media (prefers-color-scheme:dark) { :root { --bg:#101117; --panel:#181a24; --ink:#f2f3fa; --muted:#adb2c8; --line:#343849; --accent:#adb5ff; --soft:#232741; } }
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; scroll-padding-top:20px; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+a { color:var(--accent); text-underline-offset:4px; }
+a:hover { text-decoration-thickness:2px; }
+a:focus-visible { outline:3px solid var(--accent); outline-offset:5px; border-radius:3px; }
+.skip { position:absolute; left:16px; top:-80px; padding:8px; background:var(--panel); z-index:2; }
+.skip:focus { top:8px; }
+.wrap { width:min(1120px,calc(100% - 40px)); margin:auto; }
+header { border-bottom:1px solid var(--line); }
+nav { min-height:64px; display:flex; gap:20px; align-items:center; justify-content:space-between; }
+.brand { display:flex; align-items:center; gap:9px; color:var(--ink); font-weight:650; text-decoration:none; font-size:15px; letter-spacing:-.4px; }
+.brand img { display:block; }
+nav > a:last-child { font-size:14px; }
+.hero { display:grid; gap:24px; padding:28px 0 36px; align-items:center; }
+.eyebrow { color:var(--accent); font-size:11px; font-weight:750; letter-spacing:1.4px; margin:0 0 12px; }
+h1 { font-size:40px; line-height:1.06; letter-spacing:-1.8px; margin:0 0 16px; max-width:15ch; }
+.lead { font-size:17px; line-height:1.5; color:var(--muted); max-width:41ch; margin:0 0 22px; }
+.start { border:1px solid var(--line); border-radius:12px; background:var(--panel); overflow:hidden; }
+.start h2 { font-size:13px; margin:0; padding:10px 14px; border-bottom:1px solid var(--line); letter-spacing:0; }
+pre { margin:0; padding:12px 14px; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.9 ui-monospace,SFMono-Regular,Consolas,monospace; }
+code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.9em; }
+pre code { font:inherit; }
+.note { color:var(--muted); font-size:13px; margin:12px 0; }
+figure { margin:0; min-width:0; }
+figure > a { display:block; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#141720; }
+figure img { display:block; width:100%; height:auto; }
+figcaption { font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6; }
+section:not(.hero) { border-top:1px solid var(--line); padding:36px 0; }
+h2 { font-size:28px; line-height:1.2; letter-spacing:-.8px; margin:0 0 22px; }
+.steps { list-style:none; padding:0; margin:0; display:grid; gap:24px; }
+.step { color:var(--accent); font:12px ui-monospace,SFMono-Regular,Consolas,monospace; }
+h3 { font-size:18px; letter-spacing:-.3px; margin:8px 0; }
+.steps p, .details p { color:var(--muted); margin:0; }
+.details { display:grid; gap:24px; }
+.details h3 { margin-top:0; }
+.read { display:inline-block; margin-top:16px; font-weight:650; }
+.safety { padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+.safety p + p { margin-top:12px; }
+footer { border-top:1px solid var(--line); padding:24px 0 40px; font-size:13px; color:var(--muted); }
+footer .wrap { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; }
+footer p { margin:0; }
+@media (min-width:800px) {
+ .hero { grid-template-columns:1fr 1fr; gap:56px; padding:64px 0; }
+ h1 { font-size:64px; letter-spacing:-3px; }
+ .lead { font-size:19px; }
+ .start pre { font-size:13px; }
+ .hero figure { padding:24px; margin:0 -24px; background:var(--soft); border-radius:24px; }
+ .steps { grid-template-columns:repeat(3,1fr); gap:40px; }
+ .details { grid-template-columns:1fr 1fr; gap:56px; }
+ section:not(.hero) { padding:48px 0; }
+}
+@media (max-width:360px) { .wrap { width:calc(100% - 28px); } .brand { font-size:13px; } h1 { font-size:36px; } pre { font-size:11px; } }
 </style>
 </head>
 <body>
-<header>
-  <a class="brand" href="./"><img src="logo.svg" alt="" width="32" height="32">learn-from-mistakes</a>
-  <nav><a href="https://github.com/umeranjum17/learn-from-mistakes">GitHub</a><a href="https://www.npmjs.com/package/learn-from-mistakes-axi">npm</a></nav>
-</header>
-<main>
-  <section class="hero">
-    <img class="icon" src="logo.svg" alt="learn-from-mistakes logo" width="80" height="80">
-    <h1>Find the mistakes your coding agents keep repeating.</h1>
-    <p>A saved retro over your defect logs, failed checks and agent sessions: repeated causes with counts, the evidence for each, and a short list of changes that a judge has checked.</p>
-    <a class="cta" href="#install">Install in 3 steps</a>
-  </section>
-
-  <h2 id="install">Install in 3 steps</h2>
-  <ol class="steps">
-    <li><h3>Install</h3><pre>npm install -g learn-from-mistakes-axi</pre></li>
-    <li><h3>Set up</h3><pre>cd /path/to/your/project
-learn-from-mistakes-axi init --no-skill
-learn-from-mistakes-axi doctor</pre></li>
-    <li><h3>Run and read</h3><pre>learn-from-mistakes-axi retro --wait 8m
-learn-from-mistakes-axi report</pre></li>
-  </ol>
-  <p class="tile" style="margin-top:.75rem;color:var(--muted)">Needs Node 22.13 or later and an agent you have signed in to, with a model you choose, for each of two roles. A worker reads the records and names findings; a judge checks each finding and each fix. Nothing runs without them, and nothing changes in your project unless you ask.</p>
-
-  <h2>What you get</h2>
-  <div class="grid three">
-    <div class="tile"><h3>Counts, not guesses</h3><p>Repeated causes with how many times they came back and on how many days. Records the worker did not read stay unlabelled.</p></div>
-    <div class="tile"><h3>Evidence for each</h3><p>Every finding cites the records behind it. A judge confirms, weakens or refutes it before it reaches the report.</p></div>
-    <div class="tile"><h3>Fixes you can check</h3><p>Each kept fix names an owner, a change and a metric with a tripwire. The next retro tells you if it worked.</p></div>
-  </div>
-
-  <h2>A real run</h2>
-  <figure>
-    <div class="shot"><img src="media/doctor.webp" width="776" height="391" alt="Terminal: learn-from-mistakes-axi doctor lists ok lines for node, git, config, source, worker, judge and sign-off"></div>
-    <figcaption><code>doctor</code> checks config, sources, state and both agents before a retro starts. No model call.</figcaption>
-  </figure>
-  <figure>
-    <div class="shot"><img src="media/retro.webp" width="776" height="391" alt="Terminal: the end of a retro run, with two repeated causes and three findings with the judge's verdicts"></div>
-    <figcaption><code>retro</code> counts repeated causes and lists each finding with the judge's verdict.</figcaption>
-  </figure>
-  <figure>
-    <div class="shot"><img src="media/report.webp" width="1030" height="1315" alt="Terminal: report.txt with seven sections, from a short answer to repeated mistakes, fixes and questions for you"></div>
-    <figcaption><code>report.txt</code>: a short answer, numbers, repeated mistakes with evidence, checked fixes, what was not checked, and questions for you.</figcaption>
-  </figure>
-  <p class="tile">These shots come from a real run of the packed CLI on a small sample defect log. Both the worker and the judge were MiniMax-M3, called through BYOKit. Only the project path is shortened. A hosted model can say different things about your project.</p>
-
-  <h2>Alone, or with the family</h2>
-  <p style="color:var(--muted);margin-top:0">Each tool works on its own, with or without the others and with or without an agent supervisor. They meet through small written contracts.</p>
-  <div class="grid three">
-    <div class="tile"><h3><a href="https://github.com/umeranjum17/sign-off">sign-off</a></h3><p>The board where agents ask you questions. <code>signoff post</code> sends each kept fix there as an Apply or Skip choice.</p></div>
-    <div class="tile"><h3><a href="https://github.com/umeranjum17/done-done-axi">done-done</a></h3><p>Proof that the real product works. A <code style="white-space:nowrap">done-done</code> source reads its failed verify runs as retro records.</p></div>
-    <div class="tile"><h3><a href="https://github.com/umeranjum17/first-draft">first-draft</a></h3><p>Design mock-ups for review. They land on the same sign-off board, next to the retro's questions.</p></div>
-  </div>
-  <p class="tile" style="margin-top:.75rem">Inside Firstmate, add <code>init --firstmate &lt;home&gt;</code> to read its status logs and messages. Outside it, nothing changes: Firstmate is opt-in.</p>
+<a class="skip" href="#main">Skip to content</a>
+<header><nav class="wrap" aria-label="Main"><a class="brand" href="./"><img src="logo.svg" width="28" height="28" alt="">learn-from-mistakes</a><a href="https://github.com/umeranjum17/learn-from-mistakes">GitHub ↗</a></nav></header>
+<main id="main" class="wrap">
+<section class="hero" aria-labelledby="headline">
+ <div>
+  <p class="eyebrow">FOR DEVELOPERS USING CODING AGENTS</p>
+  <h1 id="headline">Stop fixing the same mistakes.</h1>
+  <p class="lead">A CLI that finds repeated coding-agent mistakes and proposes evidence-backed fixes.</p>
+  <div class="start" id="install"><h2>Start in your project</h2><pre><code>npm install -g learn-from-mistakes-axi
+learn-from-mistakes-axi init
+learn-from-mistakes-axi retro --wait</code></pre></div>
+  <p class="note">Node 22.13+. Bring signed-in agents. <code>init</code> asks you to choose a worker, a judge and their models. <a href="https://github.com/umeranjum17/learn-from-mistakes#start-in-your-project">Setup guide →</a></p>
+ </div>
+ <figure>
+  <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/demo.md" aria-label="Read the demo inputs and capture notes"><picture><source media="(max-width:600px)" srcset="media/retro-demo-mobile.webp"><img src="media/retro-demo.webp" width="680" height="718" alt="Real saved report excerpt: test-failed repeated six times over four days, with its cost, why chain and root cause, then a kept fix that makes the merge gate wait for the integration check. The judge confirmed it."></picture></a>
+  <figcaption>Actual report excerpt from six made-up defects. Claude Code with Sonnet 5.5 ran both roles. The report kept one fix and the judge confirmed it. <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/demo.md">See the inputs and limits →</a></figcaption>
+ </figure>
+</section>
+<section aria-labelledby="how"><h2 id="how">Fix the pattern, not just the latest failure.</h2>
+ <ol class="steps">
+  <li><span class="step">01 / READ</span><h3>Find what repeats.</h3><p>A worker reads your defect logs, failed checks or selected agent sessions. It groups failures by cause and keeps the evidence.</p></li>
+  <li><span class="step">02 / CHECK</span><h3>Question the explanation.</h3><p>A judge checks the findings and proposed fixes. Both roles always run. If either fails, the retro fails.</p></li>
+  <li><span class="step">03 / DECIDE</span><h3>Read it. Then choose.</h3><p>The report names repeated causes, kept fixes and what was not checked. Nothing in your project changes by default.</p></li>
+ </ol>
+</section>
+<section class="details" id="integrations" aria-label="Setup and integrations">
+ <div><h3>Alone, or with Firstmate.</h3><p>On its own, the CLI reads the sources you configure for your project. You start a retro and read the saved report. No supervisor or fleet is needed.</p><p>With Firstmate, opt in to reading its task logs and messages as extra records. It is never enabled automatically.</p><a class="read" href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/reference.md#firstmate">Integration setup →</a></div>
+ <div><h3>The summary is not the whole report.</h3><p>If the run is still <code>running</code> after eight minutes, use <code>attach</code> to follow it. After <code>completed</code>, run <code>report</code> and open the file named by <code>report_txt</code>. Read “Not checked” too.</p><a class="read" href="https://github.com/umeranjum17/learn-from-mistakes#need-help-with-setup">Setup and troubleshooting →</a></div>
+</section>
+<section class="details" aria-label="Privacy and cost">
+ <div class="safety"><h3>Your records. Your decision.</h3><p>Inspect the configured sources before running. Excerpts go to the providers you choose after redaction. Redaction cannot catch everything. Do not use material you cannot share.</p><p><a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/reference.md#sources-state-and-privacy">Privacy and excerpt controls →</a></p></div>
+ <div><h3>No per-retro fee. Models may cost.</h3><p>The CLI uses your own signed-in agents or model provider. Calls use your subscription or paid plan. Cost depends on the models and records you choose.</p><a class="read" href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/docs/reference.md">Full reference →</a></div>
+</section>
 </main>
-<footer>
-  <p>MIT licensed. Source, full README and issues on <a href="https://github.com/umeranjum17/learn-from-mistakes">GitHub</a>.</p>
-</footer>
+<footer><div class="wrap"><p>learn-from-mistakes</p><p><a href="https://github.com/umeranjum17/learn-from-mistakes/issues">Issues</a> · <a href="https://www.npmjs.com/package/learn-from-mistakes-axi">npm</a> · <a href="https://github.com/umeranjum17/learn-from-mistakes/blob/main/LICENSE">MIT license</a></p></div></footer>
 </body>
 </html>
