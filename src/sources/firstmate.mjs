@@ -7,7 +7,7 @@
 // hours_to_merge, rework_*, reverted, escaped, bot, title) gives the PR metrics when no github source does, and
 // <home>/data/metrics/daily.tsv (one day and project a row: day, steers, s_correct) gives the steers, ahead of the inbox
 // messages, and the corrections. <home>/data/chat.tsv (header `at<TAB>work<TAB>text`, one chat line a row, at an epoch)
-// holds the captain's chat lines: each whose text has the word why, wrong or again is a complaint, a mistake record with its
+// holds the captain's chat lines: each whose text has the word why, wrong or again, or asks a question (a ?, or a start with who, what, which, where, when or how), is a complaint, a mistake record with its
 // text, time and work (the task or PR it points at); the other lines are no mistake. A home that lacks either file reads without it. A message with no at= line is timed by
 // the epoch its file name starts with, as Firstmate names handled messages `<epoch>-<id>.msg`. <home>/config/targets.tsv, one
 // `metric<TAB>op<TAB>target<TAB>owner<TAB>rule` line per target, overrides the config's targets.
@@ -108,6 +108,8 @@ export function read(source, entry, ctx) {
   return { records, skipped, ...(missing.length && { missing }), ...(fleet && { homes: ids, lines_skipped: fleet.lines }), hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
 }
 
+const COMPLAINT = /\b(why|wrong|again)\b|\?|^\s*(who|what|which|where|when|how)\b/i;
+
 // One home's records; with a home id, each record's id starts with it and its data names it.
 function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }, home, fix, listed) {
   const state = join(path, 'state'), records = [], text = (t) => (excerpts ? excerpt(t) : ''), at = home ? `${home}/` : '';
@@ -183,7 +185,7 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
   const num = (v) => Number(v) || 0;
   const chatRows = table('../chat.tsv');
   for (const { line, file, row } of chatRows) {
-    if (/\b(why|wrong|again)\b/i.test(row.text ?? '')) add(/^\d+$/.test(row.at) ? Number(row.at) * 1000 : NaN, `chat:${line}`, `${file}:${line}`, 'complaint', row.text, undefined, row.work ? { work: redact(row.work) } : undefined);
+    if (COMPLAINT.test(row.text ?? '')) add(/^\d+$/.test(row.at) ? Number(row.at) * 1000 : NaN, `chat:${line}`, `${file}:${line}`, 'complaint', row.text, undefined, row.work ? { work: redact(row.work) } : undefined);
   }
   for (const { line, file, row } of table('prs.tsv')) {
     const hours = Number(row.hours_to_merge), ms = Number.isFinite(hours) ? Date.parse(row.merged) : NaN;
