@@ -93,19 +93,20 @@ export function checkHomes(sources, project) {
 
 export function read(source, entry, ctx) {
   const fleet = entry.fleet && fleetHomes(source, entry.path, ctx.project), records = [], ids = [];
-  let skipped = 0, chat = 0;
+  let skipped = 0, chat = 0, rows = 0;
   for (const [i, home] of (fleet ? fleet.homes : [entry.path]).entries()) {
     const id = fleet && markdownLog.saltedId(ctx.salt, home);
     const got = readHome(source, home, ctx, id, i ? `fix or remove the line of ${home} in ${shq(fleet.file)}, the fleet registry source ${source} reads` : undefined, i > 0);
     for (const r of got.records) records.push(r); // one push per record, as below
     skipped += got.skipped;
     chat += got.chat;
+    rows += got.rows;
     ids.push(id);
   }
   // The metrics tables the first home lacks (a fleet's other homes may keep none), named so the report says which source is missing.
   const missing = ['prs.tsv', 'daily.tsv'].filter((t) => !records.some((r) => r.data.kind === (t === 'prs.tsv' ? 'pr' : 'daily'))).map((t) => `rows in ${t} under data/metrics of the home`);
   if (!chat) missing.push('rows in chat.tsv under data of the home'); // no chat lines read: the captain's complaints are unchecked, not absent
-  return { records, skipped, ...(missing.length && { missing }), ...(fleet && { homes: ids, lines_skipped: fleet.lines }), hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
+  return { records, skipped, ...(missing.length && { missing }), ...(fleet && { homes: ids, lines_skipped: fleet.lines }), chatRows: rows, hash: createHash('sha256').update(JSON.stringify(records)).digest('hex') };
 }
 
 const COMPLAINT = /\b(why|wrong|again)\b|\?|^\s*(who|what|which|where|when|how)\b/i;
@@ -193,7 +194,7 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
       rework_other: num(row.rework_other) + num(row.rework_pipeline), reverted: num(row.reverted), escaped: num(row.escaped) });
   }
   for (const { line, file, row } of table('daily.tsv')) add(Date.parse(row.day), `daily:${line}`, `${file}:${line}`, 'daily', '', undefined, { steers: num(row.steers), corrections: num(row.s_correct) });
-  return { records, skipped, chat: chatRows.length };
+  return { records, skipped, chat: chatRows.filter(({ row }) => row.text?.trim()).length, rows: chatRows.length }; // a row counts when it parsed into text: a file whose rows all fail to parse is no chat read
 }
 
 // The steers in the window: the daily table's, when the home keeps one, else the inbox messages'; the two are never added,
@@ -206,11 +207,12 @@ const steersIn = (rows, window) => {
 // doctor: readable, the decisions, blocks and steers in the window, and the entries with no time; for a fleet, its homes
 // and the registry lines with no local home.
 export function doctor(source, entry, ctx) {
-  const { records, skipped, homes, lines_skipped } = read(source, entry, ctx), n = (kind) => records.filter((r) => r.data.kind === kind).length;
+  const { records, skipped, homes, lines_skipped, missing, chatRows } = read(source, entry, ctx), n = (kind) => records.filter((r) => r.data.kind === kind).length;
   const fleet = homes ? `${homes.length} homes, ${lines_skipped} registry lines skipped (no local home), ` : '';
   const steers = n('daily') ? records.filter((r) => r.data.kind === 'daily').reduce((sum, r) => sum + r.data.steers, 0) : n('steer');
   const tables = n('pr') || n('daily') ? `, ${n('pr')} merged PRs and ${n('daily')} daily rows in data/metrics` : '';
-  return { level: 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${steers} steers, ${n('defect')} defect records${n('complaint') ? `, ${n('complaint')} captain complaints` : ''}${tables}, ${skipped} skipped (no time)` };
+  const unparsed = chatRows && missing?.some((m) => m.includes('chat.tsv')); // rows in chat.tsv, none with text: named, not silent
+  return { level: unparsed ? 'warn' : 'ok', detail: `${fleet}${n('decision')} decisions, ${n('block')} blocks, ${steers} steers, ${n('defect')} defect records${n('complaint') ? `, ${n('complaint')} captain complaints` : ''}${tables}, ${skipped} skipped (no time)${unparsed ? `; chat.tsv has ${chatRows} rows and none parsed into text (header at<TAB>work<TAB>text, tab-separated)` : ''}` };
 }
 
 // The hours the tasks spent in each stage in the window, by the day the stage began, and the tasks timed; n/a with no timed
