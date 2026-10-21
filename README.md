@@ -1,24 +1,18 @@
-<p><img src="docs/logo.svg" width="36" height="36" alt="learn-from-mistakes logo"></p>
-
-# learn-from-mistakes
+<h2><img src="docs/logo.svg" width="24" height="24" alt=""> learn-from-mistakes</h2>
 
 **A CLI that finds repeated coding-agent mistakes and proposes evidence-backed fixes.**
 
-For developers using coding agents. Stop fixing the same failure without knowing why it keeps coming back.
+For developers tired of fixing the same agent mistakes.
 
-## Start in your project
+### Start in your project
 
-```sh
-npm install -g learn-from-mistakes-axi
-learn-from-mistakes-axi init --no-skill
-learn-from-mistakes-axi retro --wait
-```
+<p><code>npm install -g learn-from-mistakes-axi</code><br>
+<code>learn-from-mistakes-axi init --no-skill</code><br>
+<code>learn-from-mistakes-axi retro --wait</code></p>
 
-Needs **Node 22.13+**, project records and signed-in agents. `init` asks you to choose a worker, a judge and their models. One agent can fill both roles. Review the sources it writes before the first run. Models use your own subscription or paid provider.
+Needs **Node 22.13+**, project records and signed-in agents. Review the sources `init` writes before the first run.
 
-### With or without Firstmate
-
-**On its own:** reads your project's defect logs, failed checks or selected agent sessions. **With Firstmate:** you can also opt in to its task logs and messages. Neither Firstmate nor a fleet is required. [Integration setup →](docs/reference.md#firstmate)
+**Integrations:** works on its own. [Firstmate](docs/reference.md#firstmate) can add task logs and messages, only if you opt in.
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/media/retro-demo-mobile.webp">
@@ -48,6 +42,8 @@ learn-from-mistakes-axi report
 Open the file named by `report_txt` in your editor. The terminal summary is not the full report. Check **Not checked** before drawing conclusions; an empty result does not prove nothing went wrong.
 
 ## Need help with setup?
+
+`init` asks you to choose a worker, a judge and their models. One agent can fill both roles. Models use your own subscription or paid provider.
 
 ```sh
 learn-from-mistakes-axi doctor
