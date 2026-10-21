@@ -139,9 +139,11 @@ export function reportText(cfg, db, id, dir, window, run) {
     ...run.sources.flatMap((s) => (s.missing ?? []).map((m) => `- Source ${s.id} gave no ${m}.`)),
     ...run.sources.filter((s) => s.lines_skipped).map((s) => `- Source ${s.id} skipped ${plural(s.lines_skipped, 'home line')} with no local home.`),
     ...[[step('bundle').dropped, 'The bundle was full. It left out'], [step('analyse').labels_dropped, 'The worker broke the rules on', 'label'],
+      [step('analyse').findings_style, 'The worker broke the style rules in', 'finding'],
       [all('SELECT count(*) AS n FROM proposals WHERE run_id = ? AND problem IS NOT NULL')[0].n, 'The rules left out', 'fix', 'fixes'],
       [judged('weakened'), 'The judge weakened'], [judged(null), 'The judge did not check']]
       .filter(([n]) => n).flatMap(([n, what, word = 'item', many]) => [`- ${what} ${plural(n, word, many)}.`,
+        ...(what === 'The worker broke the style rules in' ? ['   The run kept them, and the report hides any wording that breaks the rules.'] : []),
         ...(what === 'The rules left out' ? all('SELECT cause, problem FROM proposals WHERE run_id = ? AND problem IS NOT NULL ORDER BY id').map((f) => `   The fix for ${f.cause}: ${f.problem}.`) : [])])];
   lines.push('', '6. Not checked', ...(gaps.length ? gaps : ['- Nothing. The run read all sources and checked all items.']), '', '7. Questions for you');
   const open = fixes.filter((f) => !applied.has(f.n)); // a fix the run applied is never asked about

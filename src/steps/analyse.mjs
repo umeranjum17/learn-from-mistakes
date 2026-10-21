@@ -2,10 +2,11 @@
 // refs to bundle items, a 5-whys chain to the root cause and the cost) and labels each defect record in it by the v1 label rules (`labels`). The answer's shape and its
 // free text (STE100: short sentences, plain words, active voice) are checked, and a bad answer is sent back once. A label or a ref that
 // names no bundle item is a problem: it is counted and logged, and the label or finding that holds it is not kept.
-// A finding with no why chain or cost, or with wording that blames a person or an agent, is not kept either.
+// A finding with no why chain or cost, or with wording that blames a person or an agent, is not kept either. A finding whose wording only
+// breaks the style rules is kept: the miss is logged and counted (`findings_style`) for the report's Not checked.
 // A bundle with no cluster, event or record to cite asks the worker nothing.
 import { readFileSync } from 'node:fs';
-import { readBundle, bundleIds, methodProblems, plain } from '../check.mjs';
+import { readBundle, bundleIds, methodProblems, plain, styleProblems } from '../check.mjs';
 import { redact } from '../redact.mjs';
 import { agentStep } from './agent-step.mjs';
 
@@ -22,7 +23,7 @@ function check(cfg, v, attempt = 1) {
     const at = `findings[${i}]`;
     if (!f || typeof f !== 'object') return p.push(`${at} must be an object`);
     if (typeof f.cause !== 'string' || !(Object.hasOwn(cfg.causes, f.cause) || KEY.test(f.cause))) p.push(`${at}.cause must be a configured cause key or a new key: lowercase letters, digits and dashes`);
-    if (attempt < 2) p.push(plain(f.summary, `${at}.summary`, { sentences: 3 }), ...methodProblems(f, at));
+    if (attempt < 2) p.push(...methodProblems(f, at), ...styleProblems(f, at));
     if (!Array.isArray(f.refs) || !f.refs.length || !f.refs.every((r) => typeof r === 'string')) p.push(`${at}.refs must be a non-empty list of bundle ids`);
   });
   const seen = new Set();
@@ -49,19 +50,21 @@ export async function analyse(cfg, db, id, dir, log) {
   const ids = bundleIds(readBundle(dir, id));
   if (!ids.size) {
     log('nothing to analyse: the bundle has no signal cluster and no unlabelled record');
-    return { asked: false, labels: 0, labels_dropped: 0, findings: 0, problems: 0 };
+    return { asked: false, labels: 0, labels_dropped: 0, findings: 0, findings_style: 0, problems: 0 };
   }
   const records = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id).filter((r) => ids.has(r)));
   const causes = [...Object.entries(cfg.causes).map(([k, c]) => `- ${k}: ${c.description}`), '- other: a real failure that no listed cause names.'].join('\n');
   const v = await agentStep(cfg, db, id, dir, { step: 'analyse', role: 'worker', prompt: PROMPT.replace('{{causes}}', () => causes), check: (x, attempt) => check(cfg, x, attempt), log });
   const problems = [];
+  let findingsStyle = 0;
   const findings = v.findings.filter((f, i) => {
-    if (plain(f.summary, '', { sentences: 3 })) { problems.push(`findings[${i}] has a summary that breaks the plain-language rules`); return false; }
     const method = methodProblems(f, `findings[${i}]`); // the retro method: a finding without its why chain, cost and blameless wording is not kept
     if (method.length) { problems.push(...method); return false; }
     const bad = f.refs.findIndex((r) => !ids.has(r));
-    if (bad >= 0) problems.push(`findings[${i}]: ref ${bad + 1} names no bundle item`);
-    return bad < 0;
+    if (bad >= 0) { problems.push(`findings[${i}]: ref ${bad + 1} names no bundle item`); return false; }
+    const style = styleProblems(f, `findings[${i}]`);
+    if (style.length) { problems.push(...style); findingsStyle++; }
+    return true;
   });
   const labels = v.labels.filter((l, i) => {
     const bad = plain(l.why, '', { words: 25 }) ? 'has a why that breaks the plain-language rules' : !records.has(l.id) ? 'names no defect record in the bundle' : l.duplicate_of != null && !records.has(l.duplicate_of) ? 'duplicate_of names no defect record in the bundle' : '';
@@ -83,5 +86,5 @@ export async function analyse(cfg, db, id, dir, log) {
   const dropped = v.labels.length - labels.length;
   for (const p of problems) log(`problem: ${p}`);
   log(`labels: ${labels.length} of ${records.size} records, ${dropped} dropped, findings: ${findings.length}, problems: ${problems.length}`);
-  return { asked: true, labels: labels.length, labels_dropped: dropped, findings: findings.length, problems: problems.length };
+  return { asked: true, labels: labels.length, labels_dropped: dropped, findings: findings.length, findings_style: findingsStyle, problems: problems.length };
 }

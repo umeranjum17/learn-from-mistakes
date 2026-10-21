@@ -1341,7 +1341,7 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
     ['analyse', 'worker', 'claude', MODELS.claude[0], `lfm-run:${run.id}:analyse`, 'ok', 'fake-session', 12, 5]);
   assert.deepEqual(lines(run.id), [`worker claude ${MODELS.claude[0]}: answered, 12 tokens in, 5 out`, 'problem: findings[1]: ref 2 names no bundle item',
     'labels: 2 of 2 records, 0 dropped, findings: 1, problems: 1']);
-  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, run.id)[0].output_json), { asked: true, labels: 2, labels_dropped: 0, findings: 1, problems: 1 });
+  assert.deepEqual(JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'analyse'`, run.id)[0].output_json), { asked: true, labels: 2, labels_dropped: 0, findings: 1, findings_style: 0, problems: 1 });
   const report = JSON.parse(query(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'report'`, run.id)[0].output_json);
   assert.equal(report.coverage.labelled, 2);
   assert.deepEqual(report.causes.filter((c) => c.log.incidents).map((c) => [c.cause, c.log.incidents]), [['shared-cache-lock', 2]]);
@@ -1492,7 +1492,8 @@ test('analyse: the worker labels the bundle\'s records and names findings; a ref
   const pid = JSON.parse(passive.stdout).run.id;
   assert.match(lines(pid).join('\n'), /^problem: labels\[0\] has a why that breaks the plain-language rules$/m);
   assert.equal(query('SELECT count(*) AS n FROM labels WHERE run_id = ?', pid)[0].n, 1);
-  assert.match(lines(pid).join('\n'), /^problem: findings\[0\] has a summary that breaks the plain-language rules$/m);
+  assert.match(lines(pid).join('\n'), /^problem: findings\[0\]\.summary: sentence 2 is passive/m); // its finding has one passive summary sentence: kept, with the miss named
+  assert.equal(query('SELECT count(*) AS n FROM findings WHERE run_id = ?', pid)[0].n, 1);
   // A store sqlite cannot read is one error line with the file to move, never a stack trace.
   writeFileSync(join(p, '.lfm', 'lfm.sqlite'), 'not a database');
   const broken = lfm({}, 'report');
@@ -2435,4 +2436,9 @@ test('retro method: the prompts ask for blameless 5 whys; the report gives every
     assert.ok(log.some((l) => l.startsWith('problem: ') && l.includes(problem)), log.join('\n'));
     assert.match(reportOf(p, broken), /^- shared-cache-lock: 2 times on 1 day\.\n {3}Cost: No finding gave a cost\.\n {3}Root cause: No finding gave a root cause\.\n {3}Fix: No fix passed the rules for this mistake\.\n/m);
   }
+  // A finding whose only miss is style (one passive sentence) is kept, so its count and refs stay, and the report names the miss.
+  const styled = retro({ FAKE_FINDING_BREAK: 'passive' });
+  assert.deepEqual(query('SELECT count(*) AS n FROM findings WHERE run_id = ?', styled), [{ n: 2 }]);
+  assert.ok(lines('analyse', styled).some((l) => l.startsWith('problem: findings[0].whys[2]: sentence 1 is passive')));
+  assert.match(reportOf(p, styled), /^6\. Not checked\n(?:.*\n)*- The worker broke the style rules in 2 findings\.\n {3}The run kept them, and the report hides any wording that breaks the rules\.$/m);
 });
