@@ -236,7 +236,7 @@ test('every rejected input names what was wrong and a next step, never the whole
   const { p, lfm, raw } = setup();
   const RETRO = /^next: learn-from-mistakes-axi retro --wait 8m$/m;
   const HELP = /^next: learn-from-mistakes-axi --help   # supported commands and options$/m;
-  const CHANGE = /^next: learn-from-mistakes-axi change applied \(--cause <cause> \| --proposal <run>:<n>\) --ref <ref> \[--metric <metric>\] \[--tripwire "<op> <number>"\] \[--kind doc\|rule\|code\] \[--at <time>\]/m;
+  const CHANGE = /^next: learn-from-mistakes-axi change applied \(--cause <cause> \| --proposal <run>:<n>\) --ref <ref> \[--metric <metric>\] \[--tripwire "<op> <number>"\] \[--check <command>\] \[--kind doc\|rule\|code\] \[--at <time>\]/m;
   const known = '(known: server-memory-kill, shared-cache-lock, agent-exit-wait; "other" is reserved)';
   const applied = (...args) => lfm('change', 'applied', '--cause', 'server-memory-kill', '--ref', 'abc1234', ...args);
   const cfgFile = join(p, '.learn-from-mistakes.yaml'), v1 = readFileSync(cfgFile, 'utf8');
@@ -720,7 +720,7 @@ test('change applied appends an append-only ledger the report counts and changes
   const first = change('--cause', 'server-memory-kill', '--ref', 'abc1234');
   assert.equal(first.status, 0, first.stderr);
   const firstEntry = decode(first.stdout); // one TOON object on stdout
-  assert.deepEqual(Object.keys(firstEntry).sort(), ['at', 'cause', 'id', 'kind', 'metric', 'ref', 'v']); // no --tripwire: none saved
+  assert.deepEqual(Object.keys(firstEntry).sort(), ['at', 'cause', 'check', 'id', 'kind', 'metric', 'ref', 'v']); // no --tripwire: none saved; the check is the default retro
   assert.deepEqual({ v: firstEntry.v, id: firstEntry.id, cause: firstEntry.cause, ref: firstEntry.ref, metric: firstEntry.metric, kind: firstEntry.kind },
     { v: 1, id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', metric: 'cause_count:server-memory-kill', kind: 'doc' }); // the defaults
   assert.ok(!Number.isNaN(Date.parse(firstEntry.at)), 'default --at is a readable time');
@@ -737,7 +737,7 @@ test('change applied appends an append-only ledger the report counts and changes
     '--what', `  ${WHAT} `, '--why', WHY, '--json');
   assert.equal(second.status, 0, second.stderr);
   assert.deepEqual(JSON.parse(second.stdout), { v: 1, id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z',
-    metric: 'tool_error_rate', tripwire: '<= 0.05', kind: 'rule' }); // the echo never carries what/why; the tripwire in one form
+    metric: 'tool_error_rate', tripwire: '<= 0.05', kind: 'rule', check: 'learn-from-mistakes-axi retro --wait 15m' }); // the echo never carries what/why; the tripwire in one form
   const afterSecond = readFileSync(ledger);
   assert.ok(afterSecond.subarray(0, afterFirst.length).equals(afterFirst)); // the second entry keeps every prior byte
 
@@ -798,8 +798,8 @@ test('change applied appends an append-only ledger the report counts and changes
   assert.equal(exportModel.project, 'example');
   assert.ok(!Number.isNaN(Date.parse(exportModel.generated_at)));
   assert.deepEqual(exportModel.changes, [
-    { id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', at: firstEntry.at, metric: 'cause_count:server-memory-kill', tripwire: '', kind: 'doc', what: '', why: '' },
-    { id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', metric: 'tool_error_rate', tripwire: '<= 0.05', kind: 'rule', what: WHAT, why: WHY },
+    { id: 'chg-1', cause: 'server-memory-kill', ref: 'abc1234', at: firstEntry.at, metric: 'cause_count:server-memory-kill', tripwire: '', kind: 'doc', check: 'learn-from-mistakes-axi retro --wait 15m', what: '', why: '' },
+    { id: 'chg-2', cause: 'server-memory-kill', ref: REF2, at: '2026-01-02T03:04:05.000Z', metric: 'tool_error_rate', tripwire: '<= 0.05', kind: 'rule', check: 'learn-from-mistakes-axi retro --wait 15m', what: WHAT, why: WHY },
   ]);
   assert.match(changesJson.stderr, /next: learn-from-mistakes-axi report /);
   const changesToon = exported();
@@ -835,7 +835,7 @@ test('change applied appends an append-only ledger the report counts and changes
   const later = JSON.parse(exported('--json').stdout);
   assert.deepEqual(later.changes.slice(0, 2), exportModel.changes); // ids are stable after a later append
   assert.deepEqual(later.changes[2], { id: 'chg-3', cause: 'shared-cache-lock', ref: 'def5678', at: later.changes[2].at,
-    metric: 'cause_count:shared-cache-lock', tripwire: '', kind: 'doc', what: 'x'.repeat(200), why: 'y' });
+    metric: 'cause_count:shared-cache-lock', tripwire: '', kind: 'doc', check: 'learn-from-mistakes-axi retro --wait 15m', what: 'x'.repeat(200), why: 'y' });
 
   // A line written before the metric, tripwire and kind fields still loads, with the defaults, and the ledger goes on.
   appendFileSync(ledger, `${JSON.stringify({ v: 1, id: 'chg-4', cause: 'agent-exit-wait', ref: 'abc1234', at: AT })}\n`);
@@ -1679,7 +1679,7 @@ test('propose, verify and check: the judge refutes fix 2 and weakens fix 3; chec
   assert.deepEqual(followups.map((f) => [f.change, f.verdict]), [['chg-1', 'no-data']]);
   assert.match(calls().at(-1).stdin, /^Follow-ups to explain:\n- chg-1: metric defects, 2 before, 0 after, tripwire <= 0, verdict no-data$/m);
   assert.deepEqual(query('SELECT change_id, reason FROM followups WHERE run_id = ?', second.id), [{ change_id: 'chg-1', reason: 'Too few sessions ran after the change for Umer.' }]);
-  assert.match(reportOf(p, second.id), /^3\. Last changes\n- Change chg-1, metric defects: 2 before, 0 after\. The verdict is no-data\. Wait for more data\.\n {2}Too few sessions ran after the change for Umer\.\n\n4\.[\s\S]*^7\. Questions for you\n- No questions\.\n$/m);
+  assert.match(reportOf(p, second.id), /^3\. Last changes\n- Change chg-1, metric defects: 2 before, 0 after\. The verdict is no-data\. Wait for more data\.\n {3}Proposal checked: confirmed\. Fix applied: yes\. Fix shipped: yes\. Fix worked: not yet\.\n {3}Check: npm test\n {2}Too few sessions ran after the change for Umer\.\n\n4\.[\s\S]*^7\. Questions for you\n- No questions\.\n$/m);
   assert.deepEqual([lines('verify', second.id), lines('verify-fixes', second.id)], [['nothing to verify: no finding'], ['nothing to verify: no fix']]);
   assert.deepEqual(lines('check', second.id), ['fixes: 0 kept of 0, problems: 0']);
 });
@@ -1869,6 +1869,8 @@ test('apply: the worker makes an accepted fix on its own branch from HEAD and re
   assert.ok(!calls('codex').some((c) => c.stdin.includes(':apply-')), 'the judge applied a fix');
   assert.deepEqual(query(`SELECT role, runner, exit_status FROM invocations WHERE run_id = ? AND step = 'apply-1'`, run.id), [{ role: 'worker', runner: 'claude', exit_status: 'ok' }]);
   const [chg] = JSON.parse(lfm({}, 'changes', '--json').stdout).changes; assert.deepEqual([chg.id, chg.cause, chg.ref, chg.kind, chg.what], ['chg-1', 'shared-cache-lock', commit, 'code', `fix ${run.id}:1 on branch lfm/example-e3b0c4/${run.id}-1`]);
+  assert.equal(chg.check, 'npm test'); // the worker's check command is recorded with the applied fix
+  assert.match(reportOf(p, run.id), /^- Check: npm test$/m);
   assert.equal(lfm({}, 'apply').stdout, ok.stdout); assert.equal(calls().length, before + 1);
   { // a reused run id with the same cause and change text but another target is refused, never reported applied
     const reuse = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));

@@ -279,6 +279,9 @@ try {
     drive('retro-followup', 'retro', '--foreground', '--json'); // 1 failed test run before the change, 3 after: rollback
     const verdicts = JSON.parse(readFileSync(join(evidence, 'retro-followup.stdout'), 'utf8')).followups.map((f) => [f.change, f.before, f.after, f.verdict]);
     assert.deepEqual(verdicts, [['chg-1', 'n/a', 'n/a', 'no-data'], ['chg-2', 1, 3, 'rollback']], 'the followup step does not give the verdicts');
+    // The four states stay apart: the rolled-back change was applied and shipped but did not work; the no-data one has not yet.
+    const states = JSON.parse(readFileSync(join(evidence, 'retro-followup.stdout'), 'utf8')).followups.map((f) => [f.change, f.checked, f.applied, f.shipped, f.worked]);
+    assert.deepEqual(states, [['chg-1', 'none', 'yes', 'yes', 'not yet'], ['chg-2', 'none', 'yes', 'yes', 'no']], 'the followup rows do not keep the four states apart');
     // Verify, propose, verify-fixes and check: eight fixes for the gate's repeated cause; the judge refutes fix 2 (a problem) and weakens
     // fix 3 (ranked last of the five kept); three are problems; one goes into the ledger.
     run('retro-propose', process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', staged], 0, { ...lab, FAKE_ANALYSE: 'label', FAKE_PROPOSE: 'eight', FAKE_CAUSE: 'agent-exit-wait', FAKE_REFUTE: 'p2', FAKE_WEAKEN: 'p3', FAKE_TARGET: 'AGENTS.md' });
@@ -324,8 +327,8 @@ try {
     assert.match(readFileSync(join(evidence, 'apply.stdout'), 'utf8'), new RegExp(`^applied: fix ${proposed.run.id}:1 on branch lfm/${config.name}-e3b0c4/${proposed.run.id}-1, commit [0-9a-f]{12}, ledger chg-\\d+$`, 'm'), 'apply does not make fix 1');
     assert.deepEqual([git('rev-parse', `lfm/${config.name}-e3b0c4/${proposed.run.id}-1^`), git('status', '--porcelain')], [git('rev-parse', 'HEAD'), ''], 'apply moved HEAD or touched the work tree');
     drive('change-proposal', 'change', 'applied', '--proposal', `${proposed.run.id}:1`, '--ref', git('rev-parse', 'HEAD').slice(0, 12), '--json'); // #129: in a git project the ref must name a commit
-    assert.deepEqual((({ cause, metric, tripwire }) => [cause, metric, tripwire])(JSON.parse(readFileSync(join(evidence, 'change-proposal.stdout'), 'utf8'))),
-      ['agent-exit-wait', 'cause_count:agent-exit-wait', '<= 0'], '--proposal does not copy the fix into the ledger');
+    assert.deepEqual((({ cause, metric, tripwire, check, proposal }) => [cause, metric, tripwire, check, proposal])(JSON.parse(readFileSync(join(evidence, 'change-proposal.stdout'), 'utf8'))),
+      ['agent-exit-wait', 'cause_count:agent-exit-wait', '<= 0', 'npm test', `${proposed.run.id}:1`], '--proposal does not copy the fix and its check command into the ledger');
   }
   const hold = new DatabaseSync(join(staged, '.lfm', 'lfm.sqlite')); // a busy store: another process holds its write lock
   hold.exec('BEGIN IMMEDIATE');

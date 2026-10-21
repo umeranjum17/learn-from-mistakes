@@ -15,6 +15,8 @@ Do the work in this order.
    - When the change edits a file, put its path from the repository root in the target.
    - Give the metric that shows whether the fix worked: {{metrics}}.
    - Give the tripwire: the value that metric must reach, "<op> <number>" such as "<= 0".
+   - Give the check: one command on one line that tests or measures whether the fix worked, such as the project's test command.
+     The user records it when they accept the fix. Leave it out when no command shows it.
    - Cite the bundle items that show the cause in refs, by their ids without brackets.
 2. Give a reason for each follow-up below. A follow-up names a change that did not clearly work.
    Say in plain words why its verdict came out that way. Do not change the verdict.
@@ -36,5 +38,5 @@ Follow-ups to explain:
 
 Reply with one JSON object and nothing else:
 {"proposals": [{"cause": "<cause key>", "kind": "doc|rule|code", "target": "<what to change>", "owner": "<who changes it>", "change": "<the change>",
-  "metric": "<metric>", "tripwire": "<op> <number>", "refs": ["<bundle id>"]}],
+  "metric": "<metric>", "tripwire": "<op> <number>", "check": "<command>", "refs": ["<bundle id>"]}],
  "reasons": [{"change": "<follow-up id>", "reason": "<why>"}]}

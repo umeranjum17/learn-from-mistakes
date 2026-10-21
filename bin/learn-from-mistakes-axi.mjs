@@ -69,7 +69,8 @@ function readJsonl(file, again) {
 }
 
 // The append-only change ledger: one JSON object per line, ids/cause keys/times, the metric, tripwire and kind
-// that show whether the change worked (a line written before them reads as the defaults), plus the
+// that show whether the change worked (a line written before them reads as the defaults), the `proposal` it came from
+// (<run>:<n>) and the one-line `check` command that shows whether it worked, plus the
 // optional owner-written one-line `what`/`why` that only `learn-from-mistakes-axi changes` prints.
 // A missing file means zero entries, never an error. Problems name file:line only,
 // never line contents, so a corrupt ledger stays privacy-bounded too. A repeated id is a
@@ -86,7 +87,8 @@ export function readLedger(file) {
       && typeof e.ref === 'string' && e.ref && typeof e.at === 'string' && !Number.isNaN(Date.parse(e.at))
       && [e.what, e.why].every((t) => t === undefined || (typeof t === 'string' && t === oneLine(t)))
       && (e.metric === undefined || (typeof e.metric === 'string' && storedMetric(e.metric)))
-      && (e.tripwire === undefined || (typeof e.tripwire === 'string' && RULE.test(e.tripwire))) && (e.kind === undefined || KINDS.includes(e.kind));
+      && (e.tripwire === undefined || (typeof e.tripwire === 'string' && RULE.test(e.tripwire))) && (e.kind === undefined || KINDS.includes(e.kind))
+      && (e.proposal === undefined || (typeof e.proposal === 'string' && /^[1-9]\d*:[1-9]\d*$/.test(e.proposal))) && (e.check === undefined || (typeof e.check === 'string' && e.check === oneLine(e.check)));
     if (!ok) problems.push(`${file}:${i + 1}: not a valid change entry`);
     else if (ids.has(e.id)) problems.push(`${file}:${i + 1}: repeats change id ${shown(e.id)}`);
     else { ids.add(e.id); entries.push(e); }
@@ -119,7 +121,9 @@ const storedMetric = (m) => oneLine(m, { allowTab: true }) !== undefined;
 // O_APPEND call, so a lone writer can never interleave or repeat an id (a hand-deleted last
 // line is the one way to reuse one). Concurrent writers could read the same ledger and
 // repeat an id; a lock file is the upgrade.
-// --proposal <run>:<n> takes the cause, metric and tripwire of that run's kept fix n; --metric and --tripwire override them.
+// --proposal <run>:<n> takes the cause, metric, tripwire and check command of that run's kept fix n; --metric, --tripwire and --check override them.
+// The check command is recorded with every change: the fix's own, else the retro that measures it.
+export const MEASURE = 'learn-from-mistakes-axi retro --wait 15m';
 export const recordableCauses = (cfg) => Object.keys(cfg.causes).filter((c) => c !== 'other');
 export async function recordChange(cfg, opts) {
   const form = FORMS['change-applied'];
@@ -129,10 +133,10 @@ export async function recordChange(cfg, opts) {
     if (!run) throw new UsageError(`--proposal ${shown(opts.proposal)} must be <run>:<n>, a run id and the number of one of its kept fixes`, form);
     quietSqlite();
     const db = await openStore(cfg.state, false);
-    const fix = db?.prepare('SELECT cause, metric, tripwire FROM proposals WHERE run_id = ? AND n = ?').get(Number(run), Number(n));
+    const fix = db?.prepare('SELECT cause, metric, tripwire, check_cmd FROM proposals WHERE run_id = ? AND n = ?').get(Number(run), Number(n));
     db?.close();
     if (!fix) throw new UsageError(`run ${run} has no kept fix ${n}`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its kept fixes', opts));
-    opts = { ...opts, cause: fix.cause, metric: opts.metric ?? fix.metric, tripwire: opts.tripwire ?? fix.tripwire };
+    opts = { ...opts, cause: fix.cause, metric: opts.metric ?? fix.metric, tripwire: opts.tripwire ?? fix.tripwire, check: opts.check ?? fix.check_cmd ?? undefined };
   }
   if (opts.cause === undefined) throw new UsageError('change applied needs --cause or --proposal', form);
   if (opts.ref === undefined) throw new UsageError('change applied needs --ref', form);
@@ -163,7 +167,8 @@ export async function recordChange(cfg, opts) {
   if (opts.tripwire !== undefined && !trip) throw new UsageError(`--tripwire ${shown(opts.tripwire)} must be "<op> <number>" with op >=, <=, >, < or =, such as "<= 0"`, form);
   if (opts.kind !== undefined && !KINDS.includes(opts.kind)) throw new UsageError(`--kind ${shown(opts.kind)} must be doc, rule or code`, form);
   const text = {};
-  for (const k of ['what', 'why']) {
+  opts = { ...opts, check: opts.check ?? MEASURE };
+  for (const k of ['what', 'why', 'check']) {
     if (opts[k] !== undefined && (text[k] = oneLine(opts[k])) === undefined) throw new UsageError(`--${k} ${shown(opts[k])} must be one line of 1-200 characters, with no line breaks or control characters`, form);
   }
   const file = join(cfg.state, 'changes.jsonl');
@@ -172,15 +177,15 @@ export async function recordChange(cfg, opts) {
   const { metric, kind } = measure({ cause: opts.cause, metric: opts.metric, kind: opts.kind });
   if (!storedMetric(metric)) throw new UsageError(`metric ${shown(metric)} must be one line of 1-200 characters, with no control characters or line separators`, form);
   const entry = { v: 1, id: `chg-${n}`, cause: opts.cause, ref: opts.ref, at, metric,
-    ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind };
+    ...(trip && { tripwire: `${trip[1]} ${trip[2]}` }), kind, ...(opts.proposal && { proposal: opts.proposal }), check: text.check };
   stateDir(cfg);
-  appendFileSync(file, JSON.stringify({ ...entry, ...text }) + '\n');
+  appendFileSync(file, JSON.stringify({ ...entry, what: text.what, why: text.why }) + '\n');
   return entry; // what/why leave only through `learn-from-mistakes-axi changes`
 }
 
 // lfm-changes.v1: every applied change in ledger order. The join key is `project` + `id`.
 function exportChanges(cfg, opts, json) {
-  const changes = cleanLedger(join(cfg.state, 'changes.jsonl'), opts).map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, ...measure(e), what: e.what ?? '', why: e.why ?? '' }));
+  const changes = cleanLedger(join(cfg.state, 'changes.jsonl'), opts).map((e) => ({ id: e.id, cause: e.cause, ref: e.ref, at: e.at, ...measure(e), check: e.check ?? '', what: e.what ?? '', why: e.why ?? '' }));
   console.log(render({ schema: 'lfm-changes.v1', generated_at: new Date().toISOString(), project: cfg.name, changes }, json));
   if (!changes.length) hint(withContext('learn-from-mistakes-axi change applied --cause <cause> --ref <ref> --what <text> --why <text>', 'record a change you already made', opts));
   else hint(json ? withContext('learn-from-mistakes-axi report', 'the per-cause counts', opts) : withContext('learn-from-mistakes-axi changes --json', 'the same export as JSON', opts));
@@ -421,6 +426,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                       (default: cause_count:<cause>)
   --tripwire <rule>   (change applied) the value that metric must reach, "<op> <number>" such as
                       "<= 0" (default: none); each retro checks it
+  --check <command>   (change applied) the test or measurement command that shows whether it
+                      worked: one line, 1-200 characters (default: the fix's own, else a retro)
   --kind <kind>       (change applied) what the change edited: doc, rule or code (default: doc)
   --at <time>         (change applied) time of the change, ISO-8601 (default: now)
   --what <text>       (change applied) what changed: one line, 1-200 characters, printed only by
@@ -509,6 +516,8 @@ sources, AGENTS.md, CLAUDE.md or skills.
    signoff_report: on, or learn-from-mistakes-axi signoff report.
 6. Once the user has made a change: learn-from-mistakes-axi change applied
    --proposal <run>:<n> --ref <git sha>
+   It records the fix's check command (--check sets another); a fix the user accepted that no
+   change records shows in section 3 as not applied.
 
 The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model, and
 judge_model: when the judge should run a stronger model than that);
@@ -532,7 +541,7 @@ const FORMS = {
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--json] [--full]',
-  'change-applied': 'learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
+  'change-applied': 'learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--check <command>] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
   retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
@@ -549,7 +558,7 @@ const FORMS = {
 };
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
+const VALUE_FLAGS = ['--dir', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
 const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;

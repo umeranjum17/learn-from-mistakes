@@ -14,6 +14,12 @@
 //   no-data   the change has no tripwire, so there is nothing to check
 //   rollback  the tripwire missed and the metric did not improve, or the tripwire missed in the last retro too
 //   fix       the metric improved but the tripwire missed
+// Each row also carries four separate states, so a fix cannot read as working before it shipped:
+//   checked  the judge's verdict on the proposal the change came from (none for a change recorded without one)
+//   applied  yes for a recorded change; no for a fix the user accepted that no change records yet (a row of its own)
+//   shipped  yes once the fix is live (a change recorded by hand is live from its recorded time), else no
+//   worked   yes for keep, not yet for no-data, no for fix, rollback and delete
+// and the check command recorded with the change, the test or measurement that shows whether it worked.
 // "The last retro" is this change's row in the latest earlier run that measured it whose read time is at least
 // followup.min_days before this run's, so a rerun over the same data is not a second retro (a run that failed or was
 // cancelled before its followup step has none). When that row fails the first no-data rule, counted again over that
@@ -21,7 +27,7 @@
 import { join } from 'node:path';
 import { measure, readLedger } from '../bin/learn-from-mistakes-axi.mjs';
 import { RULE, SOURCES } from './config.mjs';
-import { liveAt } from './merge-time.mjs';
+import { liveAt, NOT_RECORDED } from './merge-time.mjs';
 import { inWindow, meets, rounded, rowsOf, values } from './metrics.mjs';
 
 const DAY = 86_400_000;
@@ -34,6 +40,8 @@ function improved({ before, after, tripwire }) {
 }
 const flat = ({ before, after }) => (before === 0 ? after === 0 : Math.abs(after - before) < 0.1 * Math.abs(before));
 const missed = (r) => r?.tripwire && meets(r.after, r.tripwire) === 0;
+const proposalOf = (c) => c.proposal ?? /^fix (\d+:\d+) on branch /.exec(c.what ?? '')?.[1]; // the kept fix a change came from
+const WORKED = { keep: 'yes', 'no-data': 'not yet' };
 
 // `row` and `last` (undefined when there is no last retro) carry `enough`: the first no-data rule passed.
 function verdict(row, kind, last) {
@@ -62,12 +70,19 @@ export function followup(cfg, db, id, window, log) {
   const { min_sessions, min_days } = cfg.followup;
   const last = db.prepare(`SELECT f.before, f.after, f.tripwire, s.output_json FROM followups f JOIN steps s ON s.run_id = f.run_id AND s.name = 'collect'
     WHERE f.change_id = ? AND f.run_id < ? ORDER BY f.run_id DESC`);
-  const add = db.prepare('INSERT INTO followups (run_id, change_id, metric, before, after, tripwire, verdict, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const rows = readLedger(join(cfg.state, 'changes.jsonl')).entries.map((c) => { // a bad ledger line is skipped: it gets no row
+  const add = db.prepare('INSERT INTO followups (run_id, change_id, metric, before, after, tripwire, verdict, reason, stages) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const judged = db.prepare('SELECT verdict FROM proposals WHERE run_id = ? AND n = ?');
+  const stages = (proposal, applied, shipped, verdict, check) => {
+    const p = proposal && judged.get(...proposal.split(':').map(Number));
+    return JSON.stringify({ checked: p ? p.verdict ?? 'not judged' : 'none', applied, shipped, worked: WORKED[verdict] ?? 'no', check });
+  };
+  const { entries } = readLedger(join(cfg.state, 'changes.jsonl'));
+  const rows = entries.map((c) => { // a bad ledger line is skipped: it gets no row
     const { metric, tripwire, kind } = measure(c), live = liveAt(cfg.dir, c), at = live.live ? live.at : Date.parse(c.at);
+    const state = (shipped, verdict) => stages(proposalOf(c), 'yes', shipped, verdict, c.check ?? '');
     // A fix whose branch has not reached the default branch is not live yet: no
     // numbers, no verdict but no-data, and the plain reason instead.
-    if (!live.live) return { change_id: c.id, metric, before: null, after: null, tripwire: tripwire || null, enough: false, verdict: 'no-data', reason: live.reason };
+    if (!live.live) return { change_id: c.id, metric, before: null, after: null, tripwire: tripwire || null, enough: false, verdict: 'no-data', reason: live.reason, stages: state('no', 'no-data') };
     const value = (range) => values(cfg, events, records, range)[metric] ?? null; // a cause no longer in the config is n/a
     const of = recordsOf(cfg, metric);
     const covered = (ms) => from <= ms;
@@ -84,12 +99,20 @@ export function followup(cfg, db, id, window, log) {
     row.enough = enough(row, end, Infinity);
     const prev = last.all(c.id, id).map((p) => ({ ...p, readTime: readAt(JSON.parse(p.output_json)) }))
       .find((p) => end - p.readTime >= min_days * DAY);
-    return { ...row, verdict: verdict(row, kind, prev && enough(prev, prev.readTime, prev.readTime) ? prev : undefined) };
+    const result = verdict(row, kind, prev && enough(prev, prev.readTime, prev.readTime) ? prev : undefined);
+    return { ...row, verdict: result, stages: state('yes', result) };
   });
+  // A fix the user accepted (answered Apply) that no change records: no number to measure, but a row, so it is not forgotten.
+  const recorded = new Set(entries.map(proposalOf));
+  for (const p of db.prepare(`SELECT p.run_id, p.n, p.cause, p.metric, p.tripwire, p.check_cmd FROM proposals p JOIN signoff s ON s.proposal_id = p.id
+    WHERE s.answer = 'apply' AND p.n IS NOT NULL AND p.run_id < ? ORDER BY p.run_id, p.n`).all(id)) {
+    const at = `${p.run_id}:${p.n}`;
+    if (!recorded.has(at)) rows.push({ change_id: at, metric: p.metric ?? `cause_count:${p.cause}`, before: null, after: null, tripwire: p.tripwire, verdict: 'no-data', reason: NOT_RECORDED, stages: stages(at, 'no', 'no', 'no-data', p.check_cmd ?? '') });
+  }
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM followups WHERE run_id = ?').run(id);
-    for (const r of rows) add.run(id, r.change_id, r.metric, r.before, r.after, r.tripwire, r.verdict, r.reason);
+    for (const r of rows) add.run(id, r.change_id, r.metric, r.before, r.after, r.tripwire, r.verdict, r.reason, r.stages);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
