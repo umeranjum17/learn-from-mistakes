@@ -1,6 +1,7 @@
 // Explicit, optional contract-v1 handoff. Freeze the first message so retrying a run keeps the same key and bytes.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { appliedFixes, appliedLine } from './apply.mjs';
@@ -68,12 +69,80 @@ function messages(cfg, db, opts) {
   return { runId: run.id, rows, done };
 }
 
+// Plain text for a report field: redacted, one line, cut at max characters.
+const clip = (text, max) => {
+  const t = redact(text ?? '').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim(), chars = [...t];
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : t;
+};
+const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
+
+// The run's whole result as one sign-off report (contract 1, kind report, schema 3): the repeated mistakes, the kept fixes and what was
+// not checked. It carries no options: Apply or Skip stays on the finding cards of `signoff post`. The key and every field come from the
+// saved run, so a retry sends the same bytes and the board keeps one card.
+function reportMessage(cfg, db, runId) {
+  const run = db.prepare('SELECT updated_at FROM runs WHERE id = ?').get(runId);
+  const window = JSON.parse(db.prepare("SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'").get(runId).output_json);
+  const repeated = [...counts(cfg, db, runId, window).causes].filter(([, c]) => c.repeated);
+  const findings = db.prepare("SELECT cause, summary FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id").all(runId);
+  const fixes = db.prepare('SELECT n, cause, change, verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(runId);
+  const applied = appliedFixes(db, runId);
+  const open = fixes.filter((f) => !applied.has(f.n)).length;
+  // The "Not checked" lines of report.txt, already plain and redacted; the evidence lines under them stay in the file.
+  const text = readFileSync(join(cfg.state, 'runs', String(runId), 'report.txt'), 'utf8');
+  const gaps = (/^6\. Not checked\n([\s\S]*?)\n\n7\. /m.exec(text)?.[1] ?? '').split('\n').filter((l) => l.startsWith('- ') && !l.startsWith('- Nothing.'));
+  return {
+    contract: 1, kind: 'report', schema: 3, key: `lfm-report-${runId}`, filer: 'learn-from-mistakes',
+    title: clip(`Retro for ${cfg.name}: ${plural(repeated.length, 'repeated mistake')}, ${plural(fixes.length, 'fix', 'fixes')} kept`, 160),
+    about: `Run ${runId}, window ${cfg.window}. Apply or Skip questions for the open fixes are separate cards: run learn-from-mistakes-axi signoff post.`,
+    filed: `${new Date(run.updated_at).toISOString().slice(0, 19)}Z`,
+    understood: [{ label: 'You asked', text: 'What do my coding agents keep getting wrong in this project?' }, { label: 'Window', text: `The last ${cfg.window}, against the window before it.` }],
+    visual: { type: 'tiles', heading: repeated.length ? plural(repeated.length, 'mistake') + ' came back' : 'No mistake came back', rows: [
+      { label: 'Repeated mistakes', text: String(repeated.length), tone: repeated.length ? 'bad' : 'ok' },
+      { label: 'Fixes kept', text: `${fixes.length}, ${open} still open`, tone: open ? 'warn' : 'ok' },
+      { label: 'Not checked', text: plural(gaps.length, 'gap'), tone: gaps.length ? 'warn' : 'ok' }] },
+    sections: [
+      { id: 'mistakes', stage: 'found', heading: 'Repeated mistakes', body: repeated.length ? `${plural(repeated.length, 'mistake')} came back in this window.` : 'No mistake came back in this window.',
+        ...(repeated.length && { items: repeated.slice(0, 8).map(([cause, c]) => ({ title: clip(cause, 80), text: `${plural(c.count, 'time')} on ${plural(c.days, 'day')}.`,
+          ...(findings.find((f) => f.cause === cause) && { more: clip(findings.find((f) => f.cause === cause).summary, 600) }) })) }) },
+      { id: 'fixes', stage: 'recommend', heading: 'Fixes kept', body: fixes.length ? `${plural(fixes.length, 'fix', 'fixes')} passed the rules; ${applied.size} applied by the run.` : 'No fix passed the rules.',
+        ...(fixes.length && { items: fixes.slice(0, 8).map((f) => ({ title: clip(`Fix ${f.n}, for ${f.cause}`, 80),
+          text: `The judge: ${f.verdict ?? 'not judged'}. ${applied.has(f.n) ? 'Applied by the run.' : 'Not applied.'}`, more: clip(f.change, 600) })) }) },
+      { id: 'not-checked', stage: 'found', heading: 'Not checked', body: gaps.length ? `${plural(gaps.length, 'gap')}. The full list is in report.txt.` : 'Nothing. The run read all sources and checked all items.',
+        ...(gaps.length && { items: gaps.slice(0, 8).map((g, i) => ({ title: `Gap ${i + 1}`, text: clip(g.slice(2), 160) })) }) }],
+    next: { heading: open ? 'Answer the open fixes on their own cards' : 'Nothing needs you', lines: ['The full text is in report.txt in the run folder.'] },
+  };
+}
+
+// Posts the run's report to sign-off and saves the outcome (posted, skipped or failed) for `status`. It never throws: a run's
+// report that sign-off cannot take must not fail the run. The same key and bytes go out on every retry, so the board keeps one card.
+export async function postReport(cfg, db, runId) {
+  const key = `lfm-report-${runId}`, bin = which('sign-off-axi');
+  let state = 'posted', why = null;
+  if (!bin) [state, why] = ['skipped', 'sign-off-axi is not installed; the report stays in report.txt (npm i -g sign-off-axi)'];
+  else {
+    try { peer(bin, ['post', '--kind', 'report', '--from', '-'], cfg, JSON.stringify(reportMessage(cfg, db, runId))); }
+    catch (e) { [state, why] = ['failed', e.message]; }
+  }
+  db.prepare('INSERT INTO signoff_report (run_id, key, state, why) VALUES (?, ?, ?, ?) ON CONFLICT (run_id) DO UPDATE SET state = excluded.state, why = excluded.why')
+    .run(runId, key, state, why);
+  return { key, state, why };
+}
+
 export async function signoff(action, cfg, opts) {
   const db = await openStore(cfg.state, false);
   if (!db) throw new UsageError('no saved retro run', AGAIN);
   try {
     const bin = which('sign-off-axi');
     let reportHint = null;
+    if (action === 'report') {
+      const run = opts.run ? db.prepare('SELECT id, status FROM runs WHERE id = ?').get(Number(opts.run))
+        : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get();
+      if (run?.status !== 'completed') throw new UsageError('signoff report needs a completed run', AGAIN);
+      const { key, state, why } = await postReport(cfg, db, run.id);
+      console.log(`${state}: ${key}${why ? ` (${why})` : ''}`);
+      if (state === 'failed') process.exitCode = 1;
+      return;
+    }
     if (action === 'post') {
       const { runId, rows, done } = messages(cfg, db, opts); // validate every fix before sending any
       for (const line of done) console.log(line);

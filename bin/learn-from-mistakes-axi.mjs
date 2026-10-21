@@ -375,6 +375,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   (no command)        print the last run's status and its summary line
   signoff post       explicitly post a completed run's kept fixes its apply step did not apply
                      (optional sign-off-axi)
+  signoff report     post a completed run's whole report to sign-off as a report card, apart from the
+                     Apply/Skip cards; safe to repeat (signoff_report: on posts it when a run ends)
   signoff answers    save Apply/Skip answers against proposals; never apply changes
   apply               the worker makes each kept fix answered Apply (or --fix <n>) on branch
                       lfm/<project>-<hash>/<run>-<n> from HEAD, and records it;
@@ -540,6 +542,7 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
   'signoff-post': 'learn-from-mistakes-axi signoff post [--run <id>] [--dir <dir>]',
+  'signoff-report': 'learn-from-mistakes-axi signoff report [--run <id>] [--dir <dir>]',
   'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
   apply: 'learn-from-mistakes-axi apply [--run <id>] [--fix <n>] [--dir <dir>]',
 };
@@ -563,7 +566,7 @@ async function main(ctx) {
     cmd = 'change-applied';
   }
   if (cmd === 'signoff') {
-    if (!['post', 'answers'].includes(argv[0])) throw new UsageError('signoff needs post or answers', FORMS['signoff-post']);
+    if (!['post', 'report', 'answers'].includes(argv[0])) throw new UsageError('signoff needs post, report or answers', FORMS['signoff-post']);
     cmd = `signoff-${argv.shift()}`;
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns

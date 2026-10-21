@@ -131,7 +131,7 @@ sources:
   log: { type: markdown-log, path: defects.md }   # each "- " bullet is one record`, 'learn-from-mistakes-axi init   # writes the config for this project');
   if (p.name !== undefined) check(typeof p.name === 'string', `${file}: name`, 'a string');
   for (const k of GLOBAL_ONLY) if (Object.hasOwn(p, k)) throw new UsageError(`${file}: ${k} is global-only: set it in ${global.globalPath}`);
-  mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', ...AGENT_KEYS], file);
+  mapping(p, ['name', 'window', 'sources', 'targets', 'causes', 'repeat', 'followup', 'excerpts', 'caps', 'signoff', 'signoff_report', ...AGENT_KEYS], file);
   const sources = mapping(p.sources ?? {}, null, `${file}: sources`);
   for (const [id, s] of Object.entries(sources)) {
     const where = `${file}: sources.${id}`;
@@ -193,7 +193,7 @@ sources:
     window: p.window ?? '7d',
     targets: { first_pass: '>= 70', p90_hours_to_merge: '<= 8', tool_error_rate: '<= 0.05', corrections_per_session: '<= 0.3', escaped: '<= 0', ...targets, ...Object.assign({}, ...Object.values(sources).map((s) => s.targets)) },
     followup: block('followup', { min_sessions: 3, min_days: 2 }), excerpts: one('excerpts', ['on', 'off']), caps,
-    signoff: one('signoff', ['on', 'off']), ...agentKeys(global, p, file),
+    signoff: one('signoff', ['on', 'off']), signoff_report: one('signoff_report', ['off', 'on']), ...agentKeys(global, p, file),
   };
   if (global.state_root) return { ...cfg, state: join(expand(String(global.state_root), global.home), cfg.name) };
   return { ...cfg, state: join(dir, '.lfm'), ignore: true };

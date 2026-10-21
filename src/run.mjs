@@ -17,6 +17,7 @@ import { verify } from './steps/verify.mjs';
 import { check, counts } from './check.mjs';
 import { followup } from './followup.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
+import { postReport } from './signoff.mjs';
 import { startTime } from './proc.mjs';
 import { reportText } from './report-text.mjs';
 import { locked, openStore } from './store.mjs';
@@ -292,6 +293,7 @@ async function work(cfg, db, id) {
     const ended = db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(failed ? 'failed' : 'completed', error, iso(Date.now()), id).changes;
     if (failed && ended) discard(db, id);
   });
+  if (!failed && cfg.signoff_report === 'on') await postReport(cfg, db, id); // after the run completed; a refusal is saved and shown, never a failed run
   if (failed && !(failed instanceof UsageError)) throw failed; // a bug, not a run outcome: keep its stack
 }
 
@@ -407,6 +409,7 @@ export async function runs(cfg) {
 function show(db, id) {
   const out = (step) => db.prepare('SELECT output_json FROM steps WHERE run_id = ? AND name = ?').get(id, step)?.output_json;
   const collect = out('collect'), window = out('metrics'), report = out('report') && JSON.parse(out('report'));
+  const signoffReport = db.prepare('SELECT key, state, why FROM signoff_report WHERE run_id = ?').get(id);
   const applyOut = out('apply') && JSON.parse(out('apply')); // a fix the apply step refused, with why and next
   const metrics = new Map();
   // A metric with a target shows it and whether this window met it; one without has both empty.
@@ -425,6 +428,7 @@ function show(db, id) {
       .map((f) => ({ change: f.change_id, metric: f.metric, before: rounded(f.before), after: rounded(f.after), tripwire: f.tripwire ?? '', verdict: f.verdict })) }),
     ...(out('check') && { fixes: db.prepare(`SELECT n, cause, metric, tripwire, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
     ...(applyOut?.refused?.length && { refused: applyOut.refused }),
+    ...(signoffReport && { signoff_report: { ...signoffReport } }),
     ...(report && { result: { summary: summaryLine(report), labelled: report.coverage.labelled, records: report.coverage.total_records,
       causes: report.causes.filter((c) => c.log.incidents || c.store.rows).map((c) => ({ cause: c.cause, repeated: c.repeated, incidents: c.log.incidents, days: c.log.days, rows: c.store.rows })),
       findings: runResult(db, id).findings.map(({ cause, count, days, verdict }) => ({ cause, count, days, verdict })) } }),
