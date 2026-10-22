@@ -3,7 +3,7 @@ name: lfm-retro
 description: "Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro, or wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills."
 license: MIT
 metadata:
-  version: 0.4.1
+  version: 0.5.0
   argument-hint: <what keeps going wrong, or the log to read>
   hermes-tags: retrospective, defects, agents, instructions
   hermes-category: productivity

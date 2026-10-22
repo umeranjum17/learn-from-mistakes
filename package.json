@@ -1,6 +1,6 @@
 {
   "name": "learn-from-mistakes-axi",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "AXI CLI that finds the causes your coding agents keep repeating in defect logs and failed pipeline runs, with the evidence for each and evidence-backed change recommendations.",
   "license": "MIT",
   "keywords": ["axi", "agents", "retrospective", "defects", "cli", "toon", "learn-from-mistakes"],
