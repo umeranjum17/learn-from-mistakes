@@ -72,6 +72,7 @@ Follow each `fix:` line, then run it again. This checks readiness without callin
 ## Go deeper
 
 - [Product page](https://umeranjum17.github.io/learn-from-mistakes/) — the short tour.
+- [Vision](VISION.md) — who it is for, where it is going and what it is not.
 - [Reference](docs/reference.md) — agents, models, sources, incidents, costs, recovery and exit codes.
 - [Optional integrations](docs/reference.md#optional-integrations-and-changes) — Firstmate, sign-off and applying a fix.
 - [Development and verification](docs/reference.md#development) — contributor commands and real CLI journeys.
