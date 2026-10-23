@@ -15,7 +15,8 @@ import { liveAt } from './merge-time.mjs';
 import { redact } from './redact.mjs';
 import { which } from './runners/index.mjs';
 
-const ITEM_CHARS = 8000, ITEMS = 40, COMMENTS = 30; // the text kept per item, the items per run and the comments read per PR or issue
+const ITEM_CHARS = 8000, ITEMS = 40, COMMENTS = 30; // the text the agents read per item, the items per run and the comments read per PR or issue
+const FILE_CHARS = 65_536; // the text of a file the run saves: past ITEM_CHARS the bundle says it was cut
 const GITHUB = /^https?:\/\/([^/\s]*github[^/\s]*)\/([\w.-]+)\/([\w.-]+)\/(pull|issues)\/(\d+)(?:[/?#]\S*)?$/i;
 const IMAGE = [['png', [0x89, 0x50, 0x4e, 0x47]], ['jpeg', [0xff, 0xd8, 0xff]], ['gif', [0x47, 0x49, 0x46, 0x38]], ['webp', [0x52, 0x49, 0x46, 0x46]]];
 const CHECK_MS = 600_000; // one check command's time limit
@@ -52,7 +53,7 @@ function file(path) {
     return { ref: path, text: `An image (${type}, ${Math.ceil(buf.length / 1024)} KB${px}). The agents read text only, so they cannot see it.`, data: { kind: 'image', name: basename(path) } };
   }
   if (buf.includes(0)) throw new UsageError(`${path}: not a text file or an image (png, jpeg, gif or webp)`, 'pass a text file, a screenshot, or a GitHub PR or issue link');
-  return { ref: path, text: buf.toString('utf8'), data: { kind: 'file', name: basename(path) } };
+  return { ref: path, text: buf.toString('utf8').slice(0, FILE_CHARS), data: { kind: 'file', name: basename(path) } };
 }
 
 // A GitHub PR or issue, through the user's own `gh` login: its title and body, then each comment and review with text,
