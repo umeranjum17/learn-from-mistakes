@@ -39,6 +39,18 @@ learn-from-mistakes-axi report
 
 Open the file named by `report_txt` in your editor. The terminal summary is not the full report. Check **Not checked** before drawing conclusions; an empty result does not prove nothing went wrong.
 
+## Go deep on one failure
+
+A retro counts the causes that repeat. When one failure matters on its own, run an incident instead:
+
+```sh
+learn-from-mistakes-axi incident "<what failed>" --evidence notes.md --evidence screenshot.png --wait 8m
+```
+
+Name the failure in your own words, as a file, or as a GitHub PR or issue link (or `#<n>`). Add `--evidence` once for each file, screenshot or link that shows it. The run reads only what you name and your project's own files, never the configured sources. Its `report.txt` gives the timeline, the root causes, why no check caught it, how to avoid it now, and fixes, each with an owner, a priority and a due date.
+
+Once you make a fix, record it with `change applied --proposal <run>:<n> --ref <commit>`. Then `learn-from-mistakes-axi incident --status` lists the open fixes and runs the check of each fix that shipped. A fix stays open until its check passes. [Incident details →](docs/reference.md#go-deep-on-one-incident)
+
 ## With or without Firstmate
 
 **On its own:** the tool reads the sources you set for your project: a defect log, failed checks or the sessions of agents you name. Nothing else is needed.
@@ -60,7 +72,7 @@ Follow each `fix:` line, then run it again. This checks readiness without callin
 ## Go deeper
 
 - [Product page](https://umeranjum17.github.io/learn-from-mistakes/) — the short tour.
-- [Reference](docs/reference.md) — agents, models, sources, costs, recovery and exit codes.
+- [Reference](docs/reference.md) — agents, models, sources, incidents, costs, recovery and exit codes.
 - [Optional integrations](docs/reference.md#optional-integrations-and-changes) — Firstmate, sign-off and applying a fix.
 - [Development and verification](docs/reference.md#development) — contributor commands and real CLI journeys.
 - [Issues](https://github.com/umeranjum17/learn-from-mistakes/issues) · [MIT license](LICENSE).
