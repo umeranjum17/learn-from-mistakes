@@ -160,6 +160,7 @@ export function incidentReport(cfg, db, id, dir, log) {
     ...(read.left ? [`- The run read the first ${COMMENTS} comments of a PR or issue and left ${read.left} out.`] : []),
     ...(uncited.length ? [`- No timeline entry, cause or check cites ${plural(uncited.length, 'item')}.`, evidence(uncited)] : []),
     ...(left.length ? [`- The rules left out ${plural(left.length, 'fix', 'fixes')}.`, ...left.map((f) => `   The fix for ${f.cause}: ${f.problem}.`)] : []),
+    ...(step('prevent').asked && !avoid.length ? ["- The worker's advice on how to avoid it broke the report rules, so the report shows none."] : []),
     ...(fixes.some((f) => f.verdict === 'weakened') ? [`- The judge weakened ${plural(fixes.filter((f) => f.verdict === 'weakened').length, 'fix', 'fixes')}.`] : []),
     ...(ctx.off ? ['- The project context is off for this project, so the run saw no project rule.'] : ctx.read && !ctx.read.length ? ['- The project context read no project file.'] : []),
     ...(ctx.skipped?.length ? [`- The project context did not read ${plural(ctx.skipped.length, 'file')}: ${[...new Set(ctx.skipped.map((f) => f.why))].map((w) => REASONS[w].short).join(', ')}.`] : []),

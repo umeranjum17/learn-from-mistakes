@@ -99,7 +99,7 @@ test('a GitHub PR link, an issue link and #<n> are read through gh: title, body,
   assert.match(gone.stderr, /^error: https:\/\/github\.com\/umer\/board\/pull\/99: gh cannot read it \(no pull requests found\)\nnext: /m);
 });
 
-test('a fix with no owner, a code fix with no regression test and a fix with no due date are refused, and the report names each rule', () => {
+test('a fix with no owner, a code fix with no regression test, a fix with no due date and advice that breaks the rules are refused, and the report names each rule', () => {
   const { lfm } = project();
   const out = runOf(lfm(['incident', TEXT, '--foreground', '--json'], { FAKE_INCIDENT: 'refused' }));
   assert.deepEqual(out.fixes.map((f) => f.priority), ['P0', 'P1'], 'a fix that broke a rule was numbered');
@@ -108,6 +108,9 @@ test('a fix with no owner, a code fix with no regression test and a fix with no 
   const log = readFileSync(join(out.result.report_txt, '..', 'prevent.log'), 'utf8');
   assert.match(log, /^worker answer 1 is not valid: fixes\[2\]: no owner/m); // the first answer is sent back once with the rules
   assert.match(log, /^fixes: 5 given, 3 refused$/m);
+  assert.match(log, /^worker answer 1 is not valid: .*avoid must be a list of 1 to 3 strings, each one sentence/m); // the advice is sent back too
+  assert.match(report, /^5\. How to avoid it now\n- The run gave no advice\.$/m);
+  assert.match(report, /^- The worker's advice on how to avoid it broke the report rules, so the report shows none\.$/m);
 });
 
 test('an incident fix is open until it is recorded, it shipped and its check passed; a later retro tracks it in the change ledger', () => {

@@ -27,7 +27,8 @@ function refsProblem(refs, at, ids) {
 }
 
 // One list answer: the first attempt must hold whole; the second keeps the entries that hold (`problems` names each).
-async function ask(cfg, db, id, dir, log, { step, key, fill = {}, rules, max }) {
+// `more` names the problems of the answer's other fields, sent back with the list's on the first attempt.
+async function ask(cfg, db, id, dir, log, { step, key, fill = {}, rules, max, more = () => [] }) {
   const ids = bundleIds(readBundle(dir, id));
   const text = PROMPTS[step].replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k]);
   const sift = (v) => {
@@ -39,8 +40,8 @@ async function ask(cfg, db, id, dir, log, { step, key, fill = {}, rules, max }) 
     return { kept, bad };
   };
   const answer = await agentStep(cfg, db, id, dir, { step, role: 'worker', prompt: text, log,
-    check: (v, attempt) => (!Array.isArray(v[key]) ? [`${key} must be a list`] : attempt > 1 ? [] : !v[key].length ? [`${key} must hold at least one entry`]
-      : [...(v[key].length > max ? [`${key} has more than ${max} entries`] : []), ...sift(v).bad]) });
+    check: (v, attempt) => (!Array.isArray(v[key]) ? [`${key} must be a list`] : attempt > 1 ? [] : [...(!v[key].length ? [`${key} must hold at least one entry`]
+      : [...(v[key].length > max ? [`${key} has more than ${max} entries`] : []), ...sift(v).bad]), ...more(v)]) });
   const { kept, bad } = sift(answer);
   if (bad.length) log(`dropped: ${bad.join('; ')}`);
   return { answer, kept, bad };
@@ -120,8 +121,10 @@ export async function prevent(cfg, db, id, dir, log) {
   if (!kept.length) { log('nothing to prevent: no root cause the judge kept'); return { asked: false, fixes: 0, avoid: [] }; }
   const fill = { causes: listed(kept, causeLine), today: today(), context: context(cfg, db, id, dir),
     gates: listed(db.prepare(`SELECT head, text FROM incident_lines WHERE run_id = ? AND step = 'gates' ORDER BY n`).all(id), (g) => `- ${g.head}: ${g.text}`) };
-  const avoidOk = (v) => Array.isArray(v.avoid) && v.avoid.length >= 1 && v.avoid.length <= 3 && v.avoid.every((a) => !plain(a, '', { sentences: 1 }));
-  const { answer } = await ask(cfg, db, id, dir, log, { step: 'prevent', key: 'fixes', fill, max: 5, rules: (f, at, ids) => fixProblems(f, at, ids, keys, runs) });
+  // avoid: 1 to 3 strings of one plain sentence each. A bad first answer is sent back; the second keeps the ones that hold.
+  const avoidProblems = (v) => (!Array.isArray(v.avoid) || !v.avoid.length || v.avoid.length > 3 ? ['avoid must be a list of 1 to 3 strings, each one sentence']
+    : v.avoid.map((a, i) => plain(a, `avoid[${i}]`, { sentences: 1 }) || rawProblem(redact(a), `avoid[${i}]`)).filter(Boolean));
+  const { answer } = await ask(cfg, db, id, dir, log, { step: 'prevent', key: 'fixes', fill, max: 5, rules: (f, at, ids) => fixProblems(f, at, ids, keys, runs), more: avoidProblems });
   // Every fix the worker gave is saved, in its order: one that breaks a rule keeps it as its problem and is never numbered.
   const ids = bundleIds(readBundle(dir, id));
   const add = db.prepare(`INSERT INTO proposals (run_id, cause, target, owner, change, refs_json, kind, check_cmd, test, priority, due, problem)
@@ -136,8 +139,8 @@ export async function prevent(cfg, db, id, dir, log) {
       s(f.kind) || null, s(f.check) ? redact(s(f.check)) : null, s(f.test) ? redact(s(f.test)) : null, s(f.priority) || null, s(f.due) || null,
       bad.length ? bad[0].replace(/^fixes\[\d+\][.:]?\s*/, '') : null);
   });
-  const avoid = avoidOk(answer) ? answer.avoid.map(clean) : [];
-  if (!avoid.length) log('dropped: avoid must be 1 to 3 plain sentences');
+  const avoid = Array.isArray(answer.avoid) ? answer.avoid.slice(0, 3).filter((a, i) => !plain(a, '', { sentences: 1 }) && !rawProblem(redact(a), `avoid[${i}]`)).map(clean) : [];
+  if (!avoid.length) log(`dropped: ${avoidProblems(answer).join('; ') || 'avoid'}`);
   log(`fixes: ${answer.fixes.length} given, ${refused} refused`);
   return { asked: true, fixes: answer.fixes.length, refused, avoid };
 }

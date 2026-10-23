@@ -62,7 +62,8 @@ else if (/^lfm-run:\d+:apply-\d+\n/.test(stdin)) {
   reply(JSON.stringify({ files }), stop ? { stop_reason: stop } : {}); } }
 // An incident run's steps (their marker lines) answer over the bundle's items: a timeline entry per item, one root
 // cause, two gates, and two fixes (a P0 code fix with its regression test and a P1 rule fix). FAKE_INCIDENT=refused adds
-// three fixes that break the rules on every answer: no owner, a code fix with no regression test, and no due date.
+// three fixes that break the rules on every answer: no owner, a code fix with no regression test, and no due date, and
+// gives its advice as one string of two sentences, not a list.
 else if (/^lfm-run:\d+:(timeline|causes|gates|prevent)\n/.test(stdin)) {
   const step = /^lfm-run:\d+:(\w+)/.exec(stdin)[1];
   const items = [...stdin.matchAll(/^- \[(i\d+)\] .*, (no time|\S+)$/gm)].map((m) => ({ id: m[1], at: /^\d{4}-\d{2}-\d{2}/.exec(m[2])?.[0] ?? 'unknown' }));
@@ -74,7 +75,7 @@ else if (/^lfm-run:\d+:(timeline|causes|gates|prevent)\n/.test(stdin)) {
     : step === 'causes' ? { causes: [{ cause, summary: 'The build did not pin the approved prototype. The board drifted from it.', whys: ['The shipped board differed from the approved prototype.', 'The build read the old design.', 'No step pins the approved prototype to the build.'], cost: 'The owner saw the wrong board once.', refs: ids }] }
     : step === 'gates' ? { gates: [{ gate: 'The visual review', missed: 'It compared the board with the old design, not the approved one.', refs: ids.slice(-1) },
       { gate: 'A test against the prototype', missed: 'No such check exists.', refs: ids.slice(0, 1) }] }
-    : { avoid: ['Compare the board with the approved prototype by hand before each merge.'],
+    : { avoid: process.env.FAKE_INCIDENT === 'refused' ? 'Compare the board by hand. Then merge it.' : ['Compare the board with the approved prototype by hand before each merge.'],
       fixes: [fix(), fix({ kind: 'rule', target: 'AGENTS.md', change: 'Name the approved prototype in the task brief.', test: undefined, priority: 'P1', check: 'grep -q prototype AGENTS.md' }),
         ...(process.env.FAKE_INCIDENT === 'refused' ? [fix({ owner: '' }), fix({ test: undefined, priority: 'P2' }), fix({ due: undefined, priority: 'P3' })] : [])] }));
 }
