@@ -52,9 +52,10 @@ export async function verify(cfg, db, id, dir, table, log) {
   const claims = new Map(table === 'findings'
     ? db.prepare('SELECT id, cause, summary, refs_json, whys_json, cost FROM findings WHERE run_id = ? ORDER BY id').all(id)
       .map((f, i) => [`f${i + 1}`, { id: f.id, refs: JSON.parse(f.refs_json), text: `finding for cause ${f.cause}. ${f.summary} Why chain: ${JSON.parse(f.whys_json ?? '[]').map((w, k) => `${k + 1}. ${w}`).join(' ')} Cost: ${f.cost ?? 'not named'} Refs: ${refs(f.refs_json)}.` }])
-    : db.prepare('SELECT id, cause, target, owner, change, metric, tripwire, refs_json FROM proposals WHERE run_id = ? ORDER BY id').all(id)
+    : db.prepare('SELECT id, cause, target, owner, change, metric, tripwire, refs_json, test, priority, due, check_cmd FROM proposals WHERE run_id = ? ORDER BY id').all(id)
       .map((f, i) => [`p${i + 1}`, { id: f.id, refs: JSON.parse(f.refs_json), text: `fix for cause ${f.cause}. Target: ${f.target}. Owner: ${f.owner}. Change: ${f.change} `
-        + `Metric: ${f.metric?.trim() || defaultMetric(cfg, f.cause)}. Tripwire: ${f.tripwire?.trim() || 'none'}. Refs: ${refs(f.refs_json)}.` }]));
+        + (f.priority ? `Regression test: ${f.test ?? 'none'}. Check: ${f.check_cmd}. Priority ${f.priority}, due ${f.due}. ` // an incident fix: a test and a date, no metric
+          : `Metric: ${f.metric?.trim() || defaultMetric(cfg, f.cause)}. Tripwire: ${f.tripwire?.trim() || 'none'}. `) + `Refs: ${refs(f.refs_json)}.` }]));
   const none = { asked: false, confirmed: 0, weakened: 0, refuted: 0 };
   if (!claims.size) {
     log(`nothing to verify: no ${table === 'findings' ? 'finding' : 'fix'}`);

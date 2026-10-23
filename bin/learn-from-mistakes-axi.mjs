@@ -8,7 +8,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
-import { abort, attach, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { abort, attach, incident, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { incidentHint, incidentItems, incidentStatus, WHAT } from '../src/incident.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init, RECONFIGURABLE } from '../src/init.mjs';
 import { askError, closeAsk, ensureAgents, interactive, saveCommand, sessionsCommand } from '../src/ask.mjs';
@@ -127,21 +128,25 @@ export const MEASURE = 'learn-from-mistakes-axi retro --wait 15m';
 export const recordableCauses = (cfg) => Object.keys(cfg.causes).filter((c) => c !== 'other');
 export async function recordChange(cfg, opts) {
   const form = FORMS['change-applied'];
+  let incidentCause;
   if (opts.proposal !== undefined) {
     if (opts.cause !== undefined) throw new UsageError('pass --cause or --proposal, not both', form);
     const [, run, n] = /^([1-9]\d{0,8}):([1-9]\d{0,2})$/.exec(opts.proposal) ?? [];
     if (!run) throw new UsageError(`--proposal ${shown(opts.proposal)} must be <run>:<n>, a run id and the number of one of its kept fixes`, form);
     quietSqlite();
     const db = await openStore(cfg.state, false);
-    const fix = db?.prepare('SELECT cause, metric, tripwire, check_cmd FROM proposals WHERE run_id = ? AND n = ?').get(Number(run), Number(n));
+    const fix = db?.prepare('SELECT p.cause, p.metric, p.tripwire, p.check_cmd, p.kind, r.kind AS run_kind FROM proposals p JOIN runs r ON r.id = p.run_id WHERE p.run_id = ? AND p.n = ?').get(Number(run), Number(n));
     db?.close();
     if (!fix) throw new UsageError(`run ${run} has no kept fix ${n}`, withContext(`learn-from-mistakes-axi status --run ${run}`, 'its kept fixes', opts));
-    opts = { ...opts, cause: fix.cause, metric: opts.metric ?? fix.metric, tripwire: opts.tripwire ?? fix.tripwire, check: opts.check ?? fix.check_cmd ?? undefined };
+    // An incident fix names its incident's own root cause, which the config need not list, and has no metric: its check shows it worked.
+    incidentCause = fix.run_kind === 'incident' && fix.cause;
+    opts = { ...opts, cause: fix.cause, metric: opts.metric ?? fix.metric ?? undefined, tripwire: opts.tripwire ?? fix.tripwire ?? undefined, check: opts.check ?? fix.check_cmd ?? undefined,
+      ...(incidentCause && { kind: opts.kind ?? fix.kind }) };
   }
   if (opts.cause === undefined) throw new UsageError('change applied needs --cause or --proposal', form);
   if (opts.ref === undefined) throw new UsageError('change applied needs --ref', form);
   const known = recordableCauses(cfg);
-  if (!known.includes(opts.cause)) {
+  if (!known.includes(opts.cause) && opts.cause !== incidentCause) {
     const list = `known: ${known.join(', ') || `none, add causes to ${PROJECT_FILE}`}`;
     throw new UsageError(opts.cause === 'other' ? `cause "other" is reserved and never recordable (${list})` : `unknown cause ${shown(opts.cause)} (${list}; "other" is reserved)`, form);
   }
@@ -375,9 +380,17 @@ export function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change applied|changes|retro|status|
-                                runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change applied|changes|retro|incident|
+                                status|runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
   (no command)        print the last run's status and its summary line
+  incident <what>     go deep on one failure, apart from the retro: <what> is the failure in your
+                      own words, a file or screenshot, or a GitHub PR or issue link (or #<n>).
+                      It reads only what you name and the project context, and writes one
+                      report.txt: timeline, root causes, why no check caught it, how to avoid it,
+                      and fixes, each with an owner, a priority (P0-P3) and a due date
+  incident --status   list the open incident fixes with owner and date; for each fix recorded
+                      with change applied --proposal that shipped, run its check command in the
+                      project dir: a fix stays open until that check passes
   signoff post       explicitly post a completed run's kept fixes its apply step did not apply
                      (optional sign-off-axi)
   signoff report    post a run's whole report to sign-off as one card, apart from the Apply/Skip
@@ -440,9 +453,12 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                       (default: the last one; abort: the running one; apply: the last run with
                       kept fixes)
   --step <name>       (logs) the step: collect, metrics, followup, bundle, analyse, verify, propose,
-                      verify-fixes, check, apply or report
-  --wait [<time>]     (retro, rerun) wait up to 30s, 8m or 1h (default 8m) for the run to end, then
-                      print it
+                      verify-fixes, check, apply or report (an incident: read, context, timeline,
+                      causes, verify, gates, prevent, verify-fixes, check or report)
+  --evidence <path>   (incident) a file, screenshot, or GitHub PR or issue link that shows the
+                      failure; repeat it for more
+  --wait [<time>]     (retro, incident, rerun) wait up to 30s, 8m or 1h (default 8m) for the run
+                      to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
   --test <runner>     (agents) one live call to that agent CLI, acp:<target> through acpx, or
                       byokit:<route> through BYOKit (costs tokens): it must answer and write
@@ -467,7 +483,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's
                       .claude/skills and .agents/skills instead of each agent's own skills dir; -y
                       asks nothing, even in a terminal
-  --json (init, doctor, report, change applied, changes, retro, status, runs,
+  --json (init, doctor, report, change applied, changes, retro, incident, status, runs,
          attach, logs, abort, rerun, agents, no command)  print JSON instead of
          the default text format (report: lfm-report.v2; changes: lfm-changes.v1)
   --full (report)     add allow-listed evidence ids (never record text)
@@ -495,6 +511,7 @@ next: learn-from-mistakes-axi changes --json    # every applied change with its 
                                                 # what and why
 next: learn-from-mistakes-axi retro --wait 8m   # read, label and count the sources as a saved
                                                 # run, then status and runs show it
+next: learn-from-mistakes-axi incident "<what failed>" --wait 8m   # go deep on one failure
 next: learn-from-mistakes-axi agents          # the agent CLIs the tool can start, their models
                                               # and the resolved worker and judge`;
 // The agent procedure lives here, not in the installed skill, so a skill copy never goes stale.
@@ -544,6 +561,7 @@ const FORMS = {
   'change-applied': 'learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--check <command>] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
   retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
+  incident: 'learn-from-mistakes-axi incident (<what failed> [--evidence <path>]... [--wait [<time>] | --foreground] | --status ) [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
   runs: 'learn-from-mistakes-axi runs [--dir <dir>] [--json]',
   attach: 'learn-from-mistakes-axi attach [--run <id>] [--dir <dir>] [--json]',
@@ -558,8 +576,8 @@ const FORMS = {
 };
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
-const SWITCHES = ['--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '-y'];
+const VALUE_FLAGS = ['--dir', '--evidence', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
+const SWITCHES = ['--status', '--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -581,13 +599,14 @@ async function main(ctx) {
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
   if (REMOVED.includes(cmd)) throw new UsageError(`${cmd} was removed: a retro reads the sources, labels and counts them`, RETRO);
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, report, change applied, changes, retro, status, runs, attach, logs, abort, rerun, agents, signoff, apply)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, report, change applied, changes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply)`);
   const name = cmd.replace('-', ' ') || 'learn-from-mistakes-axi', form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
   ctx.opts = opts;
   for (let i = 0; i < argv.length;) {
     const flag = argv[i];
+    if (!flag.startsWith('-') && cmd === 'incident' && opts.what === undefined) { opts.what = flag; i += 1; continue; } // the one failure: text, a file or a link
     if (!flag.startsWith('-')) throw new UsageError(`unexpected argument ${shown(flag)}`, next);
     if (REMOVED.includes(flag)) throw new UsageError(`${flag} was removed: a retro labels the records and checks the fixes`, RETRO);
     if (!VALUE_FLAGS.includes(flag) && !SWITCHES.includes(flag)) throw new UsageError(`unknown option ${shown(flag)}`, next);
@@ -599,7 +618,8 @@ async function main(ctx) {
       // Paths are echoed whole in later errors so the user can find the file; a control character never is.
       if (UNPRINTABLE.test(argv[i + 1])) throw new UsageError(`${flag} (invalid value): a path must not contain control characters`, next ?? form);
       opts[flag.slice(2)] = resolve(argv[i + 1]);
-    } else opts[flag.slice(2)] = argv[i + 1];
+    } else if (flag === '--evidence') (opts.evidence ??= []).push(argv[i + 1]);
+    else opts[flag.slice(2)] = argv[i + 1];
     i += 2;
   }
   const { json, full } = opts;
@@ -610,6 +630,8 @@ async function main(ctx) {
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
+  if (cmd === 'incident' && opts.status && (opts.what !== undefined || opts.evidence || opts.wait || opts.foreground)) throw new UsageError('incident --status takes no failure, --evidence, --wait or --foreground', form);
+  if (cmd === 'incident' && !opts.status && !opts.what?.trim()) throw new UsageError('incident needs the failure: your own words, a file, a screenshot, or a GitHub PR or issue link', WHAT);
   // An acp target or a byokit route names the run dir, so it is a plain name: no path, no leading dot.
   for (const k of ['test', 'agent', 'judge-agent']) {
     if (opts[k] !== undefined && !/^(acp:[a-z0-9][\w.-]*|byokit:[a-z0-9][\w.:-]*)$/.test(opts[k]) && (opts[k] === 'acp' || !Object.hasOwn(RUNNERS, opts[k].replace(/^acp:[a-z0-9][\w.-]*$/, 'acp')))) {
@@ -628,7 +650,8 @@ async function main(ctx) {
   let cfg = loadConfig(opts.dir ?? resolve('.'));
   ctx.state = cfg.state;
   // A retro needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
-  if (['retro', 'rerun'].includes(cmd) && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
+  const agentRun = ['retro', 'rerun'].includes(cmd) || (cmd === 'incident' && !opts.status);
+  if (agentRun && await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir)) cfg = loadConfig(opts.dir ?? resolve('.'));
   // apply starts only the worker, and only after the store shows a run with kept fixes; the check comes first, so a
   // run with none stops before an agent it would never use is asked for or saved. Then only the worker role is asked.
   if (cmd === 'apply') {
@@ -639,7 +662,7 @@ async function main(ctx) {
     if (await ensureAgents(cfg, join(cfg.dir, PROJECT_FILE), opts.dir, ['agent'])) cfg = loadConfig(opts.dir ?? resolve('.'));
   }
   // Both agents always run: a worker or a judge that is not ready stops the run before it starts.
-  if (['retro', 'rerun'].includes(cmd)) {
+  if (agentRun) {
     const { worker, judge } = await resolveRoles(cfg, detect(cfg));
     if (worker.problem) throw new InputError(`worker: ${worker.problem}`, roleFix(cfg, 'agent', worker));
     if (judge.problem) throw new InputError(`judge: ${judge.problem}`, roleFix(cfg, 'judge_agent', judge));
@@ -648,6 +671,15 @@ async function main(ctx) {
   if (cmd === 'change-applied') { quietSqlite(); console.log(render(await recordChange(cfg, opts).catch((e) => { throw storeError(e, cfg, opts, name); }), json)); hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts)); return; }
   if (cmd === 'apply') { quietSqlite(); await apply(cfg, opts).catch((e) => { throw storeError(e, cfg, opts, cmd); }); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
+  if (cmd === 'incident' && opts.status) {
+    quietSqlite();
+    let out;
+    try { const db = await openStore(cfg.state, false); out = incidentStatus(cfg, db); db?.close(); } catch (e) { throw storeError(e, cfg, opts, cmd); }
+    console.log(render(out, json));
+    hint(incidentHint(out, opts));
+    return;
+  }
+  if (cmd === 'incident') { opts.items = incidentItems(cfg, opts.what, opts.evidence); await runCommand(cmd, cfg, opts); return; }
   if (['', 'retro', 'status', 'runs', 'attach', 'logs', 'abort', 'rerun'].includes(cmd)) { await runCommand(cmd, cfg, opts); return; }
   quietSqlite();
   const last = await lastRun(cfg).catch((e) => { throw storeError(e, cfg, opts, cmd); });
@@ -694,7 +726,7 @@ async function runCommand(cmd, cfg, opts) {
   quietSqlite();
   let out;
   try {
-    out = await { retro, status, '': status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
+    out = await { retro, incident: (c, o) => incident(c, o, o.items), status, '': status, runs, attach, logs, abort, rerun }[cmd](cfg, opts);
   } catch (e) {
     throw storeError(e, cfg, opts, cmd);
   }
@@ -718,7 +750,8 @@ async function runCommand(cmd, cfg, opts) {
     const output = existsSync(log) ? `; the worker's output: ${log}` : '';
     hint(withContext(`learn-from-mistakes-axi rerun --resume --run ${out.run.id}`, `finish it without running the completed steps again${output}`, opts));
     process.exitCode = 1;
-  } else if (!out.result.labelled && !out.result.findings.length) {
+  } else if (out.kind === 'incident') hint(withContext(`learn-from-mistakes-axi incident --status`, `the open fixes, each with its owner and date; the report is ${out.result.report_txt}`, opts));
+  else if (!out.result.labelled && !out.result.findings.length) {
     console.error('result: the worker labelled no record and named no finding');
     hint(withContext(`learn-from-mistakes-axi logs --step analyse --run ${out.run.id}`, 'why: nothing new in this window, or the problems with its answer', opts));
   } else hint(cmd === '' ? withContext('learn-from-mistakes-axi report', 'its ids, counts, metrics, verdicts and the path of report.txt', opts)

@@ -17,6 +17,8 @@ import { verify } from './steps/verify.mjs';
 import { check, counts } from './check.mjs';
 import { context } from './context.mjs';
 import { followup } from './followup.mjs';
+import { incidentBundle, incidentReport } from './incident.mjs';
+import { causes, gates, numberFixes, prevent, timeline } from './steps/incident.mjs';
 import { meets, metrics, rounded } from './metrics.mjs';
 import { postReport } from './signoff.mjs';
 import { startTime } from './proc.mjs';
@@ -89,6 +91,22 @@ const STEPS = {
     return model;
   },
 };
+// An incident run's steps (src/incident.mjs): it reads only the items the user named, saved with the run, and the project
+// context; it never reads the configured sources. Its judge steps are the retro's own.
+const INCIDENT = {
+  read: (cfg, db, id, log) => incidentBundle(db, id, runDir(cfg, id), log),
+  context: STEPS.context,
+  timeline: (cfg, db, id, log) => timeline(cfg, db, id, runDir(cfg, id), log),
+  causes: (cfg, db, id, log) => causes(cfg, db, id, runDir(cfg, id), log),
+  verify: STEPS.verify,
+  gates: (cfg, db, id, log) => gates(cfg, db, id, runDir(cfg, id), log),
+  prevent: (cfg, db, id, log) => prevent(cfg, db, id, runDir(cfg, id), log),
+  'verify-fixes': STEPS['verify-fixes'],
+  check: (cfg, db, id, log) => numberFixes(cfg, db, id, runDir(cfg, id), log),
+  report: (cfg, db, id, log) => incidentReport(cfg, db, id, runDir(cfg, id), log),
+};
+const stepsOf = (db, id) => (db.prepare('SELECT kind FROM runs WHERE id = ?').get(id)?.kind === 'incident' ? INCIDENT : STEPS);
+
 // The labels the worker kept in a run that asked it, its findings and its fixes; no labels when it was not asked.
 // With the config, also the run's counted causes: the check step's own count (counts()), the one the report's
 // section 4 shows, so the summary line and the report can never disagree about what repeated.
@@ -113,9 +131,9 @@ function runResult(db, id, cfg) {
 // numbers, follow-ups, fixes and report.txt. Undefined with no completed run.
 export async function lastRun(cfg) {
   const db = await openStore(cfg.state, false);
-  const latest = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed'`).get().id;
+  const latest = db?.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND kind IS NULL`).get().id; // an incident run is never the retro report
   if (latest == null) return undefined;
-  const id = db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id ?? latest;
+  const id = db.prepare(`SELECT max(id) AS id FROM runs WHERE status = 'completed' AND kind IS NULL AND (id IN (SELECT run_id FROM labels) OR id IN (SELECT run_id FROM findings))`).get().id ?? latest;
   const reportFile = join(runDir(cfg, id), 'report.txt');
   return { ...runResult(db, id, cfg), latest,
     shown: show(db, id), ...(existsSync(reportFile) && { reportFile }) };
@@ -146,9 +164,9 @@ function stop(db, id, status, why) {
 function discard(db, id) {
   db.prepare('UPDATE runs SET discarded_at = ? WHERE id = ?').run(iso(Date.now()), id);
   db.prepare('DELETE FROM signoff WHERE proposal_id IN (SELECT id FROM proposals WHERE run_id = ?)').run(id);
-  for (const t of ['labels', 'findings', 'proposals', 'followups']) db.prepare(`DELETE FROM ${t} WHERE run_id = ?`).run(id);
+  for (const t of ['labels', 'findings', 'proposals', 'followups', 'incident_lines']) db.prepare(`DELETE FROM ${t} WHERE run_id = ?`).run(id);
   db.prepare(`UPDATE steps SET status = 'pending', started_at = NULL, completed_at = NULL, output_json = NULL
-    WHERE run_id = ? AND status = 'completed' AND ord >= (SELECT ord FROM steps WHERE run_id = ? AND name = 'followup')`).run(id, id);
+    WHERE run_id = ? AND status = 'completed' AND ord >= (SELECT min(ord) FROM steps WHERE run_id = ? AND name IN ('followup', 'timeline'))`).run(id, id); // a retro's or an incident's first step that saves agent work
 }
 
 // Sends a signal to a process group; false when the group is gone.
@@ -176,21 +194,25 @@ function blockRunning(db, opts) {
   if (active) throw new UsageError(`run ${active.id} is still running`, withContext(`learn-from-mistakes-axi attach --run ${active.id}`, `follow it to the end, or abort --run ${active.id} to stop it`, opts));
 }
 
-export async function retro(cfg, opts) {
+export async function retro(cfg, opts, kind = null, items = []) {
   stateDir(cfg);
   const db = await openStore(cfg.state, true);
   const id = locked(db, () => {
     reconcile(db);
     blockRunning(db, opts);
     const now = iso(Date.now());
-    const { lastInsertRowid } = db.prepare(`INSERT INTO runs (status, pid, pid_started_at, created_at, updated_at) VALUES ('running', ?, ?, ?, ?)`)
-      .run(process.pid, startTime(process.pid), now, now); // this process owns the run until the worker takes it
+    const { lastInsertRowid } = db.prepare(`INSERT INTO runs (status, pid, pid_started_at, created_at, updated_at, kind) VALUES ('running', ?, ?, ?, ?, ?)`)
+      .run(process.pid, startTime(process.pid), now, now, kind); // this process owns the run until the worker takes it
     dropRunDir(cfg, lastInsertRowid);
-    Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(lastInsertRowid, name, ord));
+    Object.keys(stepsOf(db, lastInsertRowid)).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')`).run(lastInsertRowid, name, ord));
+    const record = db.prepare('INSERT INTO records (run_id, source, ts, ref, text, data, record_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const r of items) record.run(lastInsertRowid, 'incident', r.ts, r.ref, r.text, JSON.stringify(r.data), r.id);
     return lastInsertRowid;
   });
   return start(cfg, db, id, opts);
 }
+// `incident`: a run over the items the user named (src/incident.mjs), saved with it so the detached worker reads them.
+export const incident = (cfg, opts, items) => retro(cfg, opts, 'incident', items);
 
 // `rerun --resume` runs a run again from its first step that is not completed; a plain `rerun` starts a new
 // run with the current config, and returns the run it was started from.
@@ -206,9 +228,9 @@ export async function rerun(cfg, opts) {
     // A run saved before a step moved (report before apply, verify before propose) or was added (verify-fixes) takes today's
     // order, with each new step pending, and runs again from its first step that is not completed or that is not where it
     // was: a report written before apply is written again after it, and fixes proposed before verify are proposed again.
-    const was = db.prepare('SELECT name FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => s.name);
-    const moved = Object.keys(STEPS).findIndex((name, ord) => was[ord] !== name);
-    Object.keys(STEPS).forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')
+    const was = db.prepare('SELECT name FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => s.name), steps = Object.keys(stepsOf(db, id));
+    const moved = steps.findIndex((name, ord) => was[ord] !== name);
+    steps.forEach((name, ord) => db.prepare(`INSERT INTO steps (run_id, name, ord, status) VALUES (?, ?, ?, 'pending')
       ON CONFLICT (run_id, name) DO UPDATE SET ord = excluded.ord`).run(id, name, ord));
     const first = db.prepare(`SELECT min(ord) AS ord FROM steps WHERE run_id = ? AND status != 'completed'`).get(id).ord;
     const from = moved < 0 ? first : Math.min(first ?? moved, moved);
@@ -276,6 +298,7 @@ async function work(cfg, db, id) {
   const step = db.prepare('UPDATE steps SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, error = ?, output_json = ? WHERE run_id = ? AND name = ?');
   const running = db.prepare(`SELECT 1 FROM runs WHERE id = ? AND status = 'running'`);
   const [slow, slowMs = 60_000] = (process.env.LFM_TEST_SLOW_STEP ?? '').split(':'); // set only by tests: <step>[:<ms>]
+  const steps = stepsOf(db, id);
   mkdirSync(runDir(cfg, id), { recursive: true });
   let failed, error = null;
   for (const { name } of db.prepare(`SELECT name FROM steps WHERE run_id = ? AND status != 'completed' ORDER BY ord`).all(id)) {
@@ -286,7 +309,7 @@ async function work(cfg, db, id) {
     step.run('running', iso(Date.now()), null, null, null, id, name);
     try {
       if (slow === name) await sleep(Number(slowMs));
-      const out = JSON.stringify(await STEPS[name](cfg, db, id, log)); // before the completed time is read
+      const out = JSON.stringify(await steps[name](cfg, db, id, log)); // before the completed time is read
       step.run('completed', null, iso(Date.now()), null, out, id, name);
     } catch (e) {
       failed = e;
@@ -300,7 +323,7 @@ async function work(cfg, db, id) {
     const ended = db.prepare(`UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(failed ? 'failed' : 'completed', error, iso(Date.now()), id).changes;
     if (failed && ended) discard(db, id);
   });
-  if (!failed && cfg.signoff_report === 'on') await postReport(cfg, db, id); // after the run completed; a refusal is saved and shown, never a failed run
+  if (!failed && cfg.signoff_report === 'on' && steps === STEPS) await postReport(cfg, db, id); // after a retro completed; a refusal is saved and shown, never a failed run
   if (failed && !(failed instanceof UsageError)) throw failed; // a bug, not a run outcome: keep its stack
 }
 
@@ -429,6 +452,13 @@ function show(db, id) {
     row[m.window] = rounded(m.value); // the verdict uses the unrounded value
     if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: !m.target ? '' : m.value === null ? 'n/a' : meets(m.value, m.target) ? 'met' : 'missed' });
   }
+  if (stepsOf(db, id) === INCIDENT) return {
+    kind: 'incident', run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },
+    steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),
+    ...(out('check') && { fixes: db.prepare(`SELECT n, cause, kind, priority, due, coalesce(verdict, 'not judged') AS verdict FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n`).all(id).map((f) => ({ ...f })) }),
+    ...(report && { result: { summary: `root causes: ${db.prepare(`SELECT cause FROM findings WHERE run_id = ? AND verdict IS NOT 'refuted' ORDER BY id`).all(id).map((c) => c.cause).join(', ') || 'none'}; fixes: ${report.fixes}`,
+      report_txt: report.report_txt } }),
+  };
   return {
     run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),

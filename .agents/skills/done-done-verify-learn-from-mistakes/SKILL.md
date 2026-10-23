@@ -33,6 +33,7 @@ Harness: A shell: the run is a single node command whose exit code and the files
 - [Read the project's own context](features/project-context.md): Run the cli journey; the retro-context drive runs a retro over a made-up project with a rule, a secret file and a file over the cap (`scripts/verify-journeys.mjs`)
 - [Post the report to sign-off](features/post-the-report-to-sign-off.md): Run the cli journey; the signoff-report drive posts the run's whole report with the fake sign-off-axi, then retries it (`scripts/verify-journeys.mjs`)
 - [Keep a learned project skill](features/keep-a-learned-project-skill.md): Run the cli journey; the retro-skill drives run three retros in a plain git project whose accepted fix targets the project skill (`scripts/verify-journeys.mjs`)
+- [Go deep on one incident](features/go-deep-on-one-incident.md): Run the cli journey; the incident drives run one made-up failure (text, a notes file and a screenshot) in a plain project, then track its fixes with incident --status until a check passes (`scripts/verify-journeys.mjs`)
 
 ## Evidence
 

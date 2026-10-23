@@ -81,7 +81,7 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
     'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'scripts/frozen-five.mjs', 'skills/lfm-retro/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', 'test/frozen-five.test.mjs', 'test/fixtures/frozen-five/set.json', 'test/fixtures/frozen-five/baseline.json', 'test/fixtures/frozen-five/recorded-agent', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/incident.mjs', 'src/steps/incident.mjs', 'src/prompts/incident-timeline.md', 'src/prompts/incident-causes.md', 'src/prompts/incident-gates.md', 'src/prompts/incident-prevent.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'scripts/frozen-five.mjs', 'skills/lfm-retro/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', 'test/frozen-five.test.mjs', 'test/incident.test.mjs', 'test/fixtures/frozen-five/set.json', 'test/fixtures/frozen-five/baseline.json', 'test/fixtures/frozen-five/recorded-agent', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
 const staged = join(scratch, 'project');
@@ -268,6 +268,35 @@ try {
   assert.match(contextReport, /^- The project context did not read 2 files: 1 held a secret, 1 was too large\./m);
   assert.match(contextReport, /^- Current rule:\n {2}Run the tests before a PR\.\n {3}Evidence: AGENTS\.md:3$/m);
   save('report-context.txt', contextReport);
+  // Incident mode: one made-up failure in a plain project (its words, a notes file and a screenshot), one report, then its
+  // fixes tracked until a check passes.
+  const inc = join(scratch, 'incident');
+  mkdirSync(inc);
+  writeFileSync(join(inc, '.learn-from-mistakes.yaml'), stringify({ name: 'incident', sources: { log: { type: 'markdown-log', path: 'defects.md' } }, ...workers }));
+  writeFileSync(join(inc, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');
+  writeFileSync(join(inc, 'notes.md'), 'Umer saw the shipped board use the old layout, not the approved prototype.\n');
+  writeFileSync(join(inc, 'board.png'), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0, 0, 4, 0, 0, 0, 3, 0])]));
+  const checkBin = join(scratch, 'check-tools'); // the shell and grep the rule fix's check command runs
+  mkdirSync(checkBin);
+  for (const tool of ['sh', 'grep']) symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, tool)).find(existsSync), join(checkBin, tool));
+  const incident = (name, args) => run(name, process.execPath, [cli, ...args, '--dir', inc], 0, { PATH: `${agentBin}${delimiter}${checkBin}` });
+  incident('incident', ['incident', 'Umer approved the board prototype, but the shipped board differed from it.', '--evidence', join(inc, 'notes.md'), '--evidence', join(inc, 'board.png'), '--foreground', '--json']);
+  const incidentRun = JSON.parse(readFileSync(join(evidence, 'incident.stdout'), 'utf8'));
+  assert.equal(incidentRun.kind, 'incident');
+  assert.ok(incidentRun.run.status === 'completed' && incidentRun.fixes.length === 2, 'the incident run did not keep its two fixes');
+  const incidentReport = readFileSync(incidentRun.result.report_txt, 'utf8');
+  for (const section of ['1. Short answer', '2. Timeline', '3. Why it happened', '4. Why no check caught it', '5. How to avoid it now', '6. Fixes that stop it coming back', '7. Not checked', '8. Next steps'])
+    assert.ok(incidentReport.includes(`\n${section}\n`), `the incident report has no "${section}" section`);
+  assert.match(incidentReport, /^Fix 1, P0, for spec-not-pinned:\n- Owner: maintainer\. Due: \d{4}-\d{2}-\d{2}\.$/m);
+  assert.match(incidentReport, /^- The agents cannot see 1 image\./m);
+  save('report-incident.txt', incidentReport);
+  incident('incident-status-open', ['incident', '--status', '--json']);
+  assert.equal(JSON.parse(readFileSync(join(evidence, 'incident-status-open.stdout'), 'utf8')).open, 2);
+  incident('incident-record', ['change', 'applied', '--proposal', `${incidentRun.run.id}:2`, '--ref', 'abc1234', '--json']);
+  writeFileSync(join(inc, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n- Name the approved prototype in the task brief.\n'); // the rule fix, made
+  incident('incident-status-done', ['incident', '--status', '--json']);
+  const done = JSON.parse(readFileSync(join(evidence, 'incident-status-done.stdout'), 'utf8'));
+  assert.deepEqual([done.open, done.done, done.fixes.map((f) => f.fix)], [1, 1, [`${incidentRun.run.id}:1`]], 'the rule fix whose check passed is still open');
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });
@@ -448,7 +477,7 @@ try {
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
       'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/check.mjs', 'src/signoff.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
+      'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/incident.mjs', 'src/steps/incident.mjs', 'src/prompts/incident-timeline.md', 'src/prompts/incident-causes.md', 'src/prompts/incident-gates.md', 'src/prompts/incident-prevent.md', 'src/check.mjs', 'src/signoff.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/lfm-retro/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
     const prefix = join(scratch, 'prefix');
