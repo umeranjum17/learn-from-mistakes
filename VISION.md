@@ -56,4 +56,4 @@ Together they connect through small written contracts: one tool reads what anoth
 ## Milestones
 
 - **0.5.0, shipped 22 Oct 2026:** blameless 5-whys with trends, slowest waits, the `lfm-retro` skill, new sources, an honest "Not checked" list, and fix tracking with check commands.
-- **Next: incident mode.** One failure in, a deep root-cause plan out, and its fixes tracked until they are done. The code is merged (#183) and its docs are in review (#184). Its first real use is the fleet approval audit.
+- **Next: incident mode.** One failure in, a deep root-cause plan out, and its fixes tracked until they are done. The code (#183) and its docs (#184) are merged. Its first real use is the fleet approval audit.
