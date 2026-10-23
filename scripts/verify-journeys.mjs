@@ -272,11 +272,14 @@ try {
   // fixes tracked until a check passes.
   const inc = join(scratch, 'incident');
   mkdirSync(inc);
-  writeFileSync(join(inc, '.learn-from-mistakes.yaml'), 'name: incident\nsources: { log: { type: markdown-log, path: defects.md } }\n');
+  writeFileSync(join(inc, '.learn-from-mistakes.yaml'), stringify({ name: 'incident', sources: { log: { type: 'markdown-log', path: 'defects.md' } }, ...workers }));
   writeFileSync(join(inc, 'AGENTS.md'), '# Rules\n\n- Run the tests before a PR.\n');
   writeFileSync(join(inc, 'notes.md'), 'Umer saw the shipped board use the old layout, not the approved prototype.\n');
   writeFileSync(join(inc, 'board.png'), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0, 0, 4, 0, 0, 0, 3, 0])]));
-  const incident = (name, args) => run(name, process.execPath, [cli, ...args, '--dir', inc], 0, lab);
+  const checkBin = join(scratch, 'check-tools'); // the shell and grep the rule fix's check command runs
+  mkdirSync(checkBin);
+  for (const tool of ['sh', 'grep']) symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, tool)).find(existsSync), join(checkBin, tool));
+  const incident = (name, args) => run(name, process.execPath, [cli, ...args, '--dir', inc], 0, { PATH: `${agentBin}${delimiter}${checkBin}` });
   incident('incident', ['incident', 'Umer approved the board prototype, but the shipped board differed from it.', '--evidence', join(inc, 'notes.md'), '--evidence', join(inc, 'board.png'), '--foreground', '--json']);
   const incidentRun = JSON.parse(readFileSync(join(evidence, 'incident.stdout'), 'utf8'));
   assert.equal(incidentRun.kind, 'incident');
