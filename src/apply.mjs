@@ -235,7 +235,7 @@ export async function autoApply(cfg, db, id, log) {
 // The run apply works on: --run, else the last run with kept fixes. The one lookup apply and the CLI's ask-ahead check
 // share; a named run that is not saved, and no run with any kept fix, throw as apply reports them.
 export function applyRun(db, opts) {
-  const run = db && (opts.run ? Number(opts.run) : db.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL').get().id);
+  const run = db && (opts.run ? Number(opts.run) : db.prepare('SELECT max(run_id) AS id FROM proposals WHERE n IS NOT NULL AND run_id IN (SELECT id FROM runs WHERE kind IS NULL)').get().id); // a retro's, never an incident's
   if (db && opts.run && !db.prepare('SELECT 1 FROM runs WHERE id = ?').get(run)) throw new UsageError(`no run ${run}`, withContext('learn-from-mistakes-axi runs', 'the saved run ids', opts));
   if (run == null) throw new EmptyError('no retro run has kept fixes', withContext('learn-from-mistakes-axi retro --wait 15m', 'a run that proposes fixes', opts));
   return run;

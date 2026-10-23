@@ -78,6 +78,14 @@ const MIGRATIONS = [
   // The current project rule a fix replaces or extends, and the file that rule is in: the context the run read before
   // it proposed the fix.
   'ALTER TABLE proposals ADD COLUMN current_rule TEXT; ALTER TABLE proposals ADD COLUMN rule_ref TEXT',
+  // An incident run (kind 'incident'; NULL is a retro) goes deep on one failure the user named. Its timeline and its
+  // gates (each check that did not catch it) are its own lines. An incident fix has the regression test that would have
+  // failed on the incident, a priority (P0 to P3) and a due date, and stays open until its check command passes (passed_at).
+  `ALTER TABLE runs ADD COLUMN kind TEXT;
+    ALTER TABLE proposals ADD COLUMN test TEXT; ALTER TABLE proposals ADD COLUMN priority TEXT; ALTER TABLE proposals ADD COLUMN due TEXT;
+    ALTER TABLE proposals ADD COLUMN passed_at TEXT;
+    CREATE TABLE IF NOT EXISTS incident_lines (run_id INTEGER NOT NULL REFERENCES runs(id), step TEXT NOT NULL, n INTEGER NOT NULL,
+      head TEXT NOT NULL, text TEXT NOT NULL, refs_json TEXT NOT NULL, PRIMARY KEY (run_id, step, n))`,
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

@@ -37,7 +37,7 @@ function peer(bin, args, cfg, input, noAnswer = false) {
 // The run's kept fixes as sign-off messages, and the applied lines of the fixes its apply step applied: those are never asked.
 function messages(cfg, db, opts) {
   const run = opts.run ? db.prepare('SELECT id, status FROM runs WHERE id = ?').get(Number(opts.run))
-    : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get();
+    : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' AND kind IS NULL ORDER BY id DESC LIMIT 1").get(); // a retro, never an incident run
   if (run?.status !== 'completed') throw new UsageError('signoff post needs a completed run', AGAIN);
   const applied = appliedFixes(db, run.id), done = [...applied.values()].map((a) => appliedLine(run.id, a));
   const fixes = db.prepare('SELECT * FROM proposals WHERE run_id = ? AND n IS NOT NULL ORDER BY n').all(run.id).filter((f) => !applied.has(f.n));
@@ -136,7 +136,7 @@ export async function signoff(action, cfg, opts) {
     let reportHint = null;
     if (action === 'report') {
       const run = opts.run ? db.prepare('SELECT id, status FROM runs WHERE id = ?').get(Number(opts.run))
-        : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get();
+        : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' AND kind IS NULL ORDER BY id DESC LIMIT 1").get(); // a retro, never an incident run
       if (run?.status !== 'completed') throw new UsageError('signoff report needs a completed run', AGAIN);
       const { key, state, why } = await postReport(cfg, db, run.id);
       console.log(`${state}: ${key}${why ? ` (${why})` : ''}`);

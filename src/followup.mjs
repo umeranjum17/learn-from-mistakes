@@ -18,7 +18,8 @@
 //   checked  the judge's verdict on the proposal the change came from (none for a change recorded without one)
 //   applied  yes for a recorded change; no for a fix the user accepted that no change records yet (a row of its own)
 //   shipped  yes once the fix is live (a change recorded by hand is live from its recorded time), else no
-//   worked   yes for keep, not yet for no-data, no for fix, rollback and delete
+//   worked   yes for keep, not yet for no-data, no for fix, rollback and delete; an incident fix's is yes once its check
+//            command passed (`incident --status` runs it), else not yet
 // and the check command recorded with the change, the test or measurement that shows whether it worked.
 // "The last retro" is this change's row in the latest earlier run that measured it whose read time is at least
 // followup.min_days before this run's, so a rerun over the same data is not a second retro (a run that failed or was
@@ -71,10 +72,11 @@ export function followup(cfg, db, id, window, log) {
   const last = db.prepare(`SELECT f.before, f.after, f.tripwire, s.output_json FROM followups f JOIN steps s ON s.run_id = f.run_id AND s.name = 'collect'
     WHERE f.change_id = ? AND f.run_id < ? ORDER BY f.run_id DESC`);
   const add = db.prepare('INSERT INTO followups (run_id, change_id, metric, before, after, tripwire, verdict, reason, stages) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  const judged = db.prepare('SELECT verdict FROM proposals WHERE run_id = ? AND n = ?');
+  const judged = db.prepare('SELECT p.verdict, p.passed_at, r.kind FROM proposals p JOIN runs r ON r.id = p.run_id WHERE p.run_id = ? AND p.n = ?');
   const stages = (proposal, applied, shipped, verdict, check) => {
     const p = proposal && judged.get(...proposal.split(':').map(Number));
-    return JSON.stringify({ checked: p ? p.verdict ?? 'not judged' : 'none', applied, shipped, worked: WORKED[verdict] ?? 'no', check });
+    const worked = p?.kind === 'incident' ? (p.passed_at ? 'yes' : 'not yet') : WORKED[verdict] ?? 'no';
+    return JSON.stringify({ checked: p ? p.verdict ?? 'not judged' : 'none', applied, shipped, worked, check });
   };
   const { entries } = readLedger(join(cfg.state, 'changes.jsonl'));
   const rows = entries.map((c) => { // a bad ledger line is skipped: it gets no row
@@ -102,10 +104,11 @@ export function followup(cfg, db, id, window, log) {
     const result = verdict(row, kind, prev && enough(prev, prev.readTime, prev.readTime) ? prev : undefined);
     return { ...row, verdict: result, stages: state('yes', result) };
   });
-  // A fix the user accepted (answered Apply) that no change records: no number to measure, but a row, so it is not forgotten.
+  // A fix the user accepted (answered Apply), or an incident's fix (it has an owner and a due date), that no change
+  // records: no number to measure, but a row, so it is not forgotten.
   const recorded = new Set(entries.map(proposalOf));
-  for (const p of db.prepare(`SELECT p.run_id, p.n, p.cause, p.metric, p.tripwire, p.check_cmd FROM proposals p JOIN signoff s ON s.proposal_id = p.id
-    WHERE s.answer = 'apply' AND p.n IS NOT NULL AND p.run_id < ? ORDER BY p.run_id, p.n`).all(id)) {
+  for (const p of db.prepare(`SELECT p.run_id, p.n, p.cause, p.metric, p.tripwire, p.check_cmd FROM proposals p LEFT JOIN signoff s ON s.proposal_id = p.id JOIN runs r ON r.id = p.run_id
+    WHERE (s.answer = 'apply' OR (r.kind = 'incident' AND r.status = 'completed')) AND p.n IS NOT NULL AND p.run_id < ? ORDER BY p.run_id, p.n`).all(id)) {
     const at = `${p.run_id}:${p.n}`;
     if (!recorded.has(at)) rows.push({ change_id: at, metric: p.metric ?? `cause_count:${p.cause}`, before: null, after: null, tripwire: p.tripwire, verdict: 'no-data', reason: NOT_RECORDED, stages: stages(at, 'no', 'no', 'no-data', p.check_cmd ?? '') });
   }
