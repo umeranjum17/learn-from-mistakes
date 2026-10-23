@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const file = new URL('../skills/lfm-retro/SKILL.md', import.meta.url);
 const bin = pkg.name, npx = `npx -y ${bin}`;
-const description = `Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the ${bin} CLI. Use when the user asks what keeps going wrong, wants a retro, or wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills.`;
+const description = `Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the ${bin} CLI. Use when the user asks what keeps going wrong, wants a retro, wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills, or wants to go deep on one failure (an incident).`;
 
 const skill = `---
 name: lfm-retro
@@ -32,6 +32,10 @@ You do not need it installed: run \`${npx} <command>\`. If its output shows a co
 4. Read the run's \`report.txt\` (\`${npx} report\` prints its path as \`report_txt\`) and tell the user what it says in plain words.
 5. If sign-off is installed and signoff is not off, use sign-off's skill on the run's decisions (the whole report goes there only with signoff_report: on, or \`signoff report\`); else ask the user the questions in section 7 of \`report.txt\`.
 6. Once the user has made a change, record it with \`${npx} change applied --proposal <run>:<n> --ref <git sha>\`; it records the fix's check command (\`--check\` sets another), and the next retro checks whether it worked.
+
+## One failure: an incident
+
+When the user wants to go deep on one failure, not on what repeats, run \`${npx} incident "<what failed>" --evidence <path> --wait 8m\` instead of the retro. \`<what failed>\` is the user's own words, a file, or a GitHub PR or issue link; repeat \`--evidence\` for each file, screenshot or link the user names. The run reads only those and the project context. Read its \`report.txt\` (the \`next:\` line names it) and tell the user, in order: the timeline, each root cause with its why chain and cost, why no check caught it, how to avoid it now, and each fix with its owner, priority and due date. Then say what section 7 did not check: the agents cannot see a screenshot, so ask the user to describe it in text. Once the user makes a fix, record it with \`${npx} change applied --proposal <run>:<n> --ref <git sha>\`; \`${npx} incident --status\` then runs the check of each shipped fix and lists the fixes still open. A fix stays open until its check passes.
 
 ## The retro method
 

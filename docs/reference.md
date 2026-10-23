@@ -108,7 +108,7 @@ Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`
 The CLI has no per-retro fee, but the agents or BYOKit use **your** subscription or paid provider. Cost depends on your chosen models, record volume, retries and plan. No fixed price or hosted-model quality is promised.
 
 - `init`, ordinary `doctor`, `status` and `report` make no model calls. Login/version checks may run an agent's own status command.
-- `retro`, `rerun` and `apply` can call models. `agents --test <runner>` makes a live probe; `doctor --live` probes both roles. These cost tokens.
+- `retro`, `incident`, `rerun` and `apply` can call models; `incident --status` makes no model call. `agents --test <runner>` makes a live probe; `doctor --live` probes both roles. These cost tokens.
 - Defaults: `agent_timeout: "20m"` per attempt; `caps: { invocations: 14, bundle_chars: 60000 }`. `bundle_chars` is the size of one part of the bundle, not a cut-off: a bundle over it is written in parts and drops no item. The worker reads one part per call, the judge reads the parts that hold the items a claim cites, and each call counts against `invocations`, so a large bundle needs a higher `invocations`. A runner call can retry transient failures, up to three attempts. These are operational limits, **not a currency budget**.
 - Defaults: `context: { max_files: 12, max_chars: 20000 }`. The context is the project's own files the retro reads before it proposes fixes: `docs` (default `README.md`, `AGENTS.md`, `CLAUDE.md`), each `SKILL.md` under `skills` (default `.agents/skills` and `skills`), and the code the incident records point at. The run reads at most `max_files` files and `max_chars` characters, only inside the project folder, and never a secret file (a `.env`, a key). `context: off` keeps every project file local. A file over the cap is not read, and the report names it under "Not checked" with the reason.
 - Reduce the configured sources or `window` (default `7d`) to bound the work. Inspect the report's not-checked section for capped or unread evidence.
@@ -127,6 +127,41 @@ learn-from-mistakes-axi rerun --resume --wait 8m
 Use the run id from your output, not necessarily `1`. `rerun --resume` continues a failed, cancelled or interrupted run at its first incomplete step. Such a run kept no verdict, label, finding or fix, so the resume runs again from its `followup` step. A run saved by an earlier version whose steps ran in another order takes today's order (`analyse`, `verify`, `propose`, `verify-fixes`, `check`) and runs again from its first step that moved. A run whose done-done records keep ids from before the salt fails at its bundle step, because its bundle would name the app; its `next:` line starts a fresh `retro`. Plain `rerun` starts a new run with current config. `retro --foreground` runs in the calling process instead of detaching. Never combine `--foreground` with `--wait`.
 
 `status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently or to run without one.
+
+## Go deep on one incident
+
+A retro looks across many records for the causes that repeat. An incident run goes deep on one failure you name, apart from the retro. It needs the same setup: a project config and a ready worker and judge.
+
+```sh
+learn-from-mistakes-axi incident "<what failed>" [--evidence <path>]... --wait 8m
+learn-from-mistakes-axi incident --status
+```
+
+**What it reads.** The first argument is the failure: your own words, a file, a screenshot, or a GitHub PR or issue link. `#<n>` names a PR or issue of the project's own repo. Repeat `--evidence` for each more file, screenshot or link; it must name a file that exists or a GitHub link. The run reads only these items and the project context a retro reads (see `Cost and limits`). It never reads the configured sources.
+
+- A text file is read up to 64 KiB. Each item the agents read is redacted and cut at 8,000 characters; the report names each cut item.
+- The agents read text only. A screenshot (png, jpeg, gif or webp) is kept as its kind and size, and the report asks you to describe it in text. Any other binary file is refused.
+- A PR or issue is read through your own `gh` login: its title, body and times, then its first 30 comments and reviews with text. Authors' names are never read. Any other link is refused: save the page as a file, or paste its text.
+- One incident reads at most 40 items. A file or link that cannot be read stops the command before a run starts.
+
+**What it does.** The steps are `read`, `context`, `timeline`, `causes`, `verify`, `gates`, `prevent`, `verify-fixes`, `check` and `report`; `logs --step <name>` shows each one. The worker writes the timeline (at most 15 entries), 1 to 3 root causes (each a 5-whys chain with its cost), and each check that did not catch the failure (at most 8). The judge checks each cause. The worker then gives 1 to 3 lines of advice for now and up to 5 fixes, and the judge checks each fix. Every entry must cite the items it rests on, in the same plain-language and blameless rules as a retro. A bad answer goes back to the worker once.
+
+A fix must close a root cause the judge did not refute. It names its kind (`code` or `rule`), the owning tool (the repository, file or tool that changes), the change, an owner (a role, never a person's name), a priority (`P0` now, `P1` this week, `P2` this month, `P3` later), a due date (`YYYY-MM-DD`, on or after today) and a check command (one line, at most 200 characters) that passes once the fix is in. A code fix also names the regression test that would have failed on this incident. A fix that breaks a rule, or that the judge refuted, gets no number; the report names it and the rule it broke. The kept fixes are numbered P0 first.
+
+**The report.** The run writes `.lfm/runs/<id>/report.txt` in 8 sections: short answer, timeline, why it happened, why no check caught it, how to avoid it now, fixes that stop it coming back, not checked and next steps. The command's `next:` line names the file; `status --run <id>` prints it as `report_txt`. A return with `running` is not completion: follow it with `attach` as for a retro. Check **Not checked** before you act: it names unseen screenshots, cut items, left-out comments, items no entry cites, refused fixes and project files the run did not read.
+
+**Track the fixes.** Record a fix once you make it:
+
+```sh
+learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <commit>
+learn-from-mistakes-axi incident --status
+```
+
+`change applied` records the fix's own cause (your config need not list it), its kind and its check command; `--check <command>` sets another. Read the check before you record it: `incident --status` runs it. Each fix goes from proposed to applied (a change records it) to shipped (its commit is on the default branch; a ref that git cannot resolve, or a project with no git, counts as shipped) to done. For each shipped fix not done yet, `incident --status` runs its check with `sh -c` in the project folder, with a 10-minute limit, and appends the output to `.lfm/checks/<run>-<n>.log`. A pass marks the fix done and is saved; a fail keeps it open. A fix whose check is the retro command is never run. The command lists the open fixes, each with its owner, priority, due date and state, and counts the done ones.
+
+**With the retro.** `report`, `apply`, `signoff` and the bare command never use an incident run as the last retro. A later retro's section 3 follows each incident fix: worked is yes once its check passed, else not yet. A completed incident's fix that no change records gets its own row there, so it is not forgotten. `rerun --resume --run <id>` finishes a failed incident run; plain `rerun` starts a new retro, not an incident.
+
+The bundle, the project context and your own words go to the worker and judge providers, after redaction, as for a retro. Do not name files or links you cannot share. No Firstmate or sign-off install is needed.
 
 ## Sources, state and privacy
 

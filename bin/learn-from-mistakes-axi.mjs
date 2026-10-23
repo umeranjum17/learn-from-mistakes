@@ -536,6 +536,13 @@ sources, AGENTS.md, CLAUDE.md or skills.
    It records the fix's check command (--check sets another); a fix the user accepted that no
    change records shows in section 3 as not applied.
 
+To go deep on one failure instead of what repeats, run learn-from-mistakes-axi incident
+"<what failed>" --evidence <path> --wait 8m: the user's words, a file, or a GitHub PR or issue
+link, plus each file, screenshot or link the user names. Read the report.txt its next: line
+names and tell the user each section in plain words. Record a fix the user made with change
+applied --proposal <run>:<n> --ref <git sha>; incident --status runs each shipped fix's check
+and lists the fixes still open.
+
 The user chooses the worker and the judge (agent:, judge_agent:, agent_config.<agent>.model, and
 judge_model: when the judge should run a stronger model than that);
 the tool never picks one. Both always run: there is no mode without them. A run whose worker or
