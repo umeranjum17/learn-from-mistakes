@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { decode } from '@toon-format/toon';
 import { saltedId } from '../src/sources/markdown-log.mjs';
 // The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
@@ -215,8 +216,31 @@ test('help, guide and version work without a project file', () => {
   assert.match(bare.stderr, /next: learn-from-mistakes-axi init/);
   const v = raw('--version');
   assert.equal(v.status, 0);
-  assert.match(v.stdout.trim(), /^\d+\.\d+\.\d+$/);
+  assert.match(v.stdout.trim(), /^\d+\.\d+\.\d+(?:-[\w.]+)?(?: \(pre-release(?:, from source)?\))?$/);
+  assert.equal(h.stdout.split('\n')[0], `learn-from-mistakes-axi ${v.stdout.trim()}`); // the help header names the running version
   assert.equal(raw('frobnicate').status, 2); // an unknown command is still a usage error
+});
+
+// The version a user sees says what is running: an npm install prints the plain version, a prerelease
+// says so, and a git checkout says it runs from source. The real bin runs from a staged copy of the package.
+test('--version and the help header say whether a build is a release, a prerelease or from source', () => {
+  const pkg = mkdtempSync(join(tmpdir(), 'lfm-pkg-'));
+  after(() => rmSync(pkg, { recursive: true }));
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  for (const dir of ['bin', 'src', 'skills']) cpSync(join(repo, dir), join(pkg, dir), { recursive: true });
+  symlinkSync(join(repo, 'node_modules'), join(pkg, 'node_modules'));
+  const shown = (version, git) => {
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')), version }));
+    if (git) mkdirSync(join(pkg, '.git'), { recursive: true });
+    const [v, h] = ['--version', '--help'].map((a) => spawnSync(process.execPath, [join(pkg, 'bin', 'learn-from-mistakes-axi.mjs'), a], { encoding: 'utf8', cwd: pkg }));
+    assert.equal(v.status, 0, v.stderr);
+    assert.equal(h.stdout.split('\n')[0], `learn-from-mistakes-axi ${v.stdout.trim()}`);
+    return v.stdout;
+  };
+  assert.equal(shown('0.7.0'), '0.7.0\n');
+  assert.equal(shown('0.7.0-dev'), '0.7.0-dev (pre-release)\n');
+  assert.equal(shown('0.7.0', true), '0.7.0 (pre-release, from source)\n');
+  assert.equal(shown('0.7.0-dev', true), '0.7.0-dev (pre-release, from source)\n');
 });
 
 test('runs that never read a store print no ExperimentalWarning', () => {

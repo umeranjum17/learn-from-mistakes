@@ -113,6 +113,12 @@ try {
   const lab = { PATH: agentBin };
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
   run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
+  // The running version: this checkout says it is a pre-release from source, in --version and the help header.
+  const version = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version;
+  run('version', process.execPath, [cli, '--version']);
+  run('help', process.execPath, [cli, '--help']);
+  assert.equal(readFileSync(join(evidence, 'version.stdout'), 'utf8'), `${version} (pre-release, from source)\n`, 'a checkout does not say it runs from source');
+  assert.equal(readFileSync(join(evidence, 'help.stdout'), 'utf8').split('\n')[0], `learn-from-mistakes-axi ${version} (pre-release, from source)`, 'the help header does not name the version');
   // The frozen quality test: five made-up mistakes, scored with and without Firstmate sources. It drives the real
   // retro with a recorded worker and judge, so it calls no model and needs no key or network.
   run('frozen-five', process.execPath, [join(repo, 'scripts', 'frozen-five.mjs'), '--json'], 0);
@@ -530,6 +536,8 @@ try {
     assert.equal(JSON.parse(readFileSync(join(evidence, 'readme-slow-status.stdout'), 'utf8')).run.status, 'completed');
     run('packed-version', installed, ['--version']);
     run('packed-help', installed, ['--help']);
+    assert.equal(readFileSync(join(evidence, 'packed-version.stdout'), 'utf8'), `${version}\n`, 'the npm install does not print the plain version');
+    assert.equal(readFileSync(join(evidence, 'packed-help.stdout'), 'utf8').split('\n')[0], `learn-from-mistakes-axi ${version}`, 'the npm install help header does not name the version');
     run('packed-guide', installed, ['guide']);
     run('packed-agents', installed, ['agents', '--json'], 2); // no agent set: the packed bin also says to ask the user
     run('packed-report', installed, ['report', '--json', '--dir', staged]);

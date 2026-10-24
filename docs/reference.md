@@ -226,7 +226,7 @@ To track a change you made yourself, use `change applied --cause <configured-cau
 | `2` | Bad command/config, `abort` with nothing running, missing agent or model choice without a terminal, busy state, or another active retro. Follow the named correction; never choose on the user's behalf. |
 | `3` | No saved run to inspect, no completed retro to report, or no run with kept fixes to `apply`. Start or finish a retro first. |
 
-Use `--json` for structured output where supported; default output is compact TOON. A bare `learn-from-mistakes-axi` shows the latest run's status. `report` selects the latest completed retro, which may be older than the latest failed/running run. Check its `run` id. `--dir <project>` targets another project without changing directories. `guide` gives the current calling-agent procedure; `--help` is the installed version's command reference.
+Use `--json` for structured output where supported; default output is compact TOON. A bare `learn-from-mistakes-axi` shows the latest run's status. `report` selects the latest completed retro, which may be older than the latest failed/running run. Check its `run` id. `--dir <project>` targets another project without changing directories. `guide` gives the current calling-agent procedure; `--help` is the installed version's command reference, and its first line names that version. `--version` prints the version alone: the plain version from an npm install, `(pre-release)` after one with a suffix such as `0.7.0-dev`, and `(pre-release, from source)` from a git checkout. It reads only the package's own files, never the network.
 
 ## Development
 

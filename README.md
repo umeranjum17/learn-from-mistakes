@@ -65,7 +65,7 @@ Once you make a fix, record it with `change applied --proposal <run>:<n> --ref <
 learn-from-mistakes-axi doctor
 ```
 
-Follow each `fix:` line, then run it again. This checks readiness without calling a model. If you have no defect log or supported records yet, [configure a source](docs/reference.md#no-terminal-or-no-agentmodel-selected) first. In a non-interactive shell, provide your own agent and model choices through the [setup flags](docs/reference.md#no-terminal-or-no-agentmodel-selected).
+Follow each `fix:` line, then run it again. This checks readiness without calling a model. `learn-from-mistakes-axi --version` and the first line of `--help` show the version that runs: `0.6.0` from npm, `0.6.0 (pre-release, from source)` from a git checkout. If you have no defect log or supported records yet, [configure a source](docs/reference.md#no-terminal-or-no-agentmodel-selected) first. In a non-interactive shell, provide your own agent and model choices through the [setup flags](docs/reference.md#no-terminal-or-no-agentmodel-selected).
 
 **Privacy:** excerpts are sent to the providers you choose, after redaction. Redaction is not a guarantee. Inspect sources first; do not use records you cannot share. [Privacy and excerpt controls](docs/reference.md#sources-state-and-privacy).
 
