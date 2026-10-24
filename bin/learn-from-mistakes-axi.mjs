@@ -27,7 +27,13 @@ export class UsageError extends Error {
 }
 export class InputError extends UsageError { code = 1; } // a line in a file the run reads is bad, not the command
 export class EmptyError extends UsageError { code = 3; } // nothing to read
-const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+// The running version. A prerelease suffix (0.7.0-dev) or a git checkout (the package root holds .git) says
+// pre-release, a checkout also from source; an npm install has no .git, so it prints the plain version. No network.
+const VERSION = (() => {
+  const v = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  const source = existsSync(fileURLToPath(new URL('../.git', import.meta.url)));
+  return source || v.includes('-') ? `${v} (pre-release${source ? ', from source' : ''})` : v;
+})();
 
 export function readText(file, name = file, next = undefined) {
   try { return readFileSync(file, 'utf8'); } catch (e) { throw new UsageError(`${name}: cannot read (${e.code})`, next); }
@@ -488,14 +494,15 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
          the default text format (report: lfm-report.v2; changes: lfm-changes.v1)
   --full (report)     add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
-  -v, --version       show the version
+  -v, --version       show the version; a prerelease or a git checkout adds (pre-release, ...)
 the report --json output is privacy-bounded: identifiers, counts, metrics, follow-ups, fixes and
   each finding's judge verdict word (confirmed, weakened, refuted or not judged), plus the run's
   report.txt path; the default and --full reports also print one \`finding:\` line per finding with
   its counts and verdict, never the agent's summary (it is in report.txt only), record text,
   label/proposal prose or change what/why;
 \`changes\` prints only the what/why you wrote with \`change applied\``;
-const HELP = `${USAGE}
+const HELP = `learn-from-mistakes-axi ${VERSION}
+${USAGE}
 
 next: learn-from-mistakes-axi init           # write the config for the project you are in
 next: learn-from-mistakes-axi doctor         # what is wrong, and the fix for each
