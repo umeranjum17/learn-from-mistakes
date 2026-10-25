@@ -571,12 +571,11 @@ try {
     target: { version: JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version },
     start: 'a staged copy of the examples project, throwaway HOME, fake agent on PATH',
     steps: [
-      'Set ACCOUNT_PICKER to the stub picker and run agents --test claude after account A hits a quota',
-      'Run agents --test claude with a credits selection',
-      'Run agents --test claude with no picker',
-      'Run a retro on the synthetic examples and read the report',
+      'Set ACCOUNT_PICKER to the stub picker and run an agents probe after a quota or rate limit on account A',
+      'Refuse a usage-credits selection and rotate the same call to the next plan account',
+      'Run the same agents probe with no picker, then run a retro on the synthetic examples',
     ],
-    result: 'the probe answers on account B; a credits selection is refused; unset picker keeps today\'s shape; the retro completes',
+    result: 'an agents probe can rotate to the next plan account when a call hits a quota or rate limit, then to another supported route, without using usage credits',
   });
   passed = true;
 } finally {
