@@ -1,79 +1,75 @@
-<h2><img src="docs/logo.svg" width="24" height="24" alt=""> learn-from-mistakes</h2>
+<div align="center">
 
-**A CLI that finds repeated coding-agent mistakes and proposes evidence-backed fixes.**
+<h1><img src="docs/logo.svg" width="48" height="48" alt=""><br>learn-from-mistakes</h1>
 
-For developers tired of fixing the same agent mistakes.
+**Find repeated coding-agent mistakes. Get evidence-backed fixes.**
 
-### Start in your project
-
-<p><code>npm install -g learn-from-mistakes-axi</code><br>
-<code>learn-from-mistakes-axi init</code><br>
-<code>learn-from-mistakes-axi retro --wait</code></p>
-
-Needs **Node 22.13+**, project records and signed-in agents. Review the sources `init` writes before the first run.
+A CLI for developers tired of correcting the same mistakes.
 
 <picture>
-  <source media="(max-width: 600px)" srcset="docs/media/retro-demo-mobile.webp">
-  <img src="docs/media/retro-demo.webp" width="680" alt="Real saved report excerpt: test-failed repeated six times over four days, with its cost, why chain and root cause, then a kept fix that makes the merge gate wait for the integration check. The judge confirmed it.">
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/media/retro-hero-phone-dark.webp">
+  <source media="(max-width: 600px)" srcset="docs/media/retro-hero-phone-light.webp">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/retro-hero-dark.webp">
+  <img src="docs/media/retro-hero-light.webp" width="760" alt="Real CLI report excerpt from six synthetic records: five changes needed 110 minutes of rework because the merge checklist did not require the integration check.">
 </picture>
 
-*Real report excerpt, not a mock-up. Six made-up defect records, read by Claude Code with Sonnet 5.5 as worker and judge. The report kept one fix and the judge confirmed it. [Demo inputs and capture notes](docs/demo.md).*
+[Quick start](#quick-start) · [Docs](docs/reference.md) · [Demo](docs/demo.md) · [Vision](VISION.md)
 
-## From repeated failures to a checked report
+[![npm version](https://img.shields.io/npm/v/learn-from-mistakes-axi)](https://www.npmjs.com/package/learn-from-mistakes-axi) [![Node 22.13+](https://img.shields.io/badge/node-%E2%89%A522.13-43853d)](https://nodejs.org/) [![MIT license](https://img.shields.io/badge/license-MIT-5358cf)](LICENSE)
 
-1. **Read the records.** The worker reads your configured sources and finds repeated causes. Unread records stay unlabelled.
-2. **Check the claims.** A judge checks each finding, then each proposed fix. Both roles always run; a failed role fails the retro.
-3. **Keep the evidence.** The report names the records behind each finding, the fixes that passed and what was not checked. Before it proposes fixes the retro reads a bounded set of your project's own files, and the report names the project rule each fix replaces or extends. You decide what to change. **Your project is not changed by default.**
+</div>
 
-`--wait` waits up to eight minutes. If the result is still `running`, let it finish:
+## Quick start
 
-```sh
-learn-from-mistakes-axi attach
-```
-
-After `completed`, find the saved report:
+Run these in your project, with **Node 22.13+** and your agent CLIs installed and signed in:
 
 ```sh
-learn-from-mistakes-axi report
+npm i -g learn-from-mistakes-axi
+learn-from-mistakes-axi init
+learn-from-mistakes-axi retro --wait
 ```
 
-Open the file named by `report_txt` in your editor. The terminal summary is not the full report. Check **Not checked** before drawing conclusions; an empty result does not prove nothing went wrong.
+In a terminal, `init` asks which worker, judge and models to use. One agent can fill both roles. Review the sources it writes before running the retro: a defect log, failed checks or the sessions of agents you choose. Models use your own subscription or paid provider. [Non-interactive setup and source configuration →](docs/reference.md#no-terminal-or-no-agentmodel-selected)
 
-## Go deep on one failure
+After `completed`, run `learn-from-mistakes-axi report` and open the file named by `report_txt`. The terminal summary is not the full report. If the run is still `running` after the eight-minute wait, use `learn-from-mistakes-axi attach` to follow it.
 
-A retro counts the causes that repeat. When one failure matters on its own, run an incident instead:
+**Your project is not changed by default.** The report proposes fixes; you decide what to change.
 
-```sh
-learn-from-mistakes-axi incident "<what failed>" --evidence notes.md --evidence screenshot.png --wait 8m
-```
+## Why use it instead of another manual retro?
 
-Name the failure in your own words, as a file, or as a GitHub PR or issue link (or `#<n>`). Add `--evidence` once for each file, screenshot or link that shows it. The run reads only what you name and your project's own files, never the configured sources. Its `report.txt` gives the timeline, the root causes, why no check caught it, how to avoid it now, and fixes, each with an owner, a priority and a due date.
+Writing “don't do that again” in `AGENTS.md` is a start. It doesn't tell you whether the rule helped.
 
-Once you make a fix, record it with `change applied --proposal <run>:<n> --ref <commit>`. Then `learn-from-mistakes-axi incident --status` lists the open fixes and runs the check of each fix that shipped. A fix stays open until its check passes. [Incident details →](docs/reference.md#go-deep-on-one-incident)
+| The job | Manual retro / editing AGENTS.md by hand | learn-from-mistakes |
+| --- | --- | --- |
+| Find what repeats | Read the records and tally causes yourself. | Groups repeated causes, with counts, days and source pointers. |
+| Check the explanation | Arrange a review of your reasoning. | A judge checks the findings and proposed fixes; both roles must run. |
+| Make the fix fit | Find the relevant project rule yourself. | Reads bounded project context and names the rule a fix replaces or extends. |
+| See whether it helped | Keep a separate before/after record. | Tracks recorded changes and measures them in later retros. |
 
-## With or without Firstmate
+## What you get
 
-**On its own:** the tool reads the sources you set for your project: a defect log, failed checks or the sessions of agents you name. Nothing else is needed.
+- **Causes, not just a failure list.** Each kept finding has a cost and a why chain down to the process, rule, tool or check behind it. Unread records stay unlabelled.
+- **A report you can question.** Evidence pointers, judge verdicts and a **Not checked** section. Check the omissions before acting; an empty result does not prove nothing went wrong. A failed role fails the retro.
+- **Fixes tied to your project.** The report names the files it read and the project rule each fix would replace or extend. [Applying and tracking changes →](docs/reference.md#apply-only-when-requested)
+- **One failure worth investigating?** Incident mode reads only the evidence you name and your project's files, not your configured sources. It writes a timeline, root causes, missed checks and fixes with owners, priorities and due dates. A shipped incident fix stays open until its check passes. [Incident walkthrough →](docs/reference.md#go-deep-on-one-incident)
 
-**With Firstmate:** you can opt in to also read its task logs and messages as extra records. It is never turned on for you. [Integration setup →](docs/reference.md#firstmate)
+## Real output, with the limits left in
 
-## Need help with setup?
+The hero is an unchanged excerpt of a report saved by **npm version 0.7.0** on six made-up defect records. The run found one repeated cause across four days. Its proposed fix passed the report rules, but the judge **weakened** it. Nothing was applied.
 
-`init` asks you to choose a worker, a judge and their models. One agent can fill both roles. It also installs a discovery skill for the agents you select; `init --no-skill` skips that optional install. Models use your own subscription or paid provider.
+The example's 110 minutes are part of the synthetic input, not measured customer savings. This is a reproducible demonstration, not a quality benchmark. [Inputs, model, full result and capture method →](docs/demo.md)
 
-```sh
-learn-from-mistakes-axi doctor
-```
+## Setup and privacy
 
-Follow each `fix:` line, then run it again. This checks readiness without calling a model. `learn-from-mistakes-axi --version` and the first line of `--help` show the version that runs: `0.6.0` from npm, `0.6.0 (pre-release, from source)` from a git checkout. If you have no defect log or supported records yet, [configure a source](docs/reference.md#no-terminal-or-no-agentmodel-selected) first. In a non-interactive shell, provide your own agent and model choices through the [setup flags](docs/reference.md#no-terminal-or-no-agentmodel-selected).
+`learn-from-mistakes-axi doctor` checks readiness without calling a model. Follow its `fix:` lines and run it again. `init` also installs a discovery skill for your chosen agents; `init --no-skill` skips it. No supervisor or optional integration is needed.
 
-**Privacy:** excerpts are sent to the providers you choose, after redaction. Redaction is not a guarantee. Inspect sources first; do not use records you cannot share. [Privacy and excerpt controls](docs/reference.md#sources-state-and-privacy).
+**Excerpts and bounded project context go to your chosen providers, after redaction.** Redaction is not a guarantee. Inspect sources first; don't use records you cannot share. [Privacy and excerpt controls →](docs/reference.md#sources-state-and-privacy)
 
-## Go deeper
+## More
 
-- [Product page](https://umeranjum17.github.io/learn-from-mistakes/) — the short tour.
-- [Vision](VISION.md) — who it is for, where it is going and what it is not.
-- [Reference](docs/reference.md) — agents, models, sources, incidents, costs, recovery and exit codes.
-- [Optional integrations](docs/reference.md#optional-integrations-and-changes) — Firstmate, sign-off and applying a fix.
-- [Development and verification](docs/reference.md#development) — contributor commands and real CLI journeys.
-- [Issues](https://github.com/umeranjum17/learn-from-mistakes/issues) · [MIT license](LICENSE).
+- [Reference](docs/reference.md): agents, models, sources, costs, recovery, versions and exit codes.
+- [Optional integrations](docs/reference.md#optional-integrations-and-changes): extra records, report handoffs and applying a fix.
+- [Product page](https://umeranjum17.github.io/learn-from-mistakes/) · [Vision](VISION.md) · [Issues](https://github.com/umeranjum17/learn-from-mistakes/issues).
+- [Development and verification](docs/reference.md#development): contributor commands and real CLI journeys.
+
+[MIT](LICENSE)
