@@ -1,6 +1,6 @@
 {
   "name": "learn-from-mistakes-axi",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Find repeated coding-agent mistakes. Get evidence-backed fixes.",
   "license": "MIT",
   "keywords": ["coding-agents", "retrospective", "root-cause-analysis", "developer-tools", "cli", "agent-skills", "learn-from-mistakes"],
