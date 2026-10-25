@@ -26,10 +26,10 @@ Run these in your project, with **Node 22.13+** and your agent CLIs installed an
 ```sh
 npm i -g learn-from-mistakes-axi
 learn-from-mistakes-axi init
-learn-from-mistakes-axi retro --wait
+learn-from-mistakes-axi retro
 ```
 
-In a terminal, `init` asks which worker, judge and models to use. One agent can fill both roles. Review the sources it writes before running the retro: a defect log, failed checks or the sessions of agents you choose. Models use your own subscription or paid provider. [Non-interactive setup and source configuration →](docs/reference.md#no-terminal-or-no-agentmodel-selected)
+Pass `--wait` on that last command to block for up to eight minutes (the default). In a terminal, `init` asks which worker, judge and models to use. One agent can fill both roles. Review the sources it writes before running the retro: a defect log, failed checks or the sessions of agents you choose. Models use your own subscription or paid provider. [Non-interactive setup and source configuration →](docs/reference.md#no-terminal-or-no-agentmodel-selected)
 
 After `completed`, run `learn-from-mistakes-axi report` and open the file named by `report_txt`. The terminal summary is not the full report. If the run is still `running` after the eight-minute wait, use `learn-from-mistakes-axi attach` to follow it.
 
