@@ -30,6 +30,11 @@ const args = process.argv.slice(2), name = basename(process.argv[1]);
 if (args[0] === '--version') { console.log(`2.0.0 (fake ${name})`); process.exit(0); }
 const stdin = readFileSync(0, 'utf8');
 if (process.env.FAKE_LOG) appendFileSync(join(process.env.FAKE_LOG, `${name}.jsonl`), `${JSON.stringify({ args, cwd: process.cwd(), stdin })}\n`);
+const quotaOn = process.env.FAKE_QUOTA_ON;
+if (quotaOn && ((process.env.LFM_ACCOUNT || '').includes(quotaOn) || (process.env.CLAUDE_CONFIG_DIR || '').includes(quotaOn))) {
+  console.log(JSON.stringify({ type: 'result', is_error: true, result: 'usage limit reached' }));
+  process.exit(1);
+}
 const mode = process.env.FAKE_ANALYSE || 'empty';
 const reply = (answer, extra = {}) => { const result = process.env.FAKE_CANARY ? answer.replace(/\.(?=")/g, ` ${process.env.FAKE_CANARY}.`) : answer;
   return name === 'codex' ? args.includes('-o') && writeFileSync(args[args.indexOf('-o') + 1], result)

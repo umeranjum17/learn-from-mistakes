@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+// Stub picker for the forced-limit journey: account A, then B, then a fallover route. Protocol v1.
+import { appendFileSync, readFileSync } from 'node:fs';
+
+const verb = process.argv.includes('next') ? 'next' : 'pick';
+const req = JSON.parse(readFileSync(0, 'utf8'));
+if (process.env.PICKER_LOG) appendFileSync(process.env.PICKER_LOG, `${JSON.stringify({ verb, req })}\n`);
+if (req.v !== 1) {
+  console.log(JSON.stringify({ ok: false, v: 1, reason: 'request must set v:1' }));
+  process.exit(1);
+}
+
+const emit = (id, extra = {}) => {
+  const folders = process.env.PICKER_FOLDERS || '/tmp/lfm-picker-folders';
+  console.log(JSON.stringify({
+    ok: true, v: 1, id, selection_id: id,
+    provider: extra.provider || 'claude', harness: extra.harness || 'claude',
+    model: extra.model || req.model || 'claude-haiku-5-5',
+    set: extra.set ?? { CLAUDE_CONFIG_DIR: `${folders}/${id}`, LFM_ACCOUNT: id },
+    unset: extra.unset ?? ['ANTHROPIC_API_KEY'],
+    billing: extra.billing || 'plan',
+  }));
+};
+
+if (process.env.PICKER_CREDITS === '1') { emit('pa_credits', { billing: 'credits' }); process.exit(0); }
+
+const attempted = req.attempted ?? [];
+if (!attempted.includes('pa_umer_a')) emit('pa_umer_a');
+else if (!attempted.includes('pa_umer_b')) emit('pa_umer_b');
+else emit('route:cursor/auto', { provider: 'cursor', harness: 'cursor', model: 'auto', set: {}, unset: [] });

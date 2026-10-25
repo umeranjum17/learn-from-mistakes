@@ -81,8 +81,8 @@ save('identity.json', { repo, head: spawnSync('git', ['rev-parse', 'HEAD'], { cw
   dirty: spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout,
   node: process.version, mode: mode ? 'private opt-in' : 'synthetic', inputs: before, sources,
   candidate: ['src/signoff.mjs', 'bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
-    'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
-    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/incident.mjs', 'src/steps/incident.mjs', 'src/prompts/incident-timeline.md', 'src/prompts/incident-causes.md', 'src/prompts/incident-gates.md', 'src/prompts/incident-prevent.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'scripts/frozen-five.mjs', 'skills/lfm-retro/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', 'test/frozen-five.test.mjs', 'test/incident.test.mjs', 'test/fixtures/frozen-five/set.json', 'test/fixtures/frozen-five/baseline.json', 'test/fixtures/frozen-five/recorded-agent', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
+    'src/runners/index.mjs', 'src/runners/account-picker.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
+    'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/incident.mjs', 'src/steps/incident.mjs', 'src/prompts/incident-timeline.md', 'src/prompts/incident-causes.md', 'src/prompts/incident-gates.md', 'src/prompts/incident-prevent.md', 'src/check.mjs', 'src/apply.mjs', 'src/prompts/apply.md', 'package.json', 'package-lock.json', 'README.md', 'scripts/build-skill.mjs', 'scripts/verify-journeys.mjs', 'scripts/frozen-five.mjs', 'skills/lfm-retro/SKILL.md', 'test/cli.test.mjs', 'test/runners.test.mjs', 'test/account-picker.test.mjs', 'test/sessions.test.mjs', 'test/followup.test.mjs', 'test/init.test.mjs', 'test/github.test.mjs', 'test/frozen-five.test.mjs', 'test/incident.test.mjs', 'test/fixtures/frozen-five/set.json', 'test/fixtures/frozen-five/baseline.json', 'test/fixtures/frozen-five/recorded-agent', '.done-done.yaml', '.github/workflows/release.yml', '.no-mistakes.yaml', 'CONSTRAINTS.md'].map(path =>
     ({ path, sha256: createHash('sha256').update(readFileSync(join(repo, path))).digest('hex') })) });
 let passed = false;
 const staged = join(scratch, 'project');
@@ -113,6 +113,18 @@ try {
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(agentBin, 'git'));
   const lab = { PATH: agentBin };
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
+  const pickerLog = join(scratch, 'picker.jsonl');
+  run('account-picker', process.execPath, [cli, 'agents', '--test', 'claude', '--json', '--dir', staged], 0, {
+    ...lab, ACCOUNT_PICKER: JSON.stringify([process.execPath, join(repo, 'test/fake-agent/account-picker')]),
+    PICKER_LOG: pickerLog, FAKE_QUOTA_ON: 'pa_umer_a', PICKER_FOLDERS: join(scratch, 'picker-folders') });
+  assert.equal(JSON.parse(readFileSync(join(evidence, 'account-picker.stdout'), 'utf8')).test.account, 'pa_umer_b', 'quota on A does not fall over to B');
+  const pickerCalls = readFileSync(pickerLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(pickerCalls[1]?.req.attempted, ['pa_umer_a'], 'the picker next call does not carry the growing attempted set');
+  run('account-picker-credits', process.execPath, [cli, 'agents', '--test', 'claude', '--dir', staged], 1, {
+    ...lab, ACCOUNT_PICKER: JSON.stringify([process.execPath, join(repo, 'test/fake-agent/account-picker')]), PICKER_CREDITS: '1' });
+  assert.match(readFileSync(join(evidence, 'account-picker-credits.stderr'), 'utf8'), /usage-credits\/overage/, 'a credits selection is not refused');
+  run('account-picker-unset', process.execPath, [cli, 'agents', '--test', 'claude', '--json', '--dir', staged], 0, lab);
+  assert.equal(JSON.parse(readFileSync(join(evidence, 'account-picker-unset.stdout'), 'utf8')).test.account, undefined, 'unset picker changed the agents --test shape');
   run('guide', process.execPath, [cli, 'guide']); // the agent procedure, no project config needed
   // The running version: this checkout says it is a pre-release from source, in --version and the help header.
   const version = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version;
@@ -483,7 +495,7 @@ try {
     const manifest = spawnSync('tar', ['tzf', tarball], { encoding: 'utf8' }).stdout.trim().split('\n');
     save('pack.manifest.txt', manifest.join('\n'));
     for (const f of ['bin/learn-from-mistakes-axi.mjs', 'src/config.mjs', 'src/metrics.mjs', 'src/followup.mjs', 'src/init.mjs', 'src/doctor.mjs', 'src/sources/markdown-log.mjs', 'src/sources/no-mistakes.mjs', 'src/sources/done-done.mjs', 'src/sources/firstmate.mjs', 'src/run.mjs', 'src/store.mjs',
-      'src/runners/index.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
+      'src/runners/index.mjs', 'src/runners/account-picker.mjs', 'src/runners/byokit.mjs', 'src/runners/claude.mjs', 'src/runners/codex.mjs', 'src/runners/opencode.mjs', 'src/runners/pi.mjs', 'src/runners/gemini.mjs', 'src/runners/acp.mjs',
       'src/redact.mjs', 'src/sessions/claude.mjs', 'src/sessions/codex.mjs', 'src/sessions/opencode.mjs', 'src/sessions/pi.mjs', 'src/sessions/gemini.mjs', 'src/sources/sessions.mjs', 'src/bundle.mjs', 'src/sources/github.mjs', 'src/steps/agent-step.mjs', 'src/steps/analyse.mjs', 'src/prompts/analyse.md', 'src/steps/propose.mjs', 'src/prompts/propose.md', 'src/steps/verify.mjs', 'src/prompts/verify.md', 'src/incident.mjs', 'src/steps/incident.mjs', 'src/prompts/incident-timeline.md', 'src/prompts/incident-causes.md', 'src/prompts/incident-gates.md', 'src/prompts/incident-prevent.md', 'src/check.mjs', 'src/signoff.mjs', 'package.json']) assert.ok(manifest.includes(`package/${f}`), `tarball omits ${f}`);
     assert.ok(manifest.some((f) => f.endsWith('skills/lfm-retro/SKILL.md')), 'tarball omits the standalone skill');
     assert.ok(!manifest.some((f) => /^\s*package\/(test|examples)\//.test(f)), 'tarball bundles test/examples');
@@ -555,6 +567,16 @@ try {
     assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes-axi', 'skills', 'lfm-retro', 'SKILL.md')), 'packaged standalone skill is missing');
     save('pack.json', { tarball: tarball.slice(evidence.length + 1), sha256: createHash('sha256').update(readFileSync(tarball)).digest('hex'), files: manifest.length });
   }
+  save('steps.json', {
+    target: { version: JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version },
+    start: 'a staged copy of the examples project, throwaway HOME, fake agent on PATH',
+    steps: [
+      'Set ACCOUNT_PICKER to the stub picker and run an agents probe after a quota or rate limit on account A',
+      'Refuse a usage-credits selection and rotate the same call to the next plan account',
+      'Run the same agents probe with no picker, then run a retro on the synthetic examples',
+    ],
+    result: 'an agents probe can rotate to the next plan account when a call hits a quota or rate limit, then to another supported route, without using usage credits',
+  });
   passed = true;
 } finally {
   const after = hashes();
