@@ -106,7 +106,8 @@ function retro(dir, env, unrelated) {
   const projectDir = join(dir, env);
   project(projectDir, env);
   const runEnv = { ...process.env, HOME: join(dir, 'home'), LFM_HOME: join(dir, 'home', '.learn-from-mistakes'), TMPDIR: join(dir, 'tmp'),
-    PATH: join(dir, 'bin'), LFM_FROZEN_UNRELATED: unrelated ? '1' : '0' };
+    PATH: join(dir, 'bin'), SIGN_OFF_HOME: join(dir, 'home'), LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: dir,
+    LFM_FROZEN_UNRELATED: unrelated ? '1' : '0' };
   delete runEnv.CLAUDE_CONFIG_DIR; // the recorded agent reads no login of any agent
   delete runEnv.CODEX_HOME;
   const run = spawnSync(process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', projectDir], { encoding: 'utf8', env: runEnv });

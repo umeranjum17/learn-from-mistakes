@@ -75,7 +75,8 @@ followup: { min_sessions: 3, min_days: 1 }
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   const env = { ...process.env, PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm'), CLAUDE_CONFIG_DIR: join(tmp, 'home', '.claude'),
-    CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share') };
+    CODEX_HOME: join(tmp, 'home', '.codex'), XDG_DATA_HOME: join(tmp, 'home', '.local', 'share'),
+    SIGN_OFF_HOME: join(tmp, 'home'), TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   mkdirSync(env.LFM_HOME, { recursive: true });
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });

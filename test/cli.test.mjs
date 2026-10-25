@@ -34,15 +34,18 @@ function setup() {
   cpSync(new URL('../examples', import.meta.url).pathname, join(tmp, 'p'), { recursive: true });
   own(join(tmp, 'p'));
   // The fake agent as the worker and the judge, ahead of the host PATH: no test reaches a real agent CLI.
-  const fakes = join(tmp, 'fakes');
+  const fakes = join(tmp, 'fakes'), user = join(tmp, 'user');
   mkdirSync(fakes);
+  mkdirSync(user);
   for (const name of ['claude', 'codex']) symlinkSync(FAKE_AGENT, join(fakes, name));
-  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: join(tmp, 'home') };
+  // Private HOME / SIGN_OFF_HOME / LFM_TEST_BOARD_ROOT: a host sign-off-axi never sees the owner's board.
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: join(tmp, 'home'),
+    HOME: user, SIGN_OFF_HOME: user, TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   mkdirSync(env.LFM_HOME);
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', join(tmp, 'p')], { encoding: 'utf8', env });
   const raw = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: tmp, env });
-  return { p: join(tmp, 'p'), lfm, raw, env };
+  return { p: join(tmp, 'p'), tmp, lfm, raw, env };
 }
 // The TOON report's last stdout line is the `repeated:` summary, outside lfm-report.v2.
 const summaryOf = (stdout) => stdout.trimEnd().split('\n').at(-1);
@@ -164,7 +167,8 @@ test('the state-dir fix lines name the resolved global config, never a literal $
 test('same-named projects keep separate state; a global state_root still wins', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-'));
   after(() => rmSync(tmp, { recursive: true }));
-  const env = { ...process.env, LFM_HOME: join(tmp, 'home') };
+  const user = join(tmp, 'user'); mkdirSync(user);
+  const env = { ...process.env, LFM_HOME: join(tmp, 'home'), HOME: user, SIGN_OFF_HOME: user, TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   mkdirSync(env.LFM_HOME);
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const projects = ['a', 'b'].map((parent) => {
@@ -1282,7 +1286,7 @@ test('attach follows a run to its end; logs prints one step; abort cancels a run
 // A copy of the examples with two defect records today, whose PATH holds only the fake agents, node for its #! line, and
 // git: lfm(env, ...args) runs the CLI there, query reads the run store, calls(name) an agent's calls, lines(step, run) a step's log lines.
 function agentSetup() {
-  const { p, env } = setup();
+  const { p, env, tmp } = setup();
   const bin = join(p, '..', 'bin'), log = join(p, '..', 'log');
   for (const d of [bin, log]) mkdirSync(d);
   for (const name of ['claude', 'codex']) symlinkSync(FAKE_AGENT, join(bin, name)); // the worker and the judge
@@ -1296,7 +1300,7 @@ function agentSetup() {
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
   const calls = (name = 'claude') => readFileSync(join(log, `${name}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const lines = (step, id) => JSON.parse(lfm({}, 'logs', '--step', step, '--run', String(id), '--json').stdout).log.map((l) => l.line);
-  return { p, env, bin, lfm, lfmAt, query, calls, lines };
+  return { p, env, bin, tmp, lfm, lfmAt, query, calls, lines };
 }
 // True when a run stored no verdict, label, finding, fix or follow-up, and wrote no report.txt.
 function nothingJudged(query, id) {
@@ -1769,6 +1773,23 @@ test('signoff post without the peer prints keys only: a canary change sentence r
   assert.ok(!fallback.stdout.includes('Repeated cause:'));
   assert.ok(!fallback.stdout.includes('Give each worker its own cache directory'));
   assert.ok(readFileSync(join(p, '.lfm', 'runs', String(run.id), 'report.txt'), 'utf8').includes(canary), 'report.txt lost the fix text');
+});
+
+test('test-mode signoff post refuses a board path outside the temp board root', () => {
+  const { p, bin, lfm, tmp } = agentSetup();
+  const yaml = join(p, '.learn-from-mistakes.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^repeat: .*$/m, 'repeat: { min_incidents: 2, min_days: 1 }\ntargets: { defects: "<= 0" }'));
+  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'shared-cache-lock', FAKE_PROPOSE: 'eight' }, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const signDir = join(tmp, 'signoff'), outside = join(tmp, 'outside-home'), allowed = join(tmp, 'allowed-only');
+  mkdirSync(signDir); mkdirSync(outside); mkdirSync(allowed);
+  symlinkSync(new URL('./fake-agent/sign-off-axi', import.meta.url).pathname, join(bin, 'sign-off-axi'));
+  // LFM_TEST_MODE is already set by setup; point the board hint outside LFM_TEST_BOARD_ROOT.
+  const refused = lfm({ FAKE_SIGNOFF_DIR: signDir, LFM_TEST_BOARD_ROOT: allowed, HOME: outside, SIGN_OFF_HOME: outside }, 'signoff', 'post');
+  assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+  assert.match(refused.stderr, /^error: test\/demo mode refuses to post: board path .+ is not under the temp board root /m);
+  assert.match(refused.stderr, /^next: set HOME, SIGN_OFF_HOME and LFM_TEST_BOARD_ROOT to a mktemp directory/m);
+  assert.ok(!existsSync(join(signDir, 'board.json')), 'a refused post must not reach the peer board');
 });
 
 test('signoff_report: a run posts its whole report to sign-off when asked, shows the outcome, and a retry adds no card', () => {
@@ -2526,7 +2547,8 @@ test('doctor counts an opencode env-key provider as logged in and keeps the fail
   writeFileSync(join(lfmHome, 'config.yaml'), 'agent: claude\njudge_agent: opencode\nagent_config: { claude: { model: claude-haiku-5-5 }, opencode: { model: zai/glm-flash } }\n');
   const config = join(home, '.config', 'opencode', 'opencode.json');
   const provider = (at) => writeFileSync(at, JSON.stringify({ provider: { zai: { options: { baseURL: 'https://provider.example/v4', apiKey: '{env:LFM_TEST_PROVIDER_KEY}' }, models: { 'glm-flash': {} } } } }));
-  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), LFM_HOME: lfmHome, CALL_LOG: join(log, 'opencode.jsonl') };
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), LFM_HOME: lfmHome, CALL_LOG: join(log, 'opencode.jsonl'),
+    SIGN_OFF_HOME: home, TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   const login = (over = {}) => JSON.parse(spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env: { ...env, ...over } }).stdout).checks.find((c) => c.label === 'judge login');
   assert.equal(login().level, 'fail'); // no config, no variable: the real missing login
   provider(config);
@@ -2586,7 +2608,8 @@ process.exit(0);`;
   }
   // One configured agent: claude in both roles, which doctor accepts. The tool probes no other runner.
   writeFileSync(join(tmp, 'lfm-home', 'config.yaml'), 'agent: claude\njudge_agent: claude\nagent_config: { claude: { model: claude-haiku-5-5 } }\n');
-  const env = { ...process.env, PATH: fakes, HOME: home, LFM_HOME: join(tmp, 'lfm-home'), CALL_LOG: log };
+  const env = { ...process.env, PATH: fakes, HOME: home, LFM_HOME: join(tmp, 'lfm-home'), CALL_LOG: log,
+    SIGN_OFF_HOME: home, TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   const r = spawnSync(process.execPath, [CLI, 'doctor', '--json', '--dir', p], { encoding: 'utf8', env });
   assert.equal(r.status, 0, r.stdout);
   assert.deepEqual(readdirSync(log).sort(), ['claude.jsonl']); // codex, gemini, opencode, pi and acpx were never started

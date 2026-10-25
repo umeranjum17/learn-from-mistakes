@@ -44,7 +44,8 @@ function project({ gh = false } = {}) {
   symlinkSync(process.execPath, join(bin, 'node'));
   for (const tool of ['git', 'sh', 'grep']) symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, tool)).find(existsSync), join(bin, tool));
   if (gh) writeFileSync(join(bin, 'gh'), `#!${process.execPath}\n${FAKE_GH}`, { mode: 0o755 });
-  const env = { ...process.env, PATH: bin, HOME: home, LFM_HOME: lfmHome, SIGN_OFF_HOME: home, XDG_CONFIG_HOME: join(home, '.config'), TMPDIR: tmp };
+  const env = { ...process.env, PATH: bin, HOME: home, LFM_HOME: lfmHome, SIGN_OFF_HOME: home, XDG_CONFIG_HOME: join(home, '.config'),
+    TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   const lfm = (args, extra = {}, cli = CLI) => spawnSync(cli === CLI ? process.execPath : cli, [...(cli === CLI ? [CLI] : []), ...args, '--dir', p], { encoding: 'utf8', env: { ...env, ...extra } });
   return { p, lfm, env };
 }

@@ -4,7 +4,7 @@ Part of the learn-from-mistakes verification map. Source: `scripts/verify-journe
 
 ## How to get to it (user POV)
 
-Run the cli journey; after the signoff-post drive the signoff-report drive posts the run's whole report with the fake sign-off-axi, then again as a retry. With `signoff_report: on` in the project config a retro posts it when the run ends and `status` shows `signoff_report`.
+Run the cli journey; after the signoff-post drive the signoff-report drive posts the run's whole report with the fake sign-off-axi, then again as a retry. With `signoff_report: on` in the project config a retro posts it when the run ends and `status` shows `signoff_report`. Tests, demos and verify set `LFM_TEST_MODE` with a throwaway `HOME` / `SIGN_OFF_HOME` / `LFM_TEST_BOARD_ROOT`; a test-mode post whose board path is outside that temp root is refused.
 
 ## Driving it
 
