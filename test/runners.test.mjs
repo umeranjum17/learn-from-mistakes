@@ -56,7 +56,8 @@ function setup() {
     writeFileSync(join(bin, name), `#!${process.execPath}\n${FAKE}`);
     chmodSync(join(bin, name), 0o755);
   }
-  const env = { PATH: bin, HOME: home, LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, XDG_DATA_HOME: join(home, 'data') };
+  const env = { PATH: bin, HOME: home, LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, XDG_DATA_HOME: join(home, 'data'),
+    SIGN_OFF_HOME: home, TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   const lfm = (extra, ...args) => {
     const t = Date.now();
     const r = spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, ...extra } });

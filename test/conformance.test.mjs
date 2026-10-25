@@ -36,7 +36,8 @@ function project() {
   writeFileSync(join(home, 'config.yaml'), AGENTS_SET);
   const user = join(tmp, 'user');
   mkdirSync(user);
-  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: home, HOME: user, SIGN_OFF_HOME: user, GIT_CEILING_DIRECTORIES: tmpdir() };
+  const env = { ...process.env, PATH: `${fakes}${delimiter}${process.env.PATH}`, LFM_HOME: home, HOME: user, SIGN_OFF_HOME: user,
+    TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp, GIT_CEILING_DIRECTORIES: tmpdir() };
   const lfm = (args, extra = {}) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, ...extra } });
   const write = (text) => writeFileSync(join(p, '.learn-from-mistakes.yaml'), text);
   return { tmp, p, env, lfm, write };

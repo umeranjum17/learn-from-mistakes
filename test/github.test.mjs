@@ -87,7 +87,8 @@ function setup() {
   const job = (name, conclusion) => ({ name, conclusion });
   for (const [file, rows] of Object.entries({ '102-1': [job('lint', 'failure'), job('test', 'failure'), job('build', 'success')], '103-1': [job('test', 'failure'), job('lint', 'success')],
     '103-2': [job('test', 'success'), job('lint', 'success')], '105-1': [job('test', 'failure')], '107-1': [job('lint', 'failure')] })) writeFileSync(join(pages, `jobs-${file}.jsonl`), jl(rows));
-  const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, FAKE_PAGES: pages };
+  const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), FAKE_LOG: log, FAKE_PAGES: pages,
+    SIGN_OFF_HOME: join(tmp, 'home'), TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   mkdirSync(env.LFM_HOME, { recursive: true });
   writeFileSync(join(env.LFM_HOME, 'config.yaml'), AGENTS_SET);
   const lfm = (extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env: { ...env, ...extra } });

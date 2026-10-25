@@ -2,7 +2,8 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { UsageError } from '../bin/learn-from-mistakes-axi.mjs';
 import { appliedFixes, appliedLine } from './apply.mjs';
 import { clusters } from './bundle.mjs';
@@ -13,6 +14,7 @@ import { locked, openStore } from './store.mjs';
 
 const HELP = 'sign-off-axi --help   # read the refusal help; never edit the board file';
 const AGAIN = 'learn-from-mistakes-axi retro --wait 15m   # rerun retro to produce valid findings';
+const TEST_BOARD = 'set HOME, SIGN_OFF_HOME and LFM_TEST_BOARD_ROOT to a mktemp directory before posting in tests or demos';
 // The peer minimum: 0.3.4 is the first sign-off-axi release that takes a finding (contract 1, kind finding, schema 1).
 export const SIGNOFF_MIN = '0.3.4';
 // Version order by number, part by part, so 0.3.10 reads as later than 0.3.4.
@@ -23,6 +25,22 @@ export const atLeast = (v, min = SIGNOFF_MIN) => {
 };
 const keyId = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(s);
 const WAIT = ['wait', '--filer', 'learn-from-mistakes', '--timeout', '1', '--json'];
+const under = (parent, child) => {
+  const r = relative(resolve(parent), resolve(child));
+  return r === '' || (!r.startsWith('..') && !isAbsolute(r));
+};
+// Tests and demos set LFM_TEST_MODE or LFM_DEMO_MODE. Refuse any post whose resolved board is not under the throwaway root.
+export function refuseRealBoard() {
+  if (!process.env.LFM_TEST_MODE && !process.env.LFM_DEMO_MODE) return;
+  const root = resolve(process.env.LFM_TEST_BOARD_ROOT || process.env.TMPDIR || tmpdir());
+  const board = process.env.SIGN_OFF_HOME
+    ? resolve(process.env.SIGN_OFF_HOME)
+    : resolve(process.env.HOME || homedir(), '.sign-off');
+  if (under(root, board)) return;
+  const e = new UsageError(`test/demo mode refuses to post: board path ${board} is not under the temp board root ${root}`, TEST_BOARD);
+  e.code = 2;
+  throw e;
+}
 function peer(bin, args, cfg, input, noAnswer = false) {
   const r = spawnSync(bin, args, { cwd: cfg.dir, input, encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 });
   if (r.status === 0) return r.stdout;
@@ -120,7 +138,10 @@ export async function postReport(cfg, db, runId) {
   let state = 'posted', why = null;
   if (!bin) [state, why] = ['skipped', 'sign-off-axi is not installed; the report stays in report.txt (npm i -g sign-off-axi)'];
   else {
-    try { peer(bin, ['post', '--kind', 'report', '--from', '-'], cfg, JSON.stringify(reportMessage(cfg, db, runId))); }
+    try {
+      refuseRealBoard();
+      peer(bin, ['post', '--kind', 'report', '--from', '-'], cfg, JSON.stringify(reportMessage(cfg, db, runId)));
+    }
     catch (e) { [state, why] = ['failed', e.message]; }
   }
   db.prepare('INSERT INTO signoff_report (run_id, key, state, why) VALUES (?, ?, ?, ?) ON CONFLICT (run_id) DO UPDATE SET state = excluded.state, why = excluded.why')
@@ -146,6 +167,7 @@ export async function signoff(action, cfg, opts) {
     if (action === 'post') {
       const { runId, rows, done } = messages(cfg, db, opts); // validate every fix before sending any
       for (const line of done) console.log(line);
+      if (bin && rows.length) refuseRealBoard();
       for (const { id, message: m } of rows) {
         if (bin) {
           peer(bin, ['post', '--kind', 'finding', '--from', '-'], cfg, JSON.stringify(m));

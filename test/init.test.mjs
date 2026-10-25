@@ -31,7 +31,8 @@ function setup(agents, chosen) {
   const db = new DatabaseSync(join(nm, 'state.sqlite'));
   db.prepare('UPDATE repos SET working_path = ?, upstream_url = ?').run(realpathSync(p), 'https://example.com/umer/umer-app.git');
   db.close();
-  const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm };
+  const env = { PATH: bin, HOME: join(tmp, 'home'), LFM_HOME: join(tmp, 'lfm-home'), NM_HOME: nm,
+    SIGN_OFF_HOME: join(tmp, 'home'), TMPDIR: tmp, LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: tmp };
   if (chosen) { mkdirSync(env.LFM_HOME); writeFileSync(join(env.LFM_HOME, 'config.yaml'), chosen); }
   const lfm = (...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', p], { encoding: 'utf8', env });
   const config = join(p, '.learn-from-mistakes.yaml');

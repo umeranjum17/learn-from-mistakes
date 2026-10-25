@@ -97,7 +97,7 @@ The fixture was for Umer. It contained no real project, chat, session or task da
 - [tests] The shipping change was merged before the integration check ran. The check later failed on a missing postcode field. Rework cost 20 minutes.
 ```
 
-Only a `markdown-log` source pointing to this file was configured. The run used a task-private `LFM_HOME` and a separate fixture directory. It did not read a Firstmate home or agent sessions. No fixes were applied and nothing was posted to an integration. This was the second saved run of the same fixture; the first run's wording hid one line, so the second was used.
+Only a `markdown-log` source pointing to this file was configured. The run used a task-private `LFM_HOME` and a separate fixture directory. It did not read a Firstmate home or agent sessions. No fixes were applied and nothing was posted to an integration. Re-runs set `LFM_DEMO_MODE=1` with a throwaway `HOME`, `SIGN_OFF_HOME` and `LFM_TEST_BOARD_ROOT` so a demo never posts to a live board. This was the second saved run of the same fixture; the first run's wording hid one line, so the second was used.
 
 ## What the screenshots show
 

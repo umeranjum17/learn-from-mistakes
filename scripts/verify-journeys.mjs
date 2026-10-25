@@ -61,7 +61,8 @@ process.on('exit', cleanupScratch);
 for (const dir of ['home', 'tmp', 'xdg', 'runtime', 'project']) mkdirSync(join(scratch, dir));
 const env = { ...process.env, HOME: join(scratch, 'home'), TMPDIR: join(scratch, 'tmp'),
   XDG_CONFIG_HOME: join(scratch, 'xdg'), XDG_CACHE_HOME: join(scratch, 'xdg'), XDG_DATA_HOME: join(scratch, 'xdg'), XDG_RUNTIME_DIR: join(scratch, 'runtime'),
-  npm_config_cache: join(scratch, 'npm-cache'), GIT_CEILING_DIRECTORIES: realpathSync(scratch) }; // the staged project is no part of a repo above it
+  npm_config_cache: join(scratch, 'npm-cache'), GIT_CEILING_DIRECTORIES: realpathSync(scratch),
+  SIGN_OFF_HOME: join(scratch, 'home'), LFM_TEST_MODE: '1', LFM_TEST_BOARD_ROOT: scratch }; // never the owner's board
 delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
 env.LFM_HOME = join(env.HOME, '.learn-from-mistakes'); // explicit isolated global config; project state stays in .lfm/
 delete env.CLAUDE_CONFIG_DIR; // the sessions drive reads only the synthetic stores in the scratch HOME and XDG dir

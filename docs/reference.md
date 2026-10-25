@@ -195,7 +195,7 @@ To read a whole fleet in one retro, opt in with `init --firstmate <main-home> --
 
 ### Sign-off
 
-No peer is needed: questions stay in section 7 of `report.txt`. `doctor` warns if `sign-off-axi` is absent; `signoff: off` keeps that check quiet. A retro posts nothing unless you set `signoff_report: on`.
+No peer is needed: questions stay in section 7 of `report.txt`. `doctor` warns if `sign-off-axi` is absent; `signoff: off` keeps that check quiet. A retro posts nothing unless you set `signoff_report: on`. Tests and demos set `LFM_TEST_MODE` or `LFM_DEMO_MODE` with a throwaway `HOME`, `SIGN_OFF_HOME` and `LFM_TEST_BOARD_ROOT`; a post whose board path is outside that temp root is refused.
 
 Only when you want a handoff, run:
 
