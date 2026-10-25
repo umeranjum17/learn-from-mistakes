@@ -24,9 +24,11 @@ A CLI for developers tired of correcting the same mistakes.
 Run these in your project, with **Node 22.13+** and your agent CLIs installed and signed in:
 
 ```sh
-npm i -g learn-from-mistakes-axi
+npm i -g \
+  learn-from-mistakes-axi
 learn-from-mistakes-axi init
-learn-from-mistakes-axi retro --wait
+learn-from-mistakes-axi \
+  retro --wait
 ```
 
 In a terminal, `init` asks which worker, judge and models to use. One agent can fill both roles. Review the sources it writes before running the retro: a defect log, failed checks or the sessions of agents you choose. Models use your own subscription or paid provider. [Non-interactive setup and source configuration →](docs/reference.md#no-terminal-or-no-agentmodel-selected)
