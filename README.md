@@ -24,11 +24,9 @@ A CLI for developers tired of correcting the same mistakes.
 Run these in your project, with **Node 22.13+** and your agent CLIs installed and signed in:
 
 ```sh
-npm i -g \
-  learn-from-mistakes-axi
+npm i -g learn-from-mistakes-axi
 learn-from-mistakes-axi init
-learn-from-mistakes-axi \
-  retro --wait
+learn-from-mistakes-axi retro --wait
 ```
 
 In a terminal, `init` asks which worker, judge and models to use. One agent can fill both roles. Review the sources it writes before running the retro: a defect log, failed checks or the sessions of agents you choose. Models use your own subscription or paid provider. [Non-interactive setup and source configuration →](docs/reference.md#no-terminal-or-no-agentmodel-selected)
@@ -41,12 +39,10 @@ After `completed`, run `learn-from-mistakes-axi report` and open the file named 
 
 Writing “don't do that again” in `AGENTS.md` is a start. It doesn't tell you whether the rule helped.
 
-| The job | Manual retro / editing AGENTS.md by hand | learn-from-mistakes |
-| --- | --- | --- |
-| Find what repeats | Read the records and tally causes yourself. | Groups repeated causes, with counts, days and source pointers. |
-| Check the explanation | Arrange a review of your reasoning. | A judge checks the findings and proposed fixes; both roles must run. |
-| Make the fix fit | Find the relevant project rule yourself. | Reads bounded project context and names the rule a fix replaces or extends. |
-| See whether it helped | Keep a separate before/after record. | Tracks recorded changes and measures them in later retros. |
+- **Find what repeats.** Manual: read the records and tally causes yourself. This tool: groups repeated causes, with counts, days and source pointers.
+- **Check the explanation.** Manual: arrange a review of your reasoning. This tool: a judge checks the findings and proposed fixes; both roles must run.
+- **Make the fix fit.** Manual: find the relevant project rule yourself. This tool: reads bounded project context and names the rule a fix replaces or extends.
+- **See whether it helped.** Manual: keep a separate before/after record. This tool: tracks recorded changes and measures them in later retros.
 
 ## What you get
 
