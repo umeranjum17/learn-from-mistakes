@@ -567,6 +567,17 @@ try {
     assert.ok(existsSync(join(prefix, 'lib', 'node_modules', 'learn-from-mistakes-axi', 'skills', 'lfm-retro', 'SKILL.md')), 'packaged standalone skill is missing');
     save('pack.json', { tarball: tarball.slice(evidence.length + 1), sha256: createHash('sha256').update(readFileSync(tarball)).digest('hex'), files: manifest.length });
   }
+  save('steps.json', {
+    target: { version: JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version },
+    start: 'a staged copy of the examples project, throwaway HOME, fake agent on PATH',
+    steps: [
+      'Set ACCOUNT_PICKER to the stub picker and run agents --test claude after account A hits a quota',
+      'Run agents --test claude with a credits selection',
+      'Run agents --test claude with no picker',
+      'Run a retro on the synthetic examples and read the report',
+    ],
+    result: 'the probe answers on account B; a credits selection is refused; unset picker keeps today\'s shape; the retro completes',
+  });
   passed = true;
 } finally {
   const after = hashes();
