@@ -86,6 +86,8 @@ const MIGRATIONS = [
     ALTER TABLE proposals ADD COLUMN passed_at TEXT;
     CREATE TABLE IF NOT EXISTS incident_lines (run_id INTEGER NOT NULL REFERENCES runs(id), step TEXT NOT NULL, n INTEGER NOT NULL,
       head TEXT NOT NULL, text TEXT NOT NULL, refs_json TEXT NOT NULL, PRIMARY KEY (run_id, step, n))`,
+  // The account or route id the picker chose for a call (ids only; never credentials). Null when no picker is set.
+  'ALTER TABLE invocations ADD COLUMN account_id TEXT',
 ];
 
 // Opens the store, or returns undefined when `create` is false and there is none yet (reads never create state).

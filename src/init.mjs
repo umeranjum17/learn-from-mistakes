@@ -130,6 +130,12 @@ const globalText = `# learn-from-mistakes global configuration
 # Optional path to the user-installed acpx binary for acp:<target> agents (global only)
 # acpx_path: acpx
 
+# Optional account picker command (global only). An argv, never shell text. Unset keeps
+# today's runner behaviour. When set, each model call asks the program (pick --json /
+# next --json, JSON protocol v1 on stdin/stdout) which account or route to use.
+# account_picker:
+#   - /usr/local/bin/account-picker
+
 # Keep each project's run state here, one dir per project name, instead of
 # <project>/.lfm (global only)
 # state_root: ~/.learn-from-mistakes/state

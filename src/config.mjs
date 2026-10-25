@@ -69,7 +69,7 @@ const EFFORT_AGENTS = ['claude', 'codex', 'opencode', 'pi']; // the agents with 
 // A project file may override these. The global-only keys pick the binary that runs and its flags, so a project file
 // in a cloned repo cannot run a program of its choosing.
 const AGENT_KEYS = ['agent', 'judge_agent', 'judge_model', 'agent_config', 'agent_timeout'];
-const GLOBAL_ONLY = ['auto_fix', 'state_root', 'agent_path_override', 'agent_args_override', 'acpx_path'];
+const GLOBAL_ONLY = ['auto_fix', 'state_root', 'agent_path_override', 'agent_args_override', 'acpx_path', 'account_picker'];
 
 // Applies the agent keys one file sets onto cfg, and records that file in cfg.from as the place to change each one.
 function agentKeys(cfg, g, file) {
@@ -118,8 +118,15 @@ export function loadGlobal() {
   for (const [k, v] of Object.entries(agent_path_override)) agent_path_override[k] = path(v, `${file}: agent_path_override.${k}`);
   const agent_args_override = mapping(g.agent_args_override ?? {}, [...AGENTS, 'acp'], `${file}: agent_args_override`);
   for (const [k, v] of Object.entries(agent_args_override)) check(Array.isArray(v) && v.every((a) => typeof a === 'string'), `${file}: agent_args_override.${k}`, 'a list of strings');
+  let account_picker;
+  if (g.account_picker !== undefined) {
+    const raw = g.account_picker;
+    const argv = Array.isArray(raw) ? raw : typeof raw === 'string' && !/\s/.test(raw.trim()) ? [raw.trim()] : null;
+    check(Boolean(argv) && argv.length && argv.every((a) => typeof a === 'string' && a), `${file}: account_picker`, 'an argv (command and arguments, never shell text)');
+    account_picker = argv[0].includes('/') ? [path(argv[0], `${file}: account_picker`), ...argv.slice(1)] : argv;
+  }
   const cfg = { home, globalPath: file, state_root: g.state_root, agent_path_override, agent_args_override, acpx_path: g.acpx_path === undefined ? 'acpx' : path(g.acpx_path, `${file}: acpx_path`),
-    agent: '', judge_agent: '', judge_model: '', agent_config: {}, agent_timeout: '20m', auto_fix: 0, from: {} };
+    account_picker, agent: '', judge_agent: '', judge_model: '', agent_config: {}, agent_timeout: '20m', auto_fix: 0, from: {} };
   if (g.auto_fix !== undefined) { check(Number.isInteger(g.auto_fix) && g.auto_fix >= 0, `${file}: auto_fix`, 'a whole number, 0 or more (0 = propose only)'); cfg.auto_fix = g.auto_fix; }
   return agentKeys(cfg, g, file);
 }

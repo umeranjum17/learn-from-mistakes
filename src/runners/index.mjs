@@ -12,11 +12,14 @@ import * as gemini from './gemini.mjs';
 import * as acp from './acp.mjs';
 import * as byokit from './byokit.mjs';
 import { PROJECT_FILE } from '../config.mjs';
+import { askPicker, childEnv, creditsOn, mapSelection, pickerArgv, pickRequest, selectionId } from './account-picker.mjs';
 
 export const RUNNERS = { claude, codex, opencode, pi, gemini, acp }; // acp runs as acp:<target>
 const FIX = 'learn-from-mistakes-axi agents   # check the agent CLI is usable and logged in';
 const TRANSIENT = /\b(429|503|529)\b|overloaded|rate_limit|ECONNRESET/i;
 const QUOTA = /quota|usage_limit|usage limit|session limit|credit balance/i;
+const RATE = /\b(429|rate[_ ]?limit)\b/i;
+const limitCause = (cause) => (QUOTA.test(cause) ? 'quota' : RATE.test(cause) ? 'rate_limit' : null);
 const tail = (text) => text.replace(/\x1b\[[0-9;]*m/g, '').trim().split('\n').slice(-3).join(' ').slice(-300);
 
 export function which(name) {
@@ -137,6 +140,7 @@ const ms = (d) => Number(d.slice(0, -1)) * { s: 1000, m: 60000, h: 3600000 }[d.a
 // the stop reason the agent reported (`stop`, null when it reports none), and the session id and token counts the agent
 // reported (null when it reports none). An empty answer is a failure.
 // Transient failures are retried twice; a quota failure, a timeout or a file the agent wrote in its run dir is not.
+// With account_picker set, a quota or rate-limit failure asks the picker for the next account or route instead.
 // Every failure names the agent's real cause.
 export async function call(cfg, { runner, target, model, dir, runId, step, prompt, onSpawn, empty }) {
   const name = target ? `acp:${target}` : runner;
@@ -153,25 +157,59 @@ export async function call(cfg, { runner, target, model, dir, runId, step, promp
   const promptFile = join(dir, `prompt-${step}.md`);
   writeFileSync(promptFile, `${marker}\n${prompt}`);
   const effort = cfg.agent_config?.[name]?.effort;
-  const cmd = route ? {} : mod.command({ model, effort, dir, step, target, prompt: promptFile, marker, extra: cfg.agent_args_override?.[runner] ?? [] });
-  const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
   const timeout = cfg.agent_timeout;
+  const picker = pickerArgv(cfg);
+  const deadline = Math.floor(Date.now() / 1000) + Math.max(1, Math.ceil(ms(timeout) / 1000));
+  let attempted = [], selection, use = { runner, target, model, route, bin, mod, fix };
+  const applyPick = (ans) => {
+    if (creditsOn(ans)) {
+      process.stderr.write(`account picker: refused credits selection id=${selectionId(ans) || '?'}\n`);
+      throw new InputError(`account picker: refused a usage-credits/overage selection${selectionId(ans) ? ` (${selectionId(ans)})` : ''}`);
+    }
+    const mapped = mapSelection(ans, use);
+    if (mapped.refuse) throw new InputError(`account picker: this tool has no runner for route ${mapped.refuse}`);
+    selection = ans;
+    const nextRoute = byokit.routeOf(mapped.runner);
+    const nextMod = nextRoute ? undefined : RUNNERS[mapped.runner];
+    if (!nextRoute && !nextMod) throw new InputError(`account picker: this tool has no runner for route ${mapped.id || mapped.runner}`);
+    const nextBin = nextRoute ? mapped.runner : which(binName(cfg, mapped.runner));
+    if (!nextBin) throw new InputError(`${mapped.runner}: not on PATH`, FIX);
+    use = { runner: mapped.runner, target: mapped.runner.startsWith('acp:') ? mapped.runner.slice(4) : undefined, model: mapped.model, route: nextRoute, bin: nextBin, mod: nextMod, fix: nextRoute ? fix : FIX };
+  };
+  if (picker) applyPick(await askPicker(picker, 'pick', pickRequest({ model, deadline, attempted })));
+  const envOf = (cmd) => {
+    const base = picker ? childEnv(selection?.set, selection?.unset) : { ...process.env };
+    return { ...base, ...cmd.env };
+  };
   for (let attempt = 0; ; attempt++) {
+    const cmd = use.route ? {} : use.mod.command({ model: use.model, effort: cfg.agent_config?.[use.runner]?.effort ?? effort, dir, step, target: use.target, prompt: promptFile, marker, extra: cfg.agent_args_override?.[use.runner] ?? [] });
+    const before = new Set([...readdirSync(dir), ...(cmd.outputs ?? [])]);
     for (const f of cmd.outputs ?? []) rmSync(join(dir, f), { force: true });
-    const r = route
-      ? { code: 0, err: '', ...(await byokit.ask({ route, model, prompt: `${marker}\n${prompt}`, timeoutMs: ms(timeout) })) }
-      : await spawnOnce(bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
+    const r = use.route
+      ? { code: 0, err: '', ...(await byokit.ask({ route: use.route, model: use.model, prompt: `${marker}\n${prompt}`, timeoutMs: ms(timeout) })) }
+      : await spawnOnce(use.bin, cmd.args, { cwd: dir, env: envOf(cmd), input: cmd.stdin ? `${marker}\n${prompt}` : undefined, timeoutMs: ms(timeout), onSpawn });
     const wrote = readdirSync(dir).filter((f) => !before.has(f));
-    if (wrote.length) throw new InputError(`${runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, fix);
-    if (r.timedOut) throw new InputError(`${runner}: no answer within ${timeout} in one attempt; stopped it (agent_timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, fix);
-    if (r.spawnError) throw new InputError(`${runner}: cannot start ${bin} (${r.spawnError.code})`, fix);
-    const got = route ? r : mod.answer(r.out, { dir, step });
+    if (wrote.length) throw new InputError(`${use.runner} wrote ${wrote.join(', ')} in its run dir ${dir}: its tools are not off`, use.fix);
+    if (r.timedOut) throw new InputError(`${use.runner}: no answer within ${timeout} in one attempt; stopped it (agent_timeout)${r.err.trim() ? `; stderr: ${tail(r.err)}` : ''}`, use.fix);
+    if (r.spawnError) throw new InputError(`${use.runner}: cannot start ${use.bin} (${r.spawnError.code})`, use.fix);
+    const got = use.route ? r : use.mod.answer(r.out, { dir, step });
     const cause = got.error || (r.code !== 0 ? `exited ${r.code ?? r.signal}: ${tail(r.err) || tail(r.out) || 'no output'}` : '');
+    const limit = picker && cause && limitCause(cause);
+    if (limit) {
+      const id = selectionId(selection);
+      if (id && !attempted.includes(id)) attempted = [...attempted, id];
+      if (Math.floor(Date.now() / 1000) >= deadline) throw new InputError(`${use.runner}: ${cause}`, use.fix);
+      applyPick(await askPicker(picker, 'next', pickRequest({ model: use.model, deadline, attempted, selection, cause: limit })));
+      if (selectionId(selection) && attempted.includes(selectionId(selection))) throw new InputError(`account picker: repeated selection ${selectionId(selection)}`);
+      attempt = -1;
+      continue;
+    }
     if (cause && (got.transient || (TRANSIENT.test(cause) && !QUOTA.test(cause))) && attempt < 2) { await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt)); continue; }
-    if (cause) throw new InputError(`${runner}: ${cause}`, fix);
+    if (cause) throw new InputError(`${use.runner}: ${cause}`, use.fix);
     const text = got.text ?? '';
-    if (!text.trim() && !empty) throw new InputError(`${runner}: the answer holds no JSON object: empty`, fix);
-    return { value: json(text), text, stop: got.stop ?? null, session_id: got.session_id ?? null, tokens_in: got.tokens_in ?? null, tokens_out: got.tokens_out ?? null };
+    if (!text.trim() && !empty) throw new InputError(`${use.runner}: the answer holds no JSON object: empty`, use.fix);
+    return { value: json(text), text, stop: got.stop ?? null, session_id: got.session_id ?? null, tokens_in: got.tokens_in ?? null, tokens_out: got.tokens_out ?? null,
+      account: selectionId(selection) || null };
   }
 }
 
@@ -201,7 +239,7 @@ export async function agents(cfg, opts) {
     mkdirSync(dir, { recursive: true });
     const model = opts.model ?? a.model; // doctor --live tests the judge with the judge's model
     const got = await call(cfg, { runner, target, model, dir, runId: 'test', step, prompt: TEST });
-    return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem } };
+    return { test: { runner: opts.test, model, tools: a.tools, dir, reply: String((got.value ? got.value.reply : got.text.trim()) ?? '').slice(0, 200), offered: !a.problem, ...(got.account && { account: got.account }) } };
   }
   // Only the configured agents: the tool never lists others to pick from.
   const used = new Set(configuredRunners(cfg));

@@ -45,7 +45,7 @@ async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, l
   if (used >= cfg.caps.invocations) throw new InputError(`caps.invocations reached: run ${id} already made ${used} agent calls`);
   const row = db.prepare('INSERT INTO invocations (run_id, step, role, runner, model, marker, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(id, step, role, runner, model, `lfm-run:${id}:${step}`, iso()).lastInsertRowid;
-  const end = db.prepare('UPDATE invocations SET completed_at = ?, exit_status = ?, session_id = ?, tokens_in = ?, tokens_out = ? WHERE id = ?');
+  const end = db.prepare('UPDATE invocations SET completed_at = ?, exit_status = ?, session_id = ?, tokens_in = ?, tokens_out = ?, account_id = ? WHERE id = ?');
   const who = `${role} ${runner}${model ? ` ${model}` : ''}`;
   const target = runner.match(/^acp:(.+)/)?.[1];
   let got;
@@ -53,10 +53,10 @@ async function invoke(cfg, db, id, dir, { step, role, runner, model }, prompt, l
     got = await call(cfg, { runner: runnerKey(runner), target, model, dir, runId: id, step, prompt, empty: true, // an empty answer is a bad answer: sent back once
       onSpawn: (pgid) => db.prepare('UPDATE invocations SET child_pgid = ?, child_started_at = ? WHERE id = ?').run(pgid, startTime(pgid), row) });
   } catch (e) {
-    end.run(iso(), 'error', null, null, null, row);
+    end.run(iso(), 'error', null, null, null, null, row);
     throw e;
   }
-  end.run(iso(), 'ok', got.session_id, got.tokens_in, got.tokens_out, row);
+  end.run(iso(), 'ok', got.session_id, got.tokens_in, got.tokens_out, got.account ?? null, row);
   log(`${who}: answered${got.tokens_in == null ? '' : `, ${got.tokens_in} tokens in, ${got.tokens_out} out`}`);
   return { ...got, row };
 }

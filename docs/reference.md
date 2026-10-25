@@ -101,7 +101,18 @@ judge_model: "<optional-stronger-model>"   # the judge's model when it differs f
 agent_timeout: "20m"
 ```
 
-Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices. Binary paths and extra argv overrides belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`). A cloned project cannot set those overrides. Every model you set runs: no model name is blocked.
+Use the model id accepted by your runner; OpenCode requires `<provider>/<model>`. A project config can override these choices. Binary paths, extra argv overrides and the account picker belong only in `$LFM_HOME/config.yaml` (`agent_path_override`, `agent_args_override`, `acpx_path`, `account_picker`). A cloned project cannot set those overrides. Every model you set runs: no model name is blocked.
+
+`account_picker` (or the `ACCOUNT_PICKER` environment variable) is an argv: the command and its arguments, never a shell string. Unset, each model call uses the process environment as before. When set, the runner starts that program with `pick --json` or `next --json`, writes one JSON object on stdin, and reads one JSON object on stdout (protocol v1).
+
+Request fields: `v` (must be `1`), `purpose` (`work`), `model`, `capabilities`, `deadline` (unix seconds for the whole attempt chain) and `attempted` (account or route ids already tried). `next` also sends `selection` (the prior answer) and `cause` (`quota` or `rate_limit`).
+
+The answer names `ok`, `v`, `id` / `selection_id`, optional `harness` / `provider` / `model`, `set` (variable names to values; folder paths, never credentials), `unset` (variable names to drop from the child environment) and `billing`.
+The runner builds a fresh child environment from `set` and `unset` for that call only; it does not change the process environment or copy login files.
+A usage-credits or overage selection is refused.
+A quota or rate-limit failure asks `next` with the growing `attempted` set and the same deadline.
+A selection that names another route uses that runner when this tool has one, and otherwise stops naming the route.
+The invocation row records the account or route id that answered.
 
 ## Cost and limits
 
