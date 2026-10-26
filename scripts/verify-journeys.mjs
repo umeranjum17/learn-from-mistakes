@@ -487,6 +487,25 @@ try {
   assert.deepEqual([twoModels.agent_config, twoModels.judge_model], [{ claude: { model: 'umer-a' } }, 'umer-b'], 'one agent with two models did not save the judge_model');
   run('init-one-agent-both-roles', process.execPath, [cli, 'init', '--no-skill', '--json', '--agent', 'claude', '--model', 'umer-a', '--judge-agent', 'claude', '--dir', join(fresh, 'docs')], 0, { PATH: fakes });
   assert.deepEqual(parse(readFileSync(join(fresh, 'docs', '.learn-from-mistakes.yaml'), 'utf8')).agent_config, { claude: { model: 'umer-a' } }, 'one agent in both roles did not save its one model');
+  // setup is the one command a machine runs: every choice a flag, no stdin, the skill installed, then doctor's answer.
+  // A second run over the same home and project changes no file, and the JSON says what it did and where the config is.
+  const installer = join(scratch, 'installer');
+  mkdirSync(join(installer, 'docs'), { recursive: true });
+  copyFileSync(join(repo, 'examples', 'defects.md'), join(installer, 'docs', 'defects.md'));
+  const setupArgs = [cli, 'setup', '--agent', 'claude', '--model', 'umer-worker-model', '--judge-agent', 'opencode', '--judge-model', 'umer/umer-judge-model', '--sessions', 'claude', '--json', '--dir', installer];
+  run('setup', process.execPath, setupArgs, 0, { PATH: fakes });
+  const setupOut = JSON.parse(readFileSync(join(evidence, 'setup.stdout'), 'utf8'));
+  assert.deepEqual([setupOut.ready, setupOut.changed, setupOut.fails, setupOut.config, setupOut.global], [true, true, 0, join(installer, '.learn-from-mistakes.yaml'), join(env.HOME, '.learn-from-mistakes', 'config.yaml')], 'setup did not report a ready first install and its config paths');
+  const setupFiles = [join(installer, '.learn-from-mistakes.yaml'), join(env.HOME, '.claude', 'skills', 'lfm-retro', 'SKILL.md')];
+  const setupBytes = setupFiles.map((f) => readFileSync(f));
+  run('setup-again', process.execPath, setupArgs, 0, { PATH: fakes });
+  const setupAgain = JSON.parse(readFileSync(join(evidence, 'setup-again.stdout'), 'utf8'));
+  assert.deepEqual([setupAgain.ready, setupAgain.changed, setupAgain.config_status, setupAgain.global_status], [true, false, 'already set up', 'kept'], 'a second setup was not idempotent');
+  assert.deepEqual(setupFiles.map((f) => readFileSync(f)), setupBytes, 'a second setup changed a file');
+  run('setup-doctor', process.execPath, [cli, 'doctor', '--json', '--dir', installer], 0, { PATH: fakes });
+  assert.equal(JSON.parse(readFileSync(join(evidence, 'setup-doctor.stdout'), 'utf8')).fails, 0, 'doctor did not answer ready after setup');
+  run('setup-missing-flags', process.execPath, [cli, 'setup', '--agent', 'claude', '--json', '--dir', installer], 2, { PATH: fakes });
+  assert.match(readFileSync(join(evidence, 'setup-missing-flags.stderr'), 'utf8'), /^error: setup needs --model --judge-agent --judge-model: it asks nothing/m, 'setup asked instead of naming the missing flags');
   if (packageProof) {
     const pack = join(evidence, 'pack');
     mkdirSync(pack, { mode: 0o700 });
@@ -505,7 +524,9 @@ try {
     // README quick start with explicit synthetic user choices, through the installed CLI.
     // Reuse the real fixture runner processes; no credentials or sign-off peer are on PATH.
     const readme = readFileSync(join(repo, 'README.md'), 'utf8');
-    for (const command of ['init --no-skill', 'doctor', 'retro --wait 8m', 'status', 'report', 'attach'])
+    assert.match(readme, /^## For installers$/m, 'README has no For installers section');
+    assert.ok(readme.includes('learn-from-mistakes-axi setup \\'), 'README omits the installer setup command');
+    for (const command of ['init', 'retro --wait', 'doctor', 'report', 'attach']) // the commands the README ships
       assert.ok(readme.includes(`learn-from-mistakes-axi ${command}`), `README omits ${command}`);
     assert.doesNotMatch(readme, /(?:labels|proposals)\.jsonl|--labels\b|--proposals\b|learn-from-mistakes-axi\s+(?:ingest|count)\b/, 'README teaches the removed manual flow');
     const quick = join(scratch, 'readme-project'), quickBin = join(scratch, 'readme-agents');

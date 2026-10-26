@@ -91,7 +91,7 @@ export async function doctor(dir, opts) {
         else add('fail', `${name} login`, `${shown}: not logged in${p.status ? ` (exit ${p.status})` : ''}`, probe.fix);
       } else add(a.login.startsWith('not found') ? 'warn' : 'ok', `${name} login`, a.login.startsWith('not found') ? `no ${r.runner} login file or key variable ${a.login.slice(10)}` : a.login);
     }
-    add('ok', `${name} model`, r.model);
+    add(r.model ? 'ok' : 'fail', `${name} model`, r.model || `no model set in agent_config for ${r.runner}`, chooseFix(cfg, KEY[name], r.runner));
   }
   // The skill in each configured, usable agent CLI's own skills dir, or in the project.
   const used = new Set([roles.worker.runner, roles.judge.runner]);
@@ -114,7 +114,7 @@ export async function doctor(dir, opts) {
   // --live: one call per role that asks the agent to write a file; it must answer and write nothing.
   if (opts.live) for (const name of ['worker', 'judge']) {
     const r = roles[name];
-    if (!r.bin || r.problem) continue; // its fail line above already names the fix
+    if (!r.bin || !r.model || r.problem) continue; // its fail line above already names the fix, and a role with no model makes no call
     try {
       const { test } = await agents(cfg, { test: r.runner, model: r.model });
       add('ok', `${name} live`, `${r.runner} answered and wrote no file: ${JSON.stringify(test.reply.slice(0, 80))}`);
