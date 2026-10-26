@@ -55,12 +55,7 @@ It is idempotent: a second run over the same home and project changes no file an
 Its exit code is the health answer: `0` ready (every check ok or warn-only), `1` a check failed, `2` a missing or wrong flag.
 Each failure carries its `fix:` line, and `--json` prints one object with `ready`, `changed`, the config paths and doctor's `checks`.
 
-Two commands an installer can call on their own. `--version` prints the plain version alone, for a pin or a floor check. `doctor --json` is the health command: exit `0` when no check failed, `1` when one did, and it calls no model unless `--live` is passed.
-
-```sh
-learn-from-mistakes-axi --version
-learn-from-mistakes-axi doctor --json
-```
+Two commands an installer can call on their own: `learn-from-mistakes-axi --version` prints the plain version alone, for a pin or a floor check, and `learn-from-mistakes-axi doctor --json` is the health command, exiting `0` when no check failed and `1` when one did. It calls no model unless `--live` is passed.
 
 Agent sign-in stays with the user: a fresh home holds no agent credentials, so `doctor` reports the missing login as a `fail` until that agent is signed in.
 
