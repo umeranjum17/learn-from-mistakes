@@ -7,6 +7,12 @@ on:
   push:
     branches: [main]
 
+# One group per PR/branch: a superseded PR run is cancelled so it stops competing for runners.
+# Main pushes never cancel in progress, so a merge cannot kill a running main build.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
