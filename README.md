@@ -15,7 +15,7 @@ A CLI for developers tired of correcting the same mistakes.
 
 [Quick start](#quick-start) · [Docs](docs/reference.md) · [Demo](docs/demo.md) · [Vision](VISION.md)
 
-[![npm version](https://img.shields.io/npm/v/learn-from-mistakes-axi)](https://www.npmjs.com/package/learn-from-mistakes-axi) [![Node 22.13+](https://img.shields.io/badge/node-%E2%89%A522.13-43853d)](https://nodejs.org/) [![MIT license](https://img.shields.io/badge/license-MIT-5358cf)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/learn-from-mistakes-axi)](https://www.npmjs.com/package/learn-from-mistakes-axi) [![Node 22.13+](https://img.shields.io/badge/node-%E2%89%A522.13-43853d)](https://nodejs.org/) [![MIT license](https://img.shields.io/badge/license-MIT-5358cf)](LICENSE) [![X @umership](https://img.shields.io/badge/X-%40umership-000000?logo=x&logoColor=white)](https://x.com/umership)
 
 </div>
 
@@ -71,3 +71,5 @@ The example's 110 minutes are part of the synthetic input, not measured customer
 - [Development and verification](docs/reference.md#development): contributor commands and real CLI journeys.
 
 [MIT](LICENSE)
+
+Follow [@umership on X](https://x.com/umership) for updates.
