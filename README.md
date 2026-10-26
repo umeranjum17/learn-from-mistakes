@@ -35,6 +35,30 @@ After `completed`, run `learn-from-mistakes-axi report` and open the file named 
 
 **Your project is not changed by default.** The report proposes fixes; you decide what to change.
 
+## For installers
+
+A machine can install and set up the whole tool with no terminal and no prompt. Install the package, which provides the `learn-from-mistakes-axi` command and the short `learn-from-mistakes` alias, then pass every choice to `setup` as a flag: it never reads stdin, never calls a model and writes no secret.
+
+```sh
+learn-from-mistakes-axi setup \
+  --agent "$WORKER" \
+  --model "$WORKER_MODEL" \
+  --judge-agent "$JUDGE" \
+  --judge-model "$JUDGE_MODEL" \
+  --sessions claude,codex \
+  --json
+```
+
+The four agent and model flags are required; `--sessions` is optional and names the agents whose local session stores the retro should read.
+`setup` writes the global `$LFM_HOME/config.yaml` (default `~/.learn-from-mistakes/config.yaml`) and the project's `.learn-from-mistakes.yaml`, installs the discovery skill for the chosen agents (`--no-skill` skips it), then runs `doctor` offline.
+It is idempotent: a second run over the same home and project changes no file and reports `"changed": false`.
+Its exit code is the health answer: `0` ready (every check ok or warn-only), `1` a check failed, `2` a missing or wrong flag.
+Each failure carries its `fix:` line, and `--json` prints one object with `ready`, `changed`, the config paths and doctor's `checks`.
+
+Two commands an installer can call on their own: `learn-from-mistakes-axi --version` prints the plain version alone, for a pin or a floor check, and `learn-from-mistakes-axi doctor --json` is the health command, exiting `0` when no check failed and `1` when one did. It calls no model unless `--live` is passed.
+
+Agent sign-in stays with the user: a fresh home holds no agent credentials, so `doctor` reports the missing login as a `fail` until that agent is signed in.
+
 ## Why use it instead of another manual retro?
 
 Writing “don't do that again” in `AGENTS.md` is a start. It doesn't tell you whether the rule helped.

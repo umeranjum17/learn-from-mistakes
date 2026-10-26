@@ -386,8 +386,9 @@ export function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change applied|changes|retro|incident|
-                                status|runs|attach|logs|abort|rerun|agents|signoff|apply>] [options]
+const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|change applied|changes|
+                                retro|incident|status|runs|attach|logs|abort|rerun|agents|signoff|
+                                apply>] [options]
   (no command)        print the last run's status and its summary line
   incident <what>     go deep on one failure, apart from the retro: <what> is the failure in your
                       own words, a file or screenshot, or a GitHub PR or issue link (or #<n>).
@@ -409,6 +410,9 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
                       .learn-from-mistakes.yaml (the sources found, the agents the user chose)
                       where each is missing, then print the resolved worker and judge and the gaps.
                       Either way, make the state dir .lfm/ and its .gitignore
+  setup               non-interactive install: init with --agent, --model, --judge-agent and
+                      --judge-model (--sessions adds session stores), the skill, then doctor.
+                      It never asks; exit 0 ready, 1 a check failed, 2 a flag missing
   doctor              check node, git, the config, .lfm ignored, each source, the worker and judge
                       (usable, login, model), the skill per agent CLI and
                       sign-off: ok, warn or fail, with a fix: line; exit 1 on a fail
@@ -489,7 +493,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<init|doctor|guide|report|change 
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's
                       .claude/skills and .agents/skills instead of each agent's own skills dir; -y
                       asks nothing, even in a terminal
-  --json (init, doctor, report, change applied, changes, retro, incident, status, runs,
+  --json (setup, init, doctor, report, change applied, changes, retro, incident, status, runs,
          attach, logs, abort, rerun, agents, no command)  print JSON instead of
          the default text format (report: lfm-report.v2; changes: lfm-changes.v1)
   --full (report)     add allow-listed evidence ids (never record text)
@@ -568,6 +572,7 @@ const REMOVED = ['ingest', 'count', '--labels', '--proposals'];
 // The allowed form of each command; the flags it takes are read from it.
 const FORMS = {
   '': 'learn-from-mistakes-axi [--dir <dir>] [--json]', // no command: the last run's status and summary line
+  setup: 'learn-from-mistakes-axi setup --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> [--sessions <agent>,...] [--no-excerpts] [--no-skill] [--dir <dir>] [--json]',
   init: 'learn-from-mistakes-axi init [--agent <agent> [--model <model>]] [--judge-agent <agent> [--judge-model <model>]] [--sessions <agent>,...] [--reconfigure] [--firstmate <home> [--fleet]] [--no-excerpts] [--project-skill] [--no-skill] [-y] [--dir <dir>] [--json]',
   doctor: 'learn-from-mistakes-axi doctor [--live] [--dir <dir>] [--json]',
   guide: 'learn-from-mistakes-axi guide',
@@ -613,7 +618,7 @@ async function main(ctx) {
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
   if (REMOVED.includes(cmd)) throw new UsageError(`${cmd} was removed: a retro reads the sources, labels and counts them`, RETRO);
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: init, doctor, guide, report, change applied, changes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: setup, init, doctor, guide, report, change applied, changes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply)`);
   const name = cmd.replace('-', ' ') || 'learn-from-mistakes-axi', form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -659,6 +664,7 @@ async function main(ctx) {
     if (!modelOk(opts[a], opts[m])) throw new UsageError(`--${m} ${shown(opts[m])} must be ${MODEL_RULE}`, form);
   }
   if (cmd === 'agents') { await agentsCommand(opts); return; }
+  if (cmd === 'setup') { await setupCommand(opts); return; }
   if (cmd === 'init') { await initCommand(opts); return; }
   if (cmd === 'doctor') { await doctorCommand(opts); return; }
   let cfg = loadConfig(opts.dir ?? resolve('.'));
@@ -797,7 +803,7 @@ async function doctorCommand(opts) {
   const dir = opts.dir ?? resolve('.');
   let cfg;
   try { cfg = loadConfig(dir); } catch (e) { if (!(e instanceof UsageError)) throw e; } // doctor reports a config error itself
-  if (cfg) await ensureAgents(cfg, join(dir, PROJECT_FILE), opts.dir);
+  if (cfg && interactive()) await ensureAgents(cfg, join(dir, PROJECT_FILE), opts.dir); // without a terminal a missing choice is its own fail line, never a prompt
   const checks = await doctor(dir, opts);
   const fails = checks.filter((c) => c.level === 'fail').length;
   if (opts.json) console.log(JSON.stringify({ checks, fails }, null, 2));
@@ -847,6 +853,42 @@ async function initCommand(opts) {
   else if (problem('judge')) hint(roleFix(cfg, 'judge_agent', { runner: out.judge.runner, problem: problem('judge') }));
   else if (problem('sessions')) hint(sessionsCommand(opts.dir));
   else hint(withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
+}
+
+// `setup` is the one command a machine runs: init with every choice as a flag, the skill for those agents, then
+// doctor, offline. It never asks and never reads stdin, and its exit code is the health answer: 0 ready (ok or warn
+// only), 1 a check failed, 2 a missing flag. A second run over the same home and project writes nothing.
+async function setupCommand(opts) {
+  quietSqlite();
+  const need = ['agent', 'model', 'judge-agent', 'judge-model'].filter((f) => !opts[f]);
+  if (need.length) throw new UsageError(`setup needs ${need.map((f) => `--${f}`).join(' ')}: it asks nothing, so the worker, the judge and their models are flags`, FORMS.setup);
+  const dir = opts.dir ?? resolve('.');
+  const out = await init(dir, { ...opts, y: true });
+  const changed = out.status === 'written' || out.global_status === 'written' || out.skills.length + out.skills_updated.length + out.skills_moved.length > 0;
+  const checks = await doctor(dir, opts);
+  const fails = checks.filter((c) => c.level === 'fail').length;
+  if (opts.json) console.log(JSON.stringify({ ready: !fails, changed, project: dir, config: out.config, global: out.global,
+    config_status: out.status, global_status: out.global_status, worker: out.worker, judge: out.judge, sources: out.sources,
+    excerpts: out.excerpts, skills: out.skills, skills_updated: out.skills_updated, skills_skipped: out.skills_skipped,
+    gaps: out.gaps, missing: out.missing, ignored: out.ignored, notes: out.notes, checks, fails }, null, 2));
+  else {
+    console.log(`config: ${out.config} (${out.status})`);
+    console.log(`global: ${out.global} (${out.global_status})`);
+    console.log(`worker: ${out.worker.runner}, ${out.worker.model}`);
+    console.log(`judge: ${out.judge.runner}, ${out.judge.model}`);
+    console.log(`sources: ${Object.keys(out.sources).join(', ') || 'none'}`);
+    for (const n of out.notes) console.log(`note: ${n}`);
+    for (const f of out.skills_moved) console.log(`skill: moved ${f} to lfm-retro`);
+    for (const f of out.skills) console.log(`skill: ${out.skills_updated.includes(f) ? 'updated ' : ''}${f}`);
+    for (const f of out.skills_skipped) console.log(`skipped: ${f}`);
+    for (const g of out.gaps) console.log(`gap: ${g}`);
+    if (out.ignored.length) console.log(`${out.ignored.join(' ')} not applied: ${PROJECT_FILE} exists (edit it, or init --reconfigure to apply them)`);
+    for (const c of checks) console.log(`${c.level.padEnd(4)} ${c.label.padEnd(15)} ${c.detail}${c.fix ? `\n     fix: ${c.fix}` : ''}`);
+    console.log(`setup: ${changed ? 'changed' : 'unchanged'}`);
+    console.log(fails ? `setup: not ready: ${fails} ${fails === 1 ? 'check failed' : 'checks failed'}` : 'setup: ready');
+  }
+  if (fails) process.exitCode = 1;
+  if (!opts.json) hint(fails ? `learn-from-mistakes-axi doctor   # again after the ${fails === 1 ? 'fix' : `${fails} fixes`} above` : withContext('learn-from-mistakes-axi retro --wait 8m', 'read the sources as a saved run', opts));
 }
 
 // Run only as the CLI, through the npm bin symlink too; importing this file runs nothing.

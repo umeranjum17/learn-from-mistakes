@@ -217,10 +217,14 @@ test('every model the user set is called, a premium name too; an unset model is 
   assert.equal(noModel.status, 1);
   assert.match(noModel.stderr, /^error: pi: no model set in agent_config$/m);
   assert.equal(noModel.stderr.match(/^next: (.*)$/m)[1], `ask the user which agent and model to use, then set agent and its agent_config model in ${join(p, '.learn-from-mistakes.yaml')}; the run never picks one`);
+  // doctor names the missing model as a fail with the key to set, and makes no call for it.
   config('agent: pi\njudge_agent: claude\n');
-  const asked = lfm({}, 'doctor', '--live');
-  assert.equal(asked.status, 2, asked.stderr);
-  assert.match(asked.stderr, /^error: ask the user which agent to use: agent_config\.pi\.model is not set in /m);
+  const asked = lfm({}, 'doctor', '--live', '--json');
+  assert.equal(asked.status, 1, asked.stderr);
+  const askedChecks = JSON.parse(asked.stdout).checks;
+  const model = askedChecks.find((c) => c.label === 'worker model');
+  assert.deepEqual([model.level, model.detail], ['fail', 'no model set in agent_config for pi']);
+  assert.equal(askedChecks.some((c) => c.label === 'worker live'), false);
   assert.equal(calls('pi').length, 0);
   config('agent: pi\nagent_config: { pi: { model: umer-cheap-1 } }\n');
   assert.equal(lfm({}, 'agents', '--test', 'pi').status, 0);

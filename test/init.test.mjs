@@ -44,6 +44,50 @@ function setup(agents, chosen) {
 const STARTER = [['test-failed', 'test_fail'], ['command-failed', 'nonzero_exit'], ['tool-misused', 'tool_error'], ['user-corrected', 'correction']];
 const PICK = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode];
 
+// The installer path: setup writes the config, the skill and the health answer with no prompt and no stdin, and a
+// second run over the same home and project writes nothing (byte for byte). doctor answers without a terminal too.
+test('setup is one non-interactive command: the choices as flags, then idempotent, then the doctor exit code', () => {
+  const { p, lfm, config, global, env } = setup(['claude', 'opencode']);
+  // A logged-in stub for the judge's agent: a fresh HOME holds no credential, and doctor's login line is not this test.
+  writeFileSync(join(env.PATH, 'opencode'), '#!/bin/sh\nif [ "$1" = auth ]; then echo "1 credential"; fi\necho "1.0.0"\n');
+  chmodSync(join(env.PATH, 'opencode'), 0o755);
+  const args = ['setup', '--agent', 'claude', '--model', MODELS.claude, '--judge-agent', 'opencode', '--judge-model', MODELS.opencode, '--sessions', 'claude', '--json'];
+  const first = lfm(...args); // stdin is a closed pipe: no terminal, nothing to read
+  assert.equal(first.status, 0, first.stdout + first.stderr);
+  const a = JSON.parse(first.stdout);
+  assert.deepEqual([a.ready, a.changed, a.config_status, a.global_status, a.fails], [true, true, 'written', 'written', 0]);
+  assert.deepEqual([a.config, a.global], [config, global]);
+  assert.deepEqual([a.worker, a.judge], [{ runner: 'claude', model: MODELS.claude }, { runner: 'opencode', model: MODELS.opencode }]);
+  const skill = join(env.HOME, '.claude', 'skills', 'lfm-retro', 'SKILL.md');
+  assert.ok(existsSync(skill), `no skill at ${skill}`);
+  assert.ok(a.skills.length && a.skills.every((f) => existsSync(f)));
+  assert.deepEqual(a.checks.filter((c) => c.level === 'fail'), []); // warn-only: ready
+  assert.doesNotMatch(first.stderr, /Which agent|model for|agent: $/); // nothing was asked
+
+  const files = [config, global, skill].map((f) => readFileSync(f));
+  const second = lfm(...args);
+  assert.equal(second.status, 0, second.stdout + second.stderr);
+  const b = JSON.parse(second.stdout);
+  assert.deepEqual([b.ready, b.changed, b.config_status, b.global_status], [true, false, 'already set up', 'kept']);
+  assert.deepEqual([config, global, skill].map((f) => readFileSync(f)), files); // byte for byte unchanged
+  assert.deepEqual(b.ignored, ['--agent', '--model', '--judge-agent', '--judge-model', '--sessions']);
+  assert.doesNotMatch(second.stderr, /Which agent|model for|agent: $/);
+
+  const doc = lfm('doctor', '--json'); // the health command alone: offline, no terminal
+  assert.deepEqual([doc.status, JSON.parse(doc.stdout).fails], [0, 0]);
+
+  writeFileSync(config, 'sources:\n  log: { type: markdown-log, path: docs/defects.md }\n'); // no agent chosen
+  const unset = lfm('doctor', '--json');
+  assert.equal(unset.status, 1, unset.stderr); // a fail line, never a prompt
+  const failed = JSON.parse(unset.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(failed.map((c) => c.label), ['worker', 'judge']);
+  assert.ok(failed.every((c) => /^ask the user which agent and model to use, then set /.test(c.fix)));
+
+  const bare = lfm('setup', '--agent', 'claude', '--json'); // every choice is required: it asks nothing
+  assert.equal(bare.status, 2);
+  assert.match(bare.stderr, /^error: setup needs --model --judge-agent --judge-model: it asks nothing/m);
+});
+
 test('init writes the global agent config and a working project config once: the agents the user chose, the sources found, a git-ignored .lfm', () => {
   const { p, nm, lfm, config, global } = setup(['claude', 'opencode']);
   const r = lfm('init', '-y', '--no-skill', '--json', ...PICK, '--sessions', 'claude');
@@ -141,12 +185,18 @@ test('with no agent chosen, init writes none and says to ask the user; a run and
   const noSkill = lfm('init', '-y');
   assert.equal(noSkill.status, 0, noSkill.stderr);
   assert.match(noSkill.stdout, /^skills: no configured agent has a skills dir$/m);
-  for (const cmd of [['retro', '--foreground'], ['doctor'], ['agents']]) {
+  for (const cmd of [['retro', '--foreground'], ['agents']]) {
     const stop = lfm(...cmd);
     assert.equal(stop.status, 2, `${cmd[0]}: ${stop.stderr}`);
     assert.match(stop.stderr, /^error: ask the user which agent to use: /m);
     assert.equal(stop.stderr.match(/^next: (.*)$/m)[1], save);
   }
+  // doctor is the health command: no terminal, so the missing choices are fail lines with their fix, not a stop.
+  const doc = lfm('doctor', '--json');
+  assert.equal(doc.status, 1, doc.stderr);
+  const failed = JSON.parse(doc.stdout).checks.filter((c) => c.level === 'fail');
+  assert.deepEqual(failed.map((c) => c.label), ['worker', 'judge']);
+  assert.ok(failed.every((c) => /^ask the user which agent and model to use, then set (agent|judge_agent) and its agent_config model in /.test(c.fix)));
 
   const worker = lfm('init', '-y', '--agent', 'claude', '--model', MODELS.claude, '--json'); // an existing file takes an unset key
   assert.equal(worker.status, 0, worker.stderr);
@@ -364,15 +414,21 @@ test('an existing project file takes --agent and --model even when the global fi
 });
 
 // Not a terminal: init, retro, doctor and agents each stop with the ask line that names the model still to set.
-test('with an agent set but no model, init, retro, doctor and agents stop with the ask that names agent_config.<agent>.model', () => {
+test('with an agent set but no model, init, retro and agents stop with the ask that names agent_config.<agent>.model', () => {
   const { p, lfm } = setup(['claude', 'opencode'], 'agent: claude\njudge_agent: opencode\n');
   const ask = /^error: ask the user which agent to use: agent_config\.claude\.model and agent_config\.opencode\.model are not set in \S+\.learn-from-mistakes\.yaml, and the tool never picks one/m;
-  for (const cmd of [['init'], ['retro', '--foreground'], ['doctor'], ['agents']]) {
+  for (const cmd of [['init'], ['retro', '--foreground'], ['agents']]) {
     const stop = lfm(...cmd);
     assert.equal(stop.status, 2, `${cmd[0]}: ${stop.stderr}`);
     assert.match(stop.stderr, ask);
     assert.equal(stop.stderr.match(/^next: (.*)$/m)[1], `learn-from-mistakes-axi init --agent <agent> --model <model> --judge-agent <agent> --judge-model <model> --dir ${p}   # with the user's answer`);
   }
+  // doctor reports both missing models as fail lines, each with the fix that saves the user's choice.
+  const doc = lfm('doctor', '--json');
+  assert.equal(doc.status, 1, doc.stderr);
+  const modelFails = JSON.parse(doc.stdout).checks.filter((c) => c.label.endsWith(' model') && c.level === 'fail');
+  assert.deepEqual(modelFails.map((c) => [c.label, c.detail]), [['worker model', 'no model set in agent_config for claude'], ['judge model', 'no model set in agent_config for opencode']]);
+  assert.ok(modelFails.every((c) => /^ask the user which agent and model to use, then set /.test(c.fix)));
 });
 
 // Review-7: a flag never replaces a model the project file already sets, even when the agent comes from the global file.
@@ -686,14 +742,17 @@ test('doctor --live prints one fail for a judge on a failed BYOKit route, and no
 
 // A BYOKit route with no model in agent_config has none to call, and the tool never picks one: the model is a fail
 // with the key to set, not an agent-CLI warn, and --live makes no call that would fail a second time.
-test('doctor asks for the model of a BYOKit worker that has none, and makes no call', () => {
+test('doctor fails the model of a BYOKit worker that has none, and makes no call', () => {
   const { lfm, keys } = setup(['claude']);
   assert.equal(lfm('init', '-y', '--no-skill').status, 0);
   keys(`agent: "byokit:zai-coding-cn"\njudge_agent: claude\nagent_config: { claude: { model: ${MODELS.claude} } }\n`);
   const r = lfm('doctor', '--live', '--json');
-  assert.equal(r.status, 2, r.stdout);
-  assert.equal(r.stdout, '');
-  assert.match(r.stderr, /^error: ask the user which agent to use: agent_config\.byokit:zai-coding-cn\.model is not set in /m);
+  assert.equal(r.status, 1, r.stderr);
+  const checks = JSON.parse(r.stdout).checks;
+  const model = checks.find((c) => c.label === 'worker model');
+  assert.deepEqual([model.level, model.detail], ['fail', 'no model set in agent_config for byokit:zai-coding-cn']);
+  assert.match(model.fix, /^ask the user which agent and model to use, then set agent and its agent_config model in /);
+  assert.equal(checks.some((c) => c.label === 'worker live'), false);
 });
 
 // Two BYOKit roles on one route read one agent_config entry, so they call the same model: the user's choice, never a fail.

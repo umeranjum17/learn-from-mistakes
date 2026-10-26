@@ -1,6 +1,6 @@
 {
   "name": "learn-from-mistakes-axi",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Find repeated coding-agent mistakes. Get evidence-backed fixes.",
   "license": "MIT",
   "keywords": ["coding-agents", "retrospective", "root-cause-analysis", "developer-tools", "cli", "agent-skills", "learn-from-mistakes"],
@@ -8,7 +8,7 @@
   "repository": { "type": "git", "url": "git+https://github.com/umeranjum17/learn-from-mistakes.git" },
   "bugs": { "url": "https://github.com/umeranjum17/learn-from-mistakes/issues" },
   "type": "module",
-  "bin": { "learn-from-mistakes-axi": "bin/learn-from-mistakes-axi.mjs" },
+  "bin": { "learn-from-mistakes-axi": "bin/learn-from-mistakes-axi.mjs", "learn-from-mistakes": "bin/learn-from-mistakes-axi.mjs" },
   "files": ["bin", "src", "skills"],
   "engines": { "node": ">=22.13" },
   "scripts": { "pretest": "npm ci", "test": "npm run build:skill -- --check && node --test", "build:skill": "node scripts/build-skill.mjs", "frozen-five": "node scripts/frozen-five.mjs" },

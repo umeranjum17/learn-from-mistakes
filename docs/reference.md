@@ -50,6 +50,8 @@ Then run `doctor`, `retro`, `attach` or `status`, and `report` as above. These v
 
 `init -y --no-skill` can write config without asking, but it does **not** choose agents or make the project ready. Follow its gaps. A second `init` keeps existing choices; flags can fill missing project choices, not replace them. `init --reconfigure` is the one exception: it re-applies `--agent`, `--model`, `--judge-agent`, `--judge-model` and `--sessions` to an existing config, replacing those keys while every other key and comment stays. Edit existing keys explicitly if you want to change anything else.
 
+For an install that never has a terminal, `setup` takes the worker, the judge and both models as required flags, installs the skill for those agents, then runs `doctor`; it asks nothing and its exit code is the health answer. The [README's For installers section](../README.md#for-installers) gives the command, the flags and the exit codes.
+
 If no source was found, configure one before running retro. For a defect log:
 
 ```yaml
