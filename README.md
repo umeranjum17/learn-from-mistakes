@@ -37,13 +37,14 @@ After `completed`, run `learn-from-mistakes-axi report` and open the file named 
 
 ## For installers
 
-A machine can install and set up the whole tool in one command. Pass every choice as a flag: `setup` never prompts, never reads stdin, never calls a model and writes no secret.
+A machine can install and set up the whole tool with no terminal and no prompt. Install the package, which provides the `learn-from-mistakes-axi` command and the short `learn-from-mistakes` alias, then pass every choice to `setup` as a flag: it never reads stdin, never calls a model and writes no secret.
 
 ```sh
-npm i -g learn-from-mistakes-axi   # installs the CLI and its short learn-from-mistakes alias
 learn-from-mistakes-axi setup \
-  --agent "$WORKER" --model "$WORKER_MODEL" \
-  --judge-agent "$JUDGE" --judge-model "$JUDGE_MODEL" \
+  --agent "$WORKER" \
+  --model "$WORKER_MODEL" \
+  --judge-agent "$JUDGE" \
+  --judge-model "$JUDGE_MODEL" \
   --sessions claude,codex \
   --json
 ```
@@ -54,14 +55,13 @@ It is idempotent: a second run over the same home and project changes no file an
 Its exit code is the health answer: `0` ready (every check ok or warn-only), `1` a check failed, `2` a missing or wrong flag.
 Each failure carries its `fix:` line, and `--json` prints one object with `ready`, `changed`, the config paths and doctor's `checks`.
 
-Two commands an installer can call on their own:
+Two commands an installer can call on their own. `--version` prints the plain version alone, for a pin or a floor check. `doctor --json` is the health command: exit `0` when no check failed, `1` when one did, and it calls no model unless `--live` is passed.
 
 ```sh
-learn-from-mistakes-axi --version      # the plain version, for a pin or a floor check
-learn-from-mistakes-axi doctor --json  # exit 0 when no check failed, 1 when one did
+learn-from-mistakes-axi --version
+learn-from-mistakes-axi doctor --json
 ```
 
-`doctor` needs no terminal and calls no model unless `--live` is passed.
 Agent sign-in stays with the user: a fresh home holds no agent credentials, so `doctor` reports the missing login as a `fail` until that agent is signed in.
 
 ## Why use it instead of another manual retro?
