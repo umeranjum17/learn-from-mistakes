@@ -1826,6 +1826,8 @@ test('signoff_report: a run posts its whole report to sign-off when asked, shows
   assert.equal(board().length, 1);
   assert.deepEqual([card.contract, card.kind, card.schema, card.key, card.filer], [1, 'report', 3, `lfm-report-${posted.run.id}`, 'learn-from-mistakes']);
   assert.ok(!('options' in card) && !JSON.stringify(card).includes('"apply"'), 'the report carries Apply or Skip choices');
+  assert.deepEqual([card.purpose, card.project], ['audit', /^Retro for (.*): \d+ repeated/.exec(card.title)[1]], 'a retro is an audit of its project by default');
+  assert.ok(card.project && [...card.project].length <= 40);
   assert.match(card.title, /^Retro for .*: 2 repeated mistakes, 5 fixes kept$/);
   assert.deepEqual(card.sections.map((x) => x.id), ['mistakes', 'fixes', 'not-checked']);
   assert.equal(card.sections[1].items.length, 5);
@@ -1838,6 +1840,12 @@ test('signoff_report: a run posts its whole report to sign-off when asked, shows
   assert.equal(readFileSync(join(signDir, 'board.json'), 'utf8'), first);
   assert.equal(calls().length, 2);
   assert.equal(calls()[0].stdin, calls()[1].stdin);
+  // Purpose and project can be set; an unknown purpose is refused before anything is sent.
+  const sent = calls().length;
+  const bad = lfm(peerEnv, 'signoff', 'report', '--purpose', 'retro');
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /^error: --purpose "retro" must be one of research, plan, decision, audit, incident, status, other$/m);
+  assert.equal(calls().length, sent);
   // The Apply or Skip cards stay a separate command with their own keys.
   assert.equal(lfm(peerEnv, 'signoff', 'post').status, 0);
   assert.equal(board().length, 6);
@@ -1849,9 +1857,9 @@ test('signoff_report: a run posts its whole report to sign-off when asked, shows
   assert.deepEqual([refused.signoff_report.state, refused.signoff_report.key], ['failed', `lfm-report-${refused.run.id}`]);
   assert.match(refused.signoff_report.why, /sign-off-axi: exit 2/);
   assert.equal(board().filter((m) => m.key === refused.signoff_report.key).length, 0);
-  const again = lfm(peerEnv, 'signoff', 'report');
+  const again = lfm(peerEnv, 'signoff', 'report', '--purpose', 'status', '--project', 'sample-project');
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(board().filter((m) => m.key === refused.signoff_report.key).length, 1);
+  assert.deepEqual(board().filter((m) => m.key === refused.signoff_report.key).map((m) => [m.purpose, m.project]), [['status', 'sample-project']]);
   assert.deepEqual(query('SELECT state, why FROM signoff_report WHERE run_id = ?', refused.run.id), [{ state: 'posted', why: null }]);
   const failedCmd = lfm({ ...peerEnv, FAKE_SIGNOFF_REFUSE: '1' }, 'signoff', 'report', '--run', String(refused.run.id));
   assert.equal(failedCmd.status, 1);

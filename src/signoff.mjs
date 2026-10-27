@@ -92,12 +92,14 @@ const clip = (text, max) => {
   const t = redact(text ?? '').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim(), chars = [...t];
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : t;
 };
+// The peer takes these seven report purposes and a project of up to 40 characters; a retro is an audit of the project it ran in.
+export const PURPOSES = ['research', 'plan', 'decision', 'audit', 'incident', 'status', 'other'];
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
 // The run's whole result as one sign-off report (contract 1, kind report, schema 3): the repeated mistakes, the kept fixes and what was
 // not checked. It carries no options: Apply or Skip stays on the finding cards of `signoff post`. The key and every field come from the
 // saved run, so a retry sends the same bytes and the board keeps one card.
-function reportMessage(cfg, db, runId) {
+function reportMessage(cfg, db, runId, opts = {}) {
   const run = db.prepare('SELECT updated_at FROM runs WHERE id = ?').get(runId);
   const window = JSON.parse(db.prepare("SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'").get(runId).output_json);
   const repeated = [...counts(cfg, db, runId, window).causes].filter(([, c]) => c.repeated);
@@ -110,6 +112,7 @@ function reportMessage(cfg, db, runId) {
   const gaps = (/^6\. Not checked\n([\s\S]*?)\n\n7\. /m.exec(text)?.[1] ?? '').split('\n').filter((l) => l.startsWith('- ') && !l.startsWith('- Nothing.'));
   return {
     contract: 1, kind: 'report', schema: 3, key: `lfm-report-${runId}`, filer: 'learn-from-mistakes',
+    purpose: opts.purpose ?? 'audit', project: clip(opts.project ?? cfg.name, 40),
     title: clip(`Retro for ${cfg.name}: ${plural(repeated.length, 'repeated mistake')}, ${plural(fixes.length, 'fix', 'fixes')} kept`, 160),
     about: `Run ${runId}, window ${cfg.window}. Apply or Skip questions for the open fixes are separate cards: run learn-from-mistakes-axi signoff post.`,
     filed: `${new Date(run.updated_at).toISOString().slice(0, 19)}Z`,
@@ -133,14 +136,14 @@ function reportMessage(cfg, db, runId) {
 
 // Posts the run's report to sign-off and saves the outcome (posted, skipped or failed) for `status`. It never throws: a run's
 // report that sign-off cannot take must not fail the run. The same key and bytes go out on every retry, so the board keeps one card.
-export async function postReport(cfg, db, runId) {
+export async function postReport(cfg, db, runId, opts = {}) {
   const key = `lfm-report-${runId}`, bin = which('sign-off-axi');
   let state = 'posted', why = null;
   if (!bin) [state, why] = ['skipped', 'sign-off-axi is not installed; the report stays in report.txt (npm i -g sign-off-axi)'];
   else {
     try {
       refuseRealBoard();
-      peer(bin, ['post', '--kind', 'report', '--from', '-'], cfg, JSON.stringify(reportMessage(cfg, db, runId)));
+      peer(bin, ['post', '--kind', 'report', '--from', '-'], cfg, JSON.stringify(reportMessage(cfg, db, runId, opts)));
     }
     catch (e) { [state, why] = ['failed', e.message]; }
   }
@@ -159,7 +162,7 @@ export async function signoff(action, cfg, opts) {
       const run = opts.run ? db.prepare('SELECT id, status FROM runs WHERE id = ?').get(Number(opts.run))
         : db.prepare("SELECT id, status FROM runs WHERE status = 'completed' AND kind IS NULL ORDER BY id DESC LIMIT 1").get(); // a retro, never an incident run
       if (run?.status !== 'completed') throw new UsageError('signoff report needs a completed run', AGAIN);
-      const { key, state, why } = await postReport(cfg, db, run.id);
+      const { key, state, why } = await postReport(cfg, db, run.id, opts);
       console.log(`${state}: ${key}${why ? ` (${why})` : ''}`);
       if (state === 'failed') process.exitCode = 1;
       return;
