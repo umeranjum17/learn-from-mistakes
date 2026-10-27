@@ -17,7 +17,7 @@ import { agents, chooseFix, detect, resolveRoles, RUNNERS, which } from '../src/
 import { repeats } from '../src/check.mjs';
 import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
-import { signoff } from '../src/signoff.mjs';
+import { PURPOSES, signoff } from '../src/signoff.mjs';
 import { apply, applyRun } from '../src/apply.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
@@ -589,13 +589,13 @@ const FORMS = {
   rerun: 'learn-from-mistakes-axi rerun [--resume] [--run <id>] [--wait [<time>]] [--dir <dir>] [--json]',
   agents: 'learn-from-mistakes-axi agents [--test <runner>] [--dir <dir>] [--json]',
   'signoff-post': 'learn-from-mistakes-axi signoff post [--run <id>] [--dir <dir>]',
-  'signoff-report': 'learn-from-mistakes-axi signoff report [--run <id>] [--dir <dir>]',
+  'signoff-report': 'learn-from-mistakes-axi signoff report [--run <id>] [--purpose <research|plan|decision|audit|incident|status|other>] [--project <name>] [--dir <dir>]',
   'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
   apply: 'learn-from-mistakes-axi apply [--run <id>] [--fix <n>] [--dir <dir>]',
 };
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--evidence', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions'];
+const VALUE_FLAGS = ['--dir', '--evidence', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions', '--purpose', '--project'];
 const SWITCHES = ['--status', '--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
@@ -648,6 +648,8 @@ async function main(ctx) {
   }
   if (opts.wait) opts.wait = parseInt(opts.wait, 10) * UNIT_MS[opts.wait.at(-1)];
   if (opts.wait && opts.foreground) throw new UsageError('pass --wait or --foreground, not both', form);
+  if (opts.purpose !== undefined && !PURPOSES.includes(opts.purpose)) throw new UsageError(`--purpose ${shown(opts.purpose)} must be one of ${PURPOSES.join(', ')}`, form);
+  if (opts.project !== undefined && ![...opts.project.trim()].length) throw new UsageError('--project needs a project name', form);
   if (cmd === 'logs' && !opts.step) throw new UsageError('logs needs --step', form);
   if (cmd === 'incident' && opts.status && (opts.what !== undefined || opts.evidence || opts.wait || opts.foreground)) throw new UsageError('incident --status takes no failure, --evidence, --wait or --foreground', form);
   if (cmd === 'incident' && !opts.status && !opts.what?.trim()) throw new UsageError('incident needs the failure: your own words, a file, a screenshot, or a GitHub PR or issue link', WHAT);

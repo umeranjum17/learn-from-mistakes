@@ -214,13 +214,13 @@ Only when you want a handoff, run:
 
 ```sh
 learn-from-mistakes-axi signoff post
-learn-from-mistakes-axi signoff report
+learn-from-mistakes-axi signoff report [--purpose <purpose>] [--project <name>]
 learn-from-mistakes-axi signoff answers
 ```
 
 `post` sends the completed run's kept fixes as finding messages with Apply/Skip choices; a fix the run applied itself is printed as applied, never asked. Without the binary it prints one `kept: <key>` line per fix, the install hint and the `report.txt` path; nothing was posted and the fix text stays in `report.txt`. `answers` saves received answers, or reports no peer/no new answers. It applies nothing. Setting `signoff: off` does not disable a command you explicitly run.
 
-`report` sends the run's whole report as one report card, apart from the Apply/Skip cards: the repeated mistakes, the kept fixes and what was not checked, with no choices on it. Set `signoff_report: on` (default `off`) to post it when a run ends. The run always completes; `status` then shows `signoff_report` as `posted`, `skipped` (no `sign-off-axi`; the report stays in `report.txt`) or `failed` with the peer's refusal. Run `signoff report` to retry: the card has the key `lfm-report-<run>` and the same text every time, so the board keeps one. The report card needs a `sign-off-axi` that takes a report (schema 3).
+`report` sends the run's whole report as one report card, apart from the Apply/Skip cards: the repeated mistakes, the kept fixes and what was not checked, with no choices on it. Set `signoff_report: on` (default `off`) to post it when a run ends. The run always completes; `status` then shows `signoff_report` as `posted`, `skipped` (no `sign-off-axi`; the report stays in `report.txt`) or `failed` with the peer's refusal. Run `signoff report` to retry: the card has the key `lfm-report-<run>` and the same text every time, so the board keeps one. The report card needs a `sign-off-axi` that takes a report (schema 3). It carries a `purpose` (default `audit`; `--purpose` takes research, plan, decision, audit, incident, status or other) and a `project` of up to 40 characters (default the config `name`; `--project` sets it), which the board requires; an unknown purpose is refused before anything is sent. The Apply/Skip finding cards of `post` take neither.
 
 ### Apply only when requested
 
