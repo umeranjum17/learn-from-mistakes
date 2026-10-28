@@ -25,53 +25,55 @@ const standing = (args = []) => {
   return cache[key];
 };
 
-test('the frozen set scores its five cases in both environments', () => {
-  const out = standing();
-  assert.deepEqual(out.cases.map((c) => c.id), set.cases.map((c) => c.id));
-  assert.deepEqual(out.cases.map((c) => c.kind), ['repeated cause', 'single complaint', 'one-time defect', 'one-time defect', 'one-time defect']);
-  for (const env of ['plain', 'firstmate']) {
-    const verdicts = out.environments[env].verdicts;
-    assert.deepEqual(Object.keys(verdicts), set.cases.map((c) => c.id), `${env} does not score the same five cases`);
-    for (const [id, verdict] of Object.entries(verdicts)) assert.ok(['found', 'listed', 'missing'].includes(verdict), `${env}/${id} has the verdict ${verdict}`);
+test('the frozen five journey: five made-up mistakes are scored in both environments against the baseline', () => {
+  { // the frozen set scores its five cases in both environments
+    const out = standing();
+    assert.deepEqual(out.cases.map((c) => c.id), set.cases.map((c) => c.id));
+    assert.deepEqual(out.cases.map((c) => c.kind), ['repeated cause', 'single complaint', 'one-time defect', 'one-time defect', 'one-time defect']);
+    for (const env of ['plain', 'firstmate']) {
+      const verdicts = out.environments[env].verdicts;
+      assert.deepEqual(Object.keys(verdicts), set.cases.map((c) => c.id), `${env} does not score the same five cases`);
+      for (const [id, verdict] of Object.entries(verdicts)) assert.ok(['found', 'listed', 'missing'].includes(verdict), `${env}/${id} has the verdict ${verdict}`);
   }
-});
-
-test('the complaint repeats its cause with Firstmate sources and does not without them', () => {
-  const out = standing();
-  const repeats = (env, cause) => out.environments[env].repeated.some((l) => l.startsWith(`${cause}:`));
-  assert.ok(repeats('firstmate', 'unchosen-key'), 'the captain complaint does not repeat its cause with Firstmate sources');
-  assert.ok(!repeats('plain', 'unchosen-key'), 'an ordinary record repeats its cause without Firstmate sources');
-  assert.ok(repeats('plain', 'rollout-gap') && repeats('firstmate', 'rollout-gap'), 'the repeated cause does not repeat in both environments');
-});
-
-test('a mistake counts as found only when a finding names it in plain words', () => {
-  const out = standing();
-  // The recorded answer gives a finding for one case only: the one whose name the finding holds.
-  const named = set.cases.filter((c) => c.finding).map((c) => c.id);
-  for (const env of ['plain', 'firstmate']) {
-    const found = Object.entries(out.environments[env].verdicts).filter(([, v]) => v === 'found').map(([id]) => id);
-    assert.deepEqual(found, named, `${env} found the wrong cases`);
   }
-});
 
-test('an unrelated finding is not counted as a hit', () => {
-  const withIt = standing();
-  const without = standing(['--no-unrelated']);
-  // The run keeps the finding about the bystander record, and it names none of the five cases.
-  const unrelated = withIt.environments.plain.findings.filter((f) => f.cause === 'other');
-  assert.equal(unrelated.length, 1, 'the run did not keep the unrelated finding');
-  assert.ok(!set.cases.some((c) => c.names.some((n) => unrelated[0].summary.includes(n))), 'the unrelated finding names a case');
-  // Leaving it out changes no verdict: it counts for none of the five.
-  for (const env of ['plain', 'firstmate']) assert.deepEqual(without.environments[env].verdicts, withIt.environments[env].verdicts, `${env} counted the unrelated finding`);
-});
+  { // the complaint repeats its cause with Firstmate sources and does not without them
+    const out = standing();
+    const repeats = (env, cause) => out.environments[env].repeated.some((l) => l.startsWith(`${cause}:`));
+    assert.ok(repeats('firstmate', 'unchosen-key'), 'the captain complaint does not repeat its cause with Firstmate sources');
+    assert.ok(!repeats('plain', 'unchosen-key'), 'an ordinary record repeats its cause without Firstmate sources');
+    assert.ok(repeats('plain', 'rollout-gap') && repeats('firstmate', 'rollout-gap'), 'the repeated cause does not repeat in both environments');
+  }
 
-test('the standing matches the baseline: the found cases stay the same and a listed case stays listed', () => {
-  const out = standing();
-  for (const env of ['plain', 'firstmate']) {
-    const verdicts = out.environments[env].verdicts, was = baseline.environments[env];
-    const found = Object.entries(verdicts).filter(([, v]) => v === 'found').map(([id]) => id);
-    const foundBefore = Object.entries(was).filter(([, v]) => v === 'found').map(([id]) => id);
-    assert.deepEqual(found, foundBefore, `${env} found other cases than the baseline`);
-    for (const [id, verdict] of Object.entries(was)) if (verdict === 'listed') assert.notEqual(verdicts[id], 'missing', `${env}/${id} fell back to missing`);
+  { // a mistake counts as found only when a finding names it in plain words
+    const out = standing();
+    // The recorded answer gives a finding for one case only: the one whose name the finding holds.
+    const named = set.cases.filter((c) => c.finding).map((c) => c.id);
+    for (const env of ['plain', 'firstmate']) {
+      const found = Object.entries(out.environments[env].verdicts).filter(([, v]) => v === 'found').map(([id]) => id);
+      assert.deepEqual(found, named, `${env} found the wrong cases`);
+  }
+  }
+
+  { // an unrelated finding is not counted as a hit
+    const withIt = standing();
+    const without = standing(['--no-unrelated']);
+    // The run keeps the finding about the bystander record, and it names none of the five cases.
+    const unrelated = withIt.environments.plain.findings.filter((f) => f.cause === 'other');
+    assert.equal(unrelated.length, 1, 'the run did not keep the unrelated finding');
+    assert.ok(!set.cases.some((c) => c.names.some((n) => unrelated[0].summary.includes(n))), 'the unrelated finding names a case');
+    // Leaving it out changes no verdict: it counts for none of the five.
+    for (const env of ['plain', 'firstmate']) assert.deepEqual(without.environments[env].verdicts, withIt.environments[env].verdicts, `${env} counted the unrelated finding`);
+  }
+
+  { // the standing matches the baseline: the found cases stay the same and a listed case stays listed
+    const out = standing();
+    for (const env of ['plain', 'firstmate']) {
+      const verdicts = out.environments[env].verdicts, was = baseline.environments[env];
+      const found = Object.entries(verdicts).filter(([, v]) => v === 'found').map(([id]) => id);
+      const foundBefore = Object.entries(was).filter(([, v]) => v === 'found').map(([id]) => id);
+      assert.deepEqual(found, foundBefore, `${env} found other cases than the baseline`);
+      for (const [id, verdict] of Object.entries(was)) if (verdict === 'listed') assert.notEqual(verdicts[id], 'missing', `${env}/${id} fell back to missing`);
+  }
   }
 });

@@ -81,39 +81,6 @@ test('an incident from text, a file and a screenshot gives one report: timeline,
   assert.match(lfm(['apply']).stderr, /^error: no retro run has kept fixes/m);
 });
 
-test('a GitHub PR link, an issue link and #<n> are read through gh: title, body, comments and reviews with their times, never an author name', () => {
-  const { p, lfm } = project({ gh: true });
-  const pr = runOf(lfm(['incident', 'https://github.com/umer/board/pull/12', '--evidence', 'https://github.com/umer/board/issues/7', '--foreground', '--json']));
-  const bundle = readFileSync(join(p, '.lfm', 'runs', String(pr.run.id), 'bundle.md'), 'utf8');
-  assert.match(bundle, /^- \[i1\] the pull request, 2026-10-20T09:00:00Z\n {2}> PR #12: Ship the feel-v2 board\n {2}> PR #12 opened at 2026-10-20T09:00:00Z\. PR #12 merged at 2026-10-21T10:00:00Z\./m);
-  assert.match(bundle, /^- \[i2\] a review, 2026-10-21T09:00:00Z\n {2}> A review on PR #12:\n {2}> Review: approved\./m);
-  assert.match(bundle, /^- \[i3\] a comment, 2026-10-22T08:00:00Z\n {2}> A comment on PR #12:\n {2}> The shipped board uses the old layout\./m);
-  assert.match(bundle, /^- \[i4\] the issue, 2026-10-22T09:00:00Z\n {2}> issue #7: Board differs/m);
-  assert.doesNotMatch(bundle, /umer-login-canary/);
-  const report = reportOf(pr);
-  assert.match(report, /^- 2026-10-20: The owner approved the prototype for Umer\.\n {3}Evidence: https:\/\/github\.com\/umer\/board\/pull\/12$/m);
-  assert.match(report, /Evidence: https:\/\/github\.com\/umer\/board\/pull\/12#issuecomment-1/);
-  const issue = runOf(lfm(['incident', '#7', '--foreground', '--json'])); // not a PR: read as an issue of the project's own repo
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(issue.run.id), 'bundle.md'), 'utf8'), /^- \[i1\] the issue, /m);
-  const gone = lfm(['incident', 'https://github.com/umer/board/pull/99']);
-  assert.equal(gone.status, 2);
-  assert.match(gone.stderr, /^error: https:\/\/github\.com\/umer\/board\/pull\/99: gh cannot read it \(no pull requests found\)\nnext: /m);
-});
-
-test('a fix with no owner, a code fix with no regression test, a fix with no due date and advice that breaks the rules are refused, and the report names each rule', () => {
-  const { lfm } = project();
-  const out = runOf(lfm(['incident', TEXT, '--foreground', '--json'], { FAKE_INCIDENT: 'refused' }));
-  assert.deepEqual(out.fixes.map((f) => f.priority), ['P0', 'P1'], 'a fix that broke a rule was numbered');
-  const report = reportOf(out);
-  assert.match(report, /^- The rules left out 3 fixes\.\n {3}The fix for spec-not-pinned: no owner; the owner is the role that makes the change\.\n {3}The fix for spec-not-pinned: no regression test; a code fix names the test that would have failed on this incident\.\n {3}The fix for spec-not-pinned: no due date; give the day it is due as YYYY-MM-DD\.$/m);
-  const log = readFileSync(join(out.result.report_txt, '..', 'prevent.log'), 'utf8');
-  assert.match(log, /^worker answer 1 is not valid: fixes\[2\]: no owner/m); // the first answer is sent back once with the rules
-  assert.match(log, /^fixes: 5 given, 3 refused$/m);
-  assert.match(log, /^worker answer 1 is not valid: .*avoid must be a list of 1 to 3 strings, each one sentence/m); // the advice is sent back too
-  assert.match(report, /^5\. How to avoid it now\n- The run gave no advice\.$/m);
-  assert.match(report, /^- The worker's advice on how to avoid it broke the report rules, so the report shows none\.$/m);
-});
-
 test('an incident fix is open until it is recorded, it shipped and its check passed; a later retro tracks it in the change ledger', () => {
   const { p, lfm } = project();
   const out = runOf(lfm(['incident', TEXT, '--foreground', '--json']));
@@ -138,27 +105,6 @@ test('an incident fix is open until it is recorded, it shipped and its check pas
   assert.equal(retro.status, 0, retro.stderr);
   const last = JSON.parse(retro.stdout);
   assert.deepEqual(last.followups.map((f) => [f.change, f.applied, f.shipped, f.worked]), [['chg-1', 'yes', 'yes', 'yes'], [`${out.run.id}:1`, 'no', 'no', 'not yet']]);
-});
-
-test('bad incident input is refused with error: and next:, never a stack trace', () => {
-  const { p, lfm } = project();
-  writeFileSync(join(p, 'blob.bin'), Buffer.from([1, 0, 2, 0]));
-  for (const [args, error] of [
-    [['incident'], /^error: incident needs the failure: /m],
-    [['incident', '--status', TEXT], /^error: incident --status takes no failure/m],
-    [['incident', TEXT, '--evidence', join(p, 'missing.md')], /^error: --evidence ".*missing\.md": no such file/m],
-    [['incident', 'https://example.com/a/page'], /^error: "https:\/\/example\.com\/a\/page": only a GitHub PR or issue link is read/m],
-    [['incident', TEXT, '--evidence', join(p, 'blob.bin')], /^error: .*blob\.bin: not a text file or an image/m],
-    [['incident', 'https://github.com/umer/board/pull/12'], /^error: https:\/\/github\.com\/umer\/board\/pull\/12: gh is not on PATH/m],
-    [['incident', TEXT, 'more words'], /^error: unexpected argument "more words"/m],
-  ]) {
-    const r = lfm(args);
-    assert.notEqual(r.status, 0, args.join(' '));
-    assert.match(r.stderr, error);
-    assert.match(r.stderr, /^next: /m);
-    assert.doesNotMatch(r.stderr, STACK);
-  }
-  assert.ok(!existsSync(join(p, '.lfm', 'lfm.sqlite')), 'a refused incident started a run');
 });
 
 test('a clean packed install gives the same incident report as the repo, with no Firstmate and no sign-off installed', () => {

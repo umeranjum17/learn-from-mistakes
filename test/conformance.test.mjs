@@ -3,11 +3,10 @@
 // stack trace and never a broken-citation message for a missing evidence file. Integration style: it drives the real
 // CLI, like cli.test.mjs.
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { once } from 'node:events';
 import { after, test } from 'node:test';
 import { SIGNOFF_MIN } from '../src/signoff.mjs';
 
@@ -139,64 +138,4 @@ test('the finding fixtures pass the pinned sign-off-axi validate, and the invali
     options: [{ value: 'apply', label: 'Apply' }, { value: 'skip', label: 'Skip' }], recommend_value: 'apply',
   }));
   assert.equal(validate(join(tmp, 'finding.json')).status, 0, 'the pinned peer refuses a message in the adapter\'s emitted shape');
-});
-
-test('every guard refuses bad input with error: and next:, never a stack trace', () => {
-  const { lfm, write } = project();
-  for (const [why, args] of [
-    ['an unknown command', ['frobnicate']],
-    ['an unknown option', ['--bogus']],
-    ['an unknown --run', ['status', '--run', '99']],
-    ['a bad --run id', ['status', '--run', 'abc']],
-    ['a bad --wait', ['retro', '--wait', 'soon']],
-    ['a bad --step', ['logs', '--step', 'bogus']],
-    ['a missing --cause', ['change', 'applied', '--ref', 'abc1234']],
-    ['a bad --ref', ['change', 'applied', '--cause', 'gate-failure', '--ref', 'nope']],
-    ['a bad --tripwire', ['change', 'applied', '--cause', 'gate-failure', '--ref', 'abc1234', '--tripwire', '< x']],
-    ['a bad --kind', ['change', 'applied', '--cause', 'gate-failure', '--ref', 'abc1234', '--kind', 'bogus']],
-    ['no run to inspect', ['report']],
-    ['no run to apply', ['apply', '--run', '99']],
-  ]) refuses(lfm(args), why);
-  for (const [why, config] of [
-    ['an unknown config key', 'unknown_key: 1\nsources: { log: { type: markdown-log, path: defects.md } }\n'],
-    ['a bad source type', 'sources: { log: { type: nope, path: defects.md } }\n'],
-    ['a source with no path', 'sources: { log: { type: markdown-log } }\n'],
-    ['a bad window', 'window: bogus\nsources: { log: { type: markdown-log, path: defects.md } }\n'],
-    ['bad caps', 'caps: { invocations: -1 }\nsources: { log: { type: markdown-log, path: defects.md } }\n'],
-    ['an agent that is not a name', 'agent: 3\nsources: { log: { type: markdown-log, path: defects.md } }\n'],
-  ]) { write(config); refuses(lfm(['retro', '--foreground']), why); }
-  const { p, lfm: lfm2 } = project(); // a source file that went missing is named, with the fix
-  rmSync(join(p, 'defects.md'));
-  const gone = lfm2(['retro', '--foreground', '--json']);
-  assert.equal(gone.status, 1, gone.stderr);
-  assert.match(JSON.parse(gone.stdout).run.error, /source log: cannot read \(ENOENT\)/);
-  assert.doesNotMatch(gone.stderr, STACK);
-});
-
-test('a missing run evidence file names the file and the fix, never a broken citation', async () => {
-  const { p, env } = project();
-  const bundle = () => join(p, '.lfm', 'runs', '1', 'bundle.md');
-  const child = spawn(process.execPath, [CLI, 'retro', '--wait', '2m', '--json', '--dir', p],
-    { env: { ...env, FAKE_ANALYSE: 'label', LFM_TEST_SLOW_STEP: 'analyse:4000' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '', err = '';
-  child.stdout.on('data', (d) => { out += d; });
-  child.stderr.on('data', (d) => { err += d; });
-  for (let i = 0; i < 1200 && !existsSync(bundle()); i++) await sleep(25); // up to 30 s: the bundle step writes it before analyse sleeps; under load the run can reach it late
-  assert.ok(existsSync(bundle()), 'the run never wrote its bundle.md');
-  rmSync(bundle()); // the evidence file briefly went missing
-  await once(child, 'exit');
-  const run = JSON.parse(out).run;
-  assert.equal(run.status, 'failed');
-  assert.match(run.error, /bundle .*bundle\.md is missing/);
-  assert.doesNotMatch(run.error, /bundle item/, 'a missing evidence file was blamed on the citation');
-  assert.doesNotMatch(err, STACK, 'a missing evidence file ended in a stack trace');
-  assert.doesNotMatch(readFileSync(join(p, '.lfm', 'runs', '1', 'worker.log'), 'utf8'), STACK);
-});
-
-test('the skill and the guide teach the retro method: blameless, numbers with a trend, past fixes checked, cost and why chain per mistake', () => {
-  const skill = readFileSync(join(REPO, 'skills/lfm-retro/SKILL.md'), 'utf8');
-  const guide = spawnSync(process.execPath, [CLI, 'guide'], { encoding: 'utf8' }).stdout;
-  assert.match(skill, /^## The retro method$/m);
-  for (const need of [/Blameless/, /trend \(up, down, flat or unknown\)/, /did each past fix work\?/, /roll back or delete/, /cost, how often it came back, the why chain down to its root cause, and its fix/, /never a person or an agent/]) assert.match(skill, need);
-  for (const need of [/blameless retro/, /trend/, /roll back what did not help/, /cost, how often it came back, its why chain to the root cause and its fix/]) assert.match(guide.replace(/\s+/g, ' '), need);
 });

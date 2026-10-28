@@ -7,7 +7,7 @@ test:
     one user journey; CI runs the full suite on the PR. Pick the changed parts'
     test files from `git diff --name-only <base>...HEAD`: each changed
     test/*.test.mjs; the test named after a changed module (src/init.mjs ->
-    test/init.test.mjs, src/check.mjs -> test/check.test.mjs, src/followup.mjs
+    test/init.test.mjs, src/followup.mjs
     -> test/followup.test.mjs, src/sources/github.mjs -> test/github.test.mjs,
     src/runners/* -> test/runners.test.mjs, src/sessions/* or
     src/sources/sessions.mjs -> test/sessions.test.mjs); README.md, skills/ or

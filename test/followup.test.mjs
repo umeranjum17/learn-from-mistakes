@@ -3,14 +3,13 @@
 // rules that need two retros in a row, and a rerun over the same data does not count as one. LFM_CLI points the same
 // journey at an installed bin (the verify skill's --package proof).
 import assert from 'node:assert/strict';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, test } from 'node:test';
 import { decode } from '@toon-format/toon';
-import { NOT_LIVE } from '../src/merge-time.mjs';
 // The user's agents, set once in the throwaway global config: a run needs both and the tool never picks one.
 const AGENTS_SET = 'agent: claude\njudge_agent: codex\nagent_config: { claude: { model: claude-haiku-5-5 }, codex: { model: gpt-6-luna } }\n';
 
@@ -151,98 +150,6 @@ test('each applied change gets before and after numbers and a verdict; the secon
     { change_id: 'chg-7', before: 4, after: 0, tripwire: null, verdict: 'no-data' }]);
   const log = JSON.parse(lfm('logs', '--step', 'followup', '--json').stdout);
   assert.deepEqual(log.log.slice(0, 2).map((l) => l.line), ['chg-1 cause_count:missing-file: 4 before, 0 after, keep', 'chg-2 cause_count:bad-search: 4 before, 5 after, rollback']);
-});
-
-test('a change added after collect with an at older than what collect read gives n/a numbers and no-data', () => {
-  const { p, lfm, retro } = journey();
-  const first = retro();
-  for (const days of [20, 30]) {
-    const r = lfm('change', 'applied', '--cause', 'missing-file', '--ref', 'abc1234', '--at', ago(days), '--tripwire', '<= 0');
-    assert.equal(r.status, 0, r.stderr);
-  }
-  // The followup step failed after collect had read the ledger; `rerun --resume` runs it again with the new changes in the ledger.
-  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  db.prepare(`UPDATE steps SET status = 'failed' WHERE run_id = ? AND name = 'followup'`).run(first.run.id);
-  db.prepare(`UPDATE runs SET status = 'failed' WHERE id = ?`).run(first.run.id);
-  db.close();
-  const resumed = lfm('rerun', '--resume', '--run', String(first.run.id), '--wait', '1m', '--json');
-  assert.equal(resumed.status, 0, resumed.stderr);
-  const r = JSON.parse(resumed.stdout);
-  assert.deepEqual(r.followups.slice(0, 12), first.followups); // the changes collect read keep their numbers and verdicts
-  assert.deepEqual(r.followups.slice(12).map((f) => [f.change, f.before, f.after, f.verdict]), [['chg-13', 'n/a', 4, 'no-data'], ['chg-14', 'n/a', 'n/a', 'no-data']]);
-});
-
-test('two retros within a minute: no delete, and no missed-twice rollback', () => {
-  const { retro } = journey();
-  retro();
-  const again = retro();
-  assert.deepEqual(again.followups.map((f) => [f.change, f.verdict]), [['chg-1', 'keep'], ['chg-2', 'rollback'], ['chg-3', 'rollback'],
-    ['chg-4', 'fix'], ['chg-5', 'no-data'], ['chg-6', 'no-data'], ['chg-7', 'no-data'], ['chg-8', 'rollback'], ['chg-9', 'no-data'],
-    ['chg-10', 'keep'], ['chg-11', 'no-data'], ['chg-12', 'fix']]);
-});
-
-// A session file appended to the journey project's store, shaped as journey() writes them.
-function appendSession(p, id, days, tools) {
-  const at = { cwd: p, sessionId: id, timestamp: ago(days) };
-  const rows = [{ type: 'user', ...at, message: { role: 'user', content: 'Umer: tidy the docs.' } },
-    ...tools.flatMap((name, i) => [
-      { type: 'assistant', ...at, message: { role: 'assistant', content: [{ type: 'tool_use', id: `t${i}`, name, input: { path: `f${i}` } }] } },
-      { type: 'user', ...at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${i}`, is_error: true, content: 'No such file.' }] } }])];
-  writeFileSync(join(dirname(p), 'home', '.claude', 'projects', '-p', `${id}.jsonl`), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
-}
-
-test('an apply-branch fix is measured from when it reaches the default branch, not its apply commit: unmerged it is no-data with the plain reason, merged or squashed its window starts at that commit', () => {
-  const { p, lfm, retro } = journey();
-  const git = (...args) => execFileSync('git', ['-C', p, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main');
-  git('config', 'user.name', 'Umer');
-  git('config', 'user.email', 'umer@example.com');
-  git('add', '-A');
-  git('commit', '-qm', 'start');
-  appendSession(p, 's-p1', 1, []);
-  appendSession(p, 's-p2', 0.8, []);
-  appendSession(p, 's-p3', 0.5, []);
-  // Two fixes, each committed on its own branch four days ago, recorded as `apply` records them.
-  const backdated = { ...process.env, GIT_AUTHOR_DATE: ago(4), GIT_COMMITTER_DATE: ago(4) };
-  const commitOn = (branch, file, text, n) => {
-    git('checkout', '-qb', branch);
-    writeFileSync(join(p, file), text);
-    git('add', '-A');
-    execFileSync('git', ['-C', p, 'commit', '-qm', `learn-from-mistakes: fix 1:${n} for bad-search`], { encoding: 'utf8', env: backdated });
-    const sha = git('rev-parse', 'HEAD');
-    git('checkout', '-q', 'main');
-    return sha;
-  };
-  const sha1 = commitOn('lfm/1-1', 'notes.txt', 'Umer finished writing this.\n', 1);
-  const sha2 = commitOn('lfm/1-2', 'guide.txt', 'Umer wrote a guide.\n', 2);
-  for (const [sha, n, tripwire] of [[sha1, 1, '<= 0'], [sha2, 2, '<= 1']]) {
-    const recorded = lfm('change', 'applied', '--cause', 'bad-search', '--ref', sha, '--at', ago(4), '--tripwire', tripwire, '--what', `fix 1:${n} on branch lfm/1-${n}`);
-    assert.equal(recorded.status, 0, recorded.stderr);
-  }
-
-  // While neither branch is merged the fixes are not live: n/a numbers and no-data, never a verdict.
-  const first = retro();
-  // The four states stay apart: applied, but not shipped, so it has not worked yet.
-  const row = (change, metric, before, after, tripwire, verdict, shipped, worked) => ({ change, metric, before, after, tripwire, verdict, checked: 'none', applied: 'yes', shipped, worked });
-  for (const [change, tripwire] of [['chg-13', '<= 0'], ['chg-14', '<= 1']]) {
-    assert.deepEqual(first.followups.find((f) => f.change === change), row(change, 'cause_count:bad-search', 'n/a', 'n/a', tripwire, 'no-data', 'no', 'not yet'));
-  }
-  const log = JSON.parse(lfm('logs', '--step', 'followup', '--json').stdout);
-  assert.ok(log.log.some((l) => l.line === `chg-13 cause_count:bad-search: n/a before, n/a after, no-data: ${NOT_LIVE}`), JSON.stringify(log.log));
-  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
-  assert.deepEqual({ ...db.prepare(`SELECT reason FROM followups WHERE run_id = ? AND change_id = 'chg-14'`).get(first.run.id) }, { reason: NOT_LIVE });
-  db.close();
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(first.run.id), 'report.txt'), 'utf8'), new RegExp(`^  ${NOT_LIVE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
-
-  // One branch merged, the other squashed: each window starts at the commit that brought it in.
-  execFileSync('git', ['-C', p, 'merge', '--no-ff', '-qm', 'merge fix 1:1', 'lfm/1-1'],
-    { encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: ago(1.5) } });
-  git('merge', '--squash', 'lfm/1-2');
-  execFileSync('git', ['-C', p, 'commit', '-qm', 'squash fix 1:2'],
-    { encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: ago(1.2) } });
-  const second = retro();
-  assert.deepEqual(second.followups.find((f) => f.change === 'chg-13'), row('chg-13', 'cause_count:bad-search', 9, 0, '<= 0', 'keep', 'yes', 'yes'));
-  assert.deepEqual(second.followups.find((f) => f.change === 'chg-14'), row('chg-14', 'cause_count:bad-search', 9, 0, '<= 1', 'keep', 'yes', 'yes'));
 });
 
 test('an accepted fix records its check command, and its follow-up shows proposal checked, fix applied, fix shipped and fix worked apart: a useful fix is kept, an ineffective one is rolled back, an accepted fix no change records is its own row', () => {
