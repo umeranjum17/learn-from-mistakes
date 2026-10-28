@@ -2,22 +2,29 @@ name: ci
 
 # No paths/paths-ignore filter: `test` is a required check, so it must report on every PR.
 # A docs-only change skips the heavy steps inside the job instead.
+# `edited` is left out of the PR types on purpose: nothing here reads the PR title or body, so
+# an edit must not start a run. `ready_for_review` starts the run a draft skipped.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
 # One group per PR/branch: a superseded PR run is cancelled so it stops competing for runners.
-# Main pushes never cancel in progress, so a merge cannot kill a running main build.
+# Main pushes never cancel in progress (the group is the branch name, cancel is false off PRs), so a
+# merge cannot kill a main run that is still building the commit before it.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   test:
+    # A draft costs nothing; marking it ready starts the run that reports the required check.
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,16 +52,50 @@ jobs:
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
           if [ "$docs_only" = true ]; then echo "Docs-only change; skipping npm ci and npm test."; fi
 
+      # On a push to main, skip the suite only when this commit's tree is byte-identical to the tree of
+      # the merged PR's head and that head already passed `test`. Anything else (no PR, API error,
+      # other tree, no passing check) runs the full suite. The job summary says which case it took.
+      - name: Check for a duplicate of the tested PR head
+        id: dup
+        if: github.event_name == 'push' && steps.changes.outputs.docs_only != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          skip=false
+          say() { echo "Duplicate-run check: $1"; echo "Duplicate-run check: $1" >> "$GITHUB_STEP_SUMMARY"; }
+          done_() { echo "skip=$skip" >> "$GITHUB_OUTPUT"; exit 0; }
+          if ! prs="$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$SHA"'") | "\(.number) \(.head.sha)"')"; then
+            say "API lookup failed, running the full suite."; done_
+          fi
+          if [ "$(printf '%s' "$prs" | grep -c .)" != 1 ]; then
+            say "no single merged PR is associated with this commit, running the full suite."; done_
+          fi
+          read -r num head <<< "$prs"
+          if ! passed="$(gh api "repos/$REPO/commits/$head/check-runs?per_page=100" --jq '[.check_runs[] | select(.name == "test" and .conclusion == "success")] | length')" || [ "$passed" -lt 1 ]; then
+            say "PR #$num head $head has no passing test check, running the full suite."; done_
+          fi
+          if ! git fetch --no-tags --depth=1 origin "refs/pull/$num/head" 2>/dev/null || [ "$(git rev-parse FETCH_HEAD)" != "$head" ]; then
+            say "could not fetch PR #$num head $head, running the full suite."; done_
+          fi
+          if [ "$(git rev-parse "$head^{tree}")" != "$(git rev-parse "$SHA^{tree}")" ]; then
+            say "tree of $SHA differs from PR #$num head $head, running the full suite."; done_
+          fi
+          skip=true
+          say "tree of $SHA is identical to PR #$num head $head, which passed test. Skipping npm ci and npm test; the suite did NOT run on this commit."
+          done_
+
       - name: Set up Node
-        if: steps.changes.outputs.docs_only != 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.dup.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: Install
-        if: steps.changes.outputs.docs_only != 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.dup.outputs.skip != 'true'
         run: npm ci
 
       - name: Test (full suite)
-        if: steps.changes.outputs.docs_only != 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.dup.outputs.skip != 'true'
         run: npm test
