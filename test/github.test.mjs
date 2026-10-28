@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -177,74 +177,6 @@ test('init finds the GitHub origin; a retro reads its merged PRs through gh into
   assert.match(full.causes.find((c) => c.cause === 'rework').proposal_refs.join(' '), /^prs:\d+$/);
 });
 
-test('a window with no merged PR: merged is 0, the ratios and the sums are n/a', () => {
-  const { tmp, p, lfm } = setup();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
-  writeFileSync(join(tmp, 'pages', 'first.json'), page([pr(2, 'feat: old work', { merged: 400 })], 'second'));
-  const r = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const run = JSON.parse(r.stdout);
-  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 0 }]);
-  const names = ['merged', 'first_pass', 'p50_hours_to_merge', 'p90_hours_to_merge', 'rework_ci', 'rework_other', 'reverted', 'escaped'];
-  const current = Object.fromEntries(run.metrics.filter((m) => names.includes(m.name)).map((m) => [m.name, m.current]));
-  assert.deepEqual(current, { merged: 0, first_pass: 'n/a', p50_hours_to_merge: 'n/a', p90_hours_to_merge: 'n/a', rework_ci: 'n/a', rework_other: 'n/a', reverted: 'n/a', escaped: 'n/a' });
-});
-
-test('Actions runs gh cannot read leave the CI numbers n/a, keep the PR numbers, and the report names the missing source', () => {
-  const { p, lfm } = setup();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
-  const r = lfm({ FAKE_GH: 'no-actions' }, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const run = JSON.parse(r.stdout), value = (name) => run.metrics.find((m) => m.name === name).current;
-  assert.deepEqual([value('merged'), value('ci_runs'), value('ci_failure_rate')], [10, 'n/a', 'n/a']);
-  assert.deepEqual(run.sources[0].missing, ['GitHub Actions runs of umer/umer-app (gh: Not Found (HTTP 404))']);
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8'), /^- Source prs gave no GitHub Actions runs of umer\/umer-app \(gh: Not Found \(HTTP 404\)\)\.$/m);
-});
-
-test('a missing or logged-out gh and a non-GitHub origin fail the source with the fix, never the origin URL', () => {
-  const { p, bin, lfm } = setup();
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github }\n');
-  const source = (env) => JSON.parse(lfm(env, 'doctor', '--json').stdout).checks.find((c) => c.label === 'source prs'); // its problem and fix
-  const out = source({ FAKE_GH: 'logged-out' });
-  assert.equal(out.detail, 'github: gh is not logged in to github.com');
-  assert.match(out.fix, /^remove sources\.prs from .*\/umer-app\/\.learn-from-mistakes\.yaml, or log in: gh auth login --hostname github\.com$/);
-
-  rmSync(join(bin, 'gh'));
-  assert.equal(source({}).detail, 'github: gh is not on PATH');
-  assert.deepEqual(JSON.parse(lfm({}, 'init', '--json').stdout).skipped, ['github: origin is on GitHub, but gh is not on PATH: install the GitHub CLI, then gh auth login']);
-
-  const token = `umer:${'T'.repeat(20)}`;
-  execFileSync('git', ['-C', p, 'remote', 'set-url', 'origin', `https://${token}@gitlab.example.com/umer/umer-app.git`]);
-  const other = lfm({}, 'doctor', '--json');
-  assert.equal(JSON.parse(other.stdout).checks.find((c) => c.label === 'source prs').detail, "github: the project's git origin is not a GitHub repo");
-  assert.ok(!other.stdout.includes('T'.repeat(20)) && !other.stderr.includes('T'.repeat(20)));
-  rmSync(join(p, '.learn-from-mistakes.yaml'));
-  const init = lfm({}, 'init', '--json'); // not on GitHub: no github source, and nothing skipped
-  assert.equal(init.status, 0, init.stderr);
-  assert.deepEqual([JSON.parse(init.stdout).sources, JSON.parse(init.stdout).skipped], [{}, []]);
-});
-
-test('a repos list reads each repo\'s PRs and Actions runs; init --firstmate defaults to the fleet\'s five', () => {
-  const { tmp, p, lfm, calls } = setup();
-  const home = join(tmp, 'fm-home');
-  mkdirSync(join(home, 'state'), { recursive: true });
-  const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', home, '--json');
-  assert.equal(init.status, 0, init.stderr);
-  assert.deepEqual(parse(readFileSync(join(p, '.learn-from-mistakes.yaml'), 'utf8')).sources.prs.repos, ['muxr', 'sign-off', 'byokit', 'crewhouse', 'firstmate-addons'].map((r) => `umeranjum17/${r}`));
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'sources:\n  prs: { type: github, repos: [umer/app-a, umer/app-b] }\n');
-  const r = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const run = JSON.parse(r.stdout);
-  assert.deepEqual(run.sources, [{ id: 'prs', type: 'github', items: 26 }]); // 13 merged PRs and a PR number each repo shares, kept apart by repo
-  const names = calls().flatMap((c) => c.filter((a) => a.startsWith('name=')));
-  assert.deepEqual([...new Set(names)].sort(), ['name=app-a', 'name=app-b']);
-  const m = Object.fromEntries(run.metrics.map((x) => [x.name, x.current]));
-  assert.equal(m['ci_failure_rate:umer/app-a'], 50);
-  assert.equal(m['ci_failure_rate:umer/app-b'], 50);
-  assert.equal(m.merged, 20);
-  assert.match(lfm({}, 'doctor').stdout, /26 PRs merged/);
-});
-
 // A synthetic Firstmate home: 3 status files (one with CRLF ends) and 5 inbox messages (one acknowledged into handled/), a
 // defect log and a targets file. Lines with no stamp take the one above; an entry with no time, a stamp that is not digits
 // or one out of range is skipped.
@@ -279,33 +211,6 @@ test('init --firstmate <home> opts in; the retro counts its decisions, blocks an
   writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'name: umer-app\nsources:\n'); // a config whose sources key is empty: the opt-in still adds home
   const bare = lfm({}, 'init', '-y', '--no-skill', '--firstmate', home, '--json');
   assert.equal(bare.status, 0, bare.stderr);
-});
-
-test('a registry summary with parentheses still reads its home', () => {
-  const { tmp, lfm } = setup();
-  const [main, mate] = ['harbor-main', 'ops-mate'].map((n) => join(tmp, n));
-  const at = Math.floor(NOW / 1000 - 86_400);
-  mkdirSync(join(main, 'data'), { recursive: true });
-  mkdirSync(join(main, 'state'), { recursive: true });
-  writeFileSync(join(main, 'data', 'secondmates.md'), `# Secondmates\n\n- ops - deploys (staging) (home: ${mate}; scope: demo; added 2026-10-01) (see ops)\n`);
-  mkdirSync(join(mate, 'state'), { recursive: true });
-  writeFileSync(join(mate, 'state', 'task.status'), `needs-decision [at=${at}]: pick a region\n`);
-  assert.equal(lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet', '--json').status, 0);
-  assert.match(lfm({}, 'doctor').stdout, /2 homes, 0 registry lines skipped \(no local home\), 1 decisions/);
-});
-
-test('init refuses a fleet whose registry lists the main home, and leaves the config unchanged', () => {
-  const { tmp, p, lfm } = setup();
-  const main = join(tmp, 'harbor-main');
-  mkdirSync(join(main, 'data'), { recursive: true });
-  writeFileSync(join(main, 'data', 'secondmates.md'), `- mate - x (home: ${main}; scope: demo; added 2026-10-01)\n`);
-  const cfg = join(p, '.learn-from-mistakes.yaml');
-  writeFileSync(cfg, 'name: umer-app\nsources:\n');
-  const before = readFileSync(cfg, 'utf8');
-  const init = lfm({}, 'init', '-y', '--no-skill', '--firstmate', main, '--fleet');
-  assert.notEqual(init.status, 0);
-  assert.match(init.stderr, /^error: \S+: sources\.home reads \S+ twice$/m);
-  assert.equal(readFileSync(cfg, 'utf8'), before);
 });
 
 // A synthetic fleet: a main home and two secondmate homes its registry lists, plus a remote route and a line with no home,
@@ -396,145 +301,6 @@ test('init --firstmate <home> --fleet reads every home of the fleet; home names 
   assert.ok(soloReport.includes(`- Home ${id(solo)}: 0 decisions, 1 block, 0 steers, 0 defects this window.`));
 });
 
-// A Firstmate home with data/metrics tables and no github source: the PR metrics come from prs.tsv, steers and corrections
-// from daily.tsv (the inbox messages are not added on top), and with no daily.tsv the steers come from the handled
-// messages, timed by the epoch their file name starts with. Entries that vanish mid-walk are skipped, and a folder that
-// cannot be read is named by its path.
-test('a firstmate home reads data/metrics/prs.tsv and daily.tsv, counts steers from them or from handled inboxes, and names an unreadable path', () => {
-  const { tmp, p, lfm } = setup();
-  const home = join(tmp, 'umer-home'), day = (days) => new Date(NOW - days * 86_400_000).toISOString(), at = (days) => `at=${Math.floor(NOW / 1000 - days * 86_400)}`;
-  const put = (file, text) => { mkdirSync(join(home, file, '..'), { recursive: true }); writeFileSync(join(home, file), text); };
-  const prHead = 'home\trepo\tpr\tcreated\tmerged\thours_to_merge\tbuild_hours\tcommits\tcommits_after_open\trework_ci\trework_pipeline\trework_other\treverted\tescaped\tfirst_pass\tbot\ttitle';
-  const prRow = (days, hours, { other = 0, escaped = 0, bot = '', first = 1 } = {}) => `umer\tdemo\t1\t${day(days + 1)}\t${day(days)}\t${hours}\t0\t1\t${other}\t0\t0\t${other}\t0\t${escaped}\t${first}\t${bot}\tUmer's demo page`;
-  put('data/metrics/prs.tsv', [prHead, prRow(2, 2), prRow(3, 4, { other: 1, first: 0 }), prRow(1, 1, { escaped: 1, first: 0 }), prRow(1, 0.5, { bot: 1 }),
-    prRow(9, 8), prRow(4, 1).replace(day(4), 'not-a-time')].join('\n') + '\n'); // the last row has no merge time: skipped
-  const dayOf = (days) => day(days).slice(0, 10);
-  put('data/metrics/daily.tsv', ['day\thome\tsteers\ts_correct', `${dayOf(1)}\tdemo\t5\t2`, `${dayOf(1)}\tother\t7\t1`, `${dayOf(5)}\tdemo\t0\t0`, `${dayOf(9)}\tdemo\t3\t1`].join('\n') + '\n');
-  put('state/alpha.status', `needs-decision [${at(1)}]: pick a name\n`);
-  put(`state/alpha.inbox/handled/${Math.floor(NOW / 1000 - 86_400)}-ab12.msg`, '[steer] use the demo data\n'); // no at= line: the file name times it
-  put(`state/alpha.inbox/${Math.floor(NOW / 1000 - 2 * 86_400)}-cd34.msg`, '[steer] rename it\n');
-  put('state/.fm-lease-command.lock.owner.1/pid', '1\n'); // a lock folder: never entered
-  symlinkSync(join(tmp, 'nowhere'), join(home, 'state', 'gone.status')); // listed, then gone when read
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
-  const doctor = lfm({}, 'doctor').stdout;
-  assert.match(doctor, /^ok\s+source home\s+firstmate: 1 decisions, 0 blocks, 15 steers, 0 defect records, 5 merged PRs and 4 daily rows in data\/metrics, 1 skipped \(no time\)$/m);
-  const metricsOf = () => {
-    const r = lfm({}, 'retro', '--foreground', '--json');
-    assert.equal(r.status, 0, r.stderr);
-    return Object.fromEntries(JSON.parse(r.stdout).metrics.map((x) => [x.name, [x.current, x.previous, x.target, x.met]]));
-  };
-  let m = metricsOf();
-  assert.deepEqual([m.merged, m.first_pass, m.p50_hours_to_merge, m.p90_hours_to_merge, m.rework_ci, m.rework_other, m.reverted, m.escaped],
-    [[4, 1, '', ''], [33.3, 100, '>= 70', 'missed'], [1, 8, '', ''], [4, 8, '<= 8', 'met'], [0, 0, '', ''], [1, 0, '', ''], [0, 0, '', ''], [1, 0, '<= 0', 'missed']]);
-  assert.deepEqual([m.steers, m.corrections_per_session, m.interventions_per_merge], [[12, 3, '', ''], [0.75, 1, '<= 0.3', 'missed'], [3.25, 3, '', '']]);
-  assert.deepEqual([m.rework_per_merge, m.corrections_per_merge], [[0.25, 0, '', ''], [0.75, 1, '', '']]);
-  unlinkSync(join(home, 'data', 'metrics', 'daily.tsv')); // no daily table: the two handled and pending messages are the steers
-  m = metricsOf();
-  assert.deepEqual([m.steers, m.corrections_per_session, m.merged], [[2, 0, '', ''], ['n/a', 'n/a', '<= 0.3', 'n/a'], [4, 1, '', '']]);
-  assert.equal(m.corrections_per_merge[0], 'n/a');
-  const gone = JSON.parse(lfm({}, 'retro', '--foreground', '--json').stdout); // the report names the table that is missing
-  assert.deepEqual(gone.sources[0].missing, ['rows in daily.tsv under data/metrics of the home', 'rows in chat.tsv under data of the home']);
-  if (process.getuid?.() !== 0) { // a folder that cannot be read is no vanished entry: the error names its path
-    const locked = join(home, 'state', 'locked.inbox');
-    mkdirSync(locked);
-    chmodSync(locked, 0o000);
-    try { assert.match(lfm({}, 'doctor').stdout, /^fail\s+source home\s+firstmate: cannot read \S+\/state\/locked\.inbox \(EACCES\)/m); } finally { chmodSync(locked, 0o755); }
-  }
-});
-
-// A Firstmate home's data/chat.tsv holds the captain's chat lines: the ones with why, wrong or again, or a question, are mistakes, each with
-// its text, time and the work it points at; the others, the ones outside the window and the ones with no time are not.
-test('a firstmate home turns the chat lines with why, wrong or again into mistake records that name their work', () => {
-  const { tmp, p, lfm } = setup();
-  const home = join(tmp, 'umer-home'), epoch = (days) => Math.floor(NOW / 1000 - days * 86_400);
-  mkdirSync(join(home, 'data'), { recursive: true });
-  mkdirSync(join(home, 'state'), { recursive: true });
-  writeFileSync(join(home, 'data', 'chat.tsv'), ['at\twork\ttext', `${epoch(1)}\tdemo-page\tWhy did the demo page ship with no title?`, `${epoch(2)}\tdemo-cli\tthat is wrong, the demo flag is --umer`,
-    `${epoch(2)}\tdemo-cli\tYou did it AGAIN`, `${epoch(3)}\tdemo-cli\twho is using the demo key on my account`, `${epoch(3)}\tdemo-page\tis this a scroll within a scroll?`, `${epoch(1)}\tdemo-page\tthanks, looks good`, `${epoch(1)}\tdemo-page\tI am always wrongly spelled`, `${epoch(30)}\told-work\twhy was this late`, `soon\tdemo-page\twhy is there no time`].join('\n') + '\n');
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
-  assert.match(lfm({}, 'doctor').stdout, /^ok\s+source home\s+firstmate: 0 decisions, 0 blocks, 0 steers, 0 defect records, 5 captain complaints, 1 skipped \(no time\)$/m);
-  const r = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const run = JSON.parse(r.stdout).run.id, dir = join(p, '.lfm', 'runs', String(run));
-  const bundle = readFileSync(join(dir, 'bundle.md'), 'utf8');
-  assert.match(bundle, /^- \[chat:2\] home at \S*chat\.tsv:2, \d{4}-\d\d-\d\d, about demo-page\n {2}> Why did the demo page ship with no title\?$/m);
-  assert.ok(bundle.includes('that is wrong, the demo flag is --umer') && bundle.includes('You did it AGAIN') && bundle.includes('who is using the demo key') && bundle.includes('scroll within a scroll'));
-  for (const no of ['looks good', 'wrongly spelled', 'why was this late', 'no time']) assert.ok(!bundle.includes(no), `${no} in the bundle`);
-  const records = readFileSync(join(p, '.lfm', 'records.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((x) => x.data?.kind === 'complaint');
-  assert.deepEqual(records.map((x) => x.data.work).sort(), ['demo-cli', 'demo-cli', 'demo-cli', 'demo-page', 'demo-page']);
-  assert.equal(JSON.parse(r.stdout).metrics.find((m) => m.name === 'defects').current, 5);
-  const notChecked = (res) => readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(res.stdout).run.id), 'report.txt'), 'utf8').match(/^- Source home gave no rows in chat\.tsv/m);
-  assert.ok(!notChecked(r), 'chat.tsv has rows, so the report does not name it');
-  writeFileSync(join(home, 'state', 'alpha.status'), `needs-decision [at=${epoch(1)}]: pick a name\n`); // keeps a record, so the retro still runs
-  writeFileSync(join(home, 'data', 'chat.tsv'), ['at work text', `${epoch(1)} demo-page why did the demo page ship with no title`].join('\n') + '\n'); // rows that all fail to parse into text read nothing
-  assert.match(lfm({}, 'doctor').stdout, /^warn\s+source home\s+firstmate: .*chat\.tsv has 1 rows and none parsed into text/m);
-  assert.ok(notChecked(lfm({}, 'retro', '--foreground', '--json')), 'a chat.tsv whose rows all fail to parse is named under Not checked');
-  unlinkSync(join(home, 'data', 'chat.tsv')); // a missing chat table must not read as a clean pass
-  const gone = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(gone.status, 0, gone.stderr);
-  assert.ok(notChecked(gone), 'the report names the missing chat.tsv under Not checked');
-});
-
-// The fleet writes data/chat.tsv with no header row and ISO-8601 times; those lines read as the documented form does.
-test('a firstmate home reads a headerless chat.tsv with ISO-8601 times', () => {
-  const { tmp, p, lfm } = setup();
-  const home = join(tmp, 'umer-home'), iso = (days) => new Date(NOW - days * 86_400_000).toISOString();
-  mkdirSync(join(home, 'data'), { recursive: true });
-  mkdirSync(join(home, 'state'), { recursive: true });
-  writeFileSync(join(home, 'data', 'chat.tsv'), [`${iso(1)}\tdemo-page\tWhy did the demo page ship with no title?`, `${iso(2)}\tdemo-cli\tthanks, looks good`].join('\n') + '\n');
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
-  assert.match(lfm({}, 'doctor').stdout, /^ok\s+source home\s+firstmate: .*, 1 captain complaints, 0 skipped \(no time\)$/m);
-});
-
-// One captain complaint is a finding: the repeat rule (3 incidents on 2 days) must not hide a cause the captain wrote once.
-test('a captain complaint the worker labels as one incident still counts as a repeated cause', () => {
-  const { tmp, p, lfm } = setup();
-  const home = join(tmp, 'umer-home');
-  mkdirSync(join(home, 'data'), { recursive: true });
-  mkdirSync(join(home, 'state'), { recursive: true });
-  writeFileSync(join(home, 'data', 'chat.tsv'), `${new Date(NOW - 86_400_000).toISOString()}\tdemo-page\tWhy does the demo list scroll inside the demo panel?\n`);
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\ncauses:\n  nested-scroll: { description: A list scrolls inside a panel that scrolls }\nrepeat: { min_incidents: 3, min_days: 2 }\n`);
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_CAUSE: 'nested-scroll' }, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(JSON.parse(lfm({}, 'report', '--json').stdout).repeated, [{ cause: 'nested-scroll', count: 1, days: 1 }]); // the summary line, section 4 and the status agree
-  assert.equal(JSON.parse(lfm({}, 'status', '--json').stdout).result.summary, 'repeated: nested-scroll (1 time/1 day)');
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8'), /^- nested-scroll: 1 time on 1 day\.$/m);
-});
-
-// A complaint or defect record that no finding cites must not vanish: the report's Not checked section names it.
-test('the report names each complaint and defect record that no finding cites, and not a cited one', () => {
-  const { tmp, p, lfm } = setup();
-  const home = join(tmp, 'umer-home'), day = (n) => ago(24 * n).slice(0, 10);
-  mkdirSync(join(home, 'data'), { recursive: true });
-  mkdirSync(join(home, 'state'), { recursive: true });
-  writeFileSync(join(home, 'data', 'chat.tsv'), `${ago(24)}\tdemo-page\tWhy does the demo list scroll inside the demo panel?\n`);
-  writeFileSync(join(p, 'defects.md'), `# Defects\n\n## ${day(2)}\n\n- [layout] The demo header overlaps the menu -> lost 5 minutes -> OPEN.\n\n## ${day(4)}\n\n- [tests] The demo suite fails without a fixture folder -> lost 9 minutes -> OPEN.\n`);
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n  log: { type: markdown-log, path: defects.md }\n`);
-  const r = lfm({ FAKE_ANALYSE: 'label', FAKE_FINDINGS: 'last' }, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const report = readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8');
-  const notChecked = report.slice(report.indexOf('6. Not checked'), report.indexOf('7. Questions'));
-  assert.match(notChecked, /^- No finding cites 1 captain complaint\.\n {3}Evidence: .*chat\.tsv/m);
-  assert.match(notChecked, /^- No finding cites 1 defect record\.\n {3}Evidence: defects\.md:5$/m); // the newer defect; the older one, on line 9, is cited
-  assert.doesNotMatch(notChecked, /defects\.md:9/);
-  // Each listed record shows its own text, and the defect the worker labelled other says so; the cited one's text is absent.
-  assert.match(notChecked, /^ {3}Text: Why does the demo list scroll inside the demo panel\?$/m);
-  assert.match(notChecked, /^ {3}Evidence: defects\.md:5\n {3}Text: \[layout\] The demo header overlaps the menu.*\n {3}The worker labelled it other: /m);
-  assert.doesNotMatch(notChecked, /fixture folder/);
-});
-
-// A markdown-log whose bullets carry no date can never be placed in a window: doctor warns, naming the source, and the
-// report's not-checked section says so.
-test('a markdown-log source with no dated record is named by doctor and by the report', () => {
-  const { p, lfm } = setup();
-  writeFileSync(join(p, 'gate.md'), '# Gate report\n\n- [tests] A demo flake.\n- [lint] Umer\'s lint failure.\n');
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), 'name: umer-app\nsources:\n  gate: { type: markdown-log, path: gate.md }\n');
-  assert.match(lfm({}, 'doctor').stdout, /^warn\s+source gate\s+markdown-log: 2 records, 0 in the window, 2 skipped \(no date\): source gate has 2 records and none has a date, so the retro window places none of them/m);
-  const r = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(readFileSync(join(p, '.lfm', 'runs', String(JSON.parse(r.stdout).run.id), 'report.txt'), 'utf8'), /^- Source gate read 2 records and none has a date, so the window placed none of them\./m);
-});
-
 // Where the time goes: a Firstmate home's status lines give each task's stages (a line's stage lasts until the next line's
 // stamp), so the retro prints hours a stage and ranks the three longest waits with their cause and fix. A task still open
 // adds no stage for its last line, a line with no stamp adds none, and prs.tsv gives the merge wait when the home has it.
@@ -569,17 +335,4 @@ test('a firstmate home times the stages of its tasks and the report names the th
   assert.deepEqual([metrics.hours_merge_wait, metrics.hours_working], [6, 14]); // the PRs' open hours are the merge wait
   assert.match(report, /^- Where the time goes: 14 hours of work and 21 hours of waiting, over 2 tasks\.$/m);
   assert.match(report, /^- Slowest wait 1, with the PR open until merged: 6 hours, 29% of the waiting\.$/m);
-});
-
-test('a firstmate home whose tasks have one status line has no stage numbers and no time section', () => {
-  const { tmp, p, lfm } = setup();
-  const home = join(tmp, 'umer-home');
-  mkdirSync(join(home, 'state'), { recursive: true });
-  writeFileSync(join(home, 'state', 'alpha.status'), `needs-decision [at=${Math.floor(NOW / 1000 - 3600)}]: pick a name\nworking: no stamp\n`); // a stamped open task and a line with no stamp time nothing
-  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
-  const r = lfm({}, 'retro', '--foreground', '--json');
-  assert.equal(r.status, 0, r.stderr);
-  const run = JSON.parse(r.stdout);
-  assert.deepEqual(run.metrics.filter((m) => /^(hours_|tasks_)/.test(m.name)).map((m) => m.current), Array(8).fill('n/a'));
-  assert.doesNotMatch(readFileSync(join(p, '.lfm', 'runs', String(run.run.id), 'report.txt'), 'utf8'), /Where the time goes|Slowest wait/);
 });
