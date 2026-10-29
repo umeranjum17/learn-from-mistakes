@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const file = new URL('../skills/lfm-retro/SKILL.md', import.meta.url);
 const bin = pkg.name, npx = `npx -y ${bin}`;
-const description = `Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the ${bin} CLI. Use when the user asks what keeps going wrong, wants a retro, wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills, or wants to go deep on one failure (an incident).`;
+const description = `Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the ${bin} CLI. Use when the user asks what keeps going wrong, wants a retro, wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills, or wants to go deep on one failure (an incident), or asks where an agent's tokens go and how to use fewer.`;
 
 const skill = `---
 name: lfm-retro
@@ -36,6 +36,14 @@ You do not need it installed: run \`${npx} <command>\`. If its output shows a co
 ## One failure: an incident
 
 When the user wants to go deep on one failure, not on what repeats, run \`${npx} incident "<what failed>" --evidence <path> --wait 8m\` instead of the retro. \`<what failed>\` is the user's own words, a file, or a GitHub PR or issue link; repeat \`--evidence\` for each file, screenshot or link the user names. The run reads only those and the project context. Read its \`report.txt\` (the \`next:\` line names it) and tell the user, in order: the timeline, each root cause with its why chain and cost, why no check caught it, how to avoid it now, and each fix with its owner, priority and due date. Then say what section 7 did not check: the agents cannot see a screenshot, so ask the user to describe it in text. Once the user makes a fix, record it with \`${npx} change applied --proposal <run>:<n> --ref <git sha>\`; \`${npx} incident --status\` then runs the check of each shipped fix and lists the fixes still open. A fix stays open until its check passes.
+
+## Tokens: where they go
+
+When the user asks where the tokens go, or how to use fewer, run \`${npx} tokens retro\` (\`--since 14d\` by default, \`--agents claude,pi\`; with no project config add \`--out <dir>\`). It reads the Claude Code and Pi session stores and calls no agent. Read the \`tokens.txt\` its first line names to the user in plain words: the money split first, then the ranked causes.
+
+- Cache reads are usually most of the cost: every turn re-reads the context so far, so the cost follows turns times context size. Never offer shorter answers as the main fix; that moves only the output share.
+- Turn each top cause into one proposed change against a named file (the report gives the change and the metric that must move), and let the user decide. After a change, the next \`tokens retro\` shows each number beside the last run's.
+- \`${npx} tokens doctor\` names a store it cannot read, with the reason. \`npm i -g ${bin}\`, then \`${bin} tokens guard install\`, adds the poll guard (a global install keeps the hook's path), which blocks the third identical poll in one context with one line saying what to do instead; \`${npx} tokens guard status\` says what it blocked.
 
 ## The retro method
 

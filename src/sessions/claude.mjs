@@ -1,6 +1,9 @@
 // Claude Code sessions: <CLAUDE_CONFIG_DIR or ~/.claude>/projects/<dir>/<session id>.jsonl, one JSON record per
 // line, and the session's subagent files <session id>/subagents/**/agent-*.jsonl. The dir name loses data, so a
 // session belongs to the cwd of its first record; a subagent file belongs to its parent session.
+// With `tokens`, a read also keeps what the tokens retro counts: one request event per message id (Claude writes one
+// record per content block, so each usage field is the largest any of them carries), each tool call's id, request,
+// command and file, each result's size, the compaction boundaries, and the subagent file an event came from.
 import { createReadStream, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -42,29 +45,41 @@ export const fresh = (file, from, miss) => { try { return statSync(file).mtimeMs
 
 // One file's events, streamed line by line (a session file can be larger than one string can hold).
 // Returns null when `keep` refuses the first cwd, or the first user message carries the lfm-run: marker.
-async function parse(file, { session, keep, sub, excerpt }) {
-  const events = [], calls = new Map(), failed = new Set();
+async function parse(file, { session, keep, sub, excerpt, tokens, head }) {
+  const events = [], calls = new Map(), failed = new Set(), requests = new Map();
   let skipped = 0, n = 0, cwd, start = null, first = true, afterError = false;
   const input = createReadStream(file), lines = createInterface({ input, crlfDelay: Infinity });
   try {
     for await (const line of lines) {
       n += 1;
+      if (head && n > head) break; // a probe reads only the first lines
       if (!line.trim()) continue;
+      if (line.startsWith('{"type":"api-request') || line.startsWith('{"type":"file-history')) continue; // a copy of the request or a file backup, never a turn
       let r;
       try { r = JSON.parse(line); } catch { skipped += 1; continue; }
       if (!r || typeof r !== 'object' || typeof r.type !== 'string') { skipped += 1; continue; }
       if (!sub && cwd === undefined && typeof r.cwd === 'string' && !keep((cwd = r.cwd))) return null;
-      const at = { agent: 'claude', session_id: session, ts: typeof r.timestamp === 'string' ? r.timestamp : null, ref: `${file}:${n}` };
+      const at = { agent: 'claude', session_id: session, ts: typeof r.timestamp === 'string' ? r.timestamp : null, ref: `${file}:${n}`, ...(tokens && sub && { sub: basename(file, '.jsonl') }) };
       start ??= at.ts;
+      if (tokens && r.type === 'system' && r.subtype === 'compact_boundary') events.push({ ...at, kind: 'compaction' });
       const blocks = typeof r.message?.content === 'string' ? [{ type: 'text', text: r.message.content }] : Array.isArray(r.message?.content) ? r.message.content : [];
       if (r.type === 'assistant') {
         if (blocks.some((b) => b?.type === 'text')) afterError = false; // an assistant reply ends the adjacency
+        const id = r.message?.id, u = r.message?.usage;
+        if (tokens && typeof id === 'string' && u && typeof u === 'object') {
+          const got = { input: u.input_tokens, cache_write: u.cache_creation_input_tokens, cache_write_1h: u.cache_creation?.ephemeral_1h_input_tokens, cache_read: u.cache_read_input_tokens, output: u.output_tokens };
+          let req = requests.get(id);
+          if (!req) { requests.set(id, (req = { ...at, kind: 'request', id, model: r.message.model ?? null, tools: 0, input: 0, cache_write: 0, cache_write_1h: 0, cache_read: 0, output: 0 })); events.push(req); }
+          for (const [k, v] of Object.entries(got)) if (Number.isFinite(v)) req[k] = Math.max(req[k], v);
+          req.tools += blocks.filter((b) => b?.type === 'tool_use').length;
+        }
         for (const b of blocks) {
           if (b?.type !== 'tool_use') continue;
-          const key = `${b.name}\0${JSON.stringify(b.input)}`;
-          calls.set(b.id, { tool: b.name, key, command: typeof b.input?.command === 'string' ? b.input.command : '' });
+          const key = `${b.name}\0${JSON.stringify(b.input)}`, command = typeof b.input?.command === 'string' ? b.input.command : '';
+          calls.set(b.id, { tool: b.name, key, command });
           const retry = failed.has(key); // the same call again after it failed
-          events.push({ ...at, kind: 'tool_call', tool: b.name, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(b.input)) : '' });
+          events.push({ ...at, kind: 'tool_call', tool: b.name, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(b.input)) : '',
+            ...(tokens && { id: b.id, req: id, command, file: b.input?.file_path ?? b.input?.notebook_path ?? null, full: b.input?.offset === undefined && b.input?.limit === undefined }) });
         }
       }
       if (r.type !== 'user' || r.isMeta) continue;
@@ -78,7 +93,8 @@ async function parse(file, { session, keep, sub, excerpt }) {
         // A tool use the user turned down is not a tool failure; the interrupt or correction after it is counted.
         const declined = ['user-rejected', 'interrupted'].includes(r.toolDenialKind);
         const { signal, fromOutput } = failSignal(call?.command ?? '', text, { error, declined, exit, interrupted });
-        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '' });
+        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '',
+          ...(tokens && { call: b.tool_use_id, chars: text.length }) });
         if (error && call && !declined) failed.add(call.key);
         else if (!error && call) failed.delete(call.key); // a later repeat is no longer a retry
         afterError ||= error;
@@ -99,19 +115,21 @@ async function parse(file, { session, keep, sub, excerpt }) {
     throw e;
   } finally { lines.close(); input.destroy(); }
   if (!sub && cwd === undefined) return null; // no record says where it ran
-  return { events, skipped, start };
+  // A record of all-zero usage (a synthetic or a cancelled message) made no request.
+  return { events: tokens ? events.filter((e) => e.kind !== 'request' || e.input + e.cache_write + e.cache_read + e.output > 0) : events, skipped, start };
 }
 
 // Every session in the store whose file changed since `readFrom` and whose cwd `keep` accepts.
-// `skip` holds session ids this tool started itself.
-export async function read({ readFrom, keep, excerpt, skip }) {
+// `skip` holds session ids this tool started itself. With `each`, each session's events go to it and none are kept;
+// `problem` hears each path that could not be listed, stat'd or read; `head` reads only each file's first lines.
+export async function read({ readFrom, keep, excerpt, skip, tokens = false, each, problem, head }) {
   const events = [];
   let sessions = 0, skipped = 0;
   // A path that cannot be listed or stat'd is counted, except one that is gone; the other sessions still read.
-  const miss = (e) => { if (e.code !== 'ENOENT') skipped += 1; };
+  const miss = (e) => { if (e.code !== 'ENOENT') { skipped += 1; problem?.(e); } };
   // A file that cannot be read is skipped and counted; the other sessions still read.
   const file = async (p, opts) => {
-    try { return await parse(p, opts); } catch (e) { if (!e.syscall) throw e; skipped += 1; return null; }
+    try { return await parse(p, { ...opts, tokens, head }); } catch (e) { if (!e.syscall) throw e; skipped += 1; problem?.(e); return null; }
   };
   for (const d of list(root(), { withFileTypes: true }, miss)) {
     if (!d.isDirectory()) continue;
@@ -126,13 +144,14 @@ export async function read({ readFrom, keep, excerpt, skip }) {
       const main = await file(join(dir, f), { session, keep, excerpt });
       if (!main) continue;
       sessions += 1;
-      events.push({ agent: 'claude', session_id: session, ts: main.start, ref: `${join(dir, f)}:1`, kind: 'session_start', excerpt: '' }, ...main.events);
+      const own = [{ agent: 'claude', session_id: session, ts: main.start, ref: `${join(dir, f)}:1`, kind: 'session_start', excerpt: '' }, ...main.events];
       skipped += main.skipped;
       for (const p of subs) {
         const got = await file(p, { session, sub: true, excerpt });
-        events.push(...(got?.events ?? []));
+        own.push(...(got?.events ?? []));
         skipped += got?.skipped ?? 0;
       }
+      if (each) each(own); else for (const e of own) events.push(e);
     }
   }
   return { events, sessions, skipped };
