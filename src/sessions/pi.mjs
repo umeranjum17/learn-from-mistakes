@@ -1,6 +1,8 @@
 // Pi sessions: <PI_CODING_AGENT_SESSION_DIR or <PI_CODING_AGENT_DIR or ~/.pi/agent>/sessions>/--<path>--/*.jsonl. The
 // header line has the session id and cwd; a message is a user, assistant (toolCall blocks; stopReason aborted when the
 // user stops it) or toolResult (isError) one. From Pi's own session-format and message-types docs and its bash tool.
+// With `tokens`, a read also keeps what the tokens retro counts: a request event per assistant message with its usage,
+// each tool call's id, request, command and file, each result's size, and the compaction entries.
 import { createReadStream } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -12,13 +14,14 @@ export const root = () => process.env[STORE_VAR] || join(process.env.PI_CODING_A
 
 // One file's events, streamed line by line. Returns null when `keep` refuses the header cwd, the file has no header,
 // or the first user message carries the lfm-run: marker.
-async function parse(file, { keep, excerpt }) {
+async function parse(file, { keep, excerpt, tokens, head }) {
   const events = [], calls = new Map(), failed = new Set();
   let skipped = 0, n = 0, cwd, id = basename(file, '.jsonl'), start = null, fork = false, first = true, afterError = false;
   const input = createReadStream(file), lines = createInterface({ input, crlfDelay: Infinity });
   try {
     for await (const line of lines) {
       n += 1;
+      if (head && n > head) break; // a probe reads only the first lines
       if (!line.trim()) continue;
       const r = json(line);
       if (!r || typeof r !== 'object' || typeof r.type !== 'string') { skipped += 1; continue; }
@@ -29,19 +32,28 @@ async function parse(file, { keep, excerpt }) {
         continue;
       }
       // Model changes, usage and compaction are not turns; a fork's copy of its parent's entries keeps their older times.
-      if (r.type !== 'message' || (fork && typeof r.timestamp === 'string' && r.timestamp < start)) continue;
+      if (fork && typeof r.timestamp === 'string' && r.timestamp < start) continue;
+      const at = { agent: 'pi', session_id: id, ts: typeof r.timestamp === 'string' ? r.timestamp : null, ref: `${file}:${n}` };
+      if (tokens && r.type === 'compaction') events.push({ ...at, kind: 'compaction' });
+      if (r.type !== 'message') continue;
       const m = r.message;
       if (!m || typeof m !== 'object' || typeof m.role !== 'string') { skipped += 1; continue; }
-      const at = { agent: 'pi', session_id: id, ts: typeof r.timestamp === 'string' ? r.timestamp : null, ref: `${file}:${n}` };
       if (m.role === 'assistant') {
-        const blocks = Array.isArray(m.content) ? m.content : [];
+        const blocks = Array.isArray(m.content) ? m.content : [], u = m.usage;
         if (blocks.some((b) => b?.type === 'text' && typeof b.text === 'string' && b.text.trim())) afterError = false; // a reply ends the adjacency
+        if (tokens && u && typeof u === 'object') {
+          const num = (v) => (Number.isFinite(v) ? v : 0);
+          const req = { ...at, kind: 'request', id: r.id ?? `line ${n}`, model: m.model ?? null, tools: blocks.filter((b) => b?.type === 'toolCall').length,
+            input: num(u.input), cache_write: num(u.cacheWrite), cache_write_1h: 0, cache_read: num(u.cacheRead), output: num(u.output) };
+          if (req.input + req.cache_write + req.cache_read + req.output > 0) events.push(req); // an aborted message with no usage made no request
+        }
         for (const b of blocks) {
           if (b?.type !== 'toolCall') continue;
-          const key = `${b.name}\0${JSON.stringify(b.arguments)}`;
-          calls.set(b.id, { tool: b.name, key, command: typeof b.arguments?.command === 'string' ? b.arguments.command : '' });
+          const key = `${b.name}\0${JSON.stringify(b.arguments)}`, command = typeof b.arguments?.command === 'string' ? b.arguments.command : '';
+          calls.set(b.id, { tool: b.name, key, command });
           const retry = failed.has(key); // the same call again after it failed
-          events.push({ ...at, kind: 'tool_call', tool: b.name ?? null, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(b.arguments)) : '' });
+          events.push({ ...at, kind: 'tool_call', tool: b.name ?? null, signal: retry ? 'retry' : null, excerpt: retry ? excerpt(inputText(b.arguments)) : '',
+            ...(tokens && { id: b.id, req: r.id ?? `line ${n}`, command, file: b.arguments?.path ?? b.arguments?.file_path ?? null, full: b.arguments?.offset === undefined && b.arguments?.limit === undefined }) });
         }
         if (m.stopReason === 'aborted') { events.push({ ...at, kind: 'interrupt', signal: 'interrupt', excerpt: '' }); afterError = false; }
       } else if (m.role === 'toolResult') {
@@ -50,7 +62,8 @@ async function parse(file, { keep, excerpt }) {
         // A call the user stopped is not a tool failure; the interrupt after it is counted. Pi itself writes these texts.
         const declined = error && /(?:Command|Operation) aborted\s*$/.test(text);
         const { signal, fromOutput } = failSignal(call?.command ?? '', text, { error, declined, exit });
-        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? m.toolName ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '' });
+        events.push({ ...at, kind: 'tool_result', tool: call?.tool ?? m.toolName ?? null, status: error ? 'error' : 'ok', exit_code: exit ? Number(exit) : null, signal, from_output: fromOutput, excerpt: signal ? excerpt(text) : '',
+          ...(tokens && { call: m.toolCallId, chars: text.length }) });
         if (call) { if (error && !declined) failed.add(call.key); else failed.delete(call.key); } // a later repeat after a success is no retry
         afterError ||= error;
       } else if (m.role === 'user') {
@@ -71,22 +84,25 @@ async function parse(file, { keep, excerpt }) {
 }
 
 // Every session in the store whose file changed since `readFrom` and whose header cwd `keep` accepts.
-// `skip` holds session ids this tool started itself.
-export async function read({ readFrom, keep, excerpt, skip }) {
+// `skip` holds session ids this tool started itself. With `each`, each session's events go to it and none are kept;
+// `problem` hears each path that could not be listed, stat'd or read; `head` reads only each file's first lines.
+// Only .jsonl session files are ever opened.
+export async function read({ readFrom, keep, excerpt, skip, tokens = false, each, problem, head }) {
   const events = [];
   let sessions = 0, skipped = 0;
   // A path that cannot be listed, stat'd or read is counted, except one that is gone; the other sessions still read.
-  const miss = (e) => { if (e.code !== 'ENOENT') skipped += 1; };
+  const miss = (e) => { if (e.code !== 'ENOENT') { skipped += 1; problem?.(e); } };
   for (const d of list(root(), { withFileTypes: true }, miss)) {
     if (!d.isDirectory()) continue;
     for (const f of list(join(root(), d.name), undefined, miss)) {
       const p = join(root(), d.name, f);
       if (!f.endsWith('.jsonl') || !fresh(p, readFrom, miss)) continue;
       let got;
-      try { got = await parse(p, { keep, excerpt }); } catch (e) { if (!e.syscall) throw e; skipped += 1; continue; }
+      try { got = await parse(p, { keep, excerpt, tokens, head }); } catch (e) { if (!e.syscall) throw e; skipped += 1; problem?.(e); continue; }
       if (!got || skip.has(got.id)) continue;
       sessions += 1;
-      events.push({ agent: 'pi', session_id: got.id, ts: got.start, ref: `${p}:1`, kind: 'session_start', excerpt: '' }, ...got.events);
+      const own = [{ agent: 'pi', session_id: got.id, ts: got.start, ref: `${p}:1`, kind: 'session_start', excerpt: '' }, ...got.events];
+      if (each) each(own); else for (const e of own) events.push(e);
       skipped += got.skipped;
     }
   }

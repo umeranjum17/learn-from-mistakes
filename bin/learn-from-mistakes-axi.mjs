@@ -19,6 +19,8 @@ import { redact } from '../src/redact.mjs';
 import { openStore } from '../src/store.mjs';
 import { PURPOSES, signoff } from '../src/signoff.mjs';
 import { apply, applyRun } from '../src/apply.mjs';
+import { doctor as tokensDoctor, retro as tokensRetro, table as tokensTable } from '../src/tokens/retro.mjs';
+import { install as guardInstall, status as guardStatus } from '../src/tokens/guard.mjs';
 
 // Every rejection prints `error: <what was wrong>` and `next: <a runnable command or the allowed form>`.
 export class UsageError extends Error {
@@ -388,7 +390,7 @@ export function summaryLine(model) {
 
 const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|change applied|changes|
                                 retro|incident|status|runs|attach|logs|abort|rerun|agents|signoff|
-                                apply>] [options]
+                                apply|tokens>] [options]
   (no command)        print the last run's status and its summary line
   incident <what>     go deep on one failure, apart from the retro: <what> is the failure in your
                       own words, a file or screenshot, or a GitHub PR or issue link (or #<n>).
@@ -440,6 +442,18 @@ const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|c
                       is not completed
   agents              list the agent CLIs the tool can start: usable, version, login presence,
                       the configured model
+  tokens retro        where the tokens went: read the Claude Code and Pi session stores (no agent
+                      call), print one line and the ranked causes (instruction floor, tool output
+                      kept in context, oversized output, context above 200k, repeated polls,
+                      failed calls, subagent fan-out, files read again), write tokens.txt and
+                      tokens.json, and with a project config save a run and its numbers, so the
+                      next tokens retro shows the last one beside them
+  tokens doctor       which session stores are readable, and each path not read with the reason;
+                      it opens only session files, never a credential file; exit 1 on a fail
+  tokens guard install  add the poll guard to Claude Code's settings: a PreToolUse hook that
+                      blocks the third identical poll-like Bash command in one context with one
+                      line saying what to do instead; fail-open, and it never rewrites context
+  tokens guard status where the poll guard is installed and what it blocked
   --dir <dir>         project dir holding .learn-from-mistakes.yaml (default: the current dir)
   --cause <cause>     (change applied) cause key from the config, never \`other\`
   --proposal <run>:<n>  (change applied) the run's kept fix n (status --run <run> lists them): its
@@ -467,6 +481,13 @@ const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|c
                       causes, verify, gates, prevent, verify-fixes, check or report)
   --evidence <path>   (incident) a file, screenshot, or GitHub PR or issue link that shows the
                       failure; repeat it for more
+  --since <time>      (tokens retro, tokens doctor) the window: 14d or 36h back (default 14d), or a
+                      day like 2026-10-01
+  --agents <agent>,...  (tokens retro, tokens doctor) the session stores: claude, pi (default both)
+  --out <dir>         (tokens retro) write tokens.txt and tokens.json there; needed with no
+                      project config (default: the run's dir in the state dir)
+  --project-hook      (tokens guard install) write the project's .claude/settings.json, not the
+                      user's
   --wait [<time>]     (retro, incident, rerun) wait up to 30s, 8m or 1h (default 8m) for the run
                       to end, then print it
   --live              (doctor) also make one live call per role, as agents --test (costs tokens)
@@ -494,7 +515,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|c
                       .claude/skills and .agents/skills instead of each agent's own skills dir; -y
                       asks nothing, even in a terminal
   --json (setup, init, doctor, report, change applied, changes, retro, incident, status, runs,
-         attach, logs, abort, rerun, agents, no command)  print JSON instead of
+         attach, logs, abort, rerun, agents, tokens, no command)  print JSON instead of
          the default text format (report: lfm-report.v2; changes: lfm-changes.v1)
   --full (report)     add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -592,11 +613,15 @@ const FORMS = {
   'signoff-report': 'learn-from-mistakes-axi signoff report [--run <id>] [--purpose <research|plan|decision|audit|incident|status|other>] [--project <name>] [--dir <dir>]',
   'signoff-answers': 'learn-from-mistakes-axi signoff answers [--dir <dir>]',
   apply: 'learn-from-mistakes-axi apply [--run <id>] [--fix <n>] [--dir <dir>]',
+  'tokens-retro': 'learn-from-mistakes-axi tokens retro [--since <14d|YYYY-MM-DD>] [--agents claude,pi] [--out <dir>] [--dir <dir>] [--json]',
+  'tokens-doctor': 'learn-from-mistakes-axi tokens doctor [--since <14d|YYYY-MM-DD>] [--agents claude,pi] [--json]',
+  'tokens-guard-install': 'learn-from-mistakes-axi tokens guard install [--project-hook] [--dir <dir>] [--json]',
+  'tokens-guard-status': 'learn-from-mistakes-axi tokens guard status [--dir <dir>] [--json]',
 };
 // A role's fix: "install X" only for an agent that is not installed; the agent choice is the user's either way.
 const roleFix = (cfg, key, r) => r.fix ?? `${/ is not usable:/.test(r.problem) ? `install ${r.runner.replace(/^acp:.*/, 'acpx')}, or ` : ''}${chooseFix(cfg, key, r.runner)}`;
-const VALUE_FLAGS = ['--dir', '--evidence', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions', '--purpose', '--project'];
-const SWITCHES = ['--status', '--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '-y'];
+const VALUE_FLAGS = ['--dir', '--evidence', '--proposal', '--cause', '--ref', '--metric', '--tripwire', '--check', '--kind', '--at', '--what', '--why', '--run', '--fix', '--wait', '--step', '--test', '--agent', '--judge-agent', '--model', '--judge-model', '--firstmate', '--sessions', '--purpose', '--project', '--since', '--agents', '--out'];
+const SWITCHES = ['--status', '--live', '--json', '--full', '--foreground', '--resume', '--no-excerpts', '--project-skill', '--no-skill', '--reconfigure', '--fleet', '--project-hook', '-y'];
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000 };
 const PROBLEM_LINES = 20;
 
@@ -616,10 +641,15 @@ async function main(ctx) {
     if (!['post', 'report', 'answers'].includes(argv[0])) throw new UsageError('signoff needs post, report or answers', FORMS['signoff-post']);
     cmd = `signoff-${argv.shift()}`;
   }
+  if (cmd === 'tokens') {
+    if (argv[0] === 'guard' && ['install', 'status'].includes(argv[1])) { argv.shift(); cmd = `tokens-guard-${argv.shift()}`; }
+    else if (['retro', 'doctor'].includes(argv[0])) cmd = `tokens-${argv.shift()}`;
+    else throw new UsageError('tokens needs retro, doctor, guard install or guard status', FORMS['tokens-retro']);
+  }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
   if (REMOVED.includes(cmd)) throw new UsageError(`${cmd} was removed: a retro reads the sources, labels and counts them`, RETRO);
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: setup, init, doctor, guide, report, change applied, changes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply)`);
-  const name = cmd.replace('-', ' ') || 'learn-from-mistakes-axi', form = FORMS[cmd];
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: setup, init, doctor, guide, report, change applied, changes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply, tokens)`);
+  const name = cmd.replaceAll('-', ' ') || 'learn-from-mistakes-axi', form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
   ctx.opts = opts;
@@ -633,7 +663,7 @@ async function main(ctx) {
     if (SWITCHES.includes(flag)) { opts[flag.replace(/^--?/, '')] = true; i += 1; continue; }
     if (flag === '--wait' && !/^[^-]/.test(argv[i + 1] ?? '')) { opts.wait = '8m'; i += 1; continue; } // a bare --wait waits 8 minutes
     if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`, next ?? form);
-    if (['--dir', '--firstmate'].includes(flag)) {
+    if (['--dir', '--firstmate', '--out'].includes(flag)) {
       // Paths are echoed whole in later errors so the user can find the file; a control character never is.
       if (UNPRINTABLE.test(argv[i + 1])) throw new UsageError(`${flag} (invalid value): a path must not contain control characters`, next ?? form);
       opts[flag.slice(2)] = resolve(argv[i + 1]);
@@ -669,6 +699,7 @@ async function main(ctx) {
   if (cmd === 'setup') { await setupCommand(opts); return; }
   if (cmd === 'init') { await initCommand(opts); return; }
   if (cmd === 'doctor') { await doctorCommand(opts); return; }
+  if (cmd.startsWith('tokens-')) { await tokensCommand(cmd, opts); return; }
   let cfg = loadConfig(opts.dir ?? resolve('.'));
   ctx.state = cfg.state;
   // A retro needs both agents: a terminal is asked and the answer saved; any other caller is told to ask the user.
@@ -812,6 +843,31 @@ async function doctorCommand(opts) {
   else for (const c of checks) console.log(`${c.level.padEnd(4)} ${c.label.padEnd(15)} ${c.detail}${c.fix ? `\n     fix: ${c.fix}` : ''}`);
   if (fails) process.exitCode = 1;
   hint(withContext(fails ? 'learn-from-mistakes-axi doctor' : 'learn-from-mistakes-axi retro --wait 8m', fails ? `again after the ${fails === 1 ? 'fix' : `${fails} fixes`} above` : 'read the sources as a saved run', opts));
+}
+
+// `tokens`: retro and doctor print one line first, then the table or the check lines; the guard commands one line.
+async function tokensCommand(cmd, opts) {
+  quietSqlite();
+  const dir = opts.dir ?? resolve('.');
+  if (cmd === 'tokens-guard-install') {
+    const out = guardInstall({ ...opts, dir });
+    console.log(opts.json ? JSON.stringify(out, null, 2) : `poll guard: ${out.status} in ${out.settings} (${out.events}) · fail-open${out.note ? `\nnote: ${out.note}` : ''}`);
+    hint('learn-from-mistakes-axi tokens guard status   # where it is installed and what it blocked');
+  } else if (cmd === 'tokens-guard-status') {
+    const out = guardStatus({ ...opts, dir });
+    console.log(opts.json ? JSON.stringify(out, null, 2) : [out.line, ...(out.recent.length ? [toonEncode({ recent: out.recent })] : [])].join('\n'));
+    if (!out.installed.length) hint(withContext('learn-from-mistakes-axi tokens guard install', 'block the third identical poll in one context', opts));
+  } else if (cmd === 'tokens-doctor') {
+    const out = await tokensDoctor(opts);
+    if (opts.json) console.log(JSON.stringify(out, null, 2));
+    else console.log([out.line, ...out.checks.map((c) => `${c.level.padEnd(4)} ${c.store.padEnd(7)} ${c.detail}${c.fix ? `\n     fix: ${c.fix}` : ''}`)].join('\n'));
+    if (out.fails) process.exitCode = 1;
+    hint(out.fails ? 'learn-from-mistakes-axi tokens doctor   # again after the fix above' : 'learn-from-mistakes-axi tokens retro   # where the tokens went');
+  } else {
+    const out = await tokensRetro(existsSync(join(dir, PROJECT_FILE)) ? loadConfig(dir) : undefined, opts);
+    console.log(opts.json ? JSON.stringify(out.model, null, 2) : `${out.line}\n${tokensTable(out.model)}`);
+    hint(`cat ${shq(out.report)}   # read it to the user: the money split first, then the ranked causes`);
+  }
 }
 
 // `init` prints the config it wrote or found (with its gaps and any source detection it skipped, with the cause), and

@@ -139,7 +139,7 @@ export async function lastRun(cfg) {
     shown: show(db, id), ...(existsSync(reportFile) && { reportFile }) };
 }
 const collected = (db, id) => JSON.parse(db.prepare(`SELECT output_json FROM steps WHERE run_id = ? AND name = 'collect'`).get(id).output_json);
-const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
+export const runDir = (cfg, id) => join(cfg.state, 'runs', String(id));
 const iso = (ms) => new Date(ms).toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -452,6 +452,11 @@ function show(db, id) {
     row[m.window] = rounded(m.value); // the verdict uses the unrounded value
     if (m.window === 'current') Object.assign(row, { target: m.target ?? '', met: !m.target ? '' : m.value === null ? 'n/a' : meets(m.value, m.target) ? 'met' : 'missed' });
   }
+  const kind = db.prepare('SELECT kind FROM runs WHERE id = ?').get(id)?.kind;
+  if (kind === 'tokens') return { // a tokens retro: its numbers, its first line and the path of tokens.txt
+    kind, run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) }, metrics: [...metrics.values()],
+    ...(out('tokens') && { result: { summary: JSON.parse(out('tokens')).summary, tokens_txt: JSON.parse(out('tokens')).tokens_txt } }),
+  };
   if (stepsOf(db, id) === INCIDENT) return {
     kind: 'incident', run: { ...db.prepare(`SELECT ${RUN} FROM runs WHERE id = ?`).get(id) },
     steps: db.prepare('SELECT name, status, started_at, completed_at, error FROM steps WHERE run_id = ? ORDER BY ord').all(id).map((s) => ({ ...s })),

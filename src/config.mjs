@@ -107,7 +107,7 @@ function agentKeys(cfg, g, file) {
   return cfg;
 }
 
-const lfmHome = () => process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
+export const lfmHome = () => process.env.LFM_HOME || join(homedir(), '.learn-from-mistakes');
 export const globalFile = () => join(lfmHome(), 'config.yaml');
 // The global file with every default; cfg.from names, per agent key, the file that set it (here: the global file).
 export function loadGlobal() {

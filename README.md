@@ -75,6 +75,16 @@ Writing “don't do that again” in `AGENTS.md` is a start. It doesn't tell you
 - **Fixes tied to your project.** The report names the files it read and the project rule each fix would replace or extend. [Applying and tracking changes →](docs/reference.md#apply-only-when-requested)
 - **One failure worth investigating?** Incident mode reads only the evidence you name and your project's files, not your configured sources. It writes a timeline, root causes, missed checks and fixes with owners, priorities and due dates. A shipped incident fix stays open until its check passes. [Incident walkthrough →](docs/reference.md#go-deep-on-one-incident)
 
+## Where the tokens go
+
+```sh
+learn-from-mistakes-axi tokens retro --since 14d
+```
+
+`tokens retro` reads your local Claude Code and Pi session stores and calls no model. It prints one line, then the causes ranked by tokens: the instruction floor every turn re-reads, tool output kept in context, oversized output, context kept above 200k, repeated identical polls, turns that issued a failed call, subagent fan-out and files read again. Each cause names the change that moves it and the metric to watch; the next run shows each number beside the last one. Every turn re-reads the context so far, so cost follows turns times context size: shorter answers move only the output share.
+
+`tokens doctor` names any store it cannot read, with the reason. `tokens guard install` adds an optional Claude Code hook that blocks the third identical poll-like command in one context, with one line saying what to do instead; it fails open and never rewrites context. [Token use →](docs/reference.md#token-use)
+
 ## Real output, with the limits left in
 
 The hero is an unchanged excerpt of a report saved by **npm version 0.7.0** on six made-up defect records. The run found one repeated cause across four days. Its proposed fix passed the report rules, but the judge **weakened** it. Nothing was applied.

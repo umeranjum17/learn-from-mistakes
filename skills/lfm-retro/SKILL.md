@@ -1,6 +1,6 @@
 ---
 name: lfm-retro
-description: "Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro, wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills, or wants to go deep on one failure (an incident)."
+description: "Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the learn-from-mistakes-axi CLI. Use when the user asks what keeps going wrong, wants a retro, wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills, or wants to go deep on one failure (an incident), or asks where an agent's tokens go and how to use fewer."
 license: MIT
 metadata:
   version: 0.11.0
@@ -25,6 +25,14 @@ You do not need it installed: run `npx -y learn-from-mistakes-axi <command>`. If
 ## One failure: an incident
 
 When the user wants to go deep on one failure, not on what repeats, run `npx -y learn-from-mistakes-axi incident "<what failed>" --evidence <path> --wait 8m` instead of the retro. `<what failed>` is the user's own words, a file, or a GitHub PR or issue link; repeat `--evidence` for each file, screenshot or link the user names. The run reads only those and the project context. Read its `report.txt` (the `next:` line names it) and tell the user, in order: the timeline, each root cause with its why chain and cost, why no check caught it, how to avoid it now, and each fix with its owner, priority and due date. Then say what section 7 did not check: the agents cannot see a screenshot, so ask the user to describe it in text. Once the user makes a fix, record it with `npx -y learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <git sha>`; `npx -y learn-from-mistakes-axi incident --status` then runs the check of each shipped fix and lists the fixes still open. A fix stays open until its check passes.
+
+## Tokens: where they go
+
+When the user asks where the tokens go, or how to use fewer, run `npx -y learn-from-mistakes-axi tokens retro` (`--since 14d` by default, `--agents claude,pi`; with no project config add `--out <dir>`). It reads the Claude Code and Pi session stores and calls no agent. Read the `tokens.txt` its first line names to the user in plain words: the money split first, then the ranked causes.
+
+- Cache reads are usually most of the cost: every turn re-reads the context so far, so the cost follows turns times context size. Never offer shorter answers as the main fix; that moves only the output share.
+- Turn each top cause into one proposed change against a named file (the report gives the change and the metric that must move), and let the user decide. After a change, the next `tokens retro` shows each number beside the last run's.
+- `npx -y learn-from-mistakes-axi tokens doctor` names a store it cannot read, with the reason. `npm i -g learn-from-mistakes-axi`, then `learn-from-mistakes-axi tokens guard install`, adds the poll guard (a global install keeps the hook's path), which blocks the third identical poll in one context with one line saying what to do instead; `npx -y learn-from-mistakes-axi tokens guard status` says what it blocked.
 
 ## The retro method
 

@@ -176,6 +176,39 @@ learn-from-mistakes-axi incident --status
 
 The bundle, the project context and your own words go to the worker and judge providers, after redaction, as for a retro. Do not name files or links you cannot share. No Firstmate or sign-off install is needed.
 
+## Token use
+
+```sh
+learn-from-mistakes-axi tokens doctor                  # which session stores are readable
+learn-from-mistakes-axi tokens retro --since 14d       # where the tokens went
+learn-from-mistakes-axi tokens guard install           # optional: the poll guard hook
+learn-from-mistakes-axi tokens guard status            # what the poll guard blocked
+```
+
+**`tokens retro`** reads the Claude Code and Pi session stores (`--agents claude,pi`, both by default) for the window (`--since 14d`, or `36h`, or a day such as `2026-10-01`). It calls no model: every number is counted from the stores. It reads the whole store, not only the project's sessions. Claude Code writes one record per content block, so each request counts once, at the largest usage any of its records carries. A cache write counts at 1.25 times the input price (2 for a one-hour cache), a cache read at 0.1 and output at 5; the first line's `cache-read N% of cost` uses these weights.
+
+The first line is `tokens: <total>/<days>d (<per store>) · cache-read N% of cost · top: <three causes> · report: <tokens.txt>`, then a table of the nine causes ranked by tokens. The causes overlap (a polling turn also re-reads the floor), so they rank; they do not add up.
+
+| Cause | What it counts | The change that moves it |
+|---|---|---|
+| `floor` | each request re-reading its context's first prompt (system prompt, tools, instruction files, skill listing, start hooks) | trim the skill listing, the instruction files and the start hook output |
+| `tool-carry` | each tool result's tokens times the requests after it, up to the next compaction | quiet flags, head or tail, counts instead of lists |
+| `oversized` | the same, for results over 20,000 characters | keep the head and tail, save the rest to a file |
+| `ctx-over-200k` | the prompt tokens above 200k, per request | hand off or compact before 200k |
+| `polling` | the turns that ran an identical poll-like command again with no other work between | wait on an event; the poll guard |
+| `failed-calls` | the turns that issued a tool call that failed | fix the repeated failing command; the retro finds which |
+| `fan-out` | the tokens of subagent requests | fewer, larger subagent tasks |
+| `reread` | a whole file read again with no edit between, its result carried as above | read a range, or keep notes |
+| `reread-after-compaction` | the same, across a compaction | name what was read in the compaction summary |
+
+A tool result's tokens are its characters divided by 4; request usage is exact. Each cause names its worst sessions by id and one example as a transcript `file:line`, never transcript text. `tokens.txt` explains the split and the causes in plain words; `tokens.json` (`lfm-tokens.v1`) holds the same numbers.
+
+With a project config, the run is saved in the run store as a run of kind `tokens` with these metrics: `tokens_per_day`, `weighted_per_day`, `ctx_over_200k_share`, `floor_tokens_median`, `single_tool_turn_share`, `poll_repeat_turns`, `oversized_result_carry`, `failed_call_turn_cost` and `prefix_rebuilds` (a later request that wrote 20k or more uncached tokens). The next `tokens retro` shows each beside the last one, and `status --run <id>` prints the run's first line. The files go to `.lfm/runs/<id>/`, or to `--out <dir>`; with no project config, `--out` is needed and nothing is saved. A retro never uses a tokens run as its report.
+
+**`tokens doctor`** checks each store: missing (`warn`, with the env var that moves it), readable, or not readable (`fail`, with the path and the reason, such as `ENOTDIR` or `EACCES`). It reads only the first lines of each session file, so it is quick on a large store. Both commands open only the stores' session folders and `.jsonl` files; they never read a login or credential file.
+
+**The poll guard** is a Claude Code `PreToolUse` hook. On the third identical poll-like Bash command (sleep, status, inbox, tail, checks, pgrep, wait, watch, ps or ls) in one context with no other work between, it denies the call with one line: the command already ran, each run re-reads the whole context, so wait on an event instead or run a different command. An edit or another Bash command starts the count again, and a `SessionStart` hook on `compact` starts a new context. It is append-only and fail-open: it never rewrites or summarizes earlier output, and any error lets the call through. `tokens guard install` writes both entries into the user's Claude Code `settings.json` (`--project-hook`: the project's `.claude/settings.json`), keeps every other key and hook, and replaces only its own entries, so a second install changes nothing. Install the package globally first; an npx copy of the hook can be cleaned away. The guard keeps one small file per session under `$LFM_HOME/tokens/guard`, keyed by a hash of the command, and logs each block, with a redacted 80-character excerpt of the command, in `fired.jsonl` there; `tokens guard status` reads it.
+
 ## Sources, state and privacy
 
 A `github` source reads the repo `origin` names, or each repo of its `repos: [owner/name, ...]` list (then a PR's id and ref carry its repo, and `init --firstmate` writes the Firstmate fleet's five repos there). A `github` source also reads the repo's GitHub Actions runs through `gh api` (read-only). The report's numbers then include `ci_runs`, `ci_failure_rate` (finished runs that failed, as a share), `ci_reruns`, `ci_flaky_jobs` (failed, then passed on a rerun of the same run), `rework_per_merge`, `ci_failure_rate:<repo>`, and `ci_job_failures:<repo / workflow / job>` for each job that failed in either window. Each shows its value for this window and the last. The report lists the worst failing jobs by name. When the runs cannot be read, the PR numbers stay and the report's "Not checked" section names the missing runs and why. Job names are read for the newest 200 failed or rerun runs; GitHub lists at most 1000 runs a search.
