@@ -67,6 +67,23 @@ delete env.LFM_CLI; // only packed-npm-test points the journeys at another bin
 env.LFM_HOME = join(env.HOME, '.learn-from-mistakes'); // explicit isolated global config; project state stays in .lfm/
 delete env.CLAUDE_CONFIG_DIR; // the sessions drive reads only the synthetic stores in the scratch HOME and XDG dir
 delete env.CODEX_HOME;
+// Model a caller whose global and command-scope Git config point to a bash hook.
+// The lab must discard both without adding bash or executing the caller's hook.
+const hookDir = join(scratch, 'caller-hooks'), hook = join(hookDir, 'reference-transaction');
+mkdirSync(hookDir);
+writeFileSync(hook, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+const callerConfig = join(scratch, 'caller.gitconfig');
+writeFileSync(callerConfig, `[core]\n\thooksPath = ${JSON.stringify(hookDir)}\n`);
+Object.assign(env, { GIT_CONFIG_GLOBAL: callerConfig, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: hookDir });
+const configuredHook = spawnSync('git', ['config', '--get', 'core.hooksPath'], { env, encoding: 'utf8' });
+assert.equal(configuredHook.status, 0, configuredHook.stderr);
+assert.equal(configuredHook.stdout.trim(), hookDir, 'the synthetic caller hook configuration is not active');
+const configuredGlobalHook = spawnSync('git', ['config', '--global', '--get', 'core.hooksPath'], { env, encoding: 'utf8' });
+assert.equal(configuredGlobalHook.status, 0, configuredGlobalHook.stderr);
+assert.equal(configuredGlobalHook.stdout.trim(), hookDir, 'the synthetic global hook configuration is not active');
+// Command-scope Git configuration can carry the caller's hooks into the synthetic repos,
+// even though HOME and XDG point at the lab. Do not run outside hooks in the lab.
+for (const key of Object.keys(env)) if (/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|GLOBAL|SYSTEM)$/.test(key)) delete env[key];
 const commands = [];
 function run(name, command, args, expected = 0, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
@@ -112,6 +129,7 @@ try {
   symlinkSync(process.execPath, join(agentBin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(agentBin, 'git'));
   const lab = { PATH: agentBin };
+  assert(!existsSync(join(agentBin, 'bash')), 'the isolated lab must exercise the journey without bash on PATH');
   const drive = (name, ...args) => run(name, process.execPath, [cli, ...args, '--dir', staged], 0, lab);
   const pickerLog = join(scratch, 'picker.jsonl');
   run('account-picker', process.execPath, [cli, 'agents', '--test', 'claude', '--json', '--dir', staged], 0, {
@@ -248,6 +266,14 @@ try {
   const skillRun = (name, extra) => { run(name, process.execPath, [cli, 'retro', '--foreground', '--json', '--dir', learned], 0, { ...lab, ...extra }); return JSON.parse(readFileSync(join(evidence, `${name}.stdout`), 'utf8')); };
   const first = skillRun('retro-skill', { FAKE_ANALYSE: 'label', FAKE_CAUSE: 'cache-lock', FAKE_PROPOSE: 'eight', FAKE_TARGET: skill, FAKE_METRIC: 'defects' });
   run('apply-skill', process.execPath, [cli, 'apply', '--fix', '1', '--dir', learned], 0, { ...lab, GIT_AUTHOR_DATE: ago(4), GIT_COMMITTER_DATE: ago(4) });
+  save('apply-skill-isolation.json', {
+    caller: { globalConfig: 'scratch/caller.gitconfig', hooksPath: 'scratch/caller-hooks', hook: 'reference-transaction',
+      shebang: readFileSync(hook, 'utf8').split('\n')[0], configActive: configuredHook.stdout.trim() === hookDir,
+      globalConfigActive: configuredGlobalHook.stdout.trim() === hookDir },
+    lab: { path: 'scratch/fake-agent', pathEntries: readdirSync(agentBin).sort(), bashOnPath: existsSync(join(agentBin, 'bash')),
+      inheritedGitConfigRemoved: !Object.keys(env).some((key) => /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|GLOBAL|SYSTEM)$/.test(key)) },
+    applySkillStatus: commands.find((command) => command.name === 'apply-skill').status,
+  });
   const created = `lfm/learned-e3b0c4/${first.run.id}-1`;
   assert.equal(lgit(['diff', '--name-status', `HEAD..${created}`]), `A\t${skill}`, 'apply did not create the project skill');
   save('skill-created.md', lgit(['show', `${created}:${skill}`]));
