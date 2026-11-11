@@ -2,6 +2,7 @@
 // The report is the privacy-bounded lfm-report.v2 (identifiers, counts and verdict words, never prose); lfm-changes.v1
 // carries only the owner-written what/why of each applied change.
 // LFM_CLI points the same journeys at an installed bin (the verify skill's --package proof).
+import { validateRunV1 } from '../src/run-shape.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -199,6 +200,8 @@ test('report is lfm-report.v2 for the last run in TOON and JSON with one summary
   const gate = model.causes.find((c) => c.cause === 'agent-exit-wait');
   assert.deepEqual([gate.store.rows, gate.log.incidents, gate.repeated], [4, 0, true]); // typed store rows matched, never added to log
   assert.deepEqual(model.coverage, { labelled: 0, total_records: 18, unlabelled: 18 }); // this worker labelled nothing
+  assert.equal(validateRunV1(model.state), ''); // the shared run.v1 shape: a completed run is at stage done
+  assert.deepEqual([model.state.id, model.state.stage, model.state.result], [run.id, 'done', { outcome: 'completed', failed_step: null }]);
   // --full adds only non-content ids: a gate row id, never record text or a content-hash record id.
   const full = JSON.parse(lfm('report', '--full', '--json').stdout);
   assert.ok(full.causes.find((c) => c.cause === 'agent-exit-wait').store_row_ids.includes('gate:step-1'));
@@ -786,9 +789,9 @@ function agentSetup() {
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(process.env.PATH.split(delimiter).map((d) => join(d, 'git')).find(existsSync), join(bin, 'git'));
   appendFileSync(join(p, 'defects.md'), `\n## ${new Date().toISOString().slice(0, 10)}\n\n- [tests] Umer's tests failed: UMER_FIXTURES was unset.\n- [tests] They failed again for the same reason.\n`);
-  // The tool's git runs with PATH=bin only, so the host's global git config must not answer: a global hooksPath would
+  // The tool's git runs with PATH=bin only, so the host's global git config (and a lane's GIT_CONFIG_COUNT env) must not answer: a hooksPath would
   // run hooks whose bash is not on that PATH, and a ref update (apply's git branch) would fail for the host, not the tool.
-  const lfmAt = (dir, extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', dir], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...extra } });
+  const lfmAt = (dir, extra, ...args) => spawnSync(process.execPath, [CLI, ...args, '--dir', dir], { encoding: 'utf8', env: { ...env, PATH: bin, FAKE_LOG: log, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: '0', ...extra } });
   const lfm = (extra, ...args) => lfmAt(p, extra, ...args);
   const query = (sql, ...args) => { const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'), { readOnly: true }); try { return db.prepare(sql).all(...args).map((x) => ({ ...x })); } finally { db.close(); } };
   const calls = (name = 'claude') => readFileSync(join(log, `${name}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));

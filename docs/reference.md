@@ -141,6 +141,23 @@ Use the run id from your output, not necessarily `1`. `rerun --resume` continues
 
 `status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently or to run without one.
 
+`report --json` carries the run's `state` in the shared `run.v1` shape: `id`, `kind`, `status`, `stage` (the step the run is at, or `done`), `steps` (each with `status`, `started_at` and `completed_at`), `loops` (agent calls and retries), `waits` (an agent call or a sign-off answer the run waits on) and `result` (the outcome and the step that failed). It holds ids, words, counts and times only. The shape and this diagram of a run's moves come from one file, `src/run-shape.mjs`; `npm run build:diagram` regenerates the diagram.
+
+<!-- run-diagram:start -->
+```mermaid
+stateDiagram-v2
+    [*] --> running: start
+    running --> completed: finish
+    running --> failed: fail
+    running --> cancelled: abort
+    running --> interrupted: lose worker
+    failed --> running: resume
+    cancelled --> running: resume
+    interrupted --> running: resume
+    completed --> [*]
+```
+<!-- run-diagram:end -->
+
 ## Go deep on one incident
 
 A retro looks across many records for the causes that repeat. An incident run goes deep on one failure you name, apart from the retro. It needs the same setup: a project config and a ready worker and judge.

@@ -302,7 +302,7 @@ function analyse(cfg, files) {
   // The run's fixes as its check step left them: a fix that broke a rule is unchecked.
   const proposals = (files.proposals ?? []).map((p) => ({ ...p, refs: (Array.isArray(p.refs) ? p.refs : []).filter((ref) => records.has(ref)) }));
   return { cfg, meta, records, rows, labels, groups: list, proposals, problems, unlabelled: [...records.keys()].filter((id) => !labels.has(id)).length, changes,
-    counted: files.counted, findings: files.findings ?? [], run: files.run, shown: files.shown ?? {}, reportFile: files.reportFile };
+    counted: files.counted, findings: files.findings ?? [], run: files.run, state: files.state, shown: files.shown ?? {}, reportFile: files.reportFile };
 }
 
 // The report model and the problems behind its count; throws when the sources hold nothing to count.
@@ -357,6 +357,7 @@ function project(a, full) {
     schema: 'lfm-report.v2',
     generated_at: new Date().toISOString(),
     run: a.run, // the retro whose labels, numbers and fixes these are
+    state: a.state, // the same run as run.v1 (src/run-shape.mjs): ids, enum words, counts and times only
     report_txt: a.reportFile ?? '', // the run's plain-text report for a person: its path only, never its text
     ingested_at: a.meta.read_at ?? '',
     coverage: { labelled: a.labels.size, total_records: a.records.size, unlabelled: a.unlabelled },
