@@ -51,7 +51,7 @@ function refuses(result, why) {
 }
 
 test('every command the skill and README show is a real command the CLI accepts', () => {
-  const docs = ['skills/lfm-retro/SKILL.md', 'README.md'].map((f) => readFileSync(join(REPO, f), 'utf8')).join('\n');
+  const docs = ['skills/lfm-retro/SKILL.md', 'skills/lfm-fixes/SKILL.md', 'README.md'].map((f) => readFileSync(join(REPO, f), 'utf8')).join('\n');
   const commands = new Set([...docs.matchAll(/learn-from-mistakes-axi (?:-y )?((?:change applied|signoff (?:post|answers)|[a-z][a-z-]*))/g)].map((m) => m[1]));
   assert.ok(commands.has('init') && commands.has('retro') && commands.has('report'), 'the docs no longer show the core commands');
   const tmp = mkdtempSync(join(tmpdir(), 'lfm-conformance-docs-'));

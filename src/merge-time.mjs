@@ -99,3 +99,15 @@ export function liveAt(dir, change) {
     return { at: recorded, live: true };
   }
 }
+
+// Whether the default branch reverted a change: a commit there that says `This reverts commit <the change's ref>`
+// (what `git revert` writes). Only a revert of the recorded ref is seen; a squash-merged copy has another hash.
+export function revertedFix(dir, change) {
+  try {
+    const bin = which('git'), def = bin && defaultBranch(dir, bin);
+    const ref = def && /^[0-9a-f]{7,40}$/.test(change.ref ?? '') && git(dir, bin, ['rev-parse', '--verify', '--quiet', `${change.ref}^{commit}`]);
+    return Boolean(ref && git(dir, bin, ['log', '--format=%H', '-1', '-F', `--grep=This reverts commit ${ref}`, def]));
+  } catch {
+    return false;
+  }
+}

@@ -342,6 +342,9 @@ try {
   incident('incident-status-done', ['incident', '--status', '--json']);
   const done = JSON.parse(readFileSync(join(evidence, 'incident-status-done.stdout'), 'utf8'));
   assert.deepEqual([done.open, done.done, done.fixes.map((f) => f.fix)], [1, 1, [`${incidentRun.run.id}:1`]], 'the rule fix whose check passed is still open');
+  incident('incident-fixes', ['fixes', '--json']);
+  const lives = JSON.parse(readFileSync(join(evidence, 'incident-fixes.stdout'), 'utf8')).fixes;
+  assert.deepEqual(lives.map((f) => [f.fix, f.state]), [[`${incidentRun.run.id}:1`, 'proposed'], [`${incidentRun.run.id}:2`, 'worked']], 'fixes did not list the proposed fix and the one whose check passed');
   // Sessions: one synthetic Claude Code, Codex and OpenCode session each, run in the staged project, each with a failed test.
   const store = join(env.HOME, '.claude', 'projects', 'staged');
   mkdirSync(store, { recursive: true });

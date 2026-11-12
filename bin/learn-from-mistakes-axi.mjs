@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { encode as toonEncode } from '@toon-format/toon';
 import { isMetric, loadConfig, loadGlobal, METRIC_RULE, MODEL_RULE, modelOk, PROJECT_FILE, RULE, SOURCES } from '../src/config.mjs';
 import { abort, attach, incident, lastRun, logs, rerun, retro, runs, status, worker } from '../src/run.mjs';
+import { fixesList } from '../src/fixes.mjs';
 import { incidentHint, incidentItems, incidentStatus, WHAT } from '../src/incident.mjs';
 import { doctor } from '../src/doctor.mjs';
 import { init, RECONFIGURABLE } from '../src/init.mjs';
@@ -389,7 +390,7 @@ export function summaryLine(model) {
   return parts.length ? `repeated: ${parts.join(', ')}` : 'repeated: none';
 }
 
-const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|change applied|changes|
+const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|change applied|changes|fixes|
                                 retro|incident|status|runs|attach|logs|abort|rerun|agents|signoff|
                                 apply|tokens>] [options]
   (no command)        print the last run's status and its summary line
@@ -426,6 +427,7 @@ const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|c
                       --full adds evidence ids, --json prints JSON
   change applied      record an applied change in the append-only ledger
   changes             print every applied change (lfm-changes.v1) with its owner-written what/why
+  fixes               list each fix as proposed, kept, applied, shipped, worked or reverted
   retro               start a saved run in <state dir>/lfm.sqlite (collect, metrics, followup,
                       bundle, analyse, verify, propose, verify-fixes, check, apply, report) in a
                       background worker that goes on when this terminal ends; --wait <time> waits
@@ -515,8 +517,8 @@ const USAGE = `usage: learn-from-mistakes-axi [<setup|init|doctor|guide|report|c
   --no-skill, -y      (init) init installs no skill; --project-skill installs it in the project's
                       .claude/skills and .agents/skills instead of each agent's own skills dir; -y
                       asks nothing, even in a terminal
-  --json (setup, init, doctor, report, change applied, changes, retro, incident, status, runs,
-         attach, logs, abort, rerun, agents, tokens, no command)  print JSON instead of
+  --json (setup, init, doctor, report, change applied, changes, fixes, retro, incident, status,
+         runs, attach, logs, abort, rerun, agents, tokens, no command)  print JSON instead of
          the default text format (report: lfm-report.v2; changes: lfm-changes.v1)
   --full (report)     add allow-listed evidence ids (never record text)
   -h, --help          show this help and the supported commands
@@ -601,6 +603,7 @@ const FORMS = {
   report: 'learn-from-mistakes-axi report [--dir <dir>] [--json] [--full]',
   'change-applied': 'learn-from-mistakes-axi change applied (--cause <cause> | --proposal <run>:<n>) --ref <ref> [--metric <metric>] [--tripwire "<op> <number>"] [--check <command>] [--kind doc|rule|code] [--at <time>] [--what <text>] [--why <text>] [--json] [--dir <dir>]',
   changes: 'learn-from-mistakes-axi changes [--dir <dir>] [--json]',
+  fixes: 'learn-from-mistakes-axi fixes [--dir <dir>] [--json]',
   retro: 'learn-from-mistakes-axi retro [--wait [<time>] | --foreground] [--dir <dir>] [--json]',
   incident: 'learn-from-mistakes-axi incident (<what failed> [--evidence <path>]... [--wait [<time>] | --foreground] | --status ) [--dir <dir>] [--json]',
   status: 'learn-from-mistakes-axi status [--run <id>] [--dir <dir>] [--json]',
@@ -649,7 +652,7 @@ async function main(ctx) {
   }
   if (cmd === '_work') { await worker(loadConfig(argv[3]), Number(argv[0]), Number(argv[1])); return; } // hidden: `_work <id> <owner pid> --dir <dir>`, the worker retro spawns
   if (REMOVED.includes(cmd)) throw new UsageError(`${cmd} was removed: a retro reads the sources, labels and counts them`, RETRO);
-  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: setup, init, doctor, guide, report, change applied, changes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply, tokens)`);
+  if (!Object.hasOwn(FORMS, cmd)) throw new UsageError(`unknown command ${shown(cmd)} (commands: setup, init, doctor, guide, report, change applied, changes, fixes, retro, incident, status, runs, attach, logs, abort, rerun, agents, signoff, apply, tokens)`);
   const name = cmd.replaceAll('-', ' ') || 'learn-from-mistakes-axi', form = FORMS[cmd];
   const next = named ? form : undefined; // a bare `learn-from-mistakes-axi --bogus` points at --help
   const opts = {};
@@ -725,6 +728,14 @@ async function main(ctx) {
   if (cmd === 'change-applied') { quietSqlite(); console.log(render(await recordChange(cfg, opts).catch((e) => { throw storeError(e, cfg, opts, name); }), json)); hint(withContext('learn-from-mistakes-axi report', 'the report with the ledger', opts)); return; }
   if (cmd === 'apply') { quietSqlite(); await apply(cfg, opts).catch((e) => { throw storeError(e, cfg, opts, cmd); }); return; }
   if (cmd === 'changes') { exportChanges(cfg, opts, json); return; }
+  if (cmd === 'fixes') {
+    quietSqlite();
+    let out;
+    try { const db = await openStore(cfg.state, false); out = fixesList(cfg, db); db?.close(); } catch (e) { throw storeError(e, cfg, opts, cmd); }
+    console.log(render(out, json));
+    hint(out.count ? withContext('learn-from-mistakes-axi change applied --proposal <run>:<n> --ref <commit>', 'record a fix once it is made', opts) : withContext(RETRO, 'a retro proposes the fixes this lists', opts));
+    return;
+  }
   if (cmd === 'incident' && opts.status) {
     quietSqlite();
     let out;

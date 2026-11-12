@@ -18,11 +18,27 @@ export const MOVES = [
   ['resume', 'interrupted', 'running'],
 ];
 
-// The Mermaid stateDiagram of MOVES: the text docs/reference.md carries between its diagram markers.
-export function diagram() {
-  const finals = RUN_STATUS.filter((s) => s === 'completed');
+// The life of a fix across runs, listed by `fixes`: the same [event, from, to] form. A fix is proposed by a run, kept
+// when the user answers apply, applied when a change records it, shipped once it is live on the default branch, then
+// worked (its check passed or its tripwire was met) or reverted (the default branch reverted it). Reverted wins over
+// worked; a fix can be reverted from applied, shipped or worked.
+export const FIX_STATES = ['proposed', 'kept', 'applied', 'shipped', 'worked', 'reverted'];
+export const FIX_MOVES = [
+  ['propose', null, 'proposed'],
+  ['keep', 'proposed', 'kept'],
+  ['record', 'proposed', 'applied'],
+  ['record', 'kept', 'applied'],
+  ['merge', 'applied', 'shipped'],
+  ['check passes', 'shipped', 'worked'],
+  ['revert', 'applied', 'reverted'],
+  ['revert', 'shipped', 'reverted'],
+  ['revert', 'worked', 'reverted'],
+];
+
+// The Mermaid stateDiagram of a moves table: the text docs/reference.md carries between its diagram markers.
+export function diagram(moves = MOVES, finals = ['completed']) {
   return ['```mermaid', 'stateDiagram-v2',
-    ...MOVES.map(([event, from, to]) => `    ${from ?? '[*]'} --> ${to}: ${event}`),
+    ...moves.map(([event, from, to]) => `    ${from ?? '[*]'} --> ${to}: ${event}`),
     ...finals.map((s) => `    ${s} --> [*]`), '```'].join('\n');
 }
 

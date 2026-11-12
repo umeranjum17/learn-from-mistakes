@@ -2,10 +2,10 @@
 // The one source of skills/lfm-retro/SKILL.md. `npm run build:skill` writes it;
 // `npm run build:skill -- --check` exits 1 when the committed copy differs.
 // The skill is thin: init, doctor, retro, read report.txt, then record a change; `<bin> guide` prints the same steps for the installed version.
-import { readFileSync, writeFileSync } from 'node:fs';
+// One skill per job: lfm-retro starts a retro or an incident, lfm-fixes lists the life of each fix.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const file = new URL('../skills/lfm-retro/SKILL.md', import.meta.url);
 const bin = pkg.name, npx = `npx -y ${bin}`;
 const description = `Run a retro on what a project's coding agents keep getting wrong - repeated causes with counts, evidence and checked fixes - with the ${bin} CLI. Use when the user asks what keeps going wrong, wants a retro, wants evidence-backed changes to AGENTS.md, CLAUDE.md or skills, or wants to go deep on one failure (an incident), or asks where an agent's tokens go and how to use fewer.`;
 
@@ -67,8 +67,45 @@ If the request above is non-empty, the user invoked \`/lfm-retro\` explicitly: r
 If it is empty, run the steps above in the project you are in.
 `;
 
-if (!process.argv.includes('--check')) writeFileSync(file, skill);
-else if (readFileSync(file, 'utf8') !== skill) {
-  console.error('skills/lfm-retro/SKILL.md is stale\nnext: npm run build:skill   # regenerate it from scripts/build-skill.mjs');
-  process.exit(1);
+const fixesDescription = `List the life of each fix a ${bin} retro or incident proposed - proposed, kept, applied, shipped, worked or reverted - with the ${bin} CLI. Use when the user asks which fixes are still open, whether a past fix shipped or worked, or what happened to a fix.`;
+const fixes = `---
+name: lfm-fixes
+description: ${JSON.stringify(fixesDescription)}
+license: ${pkg.license}
+metadata:
+  version: ${pkg.version}
+  argument-hint: <which fix, or empty for all>
+  hermes-tags: retrospective, fixes, agents, instructions
+  hermes-category: productivity
+---
+
+# The life of a fix
+
+A fix to the agents' instructions has one state at a time: \`proposed\` (a retro or an incident kept it), \`kept\` (the user answered apply), \`applied\` (a change records it), \`shipped\` (live on the default branch), \`worked\` (its check passed or its tripwire was met) or \`reverted\` (the default branch reverted it). You list them and read the list to the user. Never change a state yourself, and never run a fix's check: \`fixes\` reads, it runs nothing.
+
+You do not need it installed: run \`${npx} <command>\`.
+
+1. Run \`${npx} fixes\` (\`--json\` for JSON). Each row is \`<run>:<n>\` (or a change id for a change recorded by hand), its cause and its state.
+2. Tell the user, in plain words, each fix that is not \`worked\` or \`reverted\`, and what moves it on: \`proposed\` and \`kept\` wait for the user to make the change and record it with \`${npx} change applied --proposal <run>:<n> --ref <git sha>\`; \`applied\` waits for the branch to reach the default branch; \`shipped\` waits for its check (\`${npx} incident --status\` runs an incident fix's check) or the next retro.
+3. A \`reverted\` fix is a result, not a fault: say what was reverted and ask the user whether to propose another.
+
+## Request
+
+$ARGUMENTS
+
+If the request above is non-empty, the user invoked \`/lfm-fixes\` explicitly: run the steps above, then answer that request from the list.
+If it is empty, run the steps above in the project you are in.
+`;
+
+// name -> text; `npm run build:skill` writes each, `-- --check` exits 1 when a committed copy differs.
+const SKILLS = { 'lfm-retro': skill, 'lfm-fixes': fixes };
+let stale = false;
+for (const [name, text] of Object.entries(SKILLS)) {
+  const file = new URL(`../skills/${name}/SKILL.md`, import.meta.url);
+  if (!process.argv.includes('--check')) { mkdirSync(new URL('.', file), { recursive: true }); writeFileSync(file, text); }
+  else if (!existsSync(file) || readFileSync(file, 'utf8') !== text) {
+    console.error(`skills/${name}/SKILL.md is stale\nnext: npm run build:skill   # regenerate it from scripts/build-skill.mjs`);
+    stale = true;
+  }
 }
+if (stale) process.exit(1);

@@ -280,6 +280,36 @@ Each project can keep one learned skill, `.agents/skills/learn-from-mistakes-<na
 
 To track a change you made yourself, use `change applied --cause <configured-cause> --ref <commit>`; `--proposal <run>:<n>` can identify a kept fix instead. Optional `--metric`, `--tripwire`, `--kind`, `--what` and `--why` record how to evaluate it. Every change also records a check command, the test or measurement that shows whether it worked: the worker names one for each fix, shown under the fix in `report.txt`, and `--check <command>` sets another (the default is `retro`). `changes --json` exports `lfm-changes.v1`, with each change's `check`; the next retro measures follow-ups. See `--help` for accepted values.
 
+### The life of a fix
+
+`learn-from-mistakes-axi fixes` lists each fix with one state word, the last move it made. It reads the run store, the change ledger and git, and runs no check.
+
+- `proposed`: a completed run kept the fix.
+- `kept`: you answered apply to it in sign-off.
+- `applied`: a change in the ledger records it.
+- `shipped`: its change is live on the default branch.
+- `worked`: an incident fix's check passed, or the latest follow-up met the tripwire.
+- `reverted`: the default branch holds a commit that says `This reverts commit <the change's ref>`. A revert wins over every other state; a squash-merged copy of the fix has another hash, so its revert is not seen.
+
+A change recorded by hand with no kept fix is its own row, named by its change id. The words and moves come from `src/run-shape.mjs`, like the run diagram; `npm run build:diagram` regenerates this one. The `lfm-fixes` skill is the job of reading this list to you.
+
+<!-- fix-diagram:start -->
+```mermaid
+stateDiagram-v2
+    [*] --> proposed: propose
+    proposed --> kept: keep
+    proposed --> applied: record
+    kept --> applied: record
+    applied --> shipped: merge
+    shipped --> worked: check passes
+    applied --> reverted: revert
+    shipped --> reverted: revert
+    worked --> reverted: revert
+    worked --> [*]
+    reverted --> [*]
+```
+<!-- fix-diagram:end -->
+
 ## Exit codes and automation
 
 | Code | Meaning and next step |
