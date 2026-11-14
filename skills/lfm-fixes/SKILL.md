@@ -3,7 +3,7 @@ name: lfm-fixes
 description: "List the life of each fix a learn-from-mistakes-axi retro or incident proposed - proposed, kept, applied, shipped, worked or reverted - with the learn-from-mistakes-axi CLI. Use when the user asks which fixes are still open, whether a past fix shipped or worked, or what happened to a fix."
 license: MIT
 metadata:
-  version: 0.12.0
+  version: 0.13.0
   argument-hint: <which fix, or empty for all>
   hermes-tags: retrospective, fixes, agents, instructions
   hermes-category: productivity
