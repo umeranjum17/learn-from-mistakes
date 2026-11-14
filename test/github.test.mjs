@@ -336,3 +336,24 @@ test('a firstmate home times the stages of its tasks and the report names the th
   assert.match(report, /^- Where the time goes: 14 hours of work and 21 hours of waiting, over 2 tasks\.$/m);
   assert.match(report, /^- Slowest wait 1, with the PR open until merged: 6 hours, 29% of the waiting\.$/m);
 });
+
+// A status line that carries a `[reason=<word>]` field is staged by that word, not by its text; only an old line with no reason
+// word is staged by its text. The texts below point the wrong way on purpose: the hours are the labelled truth.
+test('a firstmate home stages a wait by its reason word and reads the text only on an old line', () => {
+  const { tmp, p, lfm } = setup();
+  const home = join(tmp, 'umer-home'), hoursAgo = (h) => `at=${Math.floor(NOW / 1000 - h * 3600)}`;
+  mkdirSync(join(home, 'state'), { recursive: true });
+  writeFileSync(join(home, 'state', 'gamma.status'), [`working [${hoursAgo(20)}]: start`,
+    `paused [${hoursAgo(18)}] [wait=outside] [reason=review]: waiting on the pipeline checks`, // 3 h review
+    `blocked [${hoursAgo(15)}] [wait=main] [reason=decision]: waiting on the tool host`, // 2 h captain
+    `paused [${hoursAgo(13)}] [wait=outside] [reason=ci]: waiting for a merge call`, // 3 h ci
+    `paused [${hoursAgo(10)}] [wait=outside] [reason=quota]: waiting for review`, // 1 h blocked
+    `paused [${hoursAgo(9)}]: waiting for CI`, // 1 h ci: an old line, staged by its text
+    `done [${hoursAgo(8)}]: ready`].join('\n') + '\n'); // 2 h of work before the first wait
+  writeFileSync(join(p, '.learn-from-mistakes.yaml'), `name: umer-app\nsources:\n  home: { type: firstmate, path: ${home} }\n`);
+  const r = lfm({}, 'retro', '--foreground', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  const metrics = Object.fromEntries(JSON.parse(r.stdout).metrics.map((x) => [x.name, x.current]));
+  const names = ['hours_working', 'hours_waiting_captain', 'hours_waiting_ci', 'hours_in_review', 'hours_blocked', 'hours_merge_wait', 'tasks_timed'];
+  assert.deepEqual(names.map((n) => metrics[n]), [2, 2, 4, 3, 1, 0, 1]);
+});

@@ -300,11 +300,13 @@ const PICK2 = ['--agent', 'claude', '--model', MODELS.claude, '--judge-agent', '
 test('init installs the skill into each configured agent\'s own skills dir; a second init writes nothing; doctor shows the skill ok', () => {
   const { lfm, config, env } = setup(['claude', 'codex']);
   const out = JSON.parse(lfm('init', '-y', '--json', ...PICK2).stdout);
-  assert.equal(out.skills.length, 2);
+  assert.equal(out.skills.length, 4); // one skill per job, two jobs, in each of the two agents' dirs
   for (const root of [join(env.HOME, '.claude', 'skills'), join(env.HOME, '.codex', 'skills')]) {
-    const file = join(root, 'lfm-retro', 'SKILL.md');
-    assert.ok(out.skills.includes(file), `${file} listed`);
-    assert.equal(readFileSync(file, 'utf8'), SKILL);
+    for (const name of ['lfm-retro', 'lfm-fixes']) {
+      const file = join(root, name, 'SKILL.md');
+      assert.ok(out.skills.includes(file), `${file} listed`);
+      assert.equal(readFileSync(file, 'utf8'), readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url), 'utf8'));
+    }
   }
   const bytes = [readFileSync(config), ...out.skills.map((f) => readFileSync(f))];
   const plain = lfm('init');
@@ -313,7 +315,7 @@ test('init installs the skill into each configured agent\'s own skills dir; a se
   assert.doesNotMatch(plain.stdout, /skills_|^skills\[/m); // the text output shows the skill lines, not the result fields
   assert.deepEqual(JSON.parse(lfm('init', '-y', '--json').stdout).skills, []);
   assert.deepEqual([readFileSync(config), ...out.skills.map((f) => readFileSync(f))], bytes);
-  const [edited] = out.skills;
+  const edited = out.skills.find((f) => f.includes('lfm-retro'));
   writeFileSync(edited, 'a local edit\n');
   const updated = lfm('init');
   assert.equal(updated.status, 0, updated.stderr);

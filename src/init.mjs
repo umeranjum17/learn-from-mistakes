@@ -12,7 +12,8 @@ import { configuredRunners, detect, KEY, resolveRoles, runnerKey, RUNNERS } from
 import { checkHomes } from './sources/firstmate.mjs';
 import { READERS, stores } from './sources/sessions.mjs';
 
-const SKILL_SRC = fileURLToPath(new URL('../skills/lfm-retro/SKILL.md', import.meta.url));
+const SKILLS = ['lfm-retro', 'lfm-fixes']; // one skill per job, each packaged as skills/<name>/SKILL.md
+const skillSrc = (name) => fileURLToPath(new URL(`../skills/${name}/SKILL.md`, import.meta.url));
 // The flags --reconfigure re-applies to an existing config; the ignored line names the flag only for these.
 export const RECONFIGURABLE = ['--agent', '--model', '--judge-agent', '--judge-model', '--sessions'];
 const FIX = (flag) => `learn-from-mistakes-axi init ${flag} <agent> ...   # an installed agent CLI or byokit:<route>; agents --test <agent> checks one`;
@@ -44,23 +45,24 @@ export function installSkills(cfg, agents, dir, opts) {
       if (name.startsWith('byokit:') || !RUNNERS[key]?.skills) return [];
       return agents.find((x) => x.runner === key)?.usable ? [RUNNERS[key].skills(process.env)] : [];
     });
-  const text = readFileSync(SKILL_SRC, 'utf8');
   const written = [], updated = [], failed = [], moved = [], done = new Set();
   for (const root of roots) {
     try {
       const old = moveOldSkill(root);
       if (old) moved.push(old);
-      const target = join(root, 'lfm-retro');
-      mkdirSync(target, { recursive: true });
-      const real = realpathSync(target);
-      if (done.has(real)) continue;
-      done.add(real);
-      const file = join(target, 'SKILL.md');
-      const exists = existsSync(file);
-      if (exists && readFileSync(file, 'utf8') === text) continue;
-      writeFileSync(file, text);
-      written.push(file);
-      if (exists) updated.push(file);
+      for (const name of SKILLS) {
+        const target = join(root, name), text = readFileSync(skillSrc(name), 'utf8');
+        mkdirSync(target, { recursive: true });
+        const real = realpathSync(target);
+        if (done.has(real)) continue;
+        done.add(real);
+        const file = join(target, 'SKILL.md');
+        const exists = existsSync(file);
+        if (exists && readFileSync(file, 'utf8') === text) continue;
+        writeFileSync(file, text);
+        written.push(file);
+        if (exists) updated.push(file);
+      }
     } catch (e) { failed.push(`${root}: ${e.message}`); }
   }
   return { written, updated, failed, moved, roots: roots.length };

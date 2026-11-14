@@ -154,7 +154,7 @@ function readHome(source, path, { readFrom = 0, excerpts = true, project, salt }
       const stamp = m[2].match(/\[at=([^\]]*)\]/)?.[1];
       if (stamp !== undefined) when = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : NaN; // a stamp that is not digits is no time
       if (Object.hasOwn(KINDS, m[1])) add(when, `${f}:${i + 1}`, `${join(state, f)}:${i + 1}`, KINDS[m[1]], m[3]);
-      lines.push({ when, line: i + 1, stage: stageOf(m[1], m[3]) });
+      lines.push({ when, line: i + 1, stage: stageOf(m[1], m[3], m[2]) });
     });
     // Each line's stage lasts until the next line's stamp. The last line has no end, and a line with no stamp, or a stamp
     // before the line above, times nothing; so a task still open, or a file with no stamps, adds no stage.

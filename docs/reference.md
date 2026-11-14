@@ -141,6 +141,23 @@ Use the run id from your output, not necessarily `1`. `rerun --resume` continues
 
 `status`, the bare command and `retro --wait` exit **1** when the run they show failed or was interrupted or cancelled, and **0** for a completed or running run. Inspect `run.status` and the printed `next:`. A failed worker, unreadable source or unavailable judge is a problem to fix, not a reason to switch agents silently or to run without one.
 
+`report --json` carries the run's `state` in the shared `run.v1` shape: `id`, `kind`, `status`, `stage` (the step the run is at, or `done`), `steps` (each with `status`, `started_at` and `completed_at`), `loops` (agent calls and retries), `waits` (an agent call or a sign-off answer the run waits on) and `result` (the outcome and the step that failed). It holds ids, words, counts and times only. The shape and this diagram of a run's moves come from one file, `src/run-shape.mjs`; `npm run build:diagram` regenerates the diagram.
+
+<!-- run-diagram:start -->
+```mermaid
+stateDiagram-v2
+    [*] --> running: start
+    running --> completed: finish
+    running --> failed: fail
+    running --> cancelled: abort
+    running --> interrupted: lose worker
+    failed --> running: resume
+    cancelled --> running: resume
+    interrupted --> running: resume
+    completed --> [*]
+```
+<!-- run-diagram:end -->
+
 ## Go deep on one incident
 
 A retro looks across many records for the causes that repeat. An incident run goes deep on one failure you name, apart from the retro. It needs the same setup: a project config and a ready worker and judge.
@@ -235,7 +252,7 @@ Two explicit commands expose text beyond this compact projection: `changes` expo
 
 Opt in with `learn-from-mistakes-axi init --firstmate <home> --no-skill`, or add a `type: firstmate` source. There is no private-marker auto-detection and no dependency on Firstmate to run a retro.
 
-The source reads `state/*.status`, inbox `*.msg` files including `handled/`, `data/defects.md`, `data/metrics/prs.tsv`, `data/metrics/daily.tsv`, `data/chat.tsv` and `config/targets.tsv`. Status lines use `<state> [at=<epoch>]: <text>`; messages use an `at=<epoch>` line and bracketed tag, or, with no such line, the epoch their file name starts with (`<epoch>-<id>.msg`). Without a github source, `prs.tsv` (one merged PR a row) gives `merged`, `first_pass`, the hours to merge, the rework counts, `reverted` and `escaped`; `daily.tsv` (`day`, `steers`, `s_correct` columns) gives `steers`, ahead of the inbox messages, and `corrections_per_merge` (corrections per merged PR), which also fills `corrections_per_session` when no sessions source gives it. `rework_per_merge` is the rework commits a merged PR. `chat.tsv` holds the captain's chat lines (header `at`, `work`, `text`; `at` is an epoch, `work` the task or PR the line points at). A line with the word why, wrong or again, or that asks a question (a `?`, or a start with who, what, which, where, when or how), is a captain complaint: a mistake record with its text, date and work (the bundle says "about <work>"), counted in `defects` and listed with the unlabelled defect records (a complaint the worker labels as an event repeats its cause on its own, whatever `repeat` says, because the captain wrote it once); other lines are ignored. A table (`chat.tsv` included) that is missing or has no rows is named in the report's "Not checked" section. A file or entry that vanishes while the state folder is read is skipped; any other read error names the path. Targets use tab-separated `metric op target owner rule`. The source also times where each task's hours go. A status line opens a stage that lasts until the next line's stamp: `working` and `resolved` lines are work, `queued` lines are queue time, `needs-decision` lines wait for the captain, and a `paused` or `blocked` line waits for CI, review, a merge or something else, named by its text. A task's last line, a line with no stamp and a line stamped before the one above add no time. The metrics `hours_working`, `hours_queued`, `hours_waiting_captain`, `hours_waiting_ci`, `hours_in_review`, `hours_blocked`, `hours_merge_wait` and `tasks_timed` give the hours each stage took in the window; the merge wait is the hours the merged PRs of `prs.tsv` stayed open, or the merge waits in the status lines when the home keeps no table. `report.txt` ranks the three longest waits with their cause and a ways-of-working fix. The reader writes nothing into that home. It can measure decisions, blocks, steers and interventions per merge when a GitHub source supplies merges.
+The source reads `state/*.status`, inbox `*.msg` files including `handled/`, `data/defects.md`, `data/metrics/prs.tsv`, `data/metrics/daily.tsv`, `data/chat.tsv` and `config/targets.tsv`. Status lines use `<state> [at=<epoch>]: <text>`; messages use an `at=<epoch>` line and bracketed tag, or, with no such line, the epoch their file name starts with (`<epoch>-<id>.msg`). Without a github source, `prs.tsv` (one merged PR a row) gives `merged`, `first_pass`, the hours to merge, the rework counts, `reverted` and `escaped`; `daily.tsv` (`day`, `steers`, `s_correct` columns) gives `steers`, ahead of the inbox messages, and `corrections_per_merge` (corrections per merged PR), which also fills `corrections_per_session` when no sessions source gives it. `rework_per_merge` is the rework commits a merged PR. `chat.tsv` holds the captain's chat lines (header `at`, `work`, `text`; `at` is an epoch, `work` the task or PR the line points at). A line with the word why, wrong or again, or that asks a question (a `?`, or a start with who, what, which, where, when or how), is a captain complaint: a mistake record with its text, date and work (the bundle says "about <work>"), counted in `defects` and listed with the unlabelled defect records (a complaint the worker labels as an event repeats its cause on its own, whatever `repeat` says, because the captain wrote it once); other lines are ignored. A table (`chat.tsv` included) that is missing or has no rows is named in the report's "Not checked" section. A file or entry that vanishes while the state folder is read is skipped; any other read error names the path. Targets use tab-separated `metric op target owner rule`. The source also times where each task's hours go. A status line opens a stage that lasts until the next line's stamp: `working` and `resolved` lines are work, `queued` lines are queue time, `needs-decision` lines wait for the captain, and a `paused` or `blocked` line waits for CI, review, a merge or something else, named by its `[reason=<word>]` field (`decision` and `approval` wait for the captain, `ci`, `review`, and `blocker`, `dependency`, `quota`, `parked` and `date` are blocked) or, on an old line with no reason word, by its text. A task's last line, a line with no stamp and a line stamped before the one above add no time. The metrics `hours_working`, `hours_queued`, `hours_waiting_captain`, `hours_waiting_ci`, `hours_in_review`, `hours_blocked`, `hours_merge_wait` and `tasks_timed` give the hours each stage took in the window; the merge wait is the hours the merged PRs of `prs.tsv` stayed open, or the merge waits in the status lines when the home keeps no table. `report.txt` ranks the three longest waits with their cause and a ways-of-working fix. The reader writes nothing into that home. It can measure decisions, blocks, steers and interventions per merge when a GitHub source supplies merges.
 
 To read a whole fleet in one retro, opt in with `init --firstmate <main-home> --fleet --no-skill`, or add `fleet: true` to the source. The source then reads the main home and each secondmate home that the main home's `data/secondmates.md` lists, one `- <id> - <summary> (home: <absolute path>; ...)` line each, so repeated causes count across homes. The `home:` and `host:` keys may come in any order, and a leading `~` expands. A line with a `host:` key (a remote route), or with no absolute home, is skipped and counted under "Not checked" in `report.txt`. A home path may not contain `;` or `)`: the value is cut at the first of either. A main home with no `data/secondmates.md` is a fleet of one. Each home is read by one source only: a home that two sources, or one registry, name fails the config, and the `next:` line names the sources, or the registry line for a home the registry lists twice. The main home's `config/targets.tsv` sets the targets. A listed home whose folder is missing fails the retro; the retro's `next:` line names the source, and `doctor` names the registry line to fix. A listed home whose folder exists but has no `state/` yet reads as empty. Each record keeps its home as a salted id: the bundle and every agent prompt carry that id, never a home name or path, and `report.txt` gives each home's decisions, blocks, steers and defects next to the fleet totals. The run store keeps the real paths.
 
@@ -262,6 +279,36 @@ Default `auto_fix: 0` proposes only. `apply` commits kept fixes answered Apply (
 Each project can keep one learned skill, `.agents/skills/learn-from-mistakes-<name>/SKILL.md`; the propose step tells the worker its path. A kept fix whose target is that path is written by the tool, not the worker: `apply` adds the fix's rule with every evidence pointer, its fix id `<run>:<n>` (the ledger names it too) and its metric, and creates the file on first use. It is the only file `apply` creates, and it never overwrites an untracked file there. Once you merge the branch, each later retro measures the change from its merge. When the follow-up gives a verdict, the run writes it on the rule's `Result:` line, or retires the rule on a rollback or delete verdict (the whole skill with its last rule). It commits that on `lfm/<project>-<hash>/<run>-skill`, which `report.txt` names in section 3.
 
 To track a change you made yourself, use `change applied --cause <configured-cause> --ref <commit>`; `--proposal <run>:<n>` can identify a kept fix instead. Optional `--metric`, `--tripwire`, `--kind`, `--what` and `--why` record how to evaluate it. Every change also records a check command, the test or measurement that shows whether it worked: the worker names one for each fix, shown under the fix in `report.txt`, and `--check <command>` sets another (the default is `retro`). `changes --json` exports `lfm-changes.v1`, with each change's `check`; the next retro measures follow-ups. See `--help` for accepted values.
+
+### The life of a fix
+
+`learn-from-mistakes-axi fixes` lists each fix with one state word, the last move it made. It reads the run store, the change ledger and git, and runs no check.
+
+- `proposed`: a completed run kept the fix.
+- `kept`: you answered apply to it in sign-off.
+- `applied`: a change in the ledger records it.
+- `shipped`: its change is live on the default branch.
+- `worked`: an incident fix's check passed, or the latest follow-up met the tripwire.
+- `reverted`: the default branch holds a commit that says `This reverts commit <the change's ref>`. A revert wins over every other state; a squash-merged copy of the fix has another hash, so its revert is not seen.
+
+A change recorded by hand with no kept fix is its own row, named by its change id. The words and moves come from `src/run-shape.mjs`, like the run diagram; `npm run build:diagram` regenerates this one. The `lfm-fixes` skill is the job of reading this list to you.
+
+<!-- fix-diagram:start -->
+```mermaid
+stateDiagram-v2
+    [*] --> proposed: propose
+    proposed --> kept: keep
+    proposed --> applied: record
+    kept --> applied: record
+    applied --> shipped: merge
+    shipped --> worked: check passes
+    applied --> reverted: revert
+    shipped --> reverted: revert
+    worked --> reverted: revert
+    worked --> [*]
+    reverted --> [*]
+```
+<!-- fix-diagram:end -->
 
 ## Exit codes and automation
 

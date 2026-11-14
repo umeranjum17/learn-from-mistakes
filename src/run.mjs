@@ -22,6 +22,7 @@ import { causes, gates, numberFixes, prevent, timeline } from './steps/incident.
 import { meets, metrics, rounded } from './metrics.mjs';
 import { postReport } from './signoff.mjs';
 import { startTime } from './proc.mjs';
+import { runV1 } from './run-shape.mjs';
 import { reportText } from './report-text.mjs';
 import { locked, openStore } from './store.mjs';
 
@@ -124,7 +125,7 @@ function runResult(db, id, cfg) {
     const known = new Set(db.prepare('SELECT record_id FROM records WHERE run_id = ?').all(id).map((r) => r.record_id));
     if (!runLabels || runLabels.every((l) => known.has(l.id))) counted = Object.fromEntries(counts(cfg, db, id, collected(db, id)).causes);
   }
-  return { run: id, runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })),
+  return { run: id, state: runV1(db, id), runLabels, proposals, findings: db.prepare(`SELECT cause, count, days, COALESCE(verdict, 'not judged') AS verdict FROM findings WHERE run_id = ? ORDER BY id`).all(id).map((f) => ({ ...f })),
     ...(counted && { counted }) };
 }
 // The latest completed run that kept labels or findings, else the latest completed run: `report` counts it and shows its

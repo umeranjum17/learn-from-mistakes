@@ -124,3 +124,38 @@ test('a clean packed install gives the same incident report as the repo, with no
   assert.equal(reports[1], reports[0]);
   assert.match(reports[1], /^Fix 1, P0, for spec-not-pinned:$/m);
 });
+
+test('fixes lists one fix through each state word: proposed, kept, applied, shipped, worked, reverted', async () => {
+  const { p, lfm, env } = project();
+  const out = runOf(lfm(['incident', TEXT, '--foreground', '--json'])), id = `${out.run.id}:1`;
+  const fixes = () => Object.fromEntries(runOf(lfm(['fixes', '--json'])).fixes.map((f) => [f.fix, f.state]));
+  const git = (...args) => execFileSync('git', args, { cwd: p, encoding: 'utf8', env: { ...env, GIT_CONFIG_COUNT: '0', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 'Umer', GIT_AUTHOR_EMAIL: 'umer@example.invalid', GIT_COMMITTER_NAME: 'Umer', GIT_COMMITTER_EMAIL: 'umer@example.invalid' } }).trim();
+  assert.equal(fixes()[id], 'proposed');
+  // The user's answer comes from sign-off; the fixture writes the answered row it leaves in the store.
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(p, '.lfm', 'lfm.sqlite'));
+  db.prepare("INSERT INTO signoff (proposal_id, message, answer) SELECT id, '{}', 'apply' FROM proposals WHERE run_id = ? AND n = 1").run(out.run.id);
+  db.close();
+  assert.equal(fixes()[id], 'kept');
+  // Applied: recorded on its own branch, which has not reached the default branch.
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(p, '.gitignore'), '.lfm\n');
+  git('add', '.gitignore'); git('commit', '-q', '-m', 'start');
+  git('checkout', '-q', '-b', `lfm/demo-abc/${out.run.id}-1`);
+  writeFileSync(join(p, 'AGENTS.md'), '- Name the approved prototype in the task brief.\n');
+  git('add', 'AGENTS.md'); git('commit', '-q', '-m', 'the fix');
+  const ref = git('rev-parse', 'HEAD');
+  git('checkout', '-q', 'main');
+  const record = lfm(['change', 'applied', '--proposal', id, '--ref', ref, '--check', 'true', '--what', `fix ${id} on branch lfm/demo-abc/${out.run.id}-1`]);
+  assert.equal(record.status, 0, record.stderr);
+  assert.equal(fixes()[id], 'applied');
+  // Shipped: its branch is merged into the default branch. Worked: the check passes.
+  git('merge', '-q', '--no-ff', '-m', 'merge the fix', `lfm/demo-abc/${out.run.id}-1`);
+  assert.equal(fixes()[id], 'shipped');
+  assert.equal(lfm(['incident', '--status', '--json']).status, 0);
+  assert.equal(fixes()[id], 'worked');
+  // Reverted: the default branch reverts the fix commit.
+  git('revert', '--no-edit', ref);
+  assert.equal(fixes()[id], 'reverted');
+  assert.match(lfm(['fixes']).stdout, /reverted/);
+});

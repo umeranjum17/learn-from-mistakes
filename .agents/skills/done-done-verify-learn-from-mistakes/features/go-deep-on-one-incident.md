@@ -14,6 +14,7 @@ Harness: A shell: the run is a single node command whose exit code and the files
 2. learn-from-mistakes-axi incident "<the failure>" --evidence notes.md --evidence board.png --foreground --json: incident.stdout is a completed run of kind incident with two numbered fixes, and report-incident.txt holds the eight sections (short answer, timeline, why it happened, why no check caught it, how to avoid it now, the fixes each with an owner, a priority and a due date, not checked, next steps), with the screenshot named under Not checked.
 3. incident --status --json: incident-status-open.stdout lists both fixes as open.
 4. change applied --proposal <run>:2 --ref abc1234, then make the rule fix in AGENTS.md and run incident --status --json again: incident-status-done.stdout shows one fix done (its check passed) and one still open.
+   Then `fixes --json`: incident-fixes.stdout lists the first fix as `proposed` and the second as `worked`.
 5. Capture: save the files above to $DONE_DONE_EVIDENCE_ROOT, as SKILL.md's Evidence section says.
 6. Stop what you started.
 

@@ -19,14 +19,16 @@ export const WORKING = { metric: 'hours_working' };
 export const STAGE_METRICS = [WORKING.metric, ...Object.values(STAGES).map((s) => s.metric), 'tasks_timed'];
 
 // The stage a status line opens: null for a line that opens none (done, failed or a state the log does not define). A
-// working line, or a resolved line that closes a wait, is work; a paused or blocked line is a wait, named by what its
-// text waits for. A needs-decision line waits for the captain.
+// working line, or a resolved line that closes a wait, is work; a paused or blocked line is a wait. A needs-decision line
+// waits for the captain. A wait names its stage by its `[reason=<word>]` field (the wait reasons a Juggernaut status line
+// carries); only an old line with no known reason word falls back to the words of its text.
+const REASONS = { decision: 'captain', approval: 'captain', ci: 'ci', review: 'review', blocker: 'blocked', dependency: 'blocked', quota: 'blocked', parked: 'blocked', date: 'blocked' };
 const WAITS = [['captain', /\b(captain|decision|approv\w*|answer|sign-?off|question)\b/i], ['ci', /\b(ci|checks?|pipeline|actions)\b/i],
   ['review', /\breview\w*/i], ['merge', /\bmerg\w*/i]];
-export function stageOf(state, text) {
+export function stageOf(state, text, fields = '') {
   if (state === 'working' || state === 'resolved') return 'working';
   if (state === 'queued') return 'queued';
   if (state === 'needs-decision') return 'captain';
-  if (state === 'paused' || state === 'blocked') return WAITS.find(([, re]) => re.test(text))?.[0] ?? 'blocked';
+  if (state === 'paused' || state === 'blocked') return REASONS[fields.match(/\[reason=([a-z-]+)\]/)?.[1]] ?? WAITS.find(([, re]) => re.test(text))?.[0] ?? 'blocked';
   return null;
 }
